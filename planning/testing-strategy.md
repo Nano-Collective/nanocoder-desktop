@@ -3,7 +3,7 @@
 How each part of the plan is tested, the measurable targets results are judged against, and the cross-platform CI that runs them.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## Conventions
@@ -97,7 +97,7 @@ Suggestion (not discussed): starting budgets, to be confirmed after the first me
 
 ## Accessibility targets
 
-Behaviour only. Visual design: see `DESIGN.md` (not yet written). The criteria named are from WCAG 2.2; Suggestion (not discussed) to adopt them.
+Behaviour only. Visual design: see [`docs/DESIGN.md`](../docs/DESIGN.md). The criteria named are from WCAG 2.2; Suggestion (not discussed) to adopt them.
 
 | ID | Target | Checked how |
 |---|---|---|

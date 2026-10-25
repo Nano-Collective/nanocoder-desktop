@@ -3,12 +3,12 @@
 Projects, threads, durable resume, view-only threads, approvals, and model and mode controls.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## Purpose
 
-Let the user add a project, start or resume durable Nanocoder chats, follow each turn as it streams, approve or reject protected operations, and pick up the same chat after a full restart ([whitepaper, v1 scope][wp-scope], items 1, 2 and 7). Visual design: see `DESIGN.md` (not yet written).
+Let the user add a project, start or resume durable Nanocoder chats, follow each turn as it streams, approve or reject protected operations, and pick up the same chat after a full restart ([whitepaper, v1 scope][wp-scope], items 1, 2 and 7). Visual design: see [`docs/DESIGN.md`](../../docs/DESIGN.md).
 
 ## v1 requirements
 

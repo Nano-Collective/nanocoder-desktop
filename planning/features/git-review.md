@@ -3,12 +3,12 @@
 Real Git status and diffs, honest last-turn labelling, and the proposed baseline from #109.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## Purpose
 
-Review must represent the repository, not only what the agent says it changed ([whitepaper, Git diff and review][wp-git]). Visual design: see `DESIGN.md` (not yet written).
+Review must represent the repository, not only what the agent says it changed ([whitepaper, Git diff and review][wp-git]). Visual design: see [`docs/DESIGN.md`](../../docs/DESIGN.md).
 
 ## v1 requirements
 
