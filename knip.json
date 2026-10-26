@@ -1,0 +1,10 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"entry": ["source/index.ts"],
+	"project": ["source/**/*.ts"],
+	"ignoreBinaries": ["semgrep"],
+	"ignoreExportsUsedInFile": {
+		"interface": true,
+		"type": true
+	}
+}

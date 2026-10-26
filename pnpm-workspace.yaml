@@ -1,0 +1,17 @@
+packages:
+  - .
+
+# Supply-chain policy, the same as Nanocoder and prompt-scrub (planning: SEC-18).
+# Refuse packages published in the last 7 days, block exotic sub-dependency
+# sources, and refuse a version whose publish trust is lower than an earlier one.
+minimumReleaseAge: 10080
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
+
+# Packages allowed to run install scripts. Add native modules here when they
+# arrive (electron, node-pty) in phases S.3 and 3.1, and add electron to
+# minimumReleaseAgeExclude so a security release can be applied at once.
+allowBuilds:
+  esbuild: true
+
+auditConfig: {}

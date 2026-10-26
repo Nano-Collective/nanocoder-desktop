@@ -1,0 +1,94 @@
+{
+	"name": "@nanocollective/nanocoder-desktop",
+	"version": "0.0.0",
+	"private": true,
+	"description": "A local-first desktop workspace around Nanocoder: durable project chats, file browsing, Git review, a terminal and an isolated browser the agent can use.",
+	"keywords": [
+		"nanocoder",
+		"desktop",
+		"agent",
+		"acp",
+		"local-first"
+	],
+	"author": "Nano Collective",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Nano-Collective/nanocoder-desktop.git"
+	},
+	"homepage": "https://github.com/Nano-Collective/nanocoder-desktop#readme",
+	"bugs": {
+		"url": "https://github.com/Nano-Collective/nanocoder-desktop/issues"
+	},
+	"type": "module",
+	"packageManager": "pnpm@11.0.9",
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
+		"format": "biome check --write .",
+		"test:all": "pnpm test:format && pnpm test:types && pnpm test:lint && pnpm test:ava && pnpm test:knip && pnpm test:audit",
+		"test:format": "biome ci --formatter-enabled=true --linter-enabled=false --assist-enabled=false .",
+		"test:types": "tsc --noEmit",
+		"test:lint": "biome lint .",
+		"test:lint:fix": "biome lint --write .",
+		"test:ava": "ava",
+		"test:ava:coverage": "c8 --reporter=text --reporter=json-summary ava",
+		"test:knip": "knip",
+		"test:audit": "pnpm audit --audit-level=high --ignore-unfixable",
+		"test:security": "semgrep scan --config auto --error",
+		"prepare": "husky"
+	},
+	"lint-staged": {
+		"*.{js,ts,jsx,tsx,json,md}": [
+			"biome check --write --no-errors-on-unmatched"
+		]
+	},
+	"ava": {
+		"extensions": [
+			"ts"
+		],
+		"nodeArguments": [
+			"--import=tsx",
+			"--no-warnings"
+		],
+		"files": [
+			"source/**/*.spec.ts"
+		],
+		"workerThreads": false,
+		"serial": true,
+		"environmentVariables": {
+			"NODE_ENV": "test"
+		}
+	},
+	"c8": {
+		"include": [
+			"source/**/*.ts"
+		],
+		"exclude": [
+			"source/**/*.spec.ts"
+		],
+		"reporter": [
+			"text",
+			"json-summary",
+			"lcov"
+		],
+		"lines": 80,
+		"functions": 0,
+		"branches": 0,
+		"statements": 0
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.15",
+		"@types/node": "^24.19.2",
+		"ava": "^8.1.0",
+		"c8": "^12.0.0",
+		"husky": "^9.1.7",
+		"knip": "^6.42.0",
+		"lint-staged": "^17.6.0",
+		"tsc-alias": "^1.9.8",
+		"tsx": "^4.23.15",
+		"typescript": "^7.0.2"
+	}
+}

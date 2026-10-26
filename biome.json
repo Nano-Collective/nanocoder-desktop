@@ -1,0 +1,103 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"includes": [
+			"**",
+			"!out",
+			"!dist",
+			"!release",
+			"!coverage",
+			"!node_modules",
+			"!pnpm-lock.yaml",
+			"!.changeset/pre.json"
+		]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"indentWidth": 2,
+		"lineEnding": "lf",
+		"lineWidth": 80
+	},
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": {
+					"level": "on",
+					"options": {}
+				}
+			}
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "none",
+			"style": {
+				"noDefaultExport": "off",
+				"useBlockStatements": "off",
+				"noNonNullAssertion": "warn",
+				"noParameterAssign": "off",
+				"useConst": "off",
+				"useImportType": "off",
+				"useTemplate": "off"
+			},
+			"complexity": {
+				"noForEach": "off",
+				"useLiteralKeys": "off",
+				"useArrowFunction": "off",
+				"noBannedTypes": "off"
+			},
+			"suspicious": {
+				"noExplicitAny": "warn",
+				"noArrayIndexKey": "off",
+				"noGlobalIsNan": "off",
+				"noRedeclare": "off",
+				"noUnsafeDeclarationMerging": "off",
+				"noShadowRestrictedNames": "off",
+				"noAssignInExpressions": "off",
+				"noControlCharactersInRegex": "off",
+				"noConsole": { "level": "off", "options": { "allow": ["log"] } }
+			},
+			"correctness": {
+				"useExhaustiveDependencies": "error",
+				"noUnusedVariables": "error",
+				"noUnusedImports": "error",
+				"noUndeclaredVariables": "off"
+			}
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["**/*.spec.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off"
+					}
+				}
+			}
+		}
+	],
+	"javascript": {
+		"formatter": {
+			"semicolons": "always",
+			"quoteStyle": "single",
+			"jsxQuoteStyle": "double",
+			"quoteProperties": "asNeeded",
+			"bracketSpacing": false,
+			"arrowParentheses": "asNeeded",
+			"trailingCommas": "all"
+		}
+	},
+	"json": {
+		"formatter": {
+			"trailingCommas": "none"
+		}
+	}
+}

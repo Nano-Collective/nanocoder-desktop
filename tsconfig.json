@@ -1,0 +1,31 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"lib": ["ES2022"],
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"rootDir": "source",
+		"outDir": "out",
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"sourceMap": true,
+		"types": ["node"],
+		"paths": {
+			"@/*": ["./source/*"]
+		}
+	},
+	"include": ["source/**/*"],
+	"exclude": ["node_modules", "out", "dist", "release", "coverage"],
+	"tsc-alias": {
+		"resolveFullPaths": true,
+		"replacers": {
+			"default": {
+				"enabled": true
+			}
+		}
+	}
+}

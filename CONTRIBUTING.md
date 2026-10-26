@@ -18,7 +18,7 @@ Each roadmap phase has a "Build" checklist and a "Results we want" checklist. A 
 
 ## Development setup
 
-The toolchain arrives in roadmap phase S.2 and the Electron app in phase S.3. Until then there is nothing to install or run, and the steps below describe the planned setup.
+The toolchain is in place (roadmap phase S.2). The Electron app arrives in phase S.3, so for now there is nothing to launch, but you can install the project and run the full gate.
 
 ### Prerequisites
 
@@ -29,8 +29,6 @@ The toolchain arrives in roadmap phase S.2 and the Electron app in phase S.3. Un
 - On Linux only: Python 3, `make` and a C++ compiler, because `node-pty` has no prebuilt Linux binary and builds from source.
 
 ### Setup steps
-
-Once phase S.2 has landed:
 
 ```bash
 git clone https://github.com/Nano-Collective/nanocoder-desktop.git
