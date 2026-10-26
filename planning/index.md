@@ -53,7 +53,7 @@ Feature files:
 
 | Status | Meaning |
 |---|---|
-| **Decided** | Settled by a document on `main` (the approved whitepaper or the NC process docs), by merged code, or by @will-lamerton in writing. |
+| **Decided** | Settled by a document on `main` (the approved whitepaper or the NC process docs), by merged code, or by @will-lamerton in writing. The project's own tooling and library choices are also Decided once agreed in an issue in this repository. |
 | **Proposed (awaiting @will-lamerton)** | Proposed in review, usually by @puri-adityakumar, with no reply from @will-lamerton yet. Plan around it, but do not build anything that is expensive to undo. |
 | **Open** | No proposal yet, or a question nobody has answered. |
 | **Suggestion (not discussed)** | An idea from this planning set that has not been raised publicly. Raise it as an issue before treating it as part of the plan. |

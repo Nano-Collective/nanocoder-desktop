@@ -109,10 +109,11 @@ Everything in [`repo-setup.md`](repo-setup.md). Run before the technical gate.
 
 ### Phase S.3: Electron skeleton
 
-Needs `OQ-23` (bundler and packager) answered.
+Uses the choices decided in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3) ([`tech-stack.md`](tech-stack.md#electron-specific-choices)).
 
 **Build**
 
+- [ ] `electron-vite` and `electron-builder` set up, building to `out/` and `release/`
 - [ ] Main, preload and renderer entry points in the `source/` layout
 - [ ] Hardened app renderer: sandbox, context isolation, no Node, custom protocol, Content Security Policy (`SEC-01`, `SEC-15`)
 - [ ] Navigation and new-window requests denied in the app renderer
@@ -121,6 +122,8 @@ Needs `OQ-23` (bundler and packager) answered.
 
 - [ ] The app starts and shows an empty shell on macOS, Windows and Linux
 - [ ] A spec proves the renderer cannot reach Node or navigate away
+- [ ] Playwright launches a test build (with `nodeCliInspect` on) on all three platforms
+- [ ] `node:sqlite` works in the Electron main process; native `.node` files are unpacked from the `asar` archive
 
 ### Phase S.4: CI and release scaffolding
 
@@ -128,6 +131,7 @@ Needs `OQ-23` (bundler and packager) answered.
 
 - [ ] `pr-checks.yml` caller with `validate-changesets: true`
 - [ ] Local macOS and Windows jobs in the caller (`OQ-25`)
+- [ ] Store specs on Node 24 as well as Node 22
 - [ ] `nc-review.yml` and `.github/nc-review/rubric.md`
 - [ ] Changesets scaffold with `changeset pre enter alpha` and `pre.json` committed
 - [ ] `release-prepare.yml`, `changeset-check.yml`, `update-badges.yml`
@@ -243,11 +247,11 @@ Can run in parallel with G.4 and G.5.
 
 **Goal.** Trusted projects, durable threads, streaming and approvals, model and mode controls, process errors and bounded subagent runs ([whitepaper][wp-next]).
 
-**Blockers.** Technical gate; `OQ-03`, `OQ-04`, `OQ-19`; `DEC-36` before the first UI work. **Risks.** `RISK-04`, `RISK-05`, `RISK-06`, `RISK-11`, `RISK-14`.
+**Blockers.** Technical gate; `OQ-03`, `OQ-19`; `DEC-36` before the first UI work. **Risks.** `RISK-04`, `RISK-05`, `RISK-06`, `RISK-11`, `RISK-14`.
 
 ### Phase 1.1: desktop store
 
-Needs `OQ-04` answered.
+`node:sqlite`, with `better-sqlite3` as the fallback behind the same interface (`DEC-04`).
 
 **Build**
 
@@ -405,7 +409,7 @@ Needs `OQ-04` answered.
 
 **Goal.** Lazy file browser, preview and editor handoff, chat attachments, real Git status and diffs, touched files and transient review comments ([whitepaper][wp-next]).
 
-**Blockers.** `OQ-05`, `OQ-07`; the Nanocoder snapshot-read method for phase 2.9 only. **Risks.** `RISK-08`.
+**Blockers.** `OQ-07`; the Nanocoder snapshot-read method for phase 2.9 only. **Risks.** `RISK-08`.
 
 ### Phase 2.1: path safety
 
@@ -545,7 +549,7 @@ Needs `OQ-04` answered.
 
 ### Phase 3.1: PTY host
 
-Needs the PTY library from `OQ-05`.
+`node-pty` with `@xterm/xterm` (`DEC-28`). Linux builds `node-pty` from source.
 
 **Build**
 
@@ -714,7 +718,7 @@ Needs `OQ-13` answered.
 
 **Build**
 
-- [ ] Installers for macOS, Windows and Linux (`REL-05`)
+- [ ] Installers for macOS (`.dmg` and `.zip`), Windows and Linux (`REL-05`)
 - [ ] Fuses reviewed and set, with reasons for any left on (`SEC-19`)
 - [ ] Installers attached to GitHub Releases (`REL-12`)
 
@@ -722,6 +726,7 @@ Needs `OQ-13` answered.
 
 - [ ] Each installer installs, launches and uninstalls cleanly
 - [ ] `PERF-09` and `PERF-10` recorded for each installer
+- [ ] The shipped-build smoke test passes and confirms the fuses are set (`SEC-19`)
 
 ### Phase 4.3: notices and licences
 

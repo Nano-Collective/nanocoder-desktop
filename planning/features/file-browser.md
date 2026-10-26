@@ -99,7 +99,7 @@ None.
 
 ## Open questions
 
-`OQ-05` (highlighting library), `OQ-07` (editors).
+`OQ-07` (editors). Highlighting is decided: CodeMirror 6, read-only (`DEC-28`).
 
 ## Acceptance criteria
 

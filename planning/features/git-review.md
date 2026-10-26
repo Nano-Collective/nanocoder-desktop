@@ -101,7 +101,7 @@ A snapshot-read ACP method for `GIT-09` ([`acp-integration.md`](../acp-integrati
 
 ## Open questions
 
-`OQ-05` (diff library), `OQ-07` (editors), and whether `DEC-14` is v1.
+`OQ-07` (editors), and whether `DEC-14` is v1. The diff approach is decided: Git's own output (`DEC-28`).
 
 ## Acceptance criteria
 

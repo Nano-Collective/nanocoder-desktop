@@ -3,7 +3,7 @@
 The whitepaper's open risks, expanded with likelihood, impact, mitigation, owner and trigger, plus the risks this plan found.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 Likelihood and impact are this plan's estimates: Suggestion (not discussed). "NC core team" means `@Nano-Collective/core-team`.
@@ -36,5 +36,6 @@ Source: [whitepaper, Open risks][wp-risks].
 | RISK-15 | Desktop and Nanocoder trust disagree, so ACP refuses to start | High on first use | Medium (`SP-02`) | `OQ-14` | NC core team | Startup exits with Nanocoder's trust message |
 | RISK-16 | Build starts before Stage 4 prerequisites are recorded | Already happened (repository exists) | Low technically, real for process | `OQ-20`, `OQ-21` | @will-lamerton | Code merged before #115 and #117 are recorded |
 | RISK-17 | The next Nanocoder release, which carries `session/close`, the trust check and per-session `cwd`, is late | Medium | Medium (the gate and prototype run on unreleased code) | Gate against Nanocoder `main`; ask for release timing ([proposed issue H](proposed-issues.md#h-release-timing)) | NC core team with Nanocoder maintainers | The technical gate starts before that release exists |
+| RISK-18 | `node:sqlite` changes behaviour while it is a release candidate | Low | Medium (desktop store) | Store specs on Node 24; `better-sqlite3` fallback behind the same interface (`DEC-04`) | NC core team | A Node or Electron upgrade breaks the store specs |
 
 [wp-risks]: https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/content/collective/whitepapers/nanocoder-desktop.md?plain=1#L635-L648

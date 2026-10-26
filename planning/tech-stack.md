@@ -3,7 +3,7 @@
 The decided stack, the NC toolchain defaults as they exist in Nanocoder, prompt-scrub and Nanotune, and the Electron-specific choices still open.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## Decided stack
@@ -38,7 +38,7 @@ What the three reference repositories actually do (read on 2026-10-23), against 
 | Biome formatting | tabs, width 2, LF, line 80 | spaces, width 2, line 100 | tabs, width 2, LF, line 80 | tabs, width 2, LF, line 80 | Nanocoder's settings (docs, Nanocoder, Nanotune agree) |
 | Biome JS style | single quotes, JSX double, semicolons, trailing commas, `{foo}` object literals, arrow parens as needed | single quotes, semicolons, trailing commas | same as Nanocoder | same as Nanocoder | Nanocoder's |
 | Biome rules | preset `none`; `noUnusedVariables`, `noUnusedImports`, `useExhaustiveDependencies` error; `noExplicitAny` warn | preset `recommended` | same as Nanocoder | same as Nanocoder | Nanocoder's |
-| Spec files in Biome scope | excluded | included | excluded | not stated | Open: excluding them means tests are not linted |
+| Spec files in Biome scope | excluded | included | excluded | not stated | Included ([#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3)) |
 | Husky and lint-staged | yes (`biome check --write` on staged files) | no | no | yes | Yes (docs and Nanocoder) |
 | AVA through `tsx` | yes | yes | yes | yes | yes |
 | AVA `serial: true` | yes | no | no | yes | yes |
@@ -56,27 +56,30 @@ Where the repositories disagree, the NC docs decide; where the docs are silent, 
 
 ## Electron-specific choices
 
-The NC defaults do not cover these. All Open (`OQ-05`, `OQ-23`). Versions and licences are from the npm registry on 2026-10-23. Whatever is chosen, any divergence from the NC defaults is documented in `CONTRIBUTING.md` ([Creating a new project][creating]).
+Decided in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): the picks in [this comment](https://github.com/Nano-Collective/nanocoder-desktop/issues/3#issuecomment-6412135950), with the review points in [this comment](https://github.com/Nano-Collective/nanocoder-desktop/issues/3#issuecomment-6413649344). Versions and licences are from the npm registry on 2026-10-23. Every divergence from the NC defaults goes into `CONTRIBUTING.md` ([Creating a new project][creating]).
 
-| Choice | Candidates (latest, licence) | Trade-offs |
-|---|---|---|
-| Renderer bundler | `electron-vite` (6.0.0, MIT); `vite` (8.3.5, MIT) with a custom main and preload build; Electron Forge's Vite plugin | `electron-vite` handles main, preload and renderer in one config but expects its own folder layout; plain Vite keeps the `source/` layout at the cost of more setup. |
-| Packager | `@electron-forge/cli` (8.0.1, MIT); `electron-builder` (26.15.3, MIT) | Forge is maintained under the Electron organisation; `electron-builder` has broad target support and pairs with `electron-updater` (6.8.9, MIT). The update choice (`OQ-10`) may decide this. |
-| Fuses | `@electron/fuses` (2.1.3, MIT) | Needed for `SEC-19` whichever packager is used. |
-| End-to-end tests | `playwright` (1.64.1, Apache-2.0); `webdriverio` (10.1.0, MIT) | `playwright-core` is already in Nanocoder's dependency tree. Unverified: how well Playwright's Electron support drives a packaged app; a spike in phase S.3 would confirm. |
-| Native module rebuilds | `@electron/rebuild` (4.2.1, MIT); the packager's built-in rebuild; prebuilt binaries | `node-pty` and `better-sqlite3` are native and must match Electron's ABI. Prebuilt downloads add supply-chain surface (`SEC-18`). |
-| PTY | `node-pty` (1.1.0, MIT) | The common choice; native; Windows uses ConPTY. |
-| Terminal emulator | `@xterm/xterm` (6.0.0, MIT) | Has a screen-reader mode (`TERM-11`). |
-| SQLite | `better-sqlite3` (13.0.3, MIT); Node's built-in `node:sqlite` | See [`data-model.md`](data-model.md#sqlite-library). |
-| Diff | Git's own unified output parsed directly; `diff` (9.0.0, BSD-3-Clause, already a Nanocoder dependency) | Parsing Git's output keeps one source of truth (`GIT-04`). BSD-3-Clause needs its notice in third-party notices (`REL-06`). |
-| Syntax highlighting | `shiki` (4.5.0, MIT); `codemirror` (6.0.2, MIT) in read-only mode | Shiki produces static output; CodeMirror brings selection and keyboard handling useful for `GIT-07` and `A11Y-01`. |
-| Runtime IPC validation | `zod` (4.6.7, MIT; Nanocoder resolves 4.6.5 through the ACP SDK) | Avoids a second schema library. |
+| Choice | Pick (latest, licence) | Reason | Notes from review |
+|---|---|---|---|
+| Renderer bundler | `electron-vite` (6.0.0, MIT) | One config for main, preload and renderer; works with the `source/` layout | Builds to `out/`, so the `pr-checks` caller sets `build-output-dir: out` |
+| Packager | `electron-builder` (26.15.3, MIT) with `electron-updater` (6.8.9, MIT) | NSIS, AppImage, `.deb`, `.dmg`, signing and GitHub Releases updates in one tool | The macOS updater needs a `.zip` artefact, so macOS ships `.dmg` and `.zip`. Installers go to `release/`, not `dist/` |
+| Native module rebuilds | `electron-builder`'s built-in rebuild | No extra tool | Native `.node` files must be unpacked from the `asar` archive; check in phase S.3 |
+| SQLite | `node:sqlite`, with `better-sqlite3` (13.0.3, MIT) as the fallback behind the same interface | No native module, so store tests run in plain Node | Opened an in-memory database and a WAL file in Electron 45.0.0 on Windows. Release candidate on Node 24.15 and later; still active development on Node 22, with a warning. The bundled SQLite version differs between the two (3.51.3 and 3.53.4 in the check). Store specs also run on Node 24 in CI |
+| PTY | `node-pty` (1.1.0, MIT) | The standard choice | Prebuilt binaries for macOS and Windows only; Linux builds from source, so Linux contributors and the Linux release job need build tools |
+| Terminal emulator | `@xterm/xterm` (6.0.0, MIT) | Has a screen-reader mode (`TERM-11`) | |
+| Diff | Parse Git's own unified output | Git stays the only diff source (`GIT-04`) | The later "Agent changes" view uses `git diff --no-index` |
+| Syntax highlighting | CodeMirror 6 (MIT), read-only | Selection, keyboard and screen-reader support built in; handles large files | It renders only the visible part of a document, so screen-reader checks cover file preview and diffs (`A11Y-06`) |
+| End-to-end tests | Playwright (1.64.1, Apache-2.0) | `playwright-core` is already a Nanocoder dependency; can check the accessibility tree | Needs the `nodeCliInspect` fuse on. End-to-end tests run against a test build with that fuse on; the shipped build gets a smoke test that needs no inspector and a check that its fuses are set (`SEC-19`) |
+| Fuses | `@electron/fuses` (2.1.3, MIT) | Needed for `SEC-19` | |
+| IPC validation | `zod` 4 (MIT) | Already pulled in by the ACP SDK | |
+| Lint spec files | Yes | Security tests should be linted too | Differs from Nanocoder and Nanotune; documented in `CONTRIBUTING.md` |
+
+Not chosen: Vite with a custom main and preload build, Electron Forge, `@electron/rebuild` on its own, WebdriverIO, Shiki, and the `diff` package.
 
 ## CI implications
 
 The shared `pr-checks` workflow runs every job on `ubuntu-latest` ([source][shared-prchecks]). macOS and Windows coverage needs local jobs in the caller, as Nanocoder does for Windows ([source][nc-prchecks]). See [`testing-strategy.md`](testing-strategy.md#cross-platform-ci).
 
-`Verify Build` checks that `dist` is non-empty by default; if the bundler writes elsewhere, set `build-output-dir` ([Project infrastructure][infra]).
+`Verify Build` checks that `dist` is non-empty by default. `electron-vite` writes to `out/`, so the caller sets `build-output-dir: out` ([Project infrastructure][infra]).
 
 [wp-alt]: https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/content/collective/whitepapers/nanocoder-desktop.md?plain=1#L517-L562
 [stack]: https://docs.nanocollective.org/collective/projects/stack-suggestions

@@ -3,7 +3,7 @@
 Every question that still needs an answer, who owns it, and which milestone it blocks.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## How to use this list
@@ -21,8 +21,8 @@ From [whitepaper, Open questions][wp-questions].
 | OQ-01 | Does the first public release need a user-installed Nanocoder, or ship a bundled tested version? | Proposed (awaiting @will-lamerton): installed for the prototype, bundled and pinned with an override for the public release (`DEC-11`). | NC core team | Technical gate (which artefact the gate spawns) | [#117][i117] |
 | OQ-02 | Which Nanocoder versions and ACP capabilities are supported? | Proposed (awaiting @will-lamerton): the bundled version, plus newer versions above a minimum through the override, with startup capability checks (`DEC-12`). The minimum is not set. | NC core team | Technical gate | [#117][i117] |
 | OQ-03 | Which subagent event, child-session, cancellation and approval surfaces can be supported without Nanocoder-specific version coupling? | Open. At Nanocoder `8a5f4d4`, ACP shows a subagent only as the `agent` tool card with a polled title; there are no child IDs, no per-child cancel, and one approval handler per process ([`subagents.md`](features/subagents.md)). [nanocoder#1105][nc1105] is open. | NC core team | Milestone 1 (`SP-05`) | [Whitepaper][wp-questions] |
-| OQ-04 | Is SQLite acceptable as a new desktop dependency and migration surface? | Open. Candidates in [`data-model.md`](data-model.md#sqlite-library). | NC core team | Milestone 1 | [Whitepaper][wp-questions] |
-| OQ-05 | Which code, diff and PTY libraries meet licence and platform requirements? | Open. Candidates in [`tech-stack.md`](tech-stack.md#electron-specific-choices). | NC core team | Milestone 2 (diff), Milestone 3 (PTY) | [Whitepaper][wp-questions] |
+| OQ-04 | Is SQLite acceptable as a new desktop dependency and migration surface? | Answered in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): yes, through `node:sqlite` with `better-sqlite3` as the fallback (`DEC-04`). | NC core team | Milestone 1 | [Whitepaper][wp-questions] |
+| OQ-05 | Which code, diff and PTY libraries meet licence and platform requirements? | Answered in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): CodeMirror 6, Git's own diff output, `node-pty` with `@xterm/xterm` (`DEC-28`). | NC core team | Milestone 2 (diff), Milestone 3 (PTY) | [Whitepaper][wp-questions] |
 | OQ-06 | One app-wide browser profile, or one per project? | Open. Trade-offs in [`data-model.md`](data-model.md#browser-partition). | NC core team | Milestone 3 | [Whitepaper][wp-questions] |
 | OQ-07 | Which external editors get first-class "Open in editor" support? | Open. | NC core team | Milestone 2 | [Whitepaper][wp-questions] |
 | OQ-08 | When does full-text chat and file search become worth its index and retention surface? | Open, and deferred: search is on the "Later" list. Not a v1 blocker. | NC core team | None in v1 | [Whitepaper][wp-questions] |
@@ -53,7 +53,7 @@ All found by reading Nanocoder source at `8a5f4d4` or the NC docs. None has been
 | OQ-19 | What happens when the user switches project while a turn is running? | v1 has one active project ([whitepaper, Main window][wp-window]), but nothing says whether the previous project's process keeps running in the background. Suggestion (not discussed): keep it running until the turn ends, then idle-shut it down; never run two root turns in one process. | NC core team | Milestone 1 | [Whitepaper][wp-window] |
 | OQ-20 | Was the repository created on a recorded decision? | @will-lamerton wrote on [#115][i115] that the repository should not be created until the maintainer question is settled and recorded. `Nano-Collective/nanocoder-desktop` was created on 22 October; neither #115 nor #117 is recorded on the whitepaper page. Unverified: who created it and why. | @will-lamerton | Stage 4 | [#115][i115] |
 | OQ-22 | Does Nanocoder run under Electron's Node mode, a utility process, or a bundled Node 22 sidecar? | Electron's security checklist says to review fuses, and disabling the `runAsNode` fuse makes `child_process.fork` throw ([Electron fuses][el-fuses]). Running Nanocoder with `ELECTRON_RUN_AS_NODE` therefore keeps that fuse on. Nanocoder requires Node 22 or newer ([source][nc-engines]); Electron 45.0.0 embeds Node 24.22.0 ([releases][el-releases]), so Node mode is viable. A utility process cannot write to its child's stdin ([utility process][el-utility]), so it cannot host an ACP server over stdio and is ruled out. The choice is now Node mode (fuse kept on) or a sidecar. | NC core team | Technical gate (measure), Milestone 4 (ship) | [Whitepaper, Distribution][wp-dist] |
-| OQ-23 | Which renderer bundler, packager, end-to-end test runner and native rebuild approach? | NC defaults do not cover Electron. Any divergence is documented in `CONTRIBUTING.md`. | NC core team | Scaffold | [`tech-stack.md`](tech-stack.md#electron-specific-choices) |
+| OQ-23 | Which renderer bundler, packager, end-to-end test runner and native rebuild approach? | Answered in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): `electron-vite`, `electron-builder`, Playwright, the packager's built-in rebuild (`DEC-28`). | NC core team | Scaffold | [`tech-stack.md`](tech-stack.md#electron-specific-choices) |
 | OQ-25 | How does the cross-platform CI run, given the shared `pr-checks` workflow runs on `ubuntu-latest` only? | `SP-01` and the engineering requirements need macOS and Windows checks. Nanocoder already adds local Windows jobs beside the shared caller ([caller][nc-prchecks]). | NC core team | Milestone 1 | [Shared workflow][shared-prchecks] |
 
 ## Coverage check

@@ -17,7 +17,8 @@ Decided ([Stack suggestions][stack]): AVA loaded through `tsx`, `.spec.ts` files
 | Unit | Pure logic: parsers, policies, state machine, canonicalisation | AVA in Node, all three platforms | Every pull request |
 | Main-process integration | Services against real files, real Git and a real SQLite file in a temporary directory | AVA, all three platforms | Every pull request |
 | ACP integration | The ACP client against a real `nanocoder --acp` with a scripted provider | AVA, all three platforms | Every pull request |
-| End to end | The built app driven through its UI | End-to-end runner (`OQ-23`), all three platforms | Every pull request to `main` once Milestone 1 starts |
+| End to end | The built app driven through its UI | Playwright, against a test build with the `nodeCliInspect` fuse on, all three platforms | Every pull request to `main` once Milestone 1 starts |
+| Shipped-build smoke | The shipped build starts, opens a project and exits, without an inspector; its fuses are set as `SEC-19` says | Script per platform | Every release candidate |
 | Packaged | Installers on clean machines, real provider | Manual, then automated with a CI secret | Every release |
 
 ## Fixtures
@@ -106,7 +107,7 @@ Behaviour only. Visual design: see [`DESIGN.md`](../DESIGN.md). The criteria nam
 | A11Y-03 | Every control exposes a name, role and state to assistive technology (WCAG 4.1.2). | Automated accessibility-tree assertions in end-to-end tests. |
 | A11Y-04 | Turn started, completed, failed, cancelled and "approval needed" are announced without moving focus (WCAG 4.1.3). | Screen-reader check. |
 | A11Y-05 | Streaming text is announced at a polite rate, not chunk by chunk. | Screen-reader check during a long turn. |
-| A11Y-06 | Each release, the main screen reader on each platform completes `SP-03` and `SP-04`: VoiceOver on macOS, NVDA on Windows, Orca on Linux. Unverified: how well Orca works with Electron apps; the first run will show. | Manual protocol recorded in the release pull request. |
+| A11Y-06 | Each release, the main screen reader on each platform completes `SP-03`, `SP-04`, `SP-07` (file preview) and `SP-08` (diffs), since CodeMirror renders only the visible part of a document: VoiceOver on macOS, NVDA on Windows, Orca on Linux. Unverified: how well Orca works with Electron apps; the first run will show. | Manual protocol recorded in the release pull request. |
 
 ## Cross-platform CI
 
@@ -115,6 +116,7 @@ The shared `pr-checks` workflow runs on Linux only ([source][shared-prchecks]). 
 | Job | Platforms | Contents |
 |---|---|---|
 | Unit and main-process integration | `macos-latest`, `windows-latest` (Linux is covered by the shared job) | Path, Git, PTY and store specs |
+| Store specs on Node 24 | `ubuntu-latest` | The `node:sqlite` store specs again on Node 24, the Node line Electron embeds |
 | ACP integration | All three | The cases above, against a pinned Nanocoder build |
 | Package smoke | All three | Build an unsigned installer, launch it headless, check it starts and exits cleanly |
 

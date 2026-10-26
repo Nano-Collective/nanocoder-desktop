@@ -3,7 +3,7 @@
 The threat model, trust boundaries and security rules for Nanocoder Desktop, including the browser-to-agent boundary and signing.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## Why this matters here
@@ -94,7 +94,7 @@ flowchart LR
 | SEC-16 | `shell.openExternal` is called only for `http:` and `https:` URLs (and `mailto:` if needed), only after a user action, and never with a URL taken straight from page or model content without showing it first. | Suggestion (not discussed), from [Electron security guidance][el-security] item 15 |
 | SEC-17 | The desktop runs nothing project-defined (Nanocoder, Git status, file watchers that follow config) until the user has trusted the project. Opening an untrusted folder shows its tree name only. | Open (`OQ-14`) |
 | SEC-18 | Dependencies pass `pnpm audit`, Semgrep and CodeQL in CI, the lockfile is frozen, Electron is pinned to an exact version, and GitHub Actions are pinned by commit SHA. | Decided (audit, Semgrep, CodeQL: [Project infrastructure][infra]); pinning is Suggestion (not discussed) |
-| SEC-19 | Electron fuses are reviewed and set at packaging time. Any fuse left on (for example `runAsNode`, if Nanocoder runs under Electron's Node mode) is documented with its reason. | Suggestion (not discussed), from [Electron security guidance][el-security] item 19 and [fuses][el-fuses] |
+| SEC-19 | Electron fuses are reviewed and set at packaging time. Any fuse left on (for example `runAsNode`, if Nanocoder runs under Electron's Node mode) is documented with its reason. Playwright needs `nodeCliInspect` on, so end-to-end tests use a test build with that fuse on, and a test checks the shipped build's fuses ([#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3)). | Suggestion (not discussed), from [Electron security guidance][el-security] item 19 and [fuses][el-fuses] |
 | SEC-20 | ACP client callbacks get least privilege: root-checked text reads only, no writes, no terminal, and no reads of files the user excluded. | Decided ([whitepaper, Why ACP][wp-why]) |
 
 ## Browser-to-agent trust boundary
@@ -186,7 +186,7 @@ This is Electron's own security guidance mapped onto the plan. It is guidance, n
 | 16 | Use a current version of Electron | `SEC-14`, `SEC-18`. |
 | 17 | Validate the `sender` of all IPC messages | `SEC-02`. |
 | 18 | Avoid the `file://` protocol, prefer custom protocols | `SEC-15`. |
-| 19 | Check which fuses you can change | `SEC-19`. Disabling `runAsNode` makes `child_process.fork` throw ([fuses][el-fuses]), which matters if Nanocoder runs under Electron's Node mode (`OQ-22`). |
+| 19 | Check which fuses you can change | `SEC-19`. Disabling `runAsNode` makes `child_process.fork` throw ([fuses][el-fuses]), which matters if Nanocoder runs under Electron's Node mode (`OQ-22`). Disabling `nodeCliInspect` stops Playwright driving the app, hence the separate test build. |
 | 20 | Do not expose Electron APIs to untrusted web content | Browser view has no preload (`SEC-12`). |
 
 ## Signing, notarisation and update keys

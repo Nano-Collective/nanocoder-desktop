@@ -3,7 +3,7 @@
 What the desktop stores in SQLite, how it migrates, and what it never stores.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## Principle
@@ -114,12 +114,12 @@ Either way the partition is persistent, separate from the user's normal browser 
 
 ## SQLite library
 
-Open (whitepaper question 4, `OQ-04`). Candidates, all Unverified until checked at selection time:
+Decided in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3) (`DEC-04`): `node:sqlite`, with `better-sqlite3` as the fallback behind the same interface. In the check posted on #3, `node:sqlite` opened an in-memory database and a WAL file in Electron 45.0.0 on Windows. It is a release candidate on Node 24.15 and later and still active development on Node 22, so store specs run on Node 24 as well. The candidates considered:
 
 | Candidate | Notes |
 |---|---|
-| `better-sqlite3` (13.0.3, MIT) | Synchronous API, widely used with Electron. Native module: needs a rebuild against Electron's ABI on every Electron upgrade. |
-| Node's built-in `node:sqlite` | No native dependency. Electron 45.0.0 embeds Node 24.22.0 ([releases][el-releases]). Unverified: the module's stability level in Node 24.22.0; the Node 24 API documentation would confirm. |
+| `better-sqlite3` (13.0.3, MIT, fallback) | Synchronous API, widely used with Electron. Native module: needs a rebuild against Electron's ABI on every Electron upgrade. |
+| Node's built-in `node:sqlite` (chosen) | No native dependency. Electron 45.0.0 embeds Node 24.22.0 ([releases][el-releases]). Release candidate on Node 24.15 and later. |
 | SQLite compiled to WebAssembly | No native rebuild. Slower, and persistence needs care. |
 
 [wp-alt]: https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/content/collective/whitepapers/nanocoder-desktop.md?plain=1#L517-L531

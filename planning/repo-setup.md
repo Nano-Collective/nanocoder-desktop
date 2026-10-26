@@ -48,6 +48,8 @@ Intentionally empty (0 bytes) while this planning set is reviewed. At scaffold t
 
 Mirror Nanocoder's. Link the Code of Conduct and Economics Charter rather than restating them, document setup, the `pnpm test:all` gate, coding standards, the release process (contributors never bump versions), every divergence from the NC defaults (including the visual identity, `DEC-36`), and link [`MAINTAINING.md`][maintaining].
 
+It also documents the Electron-specific choices from #3 that differ from the NC defaults: `electron-vite`, `electron-builder`, Playwright, CodeMirror, linted spec files, and the build tools Linux contributors need for `node-pty` (Python, `make` and a C++ compiler).
+
 ### `LICENSE`
 
 MIT, copyright "Nano Collective".
@@ -79,7 +81,7 @@ Add `semgrep` to `ignoreBinaries` in `knip.json`.
 
 | File | Kind | Notes |
 |---|---|---|
-| `pr-checks.yml` | Caller of `Nano-Collective/.github/.github/workflows/pr-checks.yml@main` | `validate-changesets: true`; `build-output-dir` if the bundler does not write `dist`; local macOS and Windows jobs ([`testing-strategy.md`](testing-strategy.md#cross-platform-ci)). |
+| `pr-checks.yml` | Caller of `Nano-Collective/.github/.github/workflows/pr-checks.yml@main` | `validate-changesets: true`; `build-output-dir: out` (`electron-vite`'s output); local macOS and Windows jobs ([`testing-strategy.md`](testing-strategy.md#cross-platform-ci)). |
 | `release-prepare.yml`, `changeset-check.yml` | Callers of the shared workflows | Unchanged from other projects. |
 | `nc-review.yml` | Copy of [`templates/nc-review.caller.yml`][nc-review-template] | Needs the organisation secret `MINIMAX_API_KEY`. |
 | `release.yml` | Local | Desktop builds are not npm packages. Suggestion (not discussed): compare the `package.json` version with the latest GitHub Release, run the gate, build and upload installers per platform, create the release, notify Discord. Signing depends on `OQ-10`. |

@@ -3,7 +3,7 @@
 Prototype versus public release, bundling Nanocoder, the runtime, packaging, notices, signing and the release flow.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## Requirements
@@ -63,13 +63,13 @@ Phase G.6 measures both viable options (`OQ-22`).
 
 ## Packaging targets
 
-Suggestion (not discussed), pending the packager choice (`OQ-23`):
+Packager decided in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): `electron-builder`. Formats are a Suggestion (not discussed) except the macOS `.zip`:
 
 | Platform | Format | Architectures | Notes |
 |---|---|---|---|
-| macOS | `.dmg` (and `.zip` if the updater needs it) | `arm64`, `x64` | Notarisation needed to open without a Gatekeeper block (`OQ-10`). |
+| macOS | `.dmg` and `.zip` | `arm64`, `x64` | `electron-updater` updates macOS from the `.zip`. Notarisation needed to open without a Gatekeeper block (`OQ-10`). |
 | Windows | NSIS installer, or MSIX | `x64`, `arm64` later | Unsigned builds show SmartScreen warnings. |
-| Linux | AppImage, `.deb` | `x64`, `arm64` later | Unverified: which Linux formats `electron-updater` can update in place; check electron-builder's auto-update documentation at selection time. |
+| Linux | AppImage, `.deb` | `x64`, `arm64` later | `node-pty` has no Linux prebuilt binary, so the Linux release job needs build tools. Unverified: which Linux formats `electron-updater` can update in place. |
 
 Installer size and memory are measured every release (`PERF-09`, `PERF-10`), as the whitepaper asks ([whitepaper][wp-alt]).
 

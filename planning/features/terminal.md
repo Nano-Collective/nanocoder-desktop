@@ -93,7 +93,7 @@ None.
 
 ## Open questions
 
-`OQ-05` (PTY library).
+None. The PTY library is decided: `node-pty` with `@xterm/xterm` (`DEC-28`).
 
 ## Acceptance criteria
 
