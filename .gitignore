@@ -5,6 +5,7 @@ node_modules/
 out/
 dist/
 release/
+.nanocoder-build/
 
 # Tests and coverage
 coverage/

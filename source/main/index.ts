@@ -11,6 +11,8 @@ import {
 import {APP_NAME} from '@/shared/app-info';
 
 const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+// Used by the packaged-app smoke test in CI: start, then exit.
+const smokeTest = process.argv.includes('--smoke-test');
 const rendererRoot = path.join(import.meta.dirname, '../renderer');
 const preloadPath = path.join(import.meta.dirname, '../preload/index.cjs');
 const allowedOrigins = devServerUrl
@@ -88,7 +90,18 @@ function createWindow(): void {
 			webSecurity: true,
 		},
 	});
-	window.once('ready-to-show', () => window.show());
+	window.once('ready-to-show', () => {
+		if (smokeTest) {
+			app.exit(0);
+			return;
+		}
+		window.show();
+	});
+	window.webContents.once('did-fail-load', () => {
+		if (smokeTest) {
+			app.exit(1);
+		}
+	});
 	void window.loadURL(devServerUrl ?? `${APP_ORIGIN}/index.html`);
 }
 

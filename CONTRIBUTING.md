@@ -60,7 +60,7 @@ Electron downloads its binary the first time it runs. On Linux without a display
 - `pnpm test:audit`: dependency audit
 - `pnpm test:security`: Semgrep, if installed
 
-Tests use AVA through `tsx`, live in `.spec.ts` files beside the code they test, and run serially. End-to-end tests live in `e2e/`, use Playwright against the built app, and run with `pnpm test:e2e`, separately from `pnpm test:all`. Coverage is measured with c8, with an 80% line floor that cannot drop. The full strategy, including cross-platform and end-to-end tests, is in [`planning/testing-strategy.md`](planning/testing-strategy.md).
+Tests use AVA through `tsx`, live in `.spec.ts` files beside the code they test, and run serially. End-to-end tests live in `e2e/`, use Playwright against the built app, and run with `pnpm test:e2e`, separately from `pnpm test:all`. ACP integration tests are `*.acp.ts` files run with `pnpm test:acp` against a real Nanocoder build, whose `dist/cli.js` path goes in `NANOCODER_CLI`. Coverage is measured with c8, with an 80% line floor that cannot drop. The full strategy, including cross-platform and end-to-end tests, is in [`planning/testing-strategy.md`](planning/testing-strategy.md).
 
 ## Coding standards
 
@@ -103,7 +103,7 @@ Still open: the visual identity ([#11](https://github.com/Nano-Collective/nanoco
 - Keep each pull request to one phase, or one fix.
 - Say which roadmap phase it belongs to and which requirement IDs it covers (for example `CHAT-04`).
 - Run `pnpm test:all` before opening it.
-- Add a changeset for user-facing changes, once changesets are set up in phase S.4.
+- Add a changeset (`pnpm changeset`) for user-facing changes. Docs-only changes and chores need none.
 - If it changes a decision, update [`planning/decisions.md`](planning/decisions.md) in the same pull request.
 
 ## Release process
