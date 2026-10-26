@@ -3,12 +3,12 @@
 The processes, trust boundaries, IPC contract, process policy, thread state machine and key sequences of Nanocoder Desktop.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## Scope
 
-This file describes behaviour and structure. It builds on the [whitepaper's architecture][wp-arch] (Decided) and adds the detail a builder needs. Anything this file adds beyond the whitepaper is marked with its status. Visual design: see `DESIGN.md` (not yet written).
+This file describes behaviour and structure. It builds on the [whitepaper's architecture][wp-arch] (Decided) and adds the detail a builder needs. Anything this file adds beyond the whitepaper is marked with its status. Visual design: see [`docs/DESIGN.md`](../docs/DESIGN.md).
 
 ## Process model
 

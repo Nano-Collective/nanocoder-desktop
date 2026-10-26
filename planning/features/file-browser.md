@@ -3,12 +3,12 @@
 The read-oriented project tree and file preview.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## Purpose
 
-Help the user understand and reference the project without turning the desktop into an editor ([whitepaper, File browser][wp-files]). Visual design: see `DESIGN.md` (not yet written).
+Help the user understand and reference the project without turning the desktop into an editor ([whitepaper, File browser][wp-files]). Visual design: see [`docs/DESIGN.md`](../../docs/DESIGN.md).
 
 ## v1 requirements
 

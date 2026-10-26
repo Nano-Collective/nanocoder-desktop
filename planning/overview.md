@@ -3,7 +3,7 @@
 What Nanocoder Desktop is, who it is for, what v1 includes and excludes, and what would prove it works.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## What it is
@@ -92,7 +92,7 @@ Status: Decided ([whitepaper, v1 scope][wp-scope]).
 
 Status: Decided ([whitepaper, Engineering requirements][wp-scope]).
 
-The whitepaper also sets an information architecture for the main window. Visual design: see `DESIGN.md` (not yet written). The behavioural part that matters here is that v1 has one active project, chat, preview and terminal at a time ([whitepaper, Main window][wp-window]).
+The whitepaper also sets an information architecture for the main window. Visual design: see [`docs/DESIGN.md`](../docs/DESIGN.md). The behavioural part that matters here is that v1 has one active project, chat, preview and terminal at a time ([whitepaper, Main window][wp-window]).
 
 ## Non-goals for v1
 

@@ -3,12 +3,12 @@
 The single project terminal.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## Purpose
 
-Let the user run, test and inspect the project in one PTY tied to the project root ([whitepaper, Integrated terminal][wp-term]). It is a user terminal, not an agent execution path: Nanocoder's own command tools keep using Nanocoder's approval policy. Visual design: see `DESIGN.md` (not yet written).
+Let the user run, test and inspect the project in one PTY tied to the project root ([whitepaper, Integrated terminal][wp-term]). It is a user terminal, not an agent execution path: Nanocoder's own command tools keep using Nanocoder's approval policy. Visual design: see [`docs/DESIGN.md`](../../docs/DESIGN.md).
 
 ## v1 requirements
 
