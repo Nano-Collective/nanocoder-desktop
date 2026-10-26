@@ -1,6 +1,6 @@
 appId: org.nanocollective.nanocoder-desktop
 productName: Nanocoder Desktop
-executableName: nanocoder-desktop
+artifactName: nanocoder-desktop-${version}-${os}-${arch}.${ext}
 directories:
   output: release
   buildResources: build
@@ -21,8 +21,12 @@ win:
     - nsis
 linux:
   category: Development
+  executableName: nanocoder-desktop
+  syncDesktopName: true
   maintainer: Nano Collective <hello@nanocollective.org>
   target:
     - AppImage
     - deb
+deb:
+  packageName: nanocoder-desktop
 publish: null

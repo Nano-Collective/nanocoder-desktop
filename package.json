@@ -22,6 +22,7 @@
 	},
 	"type": "module",
 	"main": "out/main/index.js",
+	"desktopName": "nanocoder-desktop.desktop",
 	"packageManager": "pnpm@11.0.9",
 	"engines": {
 		"node": ">=22"

@@ -16,19 +16,17 @@ function findExecutable() {
 		);
 		return path.join(dir, named ?? exes[0] ?? 'missing.exe');
 	}
-	const macDir = readdirSync(release).find(name =>
-		existsSync(path.join(release, name, 'Nanocoder Desktop.app')),
-	);
-	if (!macDir) {
+	const app = readdirSync(release, {withFileTypes: true})
+		.filter(entry => entry.isDirectory() && entry.name.startsWith('mac'))
+		.flatMap(entry =>
+			readdirSync(path.join(release, entry.name))
+				.filter(name => name.endsWith('.app'))
+				.map(name => path.join(release, entry.name, name)),
+		)[0];
+	if (!app) {
 		return path.join(release, 'missing.app');
 	}
-	const binDir = path.join(
-		release,
-		macDir,
-		'Nanocoder Desktop.app',
-		'Contents',
-		'MacOS',
-	);
+	const binDir = path.join(app, 'Contents', 'MacOS');
 	return path.join(binDir, readdirSync(binDir)[0] ?? 'missing');
 }
 
