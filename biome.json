@@ -12,6 +12,8 @@
 			"!dist",
 			"!release",
 			"!coverage",
+			"!test-results",
+			"!playwright-report",
 			"!node_modules",
 			"!pnpm-lock.yaml",
 			"!.changeset/pre.json"

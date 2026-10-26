@@ -1,0 +1,75 @@
+import path from 'node:path';
+import test from 'ava';
+import {
+	APP_ORIGIN,
+	contentSecurityPolicy,
+	isAllowedNavigation,
+	resolveRendererFile,
+} from '@/main/security';
+
+const root = path.resolve('/app/out/renderer');
+
+test('allows navigation within the app origin', t => {
+	t.true(isAllowedNavigation('app://renderer/index.html', [APP_ORIGIN]));
+});
+
+test('refuses navigation to other origins', t => {
+	t.false(isAllowedNavigation('https://example.com/', [APP_ORIGIN]));
+	t.false(isAllowedNavigation('file:///etc/passwd', [APP_ORIGIN]));
+	t.false(isAllowedNavigation('app://other/index.html', [APP_ORIGIN]));
+});
+
+test('refuses malformed navigation targets', t => {
+	t.false(isAllowedNavigation('not a url', [APP_ORIGIN]));
+});
+
+test('allows the development server origin when it is listed', t => {
+	t.true(
+		isAllowedNavigation('http://localhost:5173/', ['http://localhost:5173']),
+	);
+});
+
+test('maps the root and files to the renderer folder', t => {
+	t.is(
+		resolveRendererFile('app://renderer/', root),
+		path.join(root, 'index.html'),
+	);
+	t.is(
+		resolveRendererFile('app://renderer/assets/index.js', root),
+		path.join(root, 'assets', 'index.js'),
+	);
+});
+
+test('keeps dot segments the URL parser resolves inside the folder', t => {
+	t.is(
+		resolveRendererFile('app://renderer/%2e%2e/main/index.js', root),
+		path.join(root, 'main', 'index.js'),
+	);
+});
+
+test('refuses requests that leave the renderer folder', t => {
+	t.is(resolveRendererFile('app://renderer/..%2f..%2fsecret', root), null);
+	t.is(resolveRendererFile('app://renderer/..%5c..%5csecret', root), null);
+});
+
+test('refuses other hosts, schemes and malformed requests', t => {
+	t.is(resolveRendererFile('app://other/index.html', root), null);
+	t.is(resolveRendererFile('file:///etc/passwd', root), null);
+	t.is(resolveRendererFile('app://renderer/%E0%A4%A', root), null);
+	t.is(resolveRendererFile('app://renderer/a%00b', root), null);
+	t.is(resolveRendererFile('not a url', root), null);
+});
+
+test('the production policy blocks inline scripts and remote content', t => {
+	const policy = contentSecurityPolicy();
+	t.true(policy.includes("default-src 'none'"));
+	t.true(policy.includes("script-src 'self'"));
+	t.false(policy.includes('unsafe-inline'));
+	t.false(policy.includes('ws://'));
+});
+
+test('the development policy allows only the dev server websocket', t => {
+	const policy = contentSecurityPolicy('http://localhost:5173');
+	t.true(policy.includes("connect-src 'self' ws://localhost:5173"));
+	t.true(policy.includes("script-src 'self'"));
+});

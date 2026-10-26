@@ -21,24 +21,31 @@
 		"url": "https://github.com/Nano-Collective/nanocoder-desktop/issues"
 	},
 	"type": "module",
+	"main": "out/main/index.js",
 	"packageManager": "pnpm@11.0.9",
 	"engines": {
 		"node": ">=22"
 	},
 	"scripts": {
-		"build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
+		"dev": "electron-vite dev",
+		"build": "electron-vite build",
+		"start": "electron-vite preview",
+		"package": "pnpm build && electron-builder",
+		"package:dir": "pnpm build && electron-builder --dir",
 		"format": "biome check --write .",
 		"test:all": "pnpm test:format && pnpm test:types && pnpm test:lint && pnpm test:ava && pnpm test:knip && pnpm test:audit",
 		"test:format": "biome ci --formatter-enabled=true --linter-enabled=false --assist-enabled=false .",
-		"test:types": "tsc --noEmit",
+		"test:types": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.e2e.json",
 		"test:lint": "biome lint .",
 		"test:lint:fix": "biome lint --write .",
 		"test:ava": "ava",
 		"test:ava:coverage": "c8 --reporter=text --reporter=json-summary ava",
+		"test:e2e": "pnpm build && playwright test",
 		"test:knip": "knip",
 		"test:audit": "pnpm audit --audit-level=high --ignore-unfixable",
 		"test:security": "semgrep scan --config auto --error",
-		"prepare": "husky"
+		"prepare": "husky",
+		"postinstall": "electron-builder install-app-deps"
 	},
 	"lint-staged": {
 		"*.{js,ts,jsx,tsx,json,md}": [
@@ -67,7 +74,10 @@
 			"source/**/*.ts"
 		],
 		"exclude": [
-			"source/**/*.spec.ts"
+			"source/**/*.spec.ts",
+			"source/main/index.ts",
+			"source/preload/**",
+			"source/renderer/**"
 		],
 		"reporter": [
 			"text",
@@ -81,14 +91,22 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.15",
+		"@playwright/test": "^1.64.1",
 		"@types/node": "^24.19.2",
+		"@types/react": "^19.3.0",
+		"@types/react-dom": "^19.3.0",
 		"ava": "^8.1.0",
 		"c8": "^12.0.0",
+		"electron": "45.0.0",
+		"electron-builder": "^26.17.0",
+		"electron-vite": "^6.0.0",
 		"husky": "^9.1.7",
 		"knip": "^6.42.0",
 		"lint-staged": "^17.6.0",
-		"tsc-alias": "^1.9.8",
+		"react": "^19.3.1",
+		"react-dom": "^19.3.1",
 		"tsx": "^4.23.15",
-		"typescript": "^7.0.2"
+		"typescript": "^7.0.2",
+		"vite": "^8.3.4"
 	}
 }

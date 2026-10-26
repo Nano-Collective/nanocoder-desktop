@@ -1,17 +1,21 @@
 packages:
   - .
 
-# Supply-chain policy, the same as Nanocoder and prompt-scrub (planning: SEC-18).
-# Refuse packages published in the last 7 days, block exotic sub-dependency
-# sources, and refuse a version whose publish trust is lower than an earlier one.
 minimumReleaseAge: 10080
 blockExoticSubdeps: true
 trustPolicy: no-downgrade
 
-# Packages allowed to run install scripts. Add native modules here when they
-# arrive (electron, node-pty) in phases S.3 and 3.1, and add electron to
-# minimumReleaseAgeExclude so a security release can be applied at once.
+# 2023 security-fix releases that predate npm provenance (Nanocoder allows 5.7.2 too).
+# pnpm honours one entry per package, so both versions share one.
+trustPolicyExclude:
+  - 'semver@5.7.2 || 6.3.1'
+
+# Electron security releases must apply at once.
+minimumReleaseAgeExclude:
+  - electron
+
 allowBuilds:
+  electron: true
   esbuild: true
 
-auditConfig: {}
+auditConfig: { ignoreGhsas: null }

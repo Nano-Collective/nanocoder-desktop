@@ -9,6 +9,8 @@ release/
 # Tests and coverage
 coverage/
 .test-temp/
+test-results/
+playwright-report/
 
 # Logs
 *.log

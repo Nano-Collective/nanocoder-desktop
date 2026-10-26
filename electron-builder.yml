@@ -1,0 +1,28 @@
+appId: org.nanocollective.nanocoder-desktop
+productName: Nanocoder Desktop
+executableName: nanocoder-desktop
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+asarUnpack:
+  - '**/*.node'
+npmRebuild: true
+mac:
+  category: public.app-category.developer-tools
+  # electron-updater needs the .zip.
+  target:
+    - dmg
+    - zip
+win:
+  target:
+    - nsis
+linux:
+  category: Development
+  maintainer: Nano Collective <hello@nanocollective.org>
+  target:
+    - AppImage
+    - deb
+publish: null

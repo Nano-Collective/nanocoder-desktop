@@ -23,6 +23,8 @@ Checked against the npm registry and [Electron's release index][el-releases] on 
 | `@agentclientprotocol/sdk` | 1.4.0 (as resolved by Nanocoder) | Apache-2.0 | Use the same minor as the bundled Nanocoder. |
 | `@nanocollective/nanocoder` | 1.31.0 (published 2026-09-26) | MIT | Predates the ACP fixes the desktop needs ([`acp-integration.md`](acp-integration.md#supported-nanocoder-versions)). |
 | `@types/node` | 24 (installed in phase S.2) | MIT | Matches Electron 45's Node 24. Version 22 was refused by the pnpm trust policy: its dependency `undici-types@6.21.0` has no provenance while an earlier release did. |
+| `electron` | 45.0.0 (installed in phase S.3) | MIT | Exempt from the 7-day `minimumReleaseAge` so security releases apply at once (`SEC-14`). Downloads its binary the first time it runs, not at install. |
+| `semver` 5.7.2 and 6.3.1 | Transitive (via `electron-builder` and `electron-vite`) | ISC | Allowed past the pnpm trust check as one entry, `'semver@5.7.2 || 6.3.1'`: both are 2023 security-fix releases of old lines that predate npm provenance. Nanocoder makes the same exception for 5.7.2. pnpm honours only one exclude entry per package name, hence the combined form. |
 
 ## NC toolchain defaults
 

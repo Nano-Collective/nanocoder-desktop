@@ -18,7 +18,7 @@ Each roadmap phase has a "Build" checklist and a "Results we want" checklist. A 
 
 ## Development setup
 
-The toolchain is in place (roadmap phase S.2). The Electron app arrives in phase S.3, so for now there is nothing to launch, but you can install the project and run the full gate.
+The toolchain (roadmap phase S.2) and the Electron skeleton (phase S.3) are in place. The app opens an empty shell; features arrive from Milestone 1.
 
 ### Prerequisites
 
@@ -38,6 +38,16 @@ pnpm install
 pnpm test:all
 ```
 
+Then:
+
+```bash
+pnpm dev          # run the app, rebuilding on change
+pnpm test:e2e     # build, then drive the app with Playwright
+pnpm package:dir  # build an unpacked app for your platform in release/
+```
+
+Electron downloads its binary the first time it runs. On Linux without a display, run the end-to-end tests under `xvfb-run`.
+
 ## Testing
 
 `pnpm test:all` is the single gate, the same as every Nano Collective TypeScript project. It runs:
@@ -50,7 +60,7 @@ pnpm test:all
 - `pnpm test:audit`: dependency audit
 - `pnpm test:security`: Semgrep, if installed
 
-Tests use AVA through `tsx`, live in `.spec.ts` files beside the code they test, and run serially. Coverage is measured with c8, with an 80% line floor that cannot drop. The full strategy, including cross-platform and end-to-end tests, is in [`planning/testing-strategy.md`](planning/testing-strategy.md).
+Tests use AVA through `tsx`, live in `.spec.ts` files beside the code they test, and run serially. End-to-end tests live in `e2e/`, use Playwright against the built app, and run with `pnpm test:e2e`, separately from `pnpm test:all`. Coverage is measured with c8, with an 80% line floor that cannot drop. The full strategy, including cross-platform and end-to-end tests, is in [`planning/testing-strategy.md`](planning/testing-strategy.md).
 
 ## Coding standards
 
