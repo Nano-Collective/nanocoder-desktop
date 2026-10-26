@@ -1,6 +1,6 @@
 # Repository setup
 
-Everything to create at scaffold time, following the NC playbook, and the launch checklist. Nothing here exists yet.
+Everything to create at scaffold time, following the NC playbook, and the launch checklist. The phase S.1 files (`README.md`, `CONTRIBUTING.md`, `LICENSE`, `CODEOWNERS` and the templates) exist; the rest does not yet.
 
 - Status: Draft
 - Last updated: 2026-10-26
@@ -35,7 +35,7 @@ biome.json  knip.json  tsconfig.json
 
 ### `README.md`
 
-Intentionally empty (0 bytes) while this planning set is reviewed. At scaffold time it follows the [Brand Guidelines README pattern][brand-readme]:
+Written in phase S.1, following the [Brand Guidelines README pattern][brand-readme]:
 
 1. The project name as the H1.
 2. The canonical project tagline, verbatim from the [Brand Guidelines][brand-tagline], with the Nano Collective link.

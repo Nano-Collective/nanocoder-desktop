@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/Nano-Collective/nanocoder-desktop#readme
+    about: Check the README and the planning set for scope and status
+  - name: Discord
+    url: https://discord.gg/ktPDV6rekE
+    about: Ask questions and talk to the Nano Collective community
