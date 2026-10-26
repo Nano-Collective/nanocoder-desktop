@@ -13,7 +13,7 @@ colors:
   stroke: "#e6e6ea14"
   stroke-soft: "#e6e6ea0d"
   success: "#5eba7d"
-  error: "#e3626f"
+  error: "#e25a68"
   warning: "#dda73c"
   skill: "#e8c547"
   mention: "#38bdf8"
@@ -21,7 +21,7 @@ colors:
   diff-add: "#202d26"
   diff-del: "#332023"
   primary-light: "#0000ee"
-  primary-soft-light: "#dcdcf3"
+  primary-soft-light: "#dadaf2"
   surface-light: "#f6f6f9"
   surface-panel-light: "#ededf2"
   surface-elevated-light: "#e5e5eb"
@@ -29,11 +29,11 @@ colors:
   on-surface-muted-light: "#5c6170"
   stroke-light: "#1b21321a"
   stroke-soft-light: "#1b21320f"
-  success-light: "#187533"
-  error-light: "#c2202b"
-  warning-light: "#8b5d00"
-  skill-light: "#7e620d"
-  mention-light: "#026ca2"
+  success-light: "#1a7f37"
+  error-light: "#cf222e"
+  warning-light: "#9a6700"
+  skill-light: "#a07c10"
+  mention-light: "#0284c7"
   heading-light: "#be185d"
   diff-add-light: "#dce8e2"
   diff-del-light: "#f1dde1"
@@ -328,7 +328,7 @@ Nanocoder Desktop is a workspace for handing a task to an agent and reviewing th
 - **Dark first.** Dark is the default theme. Light is a full theme, not an afterthought, and every token has a light pair.
 - **Honest states.** Running, waiting for approval, failed and view-only each look different at a glance, in both the rail and the title bar.
 
-The chassis is the "monocode" language named in the mockup: a neutral hue-240 grey ramp with no saturation in the surfaces. The light accent is the docs site's primary blue (`#0000ee`, [docs site styles][docs-css]). The dark accent (`#459bf7`) is the mockup's own lighter blue for dark backgrounds. Neither the palette nor the dark accent comes from Nanocoder: its default theme is Tokyo Night, whose primary is `#bb9af7` ([Nanocoder themes][nc-themes]), and the NC project guide names Tokyo Night, with tokens in OKLch, as the default palette ([Creating a new project, Visual identity][nc-visual]). This file diverges from that on purpose; the divergence is an open decision (see [Open design questions](#open-design-questions)) and must be documented in `CONTRIBUTING.md`.
+The chassis is the "monocode" language named in the mockup: a neutral hue-240 grey ramp with no saturation in the surfaces. The accent comes from the Nano Collective brand: CLI blue (`#3b82f6`) shifted lighter for dark backgrounds, and the docs site link blue (`#0000ee`) in light.
 
 ## Colors
 
@@ -344,12 +344,12 @@ Three tonal surfaces, two ink levels, one accent, three result colours and three
 | `stroke` | ink at 8% | ink at 10% | Every border and divider. |
 | `stroke-soft` | ink at 5% | ink at 6% | Row dividers inside cards and lists. |
 | `primary` | `#459bf7` (hsl 211 92% 62%) | `#0000ee` | The accent. See below. |
-| `primary-soft` | `#232f3e` (accent at 14% over panel) | `#dcdcf3` (accent at about 8% over panel, lightened one step for contrast) | Selected rail item, selected palette row. |
-| `success` | `#5eba7d` | `#187533` | Completed tool rows, allow buttons, added lines, `acp · ready`. |
-| `error` | `#e3626f` | `#c2202b` | Failures, reject buttons, removed lines, cancel. |
-| `warning` | `#dda73c` | `#8b5d00` | Approval required, modified files, pending browser actions. |
-| `skill` | `#e8c547` | `#7e620d` | Skill names in the stream and composer. |
-| `mention` | `#38bdf8` | `#026ca2` | `@` mentions, URLs in the terminal, diff hunk headers. |
+| `primary-soft` | `#232f3e` (accent at 14% over panel) | `#dadaf2` (accent at 8% over panel) | Selected rail item, selected palette row. |
+| `success` | `#5eba7d` | `#1a7f37` | Completed tool rows, allow buttons, added lines, `acp · ready`. |
+| `error` | `#e25a68` | `#cf222e` | Failures, reject buttons, removed lines, cancel. |
+| `warning` | `#dda73c` | `#9a6700` | Approval required, modified files, pending browser actions. |
+| `skill` | `#e8c547` | `#a07c10` | Skill names in the stream and composer. |
+| `mention` | `#38bdf8` | `#0284c7` | `@` mentions, URLs in the terminal, diff hunk headers. |
 | `heading` | `#f9a8c9` | `#be185d` | Markdown headings in agent messages. |
 | `diff-add`, `diff-del` | `#202d26`, `#332023` (14% over surface) | `#dce8e2`, `#f1dde1` (12% over surface) | Diff line backgrounds. |
 
@@ -363,19 +363,17 @@ Result colours are always paired with a glyph (`✓`, `✕`, `▲`), so state ne
 
 Every text pairing must meet WCAG 2.2 AA (4.5:1 for normal text). Small sizes make this strict: `on-surface-muted` is the lightest ink allowed for text, and `stroke` is never used as a text colour.
 
-Contrast fixes. The mockup's values for these tokens fell short of AA on at least one surface they are used on. Each was moved in lightness only (same hue and saturation) until its worst pairing reached 4.5:1. Checked on 2026-10-26 against every surface each token sits on: `surface`, `surface-panel`, `surface-elevated`, and the diff fills for `success` and `error`.
+Known contrast gaps. These are the mockup's values and they fall short of AA. Fix them before the first public release; the linter reports each one.
 
-| Token | Theme | Mockup value | Worst pairing before | New value | Worst pairing after |
-|---|---|---|---|---|---|
-| `mention` | light | `#0284c7` | 3.26:1 on `surface-elevated` | `#026ca2` | 4.56:1 |
-| `skill` | light | `#a07c10` | 3.11:1 on `surface-elevated` | `#7e620d` | 4.60:1 |
-| `warning` | light | `#9a6700` | 3.88:1 on `surface-elevated` | `#8b5d00` | 4.57:1 |
-| `success` | light | `#1a7f37` | 4.03:1 on `diff-add` | `#187533` | 4.59:1 |
-| `error` | light | `#cf222e` | 4.12:1 on `diff-del` | `#c2202b` | 4.57:1 |
-| `error` | dark | `#e25a68` | 4.30:1 on `diff-del` | `#e3626f` | 4.55:1 |
-| `primary-soft` (fill) | light | `#dadaf2` | `on-surface-muted` at 4.499:1 | `#dcdcf3` | 4.58:1 |
-
-Every other text token already meets 4.5:1 on every surface it is used on, in both themes. The mockup should be updated to match (see [Open design questions](#open-design-questions)).
+| Pairing | Theme | Ratio |
+|---|---|---|
+| `mention` on `surface-panel` | light | 3.51:1 |
+| `skill` on `surface` | light | 3.62:1 |
+| `warning` on `surface-elevated` (approval card title) | light | 3.88:1 |
+| `success` on `diff-add` | light | 4.03:1 |
+| `error` on `diff-del` | light | 4.12:1 |
+| `error` on `diff-del` | dark | 4.30:1 |
+| `success` on `surface-panel` | light | 4.35:1 |
 
 ## Typography
 
@@ -554,7 +552,7 @@ With "reduce motion" on, the spinner, cursor and pulse stop and transitions are 
 
 - **Palette and token format.** The NC project guide names Tokyo Night as the default palette, with tokens in OKLch ([Visual identity][nc-visual]). This file uses the mockup's monocode palette in hex. Either keep it and document the divergence in `CONTRIBUTING.md`, or move to Tokyo Night. Decision `DEC-36` in the planning set.
 - **Browser placement.** The mockup put the browser in the inspector. This file follows the whitepaper, which puts it in the bottom panel with the terminal. Moving it needs a whitepaper change first.
-- **Mockup sync.** The mockup still shows the pre-fix colours, a per-subagent cancel, fixed approval labels and the lowercase product name. Update it to match this file.
+- **Mockup sync.** The mockup still shows a per-subagent cancel, fixed approval labels and the lowercase product name. Update it to match this file.
 - **Light muted ink.** The mockup's token export says `hsl(225 10% 44%)` but the rendered frame uses `hsl(225 10% 40%)`. This file uses 40%, which has more contrast; confirm.
 - **Narrow layout.** The mockup hides the inspector at 840px but does not show how it comes back. A drawer or a tab in the title bar both work.
 - **High contrast and forced colours.** Not covered by the mockup.
@@ -573,6 +571,4 @@ With "reduce motion" on, the spinner, cursor and pulse stop and transitions are 
 [docs107]: https://github.com/Nano-Collective/docs/pull/107
 [nc-site]: https://nanocollective.org/
 [nc907]: https://github.com/Nano-Collective/nanocoder/issues/907
-[docs-css]: https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/app/globals.css#L14
-[nc-themes]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/config/themes.json
 [nc-visual]: https://docs.nanocollective.org/collective/projects/creating-a-new-project#visual-identity
