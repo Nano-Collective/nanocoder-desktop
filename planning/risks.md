@@ -23,7 +23,7 @@ Source: [whitepaper, Open risks][wp-risks].
 | RISK-07 | Runtime packaging (Node mode versus sidecar) | Medium | High (`SP-01`) | Measure in the technical gate (`OQ-22`) | NC core team | Node mode fails on any platform |
 | RISK-08 | Git cannot attribute overlapping edits without a baseline | Certain without `DEC-14` | Medium | Honest labelling (`GIT-05`); snapshot baseline (`GIT-09`) | NC core team | Users report confusing review of mixed edits |
 | RISK-09 | Agent-controlled public browsing widens the attack surface | Medium | High | Off by default (`BRW-03`); mode gate and approvals (`DEC-15`) | NC core team | Public browsing enabled by default, or approvals bypassed |
-| RISK-10 | PTY portability (shells, process trees, signals, encoding, ConPTY) | High | Medium | Per-platform CI (`OQ-25`); tree teardown tests (`TERM-07`) | NC core team | Orphaned processes on any platform |
+| RISK-10 | PTY portability (shells, process trees, signals, encoding, ConPTY) | High | Medium | Per-platform CI (`DEC-37`); tree teardown tests (`TERM-07`) | NC core team | Orphaned processes on any platform |
 
 ## Found while planning
 

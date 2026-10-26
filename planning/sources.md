@@ -45,6 +45,7 @@ Nanocoder: [#1709](https://github.com/Nano-Collective/nanocoder/pull/1709), [#16
 
 - [PR #1](https://github.com/Nano-Collective/nanocoder-desktop/pull/1): `DESIGN.md`, reviewed on 2026-10-26.
 - [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): tooling and library choices, with the [picks](https://github.com/Nano-Collective/nanocoder-desktop/issues/3#issuecomment-6412135950) and the [review](https://github.com/Nano-Collective/nanocoder-desktop/issues/3#issuecomment-6413649344), 2026-10-26.
+- [#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10): cross-platform CI, with the [picks](https://github.com/Nano-Collective/nanocoder-desktop/issues/10#issuecomment-6412197487) and the [review](https://github.com/Nano-Collective/nanocoder-desktop/issues/10#issuecomment-6415011518), 2026-10-26.
 
 ## Package registries and release indexes
 

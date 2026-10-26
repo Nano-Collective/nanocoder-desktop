@@ -67,7 +67,7 @@ Packager decided in [#3](https://github.com/Nano-Collective/nanocoder-desktop/is
 
 | Platform | Format | Architectures | Notes |
 |---|---|---|---|
-| macOS | `.dmg` and `.zip` | `arm64`, `x64` | `electron-updater` updates macOS from the `.zip`. Notarisation needed to open without a Gatekeeper block (`OQ-10`). |
+| macOS | `.dmg` and `.zip` | `arm64`, `x64` | `electron-updater` updates macOS from the `.zip`. Notarisation needed to open without a Gatekeeper block (`OQ-10`). The x64 build can be made on an arm64 runner; smoke-testing it needs `macos-15-intel`. |
 | Windows | NSIS installer, or MSIX | `x64`, `arm64` later | Unsigned builds show SmartScreen warnings. |
 | Linux | AppImage, `.deb` | `x64`, `arm64` later | `node-pty` has no Linux prebuilt binary, so the Linux release job needs build tools. Unverified: which Linux formats `electron-updater` can update in place. |
 

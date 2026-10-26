@@ -80,7 +80,7 @@ Not chosen: Vite with a custom main and preload build, Electron Forge, `@electro
 
 ## CI implications
 
-The shared `pr-checks` workflow runs every job on `ubuntu-latest` ([source][shared-prchecks]). macOS and Windows coverage needs local jobs in the caller, as Nanocoder does for Windows ([source][nc-prchecks]). See [`testing-strategy.md`](testing-strategy.md#cross-platform-ci).
+The shared `pr-checks` workflow runs every job on `ubuntu-latest` ([source][shared-prchecks]). macOS and Windows coverage comes from local jobs in the caller, decided in [#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10) (`DEC-37`), as Nanocoder does for Windows ([source][nc-prchecks]). See [`testing-strategy.md`](testing-strategy.md#cross-platform-ci).
 
 `Verify Build` checks that `dist` is non-empty by default. `electron-vite` writes to `out/`, so the caller sets `build-output-dir: out` ([Project infrastructure][infra]).
 

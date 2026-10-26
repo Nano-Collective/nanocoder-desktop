@@ -60,7 +60,7 @@ Cases:
 8. Two sessions with different `cwd` values in one process run tools in their own directories.
 9. An untrusted spawn directory exits with Nanocoder's message on stderr.
 
-Until the next Nanocoder release, these run against a build of Nanocoder `main`, since published 1.31.0 lacks cases 5, 8 and 9 ([`acp-integration.md`](acp-integration.md#supported-nanocoder-versions)).
+They live outside `ava.files` (their own pattern and script), so `pnpm test:ava` never needs Nanocoder. Until the next Nanocoder release, they run against a build of Nanocoder `main`, since published 1.31.0 lacks cases 5, 8 and 9 ([`acp-integration.md`](acp-integration.md#supported-nanocoder-versions)).
 
 ## Technical gate test
 
@@ -111,16 +111,19 @@ Behaviour only. Visual design: see [`DESIGN.md`](../DESIGN.md). The criteria nam
 
 ## Cross-platform CI
 
-The shared `pr-checks` workflow runs on Linux only ([source][shared-prchecks]). Add local jobs in the caller, as Nanocoder does for Windows ([source][nc-prchecks]):
+Decided in [#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10) ([picks](https://github.com/Nano-Collective/nanocoder-desktop/issues/10#issuecomment-6412197487), [review](https://github.com/Nano-Collective/nanocoder-desktop/issues/10#issuecomment-6415011518)). The shared `pr-checks` workflow runs on Linux only, with one Node version ([source][shared-prchecks]), so these jobs live in our caller, as Nanocoder's Windows jobs do ([source][nc-prchecks]):
 
-| Job | Platforms | Contents |
-|---|---|---|
-| Unit and main-process integration | `macos-latest`, `windows-latest` (Linux is covered by the shared job) | Path, Git, PTY and store specs |
-| Store specs on Node 24 | `ubuntu-latest` | The `node:sqlite` store specs again on Node 24, the Node line Electron embeds |
-| ACP integration | All three | The cases above, against a pinned Nanocoder build |
-| Package smoke | All three | Build an unsigned installer, launch it headless, check it starts and exits cleanly |
+| Job | Platforms | Runs on | Contents |
+|---|---|---|---|
+| Unit and main-process tests | `macos-latest`, `windows-latest`, each on Node 22 and 24 | Every pull request | The AVA suite, including the `node:sqlite` store specs on Node 24 |
+| ACP integration | All three | Every pull request | Its own test pattern and script, outside `ava.files`, so the shared unit job never needs Nanocoder. Runs against a pinned Nanocoder `main` build, built in CI and cached, until the next Nanocoder release |
+| Package smoke | Linux under Xvfb, `macos-latest` (arm64), `macos-15-intel` (x64), `windows-latest` | Pushes to `main`, and pull requests that touch packaging config | Build an unsigned installer, launch it, check it exits cleanly. Filtered by a job-level condition, never a workflow `paths:` filter, which would leave a required check pending |
+| End to end | All three, Linux under Xvfb | Every pull request to `main` once Milestone 1 starts | Playwright against a test build with the `nodeCliInspect` fuse on |
 
-Local jobs are not among the six required checks unless the rulesets are extended; that is a decision for the NC core team.
+- **Required checks.** Only the six NC checks are required, as in Nanocoder. The local jobs start advisory; the unit jobs can become required once stable, which is the NC core team's call.
+- **Actions** are pinned by commit SHA.
+- **Nanocoder on macOS.** Nanocoder's own CI never builds on macOS, so the first macOS run of the ACP job shows whether its `main` build works there and whether caching is needed.
+- **To check in phase S.4:** how long each job takes on macOS and Windows, and the flake rate over the first two weeks.
 
 ## Security tests
 

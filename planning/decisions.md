@@ -59,12 +59,13 @@ The date is when the decision or proposal was made, not when it was recorded her
 | DEC-34 | Durable chats rely on Nanocoder's session files; the persisted Nanocoder session ID is the durable join key; session listing is best-effort discovery. | Decided | [Whitepaper, Project and session identity][wp-identity] | 2026-10-12 | Nanocoder's retention deletes sessions after 30 days idle or beyond 100 sessions ([source][nc-retention]). `OQ-16`. |
 | DEC-35 | Run a technical gate before Milestone 1: spawn the selected artefact with `--acp`, record capabilities, complete a real turn, restart both processes, resume, and exercise both approval paths. | Decided | [Whitepaper, Next steps][wp-next] | 2026-10-12 | Exit criteria in [`roadmap.md`](roadmap.md#technical-gate). |
 | DEC-36 | Visual identity: `DESIGN.md` departs from the NC default visual identity. Keep it as a documented divergence, or adopt the default. | Open | [Creating a new project, Visual identity][creating], [`DESIGN.md`](../DESIGN.md#open-design-questions) | 2026-10-26 | Details are in `DESIGN.md`. Diverging is allowed if `CONTRIBUTING.md` documents it ([Creating a new project][creating]). |
+| DEC-37 | Cross-platform CI: local macOS and Windows unit jobs on Node 22 and 24, an ACP integration job on all three platforms with its own test script, a package smoke job behind a job-level condition, and an end-to-end job from Milestone 1. Only the six NC checks are required; local jobs start advisory. | Decided | [#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10), [picks](https://github.com/Nano-Collective/nanocoder-desktop/issues/10#issuecomment-6412197487), [review](https://github.com/Nano-Collective/nanocoder-desktop/issues/10#issuecomment-6415011518) | 2026-10-26 | Details in [`testing-strategy.md`](testing-strategy.md#cross-platform-ci). |
 
 ## Counts
 
 | Status | Entries |
 |---|---|
-| Decided | 19 (`DEC-01` to `DEC-08`, `DEC-21` to `DEC-28`, `DEC-33` to `DEC-35`) |
+| Decided | 20 (`DEC-01` to `DEC-08`, `DEC-21` to `DEC-28`, `DEC-33` to `DEC-35`, `DEC-37`) |
 | Proposed (awaiting @will-lamerton) | 11 (`DEC-09` to `DEC-19`) |
 | Open | 5 (`DEC-20`, `DEC-29` to `DEC-31`, `DEC-36`) |
 | Suggestion (not discussed) | 1 (`DEC-32`) |

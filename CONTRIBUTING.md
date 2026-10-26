@@ -84,8 +84,9 @@ The defaults are in [Stack Suggestions](https://docs.nanocollective.org/collecti
 | End-to-end tests | Playwright, against a test build with the `nodeCliInspect` fuse on | The shipped build turns that fuse off |
 | Native modules | `node-pty`, built from source on Linux | The terminal needs a real PTY |
 | Spec files | Linted by Biome | Nanocoder and Nanotune exclude them; we want security tests linted too |
+| CI | Local macOS, Windows, ACP integration and packaging jobs beside the shared Linux checks, advisory at first ([#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10)) | The app must work on all three platforms |
 
-Two more are still open: extra macOS and Windows CI jobs ([#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10)) and the visual identity ([#11](https://github.com/Nano-Collective/nanocoder-desktop/issues/11)).
+Still open: the visual identity ([#11](https://github.com/Nano-Collective/nanocoder-desktop/issues/11)).
 
 ## Commit messages
 

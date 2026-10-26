@@ -130,8 +130,11 @@ Uses the choices decided in [#3](https://github.com/Nano-Collective/nanocoder-de
 **Build**
 
 - [ ] `pr-checks.yml` caller with `validate-changesets: true`
-- [ ] Local macOS and Windows jobs in the caller (`OQ-25`)
-- [ ] Store specs on Node 24 as well as Node 22
+- [ ] Local macOS and Windows unit jobs, each on Node 22 and 24 ([#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10))
+- [ ] ACP integration job on all three platforms, with its own test pattern and script, against a cached Nanocoder `main` build
+- [ ] Package smoke job behind a job-level condition, with Xvfb on Linux and `macos-15-intel` for the x64 build
+- [ ] End-to-end job (advisory), switched on for every pull request once Milestone 1 starts
+- [ ] Actions pinned by commit SHA
 - [ ] `nc-review.yml` and `.github/nc-review/rubric.md`
 - [ ] Changesets scaffold with `changeset pre enter alpha` and `pre.json` committed
 - [ ] `release-prepare.yml`, `changeset-check.yml`, `update-badges.yml`
@@ -141,6 +144,7 @@ Uses the choices decided in [#3](https://github.com/Nano-Collective/nanocoder-de
 - [ ] All six prefixed required checks report green on a test pull request
 - [ ] Both rulesets applied in `evaluate` mode, then `active`
 - [ ] The first Version Packages pull request proposes an `alpha` version, not a stable one
+- [ ] Job times on macOS and Windows recorded; flake rate reviewed after two weeks
 
 ### Phase S.5: IPC foundation
 

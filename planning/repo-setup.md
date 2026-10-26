@@ -81,7 +81,7 @@ Add `semgrep` to `ignoreBinaries` in `knip.json`.
 
 | File | Kind | Notes |
 |---|---|---|
-| `pr-checks.yml` | Caller of `Nano-Collective/.github/.github/workflows/pr-checks.yml@main` | `validate-changesets: true`; `build-output-dir: out` (`electron-vite`'s output); local macOS and Windows jobs ([`testing-strategy.md`](testing-strategy.md#cross-platform-ci)). |
+| `pr-checks.yml` | Caller of `Nano-Collective/.github/.github/workflows/pr-checks.yml@main` | `validate-changesets: true`; `build-output-dir: out` (`electron-vite`'s output); the local jobs decided in #10 (`DEC-37`, [`testing-strategy.md`](testing-strategy.md#cross-platform-ci)). |
 | `release-prepare.yml`, `changeset-check.yml` | Callers of the shared workflows | Unchanged from other projects. |
 | `nc-review.yml` | Copy of [`templates/nc-review.caller.yml`][nc-review-template] | Needs the organisation secret `MINIMAX_API_KEY`. |
 | `release.yml` | Local | Desktop builds are not npm packages. Suggestion (not discussed): compare the `package.json` version with the latest GitHub Release, run the gate, build and upload installers per platform, create the release, notify Discord. Signing depends on `OQ-10`. |
