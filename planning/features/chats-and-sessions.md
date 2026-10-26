@@ -8,7 +8,7 @@ Projects, threads, durable resume, view-only threads, approvals, and model and m
 
 ## Purpose
 
-Let the user add a project, start or resume durable Nanocoder chats, follow each turn as it streams, approve or reject protected operations, and pick up the same chat after a full restart ([whitepaper, v1 scope][wp-scope], items 1, 2 and 7). Visual design: see [`docs/DESIGN.md`](../../docs/DESIGN.md).
+Let the user add a project, start or resume durable Nanocoder chats, follow each turn as it streams, approve or reject protected operations, and pick up the same chat after a full restart ([whitepaper, v1 scope][wp-scope], items 1, 2 and 7). Visual design: see [`DESIGN.md`](../../DESIGN.md).
 
 ## v1 requirements
 
@@ -32,7 +32,7 @@ Let the user add a project, start or resume durable Nanocoder chats, follow each
 | CHAT-16 | The composer sends text plus attached resources: files from the browser (`FILE-08`), review comments (`GIT-07`) and the browser URL and title (`BRW-10`). Attached context is transient: it goes into the prompt, not into desktop storage. | Decided ([whitepaper][wp-git-section]) |
 | CHAT-17 | Only one root turn runs per project process. While one thread runs, other threads in the project can be read but not prompted, and say why. | Decided ([whitepaper, Process policy][wp-process]) |
 | CHAT-18 | The conversation is fully keyboard operable; new content is announced to assistive technology at a polite rate; permission requests move focus to the request and are announced assertively. | Decided as a v1 goal ([whitepaper, Milestone 4][wp-next]); specifics are Suggestion (not discussed) |
-| CHAT-19 | Show per-turn usage and cost when Nanocoder provides it in `_meta`. | Suggestion (not discussed) |
+| CHAT-19 | Show per-turn usage and cost when Nanocoder provides it in `_meta`. Show a context-window gauge only when Nanocoder reports context use; at `8a5f4d4` it sends per-turn token counts but no context-window figure, so the gauge stays hidden. | Suggestion (not discussed) |
 | CHAT-20 | Offer Nanocoder's custom slash commands from `available_commands_update`. Do not present Nanocoder's built-in `/help` reply as desktop help, since it is written for the VS Code sidebar. | Suggestion (not discussed), based on [source][nc-slash] |
 | CHAT-21 | `ask_user` questions render as selectable options only, since ACP permission options have no text input. | Decided by Nanocoder's behaviour ([docs][nc-acp-limits]) |
 

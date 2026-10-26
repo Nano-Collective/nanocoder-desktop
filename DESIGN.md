@@ -13,7 +13,7 @@ colors:
   stroke: "#e6e6ea14"
   stroke-soft: "#e6e6ea0d"
   success: "#5eba7d"
-  error: "#e25a68"
+  error: "#e3626f"
   warning: "#dda73c"
   skill: "#e8c547"
   mention: "#38bdf8"
@@ -21,7 +21,7 @@ colors:
   diff-add: "#202d26"
   diff-del: "#332023"
   primary-light: "#0000ee"
-  primary-soft-light: "#dadaf2"
+  primary-soft-light: "#dcdcf3"
   surface-light: "#f6f6f9"
   surface-panel-light: "#ededf2"
   surface-elevated-light: "#e5e5eb"
@@ -29,11 +29,11 @@ colors:
   on-surface-muted-light: "#5c6170"
   stroke-light: "#1b21321a"
   stroke-soft-light: "#1b21320f"
-  success-light: "#1a7f37"
-  error-light: "#cf222e"
-  warning-light: "#9a6700"
-  skill-light: "#a07c10"
-  mention-light: "#0284c7"
+  success-light: "#187533"
+  error-light: "#c2202b"
+  warning-light: "#8b5d00"
+  skill-light: "#7e620d"
+  mention-light: "#026ca2"
   heading-light: "#be185d"
   diff-add-light: "#dce8e2"
   diff-del-light: "#f1dde1"
@@ -309,7 +309,7 @@ components:
 
 # Nanocoder Desktop design
 
-How Nanocoder Desktop looks. Behaviour, states, data, keyboard access and accessibility rules live in [`planning/`](../planning/index.md); this file only says how they are drawn.
+How Nanocoder Desktop looks. Behaviour, states, data, keyboard access and accessibility rules live in [`planning/`](planning/index.md); this file only says how they are drawn.
 
 - Status: Draft
 - Last updated: 2026-10-26
@@ -328,7 +328,7 @@ Nanocoder Desktop is a workspace for handing a task to an agent and reviewing th
 - **Dark first.** Dark is the default theme. Light is a full theme, not an afterthought, and every token has a light pair.
 - **Honest states.** Running, waiting for approval, failed and view-only each look different at a glance, in both the rail and the title bar.
 
-The chassis is the "monocode" language named in the mockup: a neutral hue-240 grey ramp with no saturation in the surfaces. The accent comes from the Nano Collective brand: CLI blue (`#3b82f6`) shifted lighter for dark backgrounds, and the docs site link blue (`#0000ee`) in light.
+The chassis is the "monocode" language named in the mockup: a neutral hue-240 grey ramp with no saturation in the surfaces. The light accent is the docs site's primary blue (`#0000ee`, [docs site styles][docs-css]). The dark accent (`#459bf7`) is the mockup's own lighter blue for dark backgrounds. Neither the palette nor the dark accent comes from Nanocoder: its default theme is Tokyo Night, whose primary is `#bb9af7` ([Nanocoder themes][nc-themes]), and the NC project guide names Tokyo Night, with tokens in OKLch, as the default palette ([Creating a new project, Visual identity][nc-visual]). This file diverges from that on purpose; the divergence is an open decision (see [Open design questions](#open-design-questions)) and must be documented in `CONTRIBUTING.md`.
 
 ## Colors
 
@@ -344,12 +344,12 @@ Three tonal surfaces, two ink levels, one accent, three result colours and three
 | `stroke` | ink at 8% | ink at 10% | Every border and divider. |
 | `stroke-soft` | ink at 5% | ink at 6% | Row dividers inside cards and lists. |
 | `primary` | `#459bf7` (hsl 211 92% 62%) | `#0000ee` | The accent. See below. |
-| `primary-soft` | `#232f3e` (accent at 14% over panel) | `#dadaf2` (accent at 8% over panel) | Selected rail item, selected palette row. |
-| `success` | `#5eba7d` | `#1a7f37` | Completed tool rows, allow buttons, added lines, `acp · ready`. |
-| `error` | `#e25a68` | `#cf222e` | Failures, reject buttons, removed lines, cancel. |
-| `warning` | `#dda73c` | `#9a6700` | Approval required, modified files, pending browser actions. |
-| `skill` | `#e8c547` | `#a07c10` | Skill names in the stream and composer. |
-| `mention` | `#38bdf8` | `#0284c7` | `@` mentions, URLs in the terminal, diff hunk headers. |
+| `primary-soft` | `#232f3e` (accent at 14% over panel) | `#dcdcf3` (accent at about 8% over panel, lightened one step for contrast) | Selected rail item, selected palette row. |
+| `success` | `#5eba7d` | `#187533` | Completed tool rows, allow buttons, added lines, `acp · ready`. |
+| `error` | `#e3626f` | `#c2202b` | Failures, reject buttons, removed lines, cancel. |
+| `warning` | `#dda73c` | `#8b5d00` | Approval required, modified files, pending browser actions. |
+| `skill` | `#e8c547` | `#7e620d` | Skill names in the stream and composer. |
+| `mention` | `#38bdf8` | `#026ca2` | `@` mentions, URLs in the terminal, diff hunk headers. |
 | `heading` | `#f9a8c9` | `#be185d` | Markdown headings in agent messages. |
 | `diff-add`, `diff-del` | `#202d26`, `#332023` (14% over surface) | `#dce8e2`, `#f1dde1` (12% over surface) | Diff line backgrounds. |
 
@@ -363,17 +363,19 @@ Result colours are always paired with a glyph (`✓`, `✕`, `▲`), so state ne
 
 Every text pairing must meet WCAG 2.2 AA (4.5:1 for normal text). Small sizes make this strict: `on-surface-muted` is the lightest ink allowed for text, and `stroke` is never used as a text colour.
 
-Known contrast gaps. These are the mockup's values and they fall short of AA. Fix them before the first public release; the linter reports each one.
+Contrast fixes. The mockup's values for these tokens fell short of AA on at least one surface they are used on. Each was moved in lightness only (same hue and saturation) until its worst pairing reached 4.5:1. Checked on 2026-10-26 against every surface each token sits on: `surface`, `surface-panel`, `surface-elevated`, and the diff fills for `success` and `error`.
 
-| Pairing | Theme | Ratio |
-|---|---|---|
-| `mention` on `surface-panel` | light | 3.51:1 |
-| `skill` on `surface` | light | 3.62:1 |
-| `warning` on `surface-elevated` (approval card title) | light | 3.88:1 |
-| `success` on `diff-add` | light | 4.03:1 |
-| `error` on `diff-del` | light | 4.12:1 |
-| `error` on `diff-del` | dark | 4.30:1 |
-| `success` on `surface-panel` | light | 4.35:1 |
+| Token | Theme | Mockup value | Worst pairing before | New value | Worst pairing after |
+|---|---|---|---|---|---|
+| `mention` | light | `#0284c7` | 3.26:1 on `surface-elevated` | `#026ca2` | 4.56:1 |
+| `skill` | light | `#a07c10` | 3.11:1 on `surface-elevated` | `#7e620d` | 4.60:1 |
+| `warning` | light | `#9a6700` | 3.88:1 on `surface-elevated` | `#8b5d00` | 4.57:1 |
+| `success` | light | `#1a7f37` | 4.03:1 on `diff-add` | `#187533` | 4.59:1 |
+| `error` | light | `#cf222e` | 4.12:1 on `diff-del` | `#c2202b` | 4.57:1 |
+| `error` | dark | `#e25a68` | 4.30:1 on `diff-del` | `#e3626f` | 4.55:1 |
+| `primary-soft` (fill) | light | `#dadaf2` | `on-surface-muted` at 4.499:1 | `#dcdcf3` | 4.58:1 |
+
+Every other text token already meets 4.5:1 on every surface it is used on, in both themes. The mockup should be updated to match (see [Open design questions](#open-design-questions)).
 
 ## Typography
 
@@ -392,7 +394,7 @@ One family: **Fira Code**, with Consolas, Menlo and the system monospace as fall
 
 Reasoning text is italic. Nothing else is.
 
-UI copy is lowercase, as in the Nanocoder CLI ("ask anything…", "approval required"). Paths, commands and model names keep their real case. The middle dot (`·`) separates facts on one line, for example `read src/auth/login.ts · +18 −6`.
+UI copy is lowercase, as in the Nanocoder CLI ("ask anything…", "approval required"). Paths, commands and model names keep their real case. The product name is always "Nanocoder", as the [Brand Guidelines][brand] require; NC docs take precedence over the mockup here. The middle dot (`·`) separates facts on one line, for example `read src/auth/login.ts · +18 −6`.
 
 The font ships inside the app. It is never loaded from a font CDN, since the app is local-first and its content security policy blocks remote fonts.
 
@@ -405,19 +407,19 @@ A fixed desktop grid with three columns over an optional bottom panel, under a t
 │ title bar: session tabs · turn badge · acp badge · ⌘K       │
 ├────────────┬──────────────────────────────┬──────────────────┤
 │ project    │ stream                       │ inspector        │
-│ rail       │                              │ files | preview  │
+│ rail       │                              │ files | review   │
 │ 190px      │ flexible                     │ 240px            │
 │            │ composer                     │                  │
 ├────────────┴──────────────────────────────┴──────────────────┤
-│ bottom panel: terminal (164px, shown only when open)         │
+│ bottom panel: terminal | browser (164px, shown when open)    │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 - **Title bar.** Session tabs on the left (tabs are threads), then the turn state badge, the ACP process badge and the palette shortcut on the right.
-- **Project rail.** The project and branch, then threads grouped by "today", "earlier" and "archived". A footer shows the Nanocoder version, provider health and settings.
+- **Project rail.** The project and branch, then threads grouped by "today", "earlier" and "archived". A footer shows the Nanocoder version, the ACP process state and settings.
 - **Stream.** The conversation, with the composer pinned to the bottom. The composer has a control rail below the input for model, mode and context use.
-- **Inspector.** Two tabs: "files" (tree, or the review list after a turn) and "preview" (the browser).
-- **Bottom panel.** The terminal. It spans all three columns and is hidden when closed.
+- **Inspector.** Two tabs: "files" (the tree) and "review" (the review list and diffs).
+- **Bottom panel.** The terminal or the browser, switched by a two-tab strip, as the whitepaper's information architecture sets. It spans all three columns and is hidden when closed.
 
 Widths tested in the mockup: 1240px, 1020px and 840px. At 840px and below, the inspector is hidden and its content opens on demand. The stream column never drops below a readable line length.
 
@@ -464,19 +466,19 @@ Token values are in the front matter under `components`. This section covers wha
 ### Stream items
 
 - **User message:** 2px `primary` left rule, author label "you · 14:02".
-- **Agent message:** author label "✱ nanocoder · 14:03" in `primary`, a token chip (`+0.9k tok`) and a blinking `▌` cursor while streaming.
+- **Agent message:** author label "✱ Nanocoder · 14:03" in `primary`, a token chip (`+0.9k tok`) and a blinking `▌` cursor while streaming.
 - **Reasoning:** `◌` glyph, italic, muted, dashed left rule, elapsed time at the end.
 - **Tool row:** status glyph, tool name in `on-surface`, target in muted. Expandable rows show `▸` and reveal `meta`-size detail.
-- **Subagent card:** `surface-panel` card with a header row (task, depth chip such as `depth 1/2`, state, elapsed, `✕` cancel in `error`) and indented child rows starting with `└`.
-- **Approval card:** `warning` border, a slow pulse ring, title "▲ approval required · protected tool · normal mode", the command, a one-line effect note, then "allow once", "always for project" and "reject" buttons with their keys.
+- **Subagent card:** `surface-panel` card with a header row (task, depth chip such as `depth 1/2`, state, elapsed, and a `✕ stop turn` action in `error`, since Nanocoder cannot yet stop one subagent on its own) and indented child rows starting with `└`.
+- **Approval card:** `warning` border, a slow pulse ring, title "▲ approval required · protected tool · normal mode", the command, a one-line effect note, then one button per option Nanocoder sends, using Nanocoder's own labels (for example "allow once", "allow always", "reject"), each with its key.
 - **Failure banner:** `error` border and text, with "restart" and "resume" buttons on the right.
-- **View-only notice:** dashed border, muted text, with "recover" and "open location" actions.
+- **View-only notice:** dashed border, muted text, with "start a new thread" and "remove" actions.
 
 ### Composer
 
 - `›` prompt mark in `primary`, placeholder "ask anything…", a token estimate pill, a hint line ("⏎ send · ⇧⏎ newline · / ! @") and an outlined `▶` send button.
-- Control rail below: model pill (`✳ qwen3-coder:30b ▾`), mode pill in `primary` (`normal ▾`), and a dashed context pill (`⌁ ctx 32%`).
-- A 2px context gauge runs along the bottom edge in `primary`.
+- Control rail below: model pill (`✳ qwen3-coder:30b ▾`), which applies to every thread in the project and says so in its accessible name; mode pill in `primary` (`normal ▾`); and a dashed context pill (`⌁ ctx 32%`), shown only when the connected Nanocoder reports context-window use. At Nanocoder `8a5f4d4` it does not, so the pill and gauge are hidden.
+- A 2px context gauge runs along the bottom edge in `primary`, under the same condition as the context pill.
 - The border turns `primary` on focus. When the thread cannot accept input, the composer drops to 50% opacity and says why.
 
 ### Inspector: files and review
@@ -488,15 +490,15 @@ Token values are in the front matter under `components`. This section covers wha
 
 ### Terminal
 
-- Bottom panel on `surface-elevated` with a tab strip (active tab underlined in `primary`) and restart, clear and stop buttons.
-- An agent strip above the output shows the last agent command and its approval result, so it is clear the agent did not type into this terminal.
+- Bottom panel on `surface-elevated` with a two-tab strip, "terminal" and "browser" (active tab underlined in `primary`). There is one terminal in v1; its tab has restart, clear and stop buttons.
+- An agent strip above the output shows the last agent command and its approval result, so it is clear the agent did not type into this terminal (`TERM-12` in the planning set).
 - Prompt `$` in `primary`, detected URLs in `mention` and underlined.
 
 ### Browser
 
-- Address bar with back, forward and reload, the URL in a `surface` field, and outlined badges for origin safety (`localhost · safe` in `success`) and downloads (`⤓ deny`).
+- The "browser" tab of the bottom panel. Address bar with back, forward and reload, the URL in a `surface` field, and outlined badges for origin safety (`localhost · safe` in `success`) and downloads (`⤓ ask`: every download asks for a destination).
 - The viewport is a plain `surface` area labelled "isolated preview · separate profile · no desktop bridge" when empty.
-- An agent rail below lists the agent's actions as a chain (`snapshot ✓ → click [sign in] ✓ → ▲ type credentials · approval pending`) with "take control" and "reload" buttons and the current policy (`public http · off · downloads denied`).
+- An agent rail below lists the agent's actions as a chain (`snapshot ✓ → click [sign in] ✓ → ▲ type credentials · approval pending`) with "take control" and "reload" buttons and the current policy (`public http · off · downloads ask`).
 
 ### Overlays
 
@@ -550,7 +552,9 @@ With "reduce motion" on, the spinner, cursor and pulse stop and transitions are 
 
 ## Open design questions
 
-- **Product name in UI copy.** The mockup writes "nanocoder" in lowercase UI text. The [Brand Guidelines][brand] require "Nanocoder" in body copy. Decide whether UI chrome is exempt.
+- **Palette and token format.** The NC project guide names Tokyo Night as the default palette, with tokens in OKLch ([Visual identity][nc-visual]). This file uses the mockup's monocode palette in hex. Either keep it and document the divergence in `CONTRIBUTING.md`, or move to Tokyo Night. Decision `DEC-36` in the planning set.
+- **Browser placement.** The mockup put the browser in the inspector. This file follows the whitepaper, which puts it in the bottom panel with the terminal. Moving it needs a whitepaper change first.
+- **Mockup sync.** The mockup still shows the pre-fix colours, a per-subagent cancel, fixed approval labels and the lowercase product name. Update it to match this file.
 - **Light muted ink.** The mockup's token export says `hsl(225 10% 44%)` but the rendered frame uses `hsl(225 10% 40%)`. This file uses 40%, which has more contrast; confirm.
 - **Narrow layout.** The mockup hides the inspector at 840px but does not show how it comes back. A drawer or a tab in the title bar both work.
 - **High contrast and forced colours.** Not covered by the mockup.
@@ -561,11 +565,14 @@ With "reduce motion" on, the spinner, cursor and pulse stop and transitions are 
 - [Nanocoder Desktop design sheet][mockup], version 12, last modified 2026-09-27. Its own sources: [docs#107][docs107], the monocode chassis, [nanocollective.org][nc-site] and [nanocoder#907][nc907].
 - [DESIGN.md format specification][spec], Google Labs, version `alpha`.
 - [Nano Collective Brand Guidelines][brand].
-- [Planning set](../planning/index.md), especially the feature files and the accessibility targets in [`testing-strategy.md`](../planning/testing-strategy.md#accessibility-targets).
+- [Planning set](planning/index.md), especially the feature files and the accessibility targets in [`testing-strategy.md`](planning/testing-strategy.md#accessibility-targets).
 
 [mockup]: https://bubbles.adityalogs.xyz/o/nanocoder-desktop-mockups/
 [spec]: https://github.com/google-labs-code/design.md/blob/main/docs/spec.md
 [brand]: https://docs.nanocollective.org/collective/organisation/brand
 [docs107]: https://github.com/Nano-Collective/docs/pull/107
 [nc-site]: https://nanocollective.org/
-[nc907]: https://github.com/Nano-Collective/nanocoder/pull/907
+[nc907]: https://github.com/Nano-Collective/nanocoder/issues/907
+[docs-css]: https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/app/globals.css#L14
+[nc-themes]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/config/themes.json
+[nc-visual]: https://docs.nanocollective.org/collective/projects/creating-a-new-project#visual-identity

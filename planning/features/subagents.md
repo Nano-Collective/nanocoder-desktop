@@ -8,7 +8,7 @@ How the desktop shows, approves and stops bounded Nanocoder subagents.
 
 ## Purpose
 
-Let the user delegate a bounded subtask, follow each child agent, and stop it when needed ([whitepaper, v1 scope][wp-scope] item 3, `SP-05`). Nanocoder owns delegation; the desktop renders it. Visual design: see [`docs/DESIGN.md`](../../docs/DESIGN.md).
+Let the user delegate a bounded subtask, follow each child agent, and stop it when needed ([whitepaper, v1 scope][wp-scope] item 3, `SP-05`). Nanocoder owns delegation; the desktop renders it. Visual design: see [`DESIGN.md`](../../DESIGN.md).
 
 ## What Nanocoder exposes at `8a5f4d4`
 

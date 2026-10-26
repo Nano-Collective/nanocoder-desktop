@@ -3,7 +3,7 @@
 Every decision the plan relies on, with its status, where it was made, and what is still missing.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## How to read this register
@@ -58,6 +58,7 @@ The date is when the decision or proposal was made, not when it was recorded her
 | DEC-33 | Thread state machine: New, Ready, Running, WaitingApproval, Interrupted, Failed, ViewOnly; archive is separate UI metadata. | Decided | [Whitepaper, Thread states][wp-states] | 2026-10-12 | Behaviour per state is in [`architecture.md`](architecture.md#thread-state-machine). |
 | DEC-34 | Durable chats rely on Nanocoder's session files; the persisted Nanocoder session ID is the durable join key; session listing is best-effort discovery. | Decided | [Whitepaper, Project and session identity][wp-identity] | 2026-10-12 | Nanocoder's retention deletes sessions after 30 days idle or beyond 100 sessions ([source][nc-retention]). `OQ-16`. |
 | DEC-35 | Run a technical gate before Milestone 1: spawn the selected artefact with `--acp`, record capabilities, complete a real turn, restart both processes, resume, and exercise both approval paths. | Decided | [Whitepaper, Next steps][wp-next] | 2026-10-12 | Exit criteria in [`roadmap.md`](roadmap.md#technical-gate). |
+| DEC-36 | Visual identity: `DESIGN.md` departs from the NC default visual identity. Keep it as a documented divergence, or adopt the default. | Open | [Creating a new project, Visual identity][creating], [`DESIGN.md`](../DESIGN.md#open-design-questions) | 2026-10-26 | Details are in `DESIGN.md`. Diverging is allowed if `CONTRIBUTING.md` documents it ([Creating a new project][creating]). |
 
 ## Counts
 
@@ -65,7 +66,7 @@ The date is when the decision or proposal was made, not when it was recorded her
 |---|---|
 | Decided | 17 (`DEC-01`, `DEC-02`, `DEC-03`, `DEC-05` to `DEC-08`, `DEC-21` to `DEC-27`, `DEC-33` to `DEC-35`) |
 | Proposed (awaiting @will-lamerton) | 11 (`DEC-09` to `DEC-19`) |
-| Open | 6 (`DEC-04`, `DEC-20`, `DEC-28` to `DEC-31`) |
+| Open | 7 (`DEC-04`, `DEC-20`, `DEC-28` to `DEC-31`, `DEC-36`) |
 | Suggestion (not discussed) | 1 (`DEC-32`) |
 
 ## What @will-lamerton needs to answer
@@ -77,6 +78,7 @@ Ordered by what they block.
 | Repository setup (Stage 4) | `DEC-09`, `DEC-10` | Settle the maintainer commitment and repository shape and record them on the whitepaper page, as [#115][i115] and [#117][i117] require. Confirm the repository that already exists is the intended one. |
 | Technical gate | `DEC-11`, `DEC-12`, `DEC-31` | Agree the bundling direction and version policy, and the starting ACP mode. |
 | Milestone 1 | `DEC-15` | Agree the browser trust boundary, since the starting mode depends on it. |
+| Milestone 1 (first UI work) | `DEC-36` | Accept `DESIGN.md`'s visual identity as a documented divergence, or adopt the NC default. |
 | Milestone 2 | `DEC-14` | Decide whether the "Agent changes" view is v1 or later. |
 | Milestone 3 | `DEC-13`, `DEC-29` | Agree the `mcpServers` change and what happens to Nanocoder's built-in `browser` tool in desktop sessions. |
 | Milestone 4 and release | `DEC-20` | Signing, notarisation, update channel and key custody. |

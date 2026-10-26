@@ -8,7 +8,7 @@ Real Git status and diffs, honest last-turn labelling, and the proposed baseline
 
 ## Purpose
 
-Review must represent the repository, not only what the agent says it changed ([whitepaper, Git diff and review][wp-git]). Visual design: see [`docs/DESIGN.md`](../../docs/DESIGN.md).
+Review must represent the repository, not only what the agent says it changed ([whitepaper, Git diff and review][wp-git]). Visual design: see [`DESIGN.md`](../../DESIGN.md).
 
 ## v1 requirements
 

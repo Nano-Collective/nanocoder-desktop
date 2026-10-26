@@ -3,7 +3,7 @@
 Everything read to write this planning set, with commits and the date read.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 All sources were read on 2026-10-23.
@@ -29,6 +29,7 @@ All sources were read on 2026-10-23.
 - [Contributing](https://docs.nanocollective.org/collective/projects/contributing)
 - [Brand Guidelines](https://docs.nanocollective.org/collective/organisation/brand)
 - [`lib/projects.ts`](https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/lib/projects.ts)
+- [Docs site styles, `app/globals.css`](https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/app/globals.css) (read 2026-10-26)
 
 ## Issues and pull requests
 
@@ -39,6 +40,10 @@ Nanocoder: [#1709](https://github.com/Nano-Collective/nanocoder/pull/1709), [#16
 ## Nanocoder source files (at `8a5f4d4`)
 
 `source/acp/` (agent, capabilities, server, session, conversation, timeline, types and specs), `source/session/session-manager.ts`, `source/session/session-paths.ts`, `source/subagents/subagent-executor.ts`, `source/services/timeline-manager.ts`, `source/constants.ts`, `source/tools/browser.tsx`, `source/tools/tool-manager.ts`, `source/config/index.ts` (including `.env` loading), `source/config/env-substitution.ts`, `source/config/preferences.ts`, `source/plain/initialize.ts`, `source/utils/ensure-nanocoder-gitignore.ts`, `source/cli.tsx`, `docs/features/acp.md`, `docs/features/hooks.md`, `docs/configuration/index.md`, `plugins/vscode/src/acp-client.ts`, `package.json`, `pnpm-workspace.yaml`, `biome.json`, `knip.json`, `tsconfig.json`, `.changeset/`, `.github/`. `@agentclientprotocol/sdk` 1.4.0 (method tables and schema types) from Nanocoder's installed dependencies.
+
+## This repository
+
+- [PR #1](https://github.com/Nano-Collective/nanocoder-desktop/pull/1): `DESIGN.md`, reviewed on 2026-10-26.
 
 ## Package registries and release indexes
 

@@ -97,7 +97,7 @@ Suggestion (not discussed): starting budgets, to be confirmed after the first me
 
 ## Accessibility targets
 
-Behaviour only. Visual design: see [`docs/DESIGN.md`](../docs/DESIGN.md). The criteria named are from WCAG 2.2; Suggestion (not discussed) to adopt them.
+Behaviour only. Visual design: see [`DESIGN.md`](../DESIGN.md). The criteria named are from WCAG 2.2; Suggestion (not discussed) to adopt them.
 
 | ID | Target | Checked how |
 |---|---|---|

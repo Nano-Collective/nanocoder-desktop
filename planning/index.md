@@ -14,7 +14,7 @@ The whitepaper stays canonical. Where this folder and the whitepaper on `main` o
 
 These are planning documents, not user documentation. User-facing docs will live in `docs/`, which the docs site publishes from each project's release tags ([`lib/projects.ts`][projects-ts]). Keeping this set in `planning/` stops drafts reaching docs.nanocollective.org.
 
-Visual design: see [`docs/DESIGN.md`](../docs/DESIGN.md).
+Visual design: see [`DESIGN.md`](../DESIGN.md).
 
 ## Reading order
 
@@ -88,7 +88,7 @@ A requirement inherits the status of the decision behind it. If a requirement de
 3. **Never renumber.** New requirements take the next unused number in their prefix. A retired requirement stays in its table, marked "Withdrawn" with the reason.
 4. **Pin Nanocoder facts.** Link Nanocoder source to a commit SHA, never to `main`. When the desktop adopts a new Nanocoder version, re-check the quirks table in [`acp-integration.md`](acp-integration.md) and add the commit to [`sources.md`](sources.md).
 5. **Follow the house style.** The [Brand Guidelines][brand] apply: British spelling, no em dashes, sentence case for headings and bold labels, no marketing language, full URLs. Mark anything not checked against a source as `Unverified:` and say what would confirm it.
-6. **Keep visual design out.** Behaviour, states, data, keyboard access and accessibility belong here. How anything looks belongs in [`docs/DESIGN.md`](../docs/DESIGN.md).
+6. **Keep visual design out.** Behaviour, states, data, keyboard access and accessibility belong here. How anything looks belongs in [`DESIGN.md`](../DESIGN.md).
 7. **Push decisions upstream.** When @will-lamerton agrees to a proposal, it is recorded on the whitepaper page (he asked for this explicitly for maintainer commitment in [#115][i115] and the repository shape in [#117][i117]). Only then does the entry here become Decided.
 
 Before opening a pull request against this folder, check that it contains no em dashes, no American spellings outside code, no visual-design vocabulary outside the `DESIGN.md` pointer lines, and no requirement ID that is referenced but never defined.

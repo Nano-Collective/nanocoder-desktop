@@ -8,7 +8,7 @@ The single project terminal.
 
 ## Purpose
 
-Let the user run, test and inspect the project in one PTY tied to the project root ([whitepaper, Integrated terminal][wp-term]). It is a user terminal, not an agent execution path: Nanocoder's own command tools keep using Nanocoder's approval policy. Visual design: see [`docs/DESIGN.md`](../../docs/DESIGN.md).
+Let the user run, test and inspect the project in one PTY tied to the project root ([whitepaper, Integrated terminal][wp-term]). It is a user terminal, not an agent execution path: Nanocoder's own command tools keep using Nanocoder's approval policy. Visual design: see [`DESIGN.md`](../../DESIGN.md).
 
 ## v1 requirements
 
@@ -25,6 +25,7 @@ Let the user run, test and inspect the project in one PTY tied to the project ro
 | TERM-09 | Scrollback is bounded and in memory only. | Decided (persisted scrollback is later work, [whitepaper][wp-term]) |
 | TERM-10 | Start the shell as a login shell where that is the platform norm, so the user's usual `PATH` applies. | Suggestion (not discussed) |
 | TERM-11 | Keyboard focus can always leave the terminal with a documented key, and a screen-reader mode is available (`A11Y-01`). | Decided as a v1 goal ([whitepaper, Milestone 4][wp-next]); specifics Suggestion (not discussed) |
+| TERM-12 | Above the terminal output, show the agent's most recent shell command (from Nanocoder's `execute_bash` tool calls) and its approval result, labelled as the agent's, so it is never mistaken for input typed into this terminal. | Proposed (awaiting @will-lamerton) ([`DESIGN.md`](../../DESIGN.md#terminal), [PR #1][pr1]) |
 
 ## Behaviour
 
@@ -105,4 +106,5 @@ None.
 [wp-term]: https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/content/collective/whitepapers/nanocoder-desktop.md?plain=1#L454-L471
 [wp-why]: https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/content/collective/whitepapers/nanocoder-desktop.md?plain=1#L267-L275
 [wp-next]: https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/content/collective/whitepapers/nanocoder-desktop.md?plain=1#L650-L696
+[pr1]: https://github.com/Nano-Collective/nanocoder-desktop/pull/1
 [nc-windows-kill]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/.changeset/windows-bash-kill-tree.md

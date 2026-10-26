@@ -8,7 +8,7 @@ The processes, trust boundaries, IPC contract, process policy, thread state mach
 
 ## Scope
 
-This file describes behaviour and structure. It builds on the [whitepaper's architecture][wp-arch] (Decided) and adds the detail a builder needs. Anything this file adds beyond the whitepaper is marked with its status. Visual design: see [`docs/DESIGN.md`](../docs/DESIGN.md).
+This file describes behaviour and structure. It builds on the [whitepaper's architecture][wp-arch] (Decided) and adds the detail a builder needs. Anything this file adds beyond the whitepaper is marked with its status. Visual design: see [`DESIGN.md`](../DESIGN.md).
 
 ## Process model
 

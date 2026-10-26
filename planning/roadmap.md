@@ -3,7 +3,7 @@
 Where Nanocoder Desktop is in the NC process, and the build broken into small phases with checklists, from scaffold to the first public release. No dates: no source gives one.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## How to use this roadmap
@@ -243,7 +243,7 @@ Can run in parallel with G.4 and G.5.
 
 **Goal.** Trusted projects, durable threads, streaming and approvals, model and mode controls, process errors and bounded subagent runs ([whitepaper][wp-next]).
 
-**Blockers.** Technical gate; `OQ-03`, `OQ-04`, `OQ-19`. **Risks.** `RISK-04`, `RISK-05`, `RISK-06`, `RISK-11`, `RISK-14`.
+**Blockers.** Technical gate; `OQ-03`, `OQ-04`, `OQ-19`; `DEC-36` before the first UI work. **Risks.** `RISK-04`, `RISK-05`, `RISK-06`, `RISK-11`, `RISK-14`.
 
 ### Phase 1.1: desktop store
 
@@ -566,6 +566,7 @@ Needs the PTY library from `OQ-05`.
 - [ ] Process tree teardown on stop, project switch and quit (`TERM-07`)
 - [ ] Clear output and bounded in-memory scrollback (`TERM-06`, `TERM-09`)
 - [ ] Keyboard escape from the terminal and screen-reader mode (`TERM-11`)
+- [ ] Agent strip showing the agent's last shell command and its approval result (`TERM-12`)
 
 **Results we want**
 

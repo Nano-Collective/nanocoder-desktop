@@ -3,7 +3,7 @@
 Everything to create at scaffold time, following the NC playbook, and the launch checklist. Nothing here exists yet.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-26
 - Drafted by: @akramcodez
 
 ## Source
@@ -27,7 +27,7 @@ badges/
 docs/                User-facing docs, published on docs.nanocollective.org
 planning/            This planning set
 source/              See architecture.md
-README.md  CONTRIBUTING.md  LICENSE  package.json  pnpm-lock.yaml  pnpm-workspace.yaml
+DESIGN.md  README.md  CONTRIBUTING.md  LICENSE  package.json  pnpm-lock.yaml  pnpm-workspace.yaml
 biome.json  knip.json  tsconfig.json
 ```
 
@@ -46,7 +46,7 @@ Intentionally empty (0 bytes) while this planning set is reviewed. At scaffold t
 
 ### `CONTRIBUTING.md`
 
-Mirror Nanocoder's. Link the Code of Conduct and Economics Charter rather than restating them, document setup, the `pnpm test:all` gate, coding standards, the release process (contributors never bump versions), every divergence from the NC defaults, and link [`MAINTAINING.md`][maintaining].
+Mirror Nanocoder's. Link the Code of Conduct and Economics Charter rather than restating them, document setup, the `pnpm test:all` gate, coding standards, the release process (contributors never bump versions), every divergence from the NC defaults (including the visual identity, `DEC-36`), and link [`MAINTAINING.md`][maintaining].
 
 ### `LICENSE`
 

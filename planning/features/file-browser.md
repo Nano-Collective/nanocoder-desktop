@@ -8,7 +8,7 @@ The read-oriented project tree and file preview.
 
 ## Purpose
 
-Help the user understand and reference the project without turning the desktop into an editor ([whitepaper, File browser][wp-files]). Visual design: see [`docs/DESIGN.md`](../../docs/DESIGN.md).
+Help the user understand and reference the project without turning the desktop into an editor ([whitepaper, File browser][wp-files]). Visual design: see [`DESIGN.md`](../../DESIGN.md).
 
 ## v1 requirements
 

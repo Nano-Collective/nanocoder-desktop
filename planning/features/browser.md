@@ -8,7 +8,7 @@ The isolated, agent-controlled browser: navigation, agent control, approvals, do
 
 ## Purpose
 
-A user-visible preview for a running application or a reference page. The user can navigate it, or ask Nanocoder to inspect the page and take bounded actions, and can pause, interrupt or take control at any time ([whitepaper, Agent-controlled browser][wp-browser]). Visual design: see [`docs/DESIGN.md`](../../docs/DESIGN.md).
+A user-visible preview for a running application or a reference page. The user can navigate it, or ask Nanocoder to inspect the page and take bounded actions, and can pause, interrupt or take control at any time ([whitepaper, Agent-controlled browser][wp-browser]). Visual design: see [`DESIGN.md`](../../DESIGN.md).
 
 ## v1 requirements
 
