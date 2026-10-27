@@ -6,6 +6,7 @@ const api: DesktopApi = {
 	getAppInfo: () => ipcRenderer.invoke(CHANNELS.getAppInfo, {}),
 	getNanocoderRuntime: () =>
 		ipcRenderer.invoke(CHANNELS.getNanocoderRuntime, {}),
+	connectNanocoder: () => ipcRenderer.invoke(CHANNELS.connectNanocoder, {}),
 };
 
 contextBridge.exposeInMainWorld('desktop', api);

@@ -28,7 +28,11 @@ test('the preload bridge exposes typed methods only', async () => {
 	const keys = await page.evaluate(() =>
 		Object.keys((window as {desktop?: object}).desktop ?? {}),
 	);
-	expect(keys).toEqual(['getAppInfo', 'getNanocoderRuntime']);
+	expect(keys).toEqual([
+		'getAppInfo',
+		'getNanocoderRuntime',
+		'connectNanocoder',
+	]);
 });
 
 test('the bridge returns the standard result shape', async () => {

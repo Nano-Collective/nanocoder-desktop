@@ -20,7 +20,8 @@ Checked against the npm registry and [Electron's release index][el-releases] on 
 |---|---|---|---|
 | `electron` | 45.0.0 | MIT | Embeds Node 24.22.0 and Chromium 156. Electron 41 to 45 all embed Node 24, which meets Nanocoder's `>=22`. |
 | `react` | 19.3.1 | MIT | |
-| `@agentclientprotocol/sdk` | 1.4.0 (as resolved by Nanocoder) | Apache-2.0 | Use the same minor as the bundled Nanocoder. |
+| `@agentclientprotocol/sdk` | 1.4.0 (as resolved by Nanocoder) | Apache-2.0 | Nanocoder's own version. |
+| `@agentclientprotocol/sdk` | 1.9.0 (installed in phase G.2) | Apache-2.0 | Speaks ACP protocol version 1, like Nanocoder's 1.4.0. The desktop uses the `client()` API: `ClientSideConnection` is deprecated in 1.9 and removed in 2.0 (2026-10-19), which also speaks protocol version 1. Bundled, so a devDependency. |
 | `@nanocollective/nanocoder` | 1.31.0 (published 2026-09-26) | MIT | Predates the ACP fixes the desktop needs ([`acp-integration.md`](acp-integration.md#supported-nanocoder-versions)). |
 | `@types/node` | 24 (installed in phase S.2) | MIT | Matches Electron 45's Node 24. Version 22 was refused by the pnpm trust policy: its dependency `undici-types@6.21.0` has no provenance while an earlier release did. |
 | `electron` | 45.0.0 (installed in phase S.3) | MIT | Exempt from the 7-day `minimumReleaseAge` so security releases apply at once (`SEC-14`). Downloads its binary the first time it runs, not at install. |

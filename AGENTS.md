@@ -29,9 +29,14 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/ipc/index.ts` | Registers the IPC handlers |
 | `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path |
 | `source/main/nanocoder/launch.ts` | Starts Nanocoder with an argument array and no shell |
+| `source/main/nanocoder/acp-client.ts` | Starts `nanocoder --acp` in the project root and sends `initialize` |
+| `source/main/nanocoder/protocol-stream.ts` | Reads stdout as ACP only; anything else ends the connection |
+| `source/main/nanocoder/stderr-ring.ts` | Bounded, redacted, in-memory ring for Nanocoder's stderr |
+| `source/main/nanocoder/capabilities.ts` | Records the version and capabilities from `initialize` |
+| `source/main/nanocoder/fixtures/fake-nanocoder.mjs` | A fake `nanocoder --acp` for unit and end-to-end tests |
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
 | `source/preload/index.ts` | The `window.desktop` bridge |
-| `e2e/app.e2e.ts` | Playwright tests against the built app |
+| `e2e/*.e2e.ts` | Playwright tests against the built app |
 | `electron.vite.config.ts`, `electron-builder.yml` | Build and packaging |
 | `.github/workflows/desktop-checks.yml` | Local CI jobs beside the shared `pr-checks` |
 
@@ -58,6 +63,8 @@ These hold in every change:
 - Renderers stay sandboxed with context isolation and no Node. The preload exposes typed functions only.
 - Every IPC handler goes through `registerHandler`, with a `zod` `strictObject` schema. It returns an `IpcResult`; throw `IpcFailure` for a specific error code.
 - Processes start from an absolute path with an argument array and `shell: false`. No `PATH` lookup at launch, and never a binary from the project's own folder.
+- Nanocoder's stdout carries ACP only: a line that is not a JSON-RPC frame ends the connection. Its stderr is redacted into a bounded in-memory ring, and only Nanocoder's own `[nanocoder]` message reaches the UI.
+- The desktop never turns on Nanocoder's directory trust by accident: no `--trust-directory`, and an inherited `NANOCODER_TRUST_DIRECTORY` is dropped.
 - Paths are canonicalised and checked to stay inside their root before use.
 - Chat messages, file contents, tool results, Nanocoder's stderr and secrets are never written to disk or logs.
 - The app renderer loads nothing remote and keeps its strict Content Security Policy.
@@ -75,7 +82,7 @@ These hold in every change:
 - Unit tests are AVA `.spec.ts` files beside the code, run in plain Node. Keep logic in modules that do not import Electron, so it can be tested.
 - A security rule needs a test that proves the refusal, not only the happy path.
 - Tests never sleep for a fixed time; they wait for an event.
-- End-to-end tests live in `e2e/`. ACP integration tests are `*.acp.ts`.
+- End-to-end tests live in `e2e/`. ACP integration tests are `*.acp.ts`; they keep Nanocoder's config in a temporary folder and need a Nanocoder build with the ACP trust check.
 - Coverage stays at or above 80% of lines.
 
 ## AI Coding Assistance Notes

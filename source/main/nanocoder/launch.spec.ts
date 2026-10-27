@@ -4,13 +4,14 @@ import path from 'node:path';
 import test from 'ava';
 import {childEnv, launchNanocoder} from '@/main/nanocoder/launch';
 
-test('drops variables that change how Node loads code', t => {
+test('drops variables that change how Node loads code or what is trusted', t => {
 	t.deepEqual(
 		childEnv({
 			PATH: '/bin',
 			NODE_OPTIONS: '--require=evil',
 			node_options: '--require=evil',
 			ELECTRON_RUN_AS_NODE: '1',
+			NANOCODER_TRUST_DIRECTORY: '1',
 			OPENAI_API_KEY: 'kept',
 		}),
 		{PATH: '/bin', OPENAI_API_KEY: 'kept'},
@@ -32,7 +33,7 @@ test('passes arguments literally, with no shell', async t => {
 		{...process.env, NODE_OPTIONS: '--require=/does/not/exist.js'},
 	);
 	let stdout = '';
-	child.stdout?.on('data', chunk => {
+	child.stdout.on('data', chunk => {
 		stdout += chunk;
 	});
 	const code = await new Promise(resolve => child.on('close', resolve));

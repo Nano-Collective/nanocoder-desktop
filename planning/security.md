@@ -147,7 +147,7 @@ What that means in practice, Suggestion (not discussed):
 - **Resolve once, show always.** The prototype finds the installed Nanocoder package, resolves its `bin` entry (`dist/cli.js`, [source][nc-bin]) and a Node runtime to absolute paths, shows both with the version, and stores them. It does not search `PATH` again at launch.
 - **No shims on Windows.** The npm-installed `nanocoder` command on Windows is a `.cmd` wrapper, which Node can only run through a shell. The desktop launches `[node, absolute path to dist/cli.js, "--acp"]` instead.
 - **Never the project's own copy.** A `node_modules/.bin/nanocoder` inside the opened repository is not a trusted runtime. Nanocoder's VS Code extension had exactly this bug ([nanocoder#1730][nc1730]).
-- **A clean environment.** Pass the user's environment so providers keep working, but drop variables that change how the runtime loads code, such as `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE` (unless the desktop sets the latter deliberately, `OQ-22`).
+- **A clean environment.** Pass the user's environment so providers keep working, but drop variables that change how the runtime loads code, such as `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE` (unless the desktop sets the latter deliberately, `OQ-22`). Also drop `NANOCODER_TRUST_DIRECTORY`, so Nanocoder's directory trust is never inherited from a shell (`OQ-14`). Done in phase G.2.
 - **The same rules for every launch.** Git, the external editor and the PTY shell follow the same pattern.
 
 ## Secrets and diagnostics

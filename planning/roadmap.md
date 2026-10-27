@@ -184,15 +184,15 @@ Published Nanocoder 1.31.0 lacks `session/close`, the trust check and per-sessio
 
 **Build**
 
-- [ ] Spawn `--acp` in the canonical project root
-- [ ] `initialize` with read-only client capabilities (`ACP-02`)
-- [ ] Protocol-only stdout handling (`ACP-15`)
-- [ ] Bounded, redacted stderr ring (`ACP-16`)
+- [x] Spawn `--acp` in the canonical project root ([`acp-client.spec.ts`](../source/main/nanocoder/acp-client.spec.ts), [`connect.e2e.ts`](../e2e/connect.e2e.ts))
+- [x] `initialize` with read-only client capabilities (`ACP-02`) ([`acp-client.spec.ts`](../source/main/nanocoder/acp-client.spec.ts))
+- [x] Protocol-only stdout handling (`ACP-15`) ([`protocol-stream.spec.ts`](../source/main/nanocoder/protocol-stream.spec.ts))
+- [x] Bounded, redacted stderr ring (`ACP-16`) ([`stderr-ring.spec.ts`](../source/main/nanocoder/stderr-ring.spec.ts))
 
 **Results we want**
 
-- [ ] Capabilities and version are recorded for the connected Nanocoder
-- [ ] An untrusted folder shows Nanocoder's own refusal message
+- [x] Capabilities and version are recorded for the connected Nanocoder ([`acp-client.acp.ts`](../source/main/nanocoder/acp-client.acp.ts), run on Linux against Nanocoder `8a5f4d4` on 2026-10-27)
+- [x] An untrusted folder shows Nanocoder's own refusal message ([`acp-client.acp.ts`](../source/main/nanocoder/acp-client.acp.ts), same run; [`connect.e2e.ts`](../e2e/connect.e2e.ts))
 
 ### Phase G.3: settle trust and starting mode
 
