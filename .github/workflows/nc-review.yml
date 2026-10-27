@@ -31,6 +31,6 @@ jobs:
       pull-requests: write
     with:
       pr-number: ${{ inputs.pr_number }}
-      architecture-doc: planning/architecture.md
+      architecture-doc: AGENTS.md
     secrets:
       MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}

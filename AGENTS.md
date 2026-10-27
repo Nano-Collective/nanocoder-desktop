@@ -1,0 +1,93 @@
+# AGENTS.md
+
+Guidance for coding agents, and anyone else, working in this repository. Keep it current: a pull request that changes the structure, commands or conventions below updates this file too.
+
+## Project Overview
+
+Nanocoder Desktop is an Electron desktop workspace around [Nanocoder](https://github.com/Nano-Collective/nanocoder). It drives Nanocoder over the Agent Client Protocol (`nanocoder --acp`) and adds no agent of its own: Nanocoder owns models, prompts, tools, approvals and chat history.
+
+The project is pre-v0.1. The plan lives in [`planning/`](planning/index.md): start at `planning/index.md`, and see `planning/roadmap.md` for the current phase. How the app looks is in [`DESIGN.md`](DESIGN.md).
+
+## Architecture
+
+| Layer | Folder | Rule |
+|---|---|---|
+| Main process | `source/main/` | The only privileged code: windows, the `app://` protocol, session lock-down, IPC handlers, finding and launching Nanocoder |
+| Preload | `source/preload/` | Sandboxed, built as CommonJS. Exposes typed functions as `window.desktop`, never `ipcRenderer` |
+| Renderer | `source/renderer/` | React, sandboxed, no Node. Receives data, never a capability |
+| Shared | `source/shared/` | IPC channel names, error codes, result and data types |
+
+Details are in [`planning/architecture.md`](planning/architecture.md); the security rules are in [`planning/security.md`](planning/security.md).
+
+## Key Files
+
+| Path | Purpose |
+|---|---|
+| `source/main/index.ts` | App entry: `app://` protocol, CSP, sandbox, navigation and window rules |
+| `source/main/security.ts` | Origin checks, renderer file resolution, Content Security Policy |
+| `source/main/ipc/handle-request.ts` | Sender check, schema validation and the result shape for every IPC call |
+| `source/main/ipc/index.ts` | Registers the IPC handlers |
+| `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path |
+| `source/main/nanocoder/launch.ts` | Starts Nanocoder with an argument array and no shell |
+| `source/shared/ipc.ts` | Channels, error codes and IPC types |
+| `source/preload/index.ts` | The `window.desktop` bridge |
+| `e2e/app.e2e.ts` | Playwright tests against the built app |
+| `electron.vite.config.ts`, `electron-builder.yml` | Build and packaging |
+| `.github/workflows/desktop-checks.yml` | Local CI jobs beside the shared `pr-checks` |
+
+## Development Commands
+
+```bash
+pnpm install
+pnpm dev               # run the app, rebuilding on change
+pnpm test:all          # the gate: format, types, lint, unit tests, Knip, audit
+pnpm test:ava          # unit tests
+pnpm test:e2e          # build, then Playwright (use xvfb-run on headless Linux)
+pnpm test:acp          # ACP integration tests (*.acp.ts), needs NANOCODER_CLI
+pnpm package:dir       # unpacked app for this platform in release/
+pnpm format            # apply Biome formatting
+pnpm changeset         # add a changeset for a user-facing change
+```
+
+`NANOCODER_DESKTOP_CLI` and `NANOCODER_DESKTOP_NODE` point the app at a specific Nanocoder `dist/cli.js` and Node.js runtime (absolute paths).
+
+## Security Rules
+
+These hold in every change:
+
+- Renderers stay sandboxed with context isolation and no Node. The preload exposes typed functions only.
+- Every IPC handler goes through `registerHandler`, with a `zod` `strictObject` schema. It returns an `IpcResult`; throw `IpcFailure` for a specific error code.
+- Processes start from an absolute path with an argument array and `shell: false`. No `PATH` lookup at launch, and never a binary from the project's own folder.
+- Paths are canonicalised and checked to stay inside their root before use.
+- Chat messages, file contents, tool results, Nanocoder's stderr and secrets are never written to disk or logs.
+- The app renderer loads nothing remote and keeps its strict Content Security Policy.
+
+## Code Style Guidelines
+
+- Biome formats and lints (tabs, single quotes, 80 columns). Run `pnpm format`.
+- Strict TypeScript. Import from `source/` through the `@/` alias.
+- Comments are rare: one line, only where the reason is not obvious.
+- Docs and UI text follow the [Brand Guidelines](https://docs.nanocollective.org/collective/organisation/brand): British spelling, no em dashes in docs, no marketing language.
+- Ownership is the Nano Collective core team; docs name no individual owner.
+
+## Testing
+
+- Unit tests are AVA `.spec.ts` files beside the code, run in plain Node. Keep logic in modules that do not import Electron, so it can be tested.
+- A security rule needs a test that proves the refusal, not only the happy path.
+- Tests never sleep for a fixed time; they wait for an event.
+- End-to-end tests live in `e2e/`. ACP integration tests are `*.acp.ts`.
+- Coverage stays at or above 80% of lines.
+
+## AI Coding Assistance Notes
+
+- Before changing behaviour, read `planning/index.md`, the relevant file in `planning/features/` and `planning/decisions.md`. A change to a decision updates `planning/decisions.md` in the same pull request.
+- Work one roadmap phase at a time and cite its requirement IDs (for example `ACP-01`).
+- Commit messages follow the NC convention: `feat:`, `fix:`, `mod:`, `chore:`, `docs:`, lowercase, imperative, no trailing full stop.
+- `DESIGN.md` belongs to the designer. Do not change its visual decisions.
+- Run `pnpm test:all` before finishing.
+
+## Repository
+
+- GitHub: [Nano-Collective/nanocoder-desktop](https://github.com/Nano-Collective/nanocoder-desktop)
+- Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- Licence: MIT

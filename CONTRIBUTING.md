@@ -105,6 +105,7 @@ Still open: the visual identity ([#11](https://github.com/Nano-Collective/nanoco
 - Run `pnpm test:all` before opening it.
 - Add a changeset (`pnpm changeset`) for user-facing changes. Docs-only changes and chores need none.
 - If it changes a decision, update [`planning/decisions.md`](planning/decisions.md) in the same pull request.
+- If it changes the structure, commands or conventions, update [`AGENTS.md`](AGENTS.md) in the same pull request.
 
 ## Release process
 

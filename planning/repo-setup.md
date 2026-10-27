@@ -3,7 +3,7 @@
 Everything to create at scaffold time, following the NC playbook, and the launch checklist. The phase S.1 files (`README.md`, `CONTRIBUTING.md`, `LICENSE`, `CODEOWNERS` and the templates) exist; the rest does not yet.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-27
 - Drafted by: @akramcodez
 
 ## Source
@@ -27,7 +27,7 @@ badges/
 docs/                User-facing docs, published on docs.nanocollective.org
 planning/            This planning set
 source/              See architecture.md
-DESIGN.md  README.md  CONTRIBUTING.md  LICENSE  package.json  pnpm-lock.yaml  pnpm-workspace.yaml
+AGENTS.md  CLAUDE.md  DESIGN.md  README.md  CONTRIBUTING.md  LICENSE  package.json  pnpm-lock.yaml  pnpm-workspace.yaml
 biome.json  knip.json  tsconfig.json
 ```
 
@@ -49,6 +49,10 @@ Written in phase S.1, following the [Brand Guidelines README pattern][brand-read
 Mirror Nanocoder's. Link the Code of Conduct and Economics Charter rather than restating them, document setup, the `pnpm test:all` gate, coding standards, the release process (contributors never bump versions), every divergence from the NC defaults (including the visual identity, `DEC-36`), and link [`MAINTAINING.md`][maintaining].
 
 It also documents the Electron-specific choices from #3 that differ from the NC defaults: `electron-vite`, `electron-builder`, Playwright, CodeMirror, linted spec files, and the build tools Linux contributors need for `node-pty` (Python, `make` and a C++ compiler).
+
+### `AGENTS.md` and `CLAUDE.md`
+
+`AGENTS.md` tells coding agents (Nanocoder, `nc-review`, and others) how the repository works, in the layout nanocoder, get-md and docs use: Project Overview, Architecture, Key Files, Development Commands, Code Style Guidelines, Testing, AI Coding Assistance Notes. `CLAUDE.md` contains only `@AGENTS.md`, as in taskforest, so there is one file to maintain. A pull request that changes the structure, commands or conventions updates `AGENTS.md` in the same change.
 
 ### `LICENSE`
 

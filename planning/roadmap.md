@@ -3,7 +3,7 @@
 Where Nanocoder Desktop is in the NC process, and the build broken into small phases with checklists, from scaffold to the first public release. No dates: no source gives one.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-27
 - Drafted by: @akramcodez
 
 ## How to use this roadmap
@@ -83,6 +83,7 @@ Everything in [`repo-setup.md`](repo-setup.md). Run before the technical gate.
 - [ ] `CONTRIBUTING.md` linking the Code of Conduct, Economics Charter and `MAINTAINING.md`
 - [ ] `README.md` following the brand pattern, replacing the empty file
 - [ ] `CODEOWNERS` with `* @Nano-Collective/core-team`
+- [ ] `AGENTS.md` for coding agents, and a `CLAUDE.md` containing `@AGENTS.md`, as nanocoder, get-md, docs and taskforest do
 - [ ] Bug report, feature request and pull request templates
 
 **Results we want**

@@ -40,6 +40,6 @@ Docs-only or internal chores need no changeset (or run `pnpm changeset --empty` 
 - [ ] If this was for an open issue, I was assigned to it
 - [ ] Code follows project style guidelines
 - [ ] Self-review completed
-- [ ] Documentation and `planning/` updated (if needed)
+- [ ] Documentation, `planning/` and `AGENTS.md` updated (if needed)
 - [ ] No transcripts, file contents, tool results or secrets are written to disk or logs
 - [ ] No breaking changes (or clearly documented)
