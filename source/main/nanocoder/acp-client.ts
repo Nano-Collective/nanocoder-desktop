@@ -141,10 +141,12 @@ export async function connectNanocoder(
 			);
 		}
 		const own = nanocoderMessage(stderr.lines());
+		const trust = own === undefined ? undefined : trustRefusal(own);
+		// Nanocoder's advice to pass --trust-directory does not apply here: the desktop records trust itself.
 		throw new NanocoderFailure(
 			'AGENT_UNAVAILABLE',
-			own ?? describeExit(exit),
-			own === undefined ? undefined : trustRefusal(own),
+			trust?.summary ?? own ?? describeExit(exit),
+			trust,
 		);
 	}
 

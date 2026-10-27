@@ -79,10 +79,7 @@ test("shows Nanocoder's own message when it refuses the folder", async t => {
 	const error = await failure(root, {homeDir: path.dirname(root)});
 	const folder = `~${path.sep}${path.basename(root)}`;
 	t.is(error.code, 'AGENT_UNAVAILABLE');
-	t.is(
-		error.message,
-		`Directory ${folder} is not trusted. Pass --trust-directory to bypass the disclaimer for this run only, or set NANOCODER_TRUST_DIRECTORY=1 to trust this directory permanently.`,
-	);
+	t.is(error.message, `Directory ${folder} is not trusted.`);
 	t.deepEqual(error.trust, {
 		reason: 'not-trusted',
 		summary: `Directory ${folder} is not trusted.`,

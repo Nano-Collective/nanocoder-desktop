@@ -28,10 +28,10 @@ import {
 
 const DEFAULT_MODE: NanocoderMode = 'normal';
 
-const TRUST_QUESTIONS: Record<TrustReason, string> = {
+const TRUST_TITLES: Record<TrustReason, string> = {
 	'not-trusted': 'Trust this folder?',
-	changed: 'This folder changed since you trusted it. Trust it again?',
-	'needs-re-approval': 'Nanocoder was updated. Approve this folder again?',
+	changed: 'Trust this changed folder?',
+	'needs-re-approval': 'Approve this folder again?',
 };
 
 let runtime: Promise<Resolution> | undefined;
@@ -68,9 +68,10 @@ async function chooseProjectRoot(): Promise<string | undefined> {
 async function confirmTrust(refusal: TrustRefusal): Promise<boolean> {
 	const options: MessageBoxOptions = {
 		type: 'question',
-		title: 'Trust this folder?',
-		message: TRUST_QUESTIONS[refusal.reason],
-		detail: `Nanocoder: ${refusal.summary}\n\nTrusting it lets Nanocoder load this folder's own configuration, hooks, MCP servers and plugins, which can run code on this computer.`,
+		title: TRUST_TITLES[refusal.reason],
+		message: refusal.summary,
+		detail:
+			"Trusting it lets Nanocoder load this folder's own configuration, hooks, MCP servers and plugins, which can run code on this computer.",
 		buttons: ['Trust folder', 'Cancel'],
 		defaultId: 1,
 		cancelId: 1,

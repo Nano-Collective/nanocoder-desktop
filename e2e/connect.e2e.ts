@@ -115,13 +115,15 @@ test("asks with Nanocoder's reason, and shows its message when the user says no"
 	const [prompt] = await trustPrompts();
 	expect(prompt.title).toBe('Trust this folder?');
 	// The home folder is redacted to ~, and on Windows the temp folder sits inside it.
-	expect(prompt.detail).toMatch(/^Nanocoder: Directory /);
-	expect(prompt.detail).toContain(
+	expect(prompt.message).toMatch(/^Directory /);
+	expect(prompt.message).toContain(
 		`${path.sep}${path.basename(root)} is not trusted.`,
 	);
 	const alert = page.getByRole('alert');
 	await expect(alert).toContainText('Not opened. Directory');
-	await expect(alert).toContainText('Pass --trust-directory');
+	await expect(alert).toContainText('is not trusted.');
+	await expect(alert).not.toContainText('--trust-directory');
+	await expect(alert).not.toContainText('NANOCODER_TRUST_DIRECTORY');
 	expect(existsSync(path.join(root, '.fake-trusted'))).toBe(false);
 });
 

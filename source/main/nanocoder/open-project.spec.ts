@@ -71,7 +71,7 @@ test('leaves the folder untrusted when the user says no', async t => {
 	t.is(asked.length, 1);
 	t.is(opened.status, 'untrusted');
 	if (opened.status === 'untrusted') {
-		t.regex(opened.message, /^Directory .+ is not trusted\. /);
+		t.regex(opened.message, /^Directory .+ is not trusted\.$/);
 	}
 	t.false(existsSync(path.join(root, '.fake-trusted')));
 });
