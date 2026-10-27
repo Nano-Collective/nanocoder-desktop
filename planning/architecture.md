@@ -195,7 +195,13 @@ sequenceDiagram
     S->>N: spawn [runtime, entry, "--acp", ...flags], cwd = canonical root
     alt Directory not trusted by Nanocoder
         N-->>S: stderr message, exit 1
-        S-->>R: AGENT_UNAVAILABLE with Nanocoder's trust message
+        S->>U: Native trust prompt with Nanocoder's reason (DEC-30)
+        alt User trusts the folder
+            S->>N: Trust launch: NANOCODER_TRUST_DIRECTORY=1, stdin closed
+            S->>N: spawn again without it, then initialize
+        else User declines
+            S-->>R: Not opened, with Nanocoder's message
+        end
     else Started
         S->>N: initialize(protocolVersion, clientCapabilities: fs.readTextFile only)
         N-->>S: protocolVersion, agentCapabilities, agentInfo.version

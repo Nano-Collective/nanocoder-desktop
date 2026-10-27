@@ -1,4 +1,3 @@
-import type {ChildProcess} from 'node:child_process';
 import {
 	type ClientCapabilities,
 	client,
@@ -7,13 +6,19 @@ import {
 	PROTOCOL_VERSION,
 } from '@agentclientprotocol/sdk';
 import {describeAgent} from '@/main/nanocoder/capabilities';
-import {launchNanocoder} from '@/main/nanocoder/launch';
+import {type Exit, launchNanocoder, waitForExit} from '@/main/nanocoder/launch';
 import {
 	ProtocolViolation,
 	protocolStream,
 } from '@/main/nanocoder/protocol-stream';
 import {StderrRing} from '@/main/nanocoder/stderr-ring';
-import type {ConnectedAgent, NanocoderRuntime} from '@/shared/ipc';
+import {type TrustRefusal, trustRefusal} from '@/main/nanocoder/trust';
+import type {
+	ConnectedAgent,
+	NanocoderMode,
+	NanocoderRuntime,
+	SessionInfo,
+} from '@/shared/ipc';
 
 const INITIALIZE_TIMEOUT_MS = 60_000;
 const SHUTDOWN_GRACE_MS = 5_000;
@@ -25,15 +30,11 @@ const CLIENT_CAPABILITIES: ClientCapabilities = {
 	terminal: false,
 };
 
-export interface Exit {
-	code: number | null;
-	signal: NodeJS.Signals | null;
-}
-
-export class ConnectFailure extends Error {
+export class NanocoderFailure extends Error {
 	constructor(
 		readonly code: 'AGENT_UNAVAILABLE' | 'UNSUPPORTED',
 		message: string,
+		readonly trust?: TrustRefusal,
 	) {
 		super(message);
 	}
@@ -43,6 +44,7 @@ export interface NanocoderConnection {
 	readonly agent: ConnectedAgent;
 	readonly stderr: StderrRing;
 	readonly exited: Promise<Exit>;
+	newSession(mode: NanocoderMode): Promise<SessionInfo>;
 	close(): Promise<void>;
 }
 
@@ -55,20 +57,7 @@ export interface ConnectOptions {
 	initializeTimeoutMs?: number;
 }
 
-function waitForExit(child: ChildProcess): Promise<Exit> {
-	return new Promise(resolve => {
-		const done = () =>
-			resolve(
-				child.pid === undefined
-					? {code: null, signal: null}
-					: {code: child.exitCode, signal: child.signalCode},
-			);
-		child.once('close', done);
-		child.once('error', done);
-	});
-}
-
-function describeExit(exit: Exit): string {
+export function describeExit(exit: Exit): string {
 	if (exit.signal) {
 		return `Nanocoder stopped before it was ready (signal ${exit.signal})`;
 	}
@@ -139,29 +128,74 @@ export async function connectNanocoder(
 		await close();
 		stderr.flush();
 		const exit = await exited;
-		let message: string;
 		if (violated) {
-			message = new ProtocolViolation().message;
-		} else if (timedOut) {
-			message = `Nanocoder did not answer within ${timeoutMs / 1000} seconds`;
-		} else {
-			message = nanocoderMessage(stderr.lines()) ?? describeExit(exit);
+			throw new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				new ProtocolViolation().message,
+			);
 		}
-		throw new ConnectFailure('AGENT_UNAVAILABLE', message);
+		if (timedOut) {
+			throw new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				`Nanocoder did not answer within ${timeoutMs / 1000} seconds`,
+			);
+		}
+		const own = nanocoderMessage(stderr.lines());
+		const trust = own === undefined ? undefined : trustRefusal(own);
+		// Nanocoder's advice to pass --trust-directory does not apply here: the desktop records trust itself.
+		throw new NanocoderFailure(
+			'AGENT_UNAVAILABLE',
+			trust?.summary ?? own ?? describeExit(exit),
+			trust,
+		);
 	}
 
 	if (response.protocolVersion !== PROTOCOL_VERSION) {
 		await close();
-		throw new ConnectFailure(
+		throw new NanocoderFailure(
 			'UNSUPPORTED',
 			`Nanocoder uses ACP protocol version ${response.protocolVersion}; this app supports version ${PROTOCOL_VERSION}`,
 		);
 	}
 
-	return {
-		agent: describeAgent(options.root, response),
-		stderr,
-		exited,
-		close,
+	const agent = describeAgent(options.root, response);
+
+	// The session is handed out only once its mode is set, so nothing can prompt it before (DEC-31).
+	const newSession = async (mode: NanocoderMode): Promise<SessionInfo> => {
+		const created = await connection.agent
+			.request(methods.agent.session.new, {cwd: options.root, mcpServers: []})
+			.catch(() => {
+				throw new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'Nanocoder could not start a session',
+				);
+			});
+		const sessionId = created.sessionId;
+		try {
+			if (!created.modes?.availableModes.some(({id}) => id === mode)) {
+				throw new NanocoderFailure(
+					'UNSUPPORTED',
+					`Nanocoder does not offer the ${mode} mode`,
+				);
+			}
+			await connection.agent
+				.request(methods.agent.session.setMode, {sessionId, modeId: mode})
+				.catch(() => {
+					throw new NanocoderFailure(
+						'AGENT_UNAVAILABLE',
+						`Nanocoder did not set the ${mode} mode`,
+					);
+				});
+		} catch (error) {
+			if (agent.capabilities.sessions.close) {
+				await connection.agent
+					.request(methods.agent.session.close, {sessionId})
+					.catch(() => undefined);
+			}
+			throw error;
+		}
+		return {id: sessionId, mode};
 	};
+
+	return {agent, stderr, exited, newSession, close};
 }

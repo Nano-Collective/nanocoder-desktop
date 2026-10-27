@@ -18,7 +18,7 @@ Each roadmap phase has a "Build" checklist and a "Results we want" checklist. A 
 
 ## Development setup
 
-The scaffold (roadmap phases S.1 to S.5) is in place, and the technical gate has started: the app can open a project folder, start Nanocoder there over ACP and show what it offers. Features arrive from Milestone 1.
+The scaffold (roadmap phases S.1 to S.5) is in place, and the technical gate has started: the app can open a project folder, ask before trusting it, start Nanocoder there over ACP and open a session in `normal` mode. Features arrive from Milestone 1.
 
 ### Prerequisites
 

@@ -18,6 +18,36 @@ test('drops variables that change how Node loads code or what is trusted', t => 
 	);
 });
 
+test('sets the trust variable only on the trust launch', async t => {
+	const dir = realpathSync.native(
+		mkdtempSync(path.join(tmpdir(), 'nd-launch-')),
+	);
+	const cli = path.join(dir, 'cli.js');
+	writeFileSync(
+		cli,
+		'process.stdout.write(process.env.NANOCODER_TRUST_DIRECTORY ?? "unset");',
+	);
+	const run = async (child: ReturnType<typeof launchNanocoder>) => {
+		let stdout = '';
+		child.stdout.on('data', chunk => {
+			stdout += chunk;
+		});
+		await new Promise(resolve => child.on('close', resolve));
+		return stdout;
+	};
+	const runtime = {nodePath: process.execPath, cliPath: cli};
+	const inherited = {...process.env, NANOCODER_TRUST_DIRECTORY: '1'};
+
+	const normal = await run(launchNanocoder(runtime, [], dir, inherited));
+	const trusted = await run(
+		launchNanocoder(runtime, [], dir, process.env, {trustDirectory: true}),
+	);
+	rmSync(dir, {recursive: true, force: true});
+
+	t.is(normal, 'unset');
+	t.is(trusted, '1');
+});
+
 test('passes arguments literally, with no shell', async t => {
 	const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'nd-launch-')));
 	const cli = path.join(dir, 'cli.js');

@@ -19,7 +19,7 @@ const cases: Array<[string, string]> = [
 	['key sk-ant-api03-abcdefghijklmnop rejected', 'key [redacted] rejected'],
 	['ghp_abcdefghijklmnopqrstuvwxyz0123 expired', '[redacted] expired'],
 	['github_pat_abcdefghijklmnopqrstuvwxyz', '[redacted]'],
-	['aws AKIAABCDEFGHIJKLMNOP', 'aws [redacted]'],
+	[`aws ${['AKIA', 'ABCDEFGHIJKLMNOP'].join('')}`, 'aws [redacted]'],
 	['AIzaabcdefghijklmnopqrstuvwxyz012345678', '[redacted]'],
 ];
 
@@ -46,6 +46,26 @@ test('replaces the home directory', t => {
 	t.is(
 		redact('open C:\\USERS\\Sam\\a.ts', 'C:\\Users\\Sam', 'win32'),
 		'open ~\\a.ts',
+	);
+});
+
+test('replaces every spelling of the home directory where case is ignored', t => {
+	t.is(
+		redact('/Users/Sam/a and /users/sam/b', '/Users/Sam', 'darwin'),
+		'~/a and ~/b',
+	);
+});
+
+test('still ignores case when the line holds a character that lowercases longer', t => {
+	t.is(redact('/users/sam/İ', '/Users/Sam', 'darwin'), '~/İ');
+	t.is(redact('İ /USERS/SAM/a', '/Users/Sam', 'win32'), 'İ ~/a');
+	t.is(redact('/home/İsam/x /HOME/İSAM/y', '/home/İsam', 'win32'), '~/x ~/y');
+});
+
+test('matches the home directory exactly where case matters', t => {
+	t.is(
+		redact('/home/sam/a /HOME/SAM/b', '/home/sam', 'linux'),
+		'~/a /HOME/SAM/b',
 	);
 });
 

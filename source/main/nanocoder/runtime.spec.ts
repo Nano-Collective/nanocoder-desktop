@@ -154,7 +154,13 @@ test('refuses a nanocoder inside the project folder', async t => {
 
 test('refuses a Node.js inside the project folder', async t => {
 	const project = tempDir();
-	makeFile(path.join(project, 'bin', 'node'));
+	makeFile(
+		path.join(
+			project,
+			'bin',
+			process.platform === 'win32' ? 'node.exe' : 'node',
+		),
+	);
 
 	const result = await resolveNanocoder({
 		env: {
@@ -166,6 +172,57 @@ test('refuses a Node.js inside the project folder', async t => {
 		readNodeVersion: v22,
 	});
 
+	t.false(result.ok);
+	if (!result.ok) t.is(result.code, 'DENIED');
+});
+
+const resolveCli = (cli: string) =>
+	resolveNanocoder({
+		env: {NANOCODER_DESKTOP_CLI: cli},
+		platform: process.platform,
+		untrustedRoots: [],
+		readNodeVersion: v22,
+	});
+
+test('finds no cli for a path that does not exist', async t => {
+	const missing = path.join(tempDir(), 'dist', 'cli.js');
+	const result = await resolveCli(missing);
+	t.false(result.ok);
+	if (!result.ok) t.is(result.code, 'NOT_FOUND');
+	t.is(cliFromShim(path.join(tempDir(), 'no-such-shim')), undefined);
+});
+
+test('finds no cli when a wrapper points at a file that is missing', async t => {
+	const dir = tempDir();
+	const shim = makeFile(
+		path.join(dir, 'nanocoder'),
+		'exec node "$basedir/../lib/node_modules/@nanocollective/nanocoder/dist/cli.js" "$@"',
+	);
+	const result = await resolveCli(shim);
+	t.false(result.ok);
+	if (!result.ok) t.is(result.code, 'NOT_FOUND');
+});
+
+test('rejects a package with no package.json beside it', async t => {
+	const dir = tempDir();
+	const cli = makeFile(path.join(dir, 'dist', 'cli.js'));
+	const result = await resolveCli(cli);
+	t.false(result.ok);
+	if (!result.ok) t.is(result.code, 'DENIED');
+});
+
+test('rejects a package whose bin is not the cli', async t => {
+	const dir = tempDir();
+	const cli = makePackage(dir);
+	writeFileSync(
+		path.join(dir, 'package.json'),
+		JSON.stringify({
+			name: '@nanocollective/nanocoder',
+			version: '1.31.0',
+			bin: {nanocoder: 'dist/other.js'},
+		}),
+	);
+	const result = await resolveCli(cli);
 	t.false(result.ok);
 	if (!result.ok) t.is(result.code, 'DENIED');
 });

@@ -78,9 +78,7 @@ jobs:
       - id: tests
         shell: bash
         run: |
-          shopt -s globstar nullglob
-          files=(source/**/*.acp.ts)
-          if [ ${#files[@]} -gt 0 ]; then echo "found=true" >> "$GITHUB_OUTPUT"; else echo "found=false" >> "$GITHUB_OUTPUT"; fi
+          if [ -n "$(git ls-files 'source/*.acp.ts')" ]; then echo "found=true" >> "$GITHUB_OUTPUT"; else echo "found=false" >> "$GITHUB_OUTPUT"; fi
 
       - if: steps.tests.outputs.found == 'true'
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
@@ -94,7 +92,8 @@ jobs:
       - if: steps.tests.outputs.found == 'true'
         run: pnpm install --frozen-lockfile
 
-      - if: steps.tests.outputs.found == 'true'
+      # Not on Windows: pnpm's node_modules links do not survive a cache restore there.
+      - if: steps.tests.outputs.found == 'true' && runner.os != 'Windows'
         id: nanocoder-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:

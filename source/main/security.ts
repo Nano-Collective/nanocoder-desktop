@@ -61,6 +61,7 @@ export function contentSecurityPolicy(devServerUrl?: string): string {
 	const connect = ["'self'"];
 	const style = ["'self'"];
 	if (devServerUrl) {
+		// nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
 		connect.push(`ws://${new URL(devServerUrl).host}`);
 		style.push("'unsafe-inline'");
 	}

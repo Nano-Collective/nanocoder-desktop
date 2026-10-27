@@ -1,22 +1,38 @@
 import {realpath} from 'node:fs/promises';
 import {homedir} from 'node:os';
-import {app, BrowserWindow, dialog, type OpenDialogOptions} from 'electron';
+import {
+	app,
+	BrowserWindow,
+	dialog,
+	type MessageBoxOptions,
+	type OpenDialogOptions,
+} from 'electron';
 import {z} from 'zod';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
 import {
-	ConnectFailure,
-	connectNanocoder,
 	type NanocoderConnection,
+	NanocoderFailure,
 } from '@/main/nanocoder/acp-client';
+import {openProject} from '@/main/nanocoder/open-project';
 import {type Resolution, resolveNanocoder} from '@/main/nanocoder/runtime';
+import type {TrustReason, TrustRefusal} from '@/main/nanocoder/trust';
 import {APP_NAME} from '@/shared/app-info';
 import {
 	type AppInfo,
 	CHANNELS,
-	type ConnectedAgent,
+	type ConnectResult,
+	type NanocoderMode,
 	type NanocoderRuntime,
 } from '@/shared/ipc';
+
+const DEFAULT_MODE: NanocoderMode = 'normal';
+
+const TRUST_TITLES: Record<TrustReason, string> = {
+	'not-trusted': 'Trust this folder?',
+	changed: 'Trust this changed folder?',
+	'needs-re-approval': 'Approve this folder again?',
+};
 
 let runtime: Promise<Resolution> | undefined;
 let connection: NanocoderConnection | undefined;
@@ -48,18 +64,38 @@ async function chooseProjectRoot(): Promise<string | undefined> {
 	return picked.canceled || !folder ? undefined : realpath(folder);
 }
 
-async function connect(): Promise<ConnectedAgent | null> {
+// A native dialog in main, so the renderer can never grant trust on the user's behalf.
+async function confirmTrust(refusal: TrustRefusal): Promise<boolean> {
+	const options: MessageBoxOptions = {
+		type: 'question',
+		title: TRUST_TITLES[refusal.reason],
+		message: refusal.summary,
+		detail:
+			"Trusting it lets Nanocoder load this folder's own configuration, hooks, MCP servers and plugins, which can run code on this computer.",
+		buttons: ['Trust folder', 'Cancel'],
+		defaultId: 1,
+		cancelId: 1,
+		noLink: true,
+	};
+	const window = BrowserWindow.getFocusedWindow();
+	const {response} = window
+		? await dialog.showMessageBox(window, options)
+		: await dialog.showMessageBox(options);
+	return response === 0;
+}
+
+async function connect(): Promise<ConnectResult> {
 	if (connecting) {
 		throw new IpcFailure('BUSY', 'Already connecting to Nanocoder', true);
 	}
 	connecting = true;
 	try {
 		const root = await chooseProjectRoot();
-		if (!root) return null;
+		if (!root) return {status: 'cancelled'};
 		const resolved = await nanocoderRuntime();
 		await connection?.close();
 		connection = undefined;
-		const next = await connectNanocoder({
+		const outcome = await openProject({
 			runtime: resolved,
 			root,
 			clientInfo: {
@@ -68,8 +104,10 @@ async function connect(): Promise<ConnectedAgent | null> {
 				version: app.getVersion(),
 			},
 			homeDir: homedir(),
+			mode: DEFAULT_MODE,
+			confirmTrust,
 		}).catch((error: unknown) => {
-			if (error instanceof ConnectFailure) {
+			if (error instanceof NanocoderFailure) {
 				throw new IpcFailure(
 					error.code,
 					error.message,
@@ -78,11 +116,13 @@ async function connect(): Promise<ConnectedAgent | null> {
 			}
 			throw error;
 		});
+		if (outcome.status === 'untrusted') return outcome;
+		const next = outcome.connection;
 		connection = next;
 		void next.exited.then(() => {
 			if (connection === next) connection = undefined;
 		});
-		return next.agent;
+		return {status: 'connected', agent: next.agent, session: outcome.session};
 	} finally {
 		connecting = false;
 	}

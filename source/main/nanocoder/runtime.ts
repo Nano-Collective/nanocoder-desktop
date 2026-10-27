@@ -119,11 +119,12 @@ export function isInside(
 ): boolean {
 	const fold = (p: string) =>
 		platform === 'win32' || platform === 'darwin' ? p.toLowerCase() : p;
+	const flavour = platform === 'win32' ? path.win32 : path.posix;
 	return roots.some(root => {
-		const relative = path.relative(fold(root), fold(child));
+		const relative = flavour.relative(fold(root), fold(child));
 		return (
 			relative === '' ||
-			(!relative.startsWith('..') && !path.isAbsolute(relative))
+			(!relative.startsWith('..') && !flavour.isAbsolute(relative))
 		);
 	});
 }

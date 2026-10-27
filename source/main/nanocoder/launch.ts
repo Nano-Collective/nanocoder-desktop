@@ -1,4 +1,8 @@
-import {type ChildProcessByStdio, spawn} from 'node:child_process';
+import {
+	type ChildProcess,
+	type ChildProcessByStdio,
+	spawn,
+} from 'node:child_process';
 import type {Readable, Writable} from 'node:stream';
 import type {NanocoderRuntime} from '@/shared/ipc';
 
@@ -8,6 +12,11 @@ const BLOCKED_ENV = new Set([
 	// Set only by the trust launch (DEC-30), never inherited from a shell.
 	'NANOCODER_TRUST_DIRECTORY',
 ]);
+
+export interface Exit {
+	code: number | null;
+	signal: NodeJS.Signals | null;
+}
 
 export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	return Object.fromEntries(
@@ -20,12 +29,27 @@ export function launchNanocoder(
 	args: readonly string[],
 	cwd: string,
 	env: NodeJS.ProcessEnv = process.env,
+	{trustDirectory = false}: {trustDirectory?: boolean} = {},
 ): ChildProcessByStdio<Writable, Readable, Readable> {
+	const clean = childEnv(env);
 	return spawn(runtime.nodePath, [runtime.cliPath, ...args], {
 		cwd,
-		env: childEnv(env),
+		env: trustDirectory ? {...clean, NANOCODER_TRUST_DIRECTORY: '1'} : clean,
 		shell: false,
 		windowsHide: true,
 		stdio: ['pipe', 'pipe', 'pipe'],
+	});
+}
+
+export function waitForExit(child: ChildProcess): Promise<Exit> {
+	return new Promise(resolve => {
+		const done = () =>
+			resolve(
+				child.pid === undefined
+					? {code: null, signal: null}
+					: {code: child.exitCode, signal: child.signalCode},
+			);
+		child.once('close', done);
+		child.once('error', done);
 	});
 }

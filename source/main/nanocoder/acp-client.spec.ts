@@ -1,54 +1,46 @@
-import {mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:fs';
-import {tmpdir} from 'node:os';
 import path from 'node:path';
 import test from 'ava';
 import {
-	ConnectFailure,
 	type ConnectOptions,
 	connectNanocoder,
+	describeExit,
+	NanocoderFailure,
 	nanocoderMessage,
 } from '@/main/nanocoder/acp-client';
-
-const fakeNanocoder = path.join(
-	import.meta.dirname,
-	'fixtures',
-	'fake-nanocoder.mjs',
-);
-const folders: string[] = [];
-
-function folder(mode?: string): string {
-	const dir = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-acp-')));
-	folders.push(dir);
-	if (mode) writeFileSync(path.join(dir, '.fake-nanocoder'), mode);
-	return dir;
-}
+import {
+	fakeEvents,
+	fakeProject,
+	fakeRuntime,
+	removeFakeProjects,
+} from '@/main/nanocoder/fixtures/fake-project';
 
 function connect(root: string, options: Partial<ConnectOptions> = {}) {
 	return connectNanocoder({
-		runtime: {nodePath: process.execPath, cliPath: fakeNanocoder},
+		runtime: fakeRuntime,
 		root,
 		clientInfo: {name: 'nanocoder-desktop', version: '0.0.0-test'},
 		...options,
 	});
 }
 
-async function failure(root: string, options?: Partial<ConnectOptions>) {
-	const error = await connect(root, options).then(
+async function rejection(promise: Promise<unknown>) {
+	const error = await promise.then(
 		() => undefined,
 		(error: unknown) => error,
 	);
-	if (!(error instanceof ConnectFailure)) {
-		throw new Error(`Expected a ConnectFailure, got ${String(error)}`);
+	if (!(error instanceof NanocoderFailure)) {
+		throw new Error(`Expected a NanocoderFailure, got ${String(error)}`);
 	}
 	return error;
 }
 
-test.after.always(() => {
-	for (const dir of folders) rmSync(dir, {recursive: true, force: true});
-});
+const failure = (root: string, options?: Partial<ConnectOptions>) =>
+	rejection(connect(root, options));
+
+test.after.always(removeFakeProjects);
 
 test('records the protocol version, agent version and capabilities', async t => {
-	const root = folder();
+	const root = fakeProject();
 	const connection = await connect(root);
 	t.deepEqual(connection.agent, {
 		root,
@@ -67,10 +59,12 @@ test('records the protocol version, agent version and capabilities', async t => 
 });
 
 test('starts Nanocoder in the project root with read-only capabilities', async t => {
-	const connection = await connect(folder('echo'));
+	const connection = await connect(fakeProject());
 	await connection.close();
-	const params = JSON.parse(connection.stderr.lines()[0]);
-	t.deepEqual(params, {
+	const initialize = fakeEvents(connection.stderr.lines()).find(
+		event => event.method === 'initialize',
+	);
+	t.deepEqual(initialize?.params, {
 		protocolVersion: 1,
 		clientCapabilities: {
 			fs: {readTextFile: true, writeTextFile: false},
@@ -81,37 +75,45 @@ test('starts Nanocoder in the project root with read-only capabilities', async t
 });
 
 test("shows Nanocoder's own message when it refuses the folder", async t => {
-	const root = folder('refuse');
+	const root = fakeProject('refuse');
 	const error = await failure(root, {homeDir: path.dirname(root)});
+	const folder = `~${path.sep}${path.basename(root)}`;
 	t.is(error.code, 'AGENT_UNAVAILABLE');
-	t.is(
-		error.message,
-		`Directory ~${path.sep}${path.basename(root)} is not trusted. Pass --trust-directory to bypass the disclaimer for this run only, or set NANOCODER_TRUST_DIRECTORY=1 to trust this directory permanently.`,
-	);
+	t.is(error.message, `Directory ${folder} is not trusted.`);
+	t.deepEqual(error.trust, {
+		reason: 'not-trusted',
+		summary: `Directory ${folder} is not trusted.`,
+	});
+});
+
+test('tells a changed folder apart from an untrusted one', async t => {
+	const error = await failure(fakeProject('changed'));
+	t.is(error.trust?.reason, 'changed');
 });
 
 test('redacts secrets in the message', async t => {
-	const error = await failure(folder('leak'));
+	const error = await failure(fakeProject('leak'));
 	t.is(error.message, 'ACP initialization failed: Authorization: [redacted]');
+	t.is(error.trust, undefined);
 });
 
 test('falls back to the exit code when Nanocoder leaves no message', async t => {
-	const error = await failure(folder('crash'));
+	const error = await failure(fakeProject('crash'));
 	t.is(error.message, 'Nanocoder stopped before it was ready (exit code 3)');
 });
 
 test('reports a runtime that cannot start', async t => {
-	const error = await failure(folder(), {
+	const error = await failure(fakeProject(), {
 		runtime: {
-			nodePath: path.join(tmpdir(), 'no-such-node'),
-			cliPath: fakeNanocoder,
+			...fakeRuntime,
+			nodePath: path.join(path.dirname(fakeRuntime.cliPath), 'no-such-node'),
 		},
 	});
 	t.is(error.message, 'Nanocoder could not start');
 });
 
 test('ends the connection when stdout carries anything but ACP', async t => {
-	const error = await failure(folder('garbage'));
+	const error = await failure(fakeProject('garbage'));
 	t.is(
 		error.message,
 		'Nanocoder wrote something other than ACP to standard output',
@@ -119,7 +121,7 @@ test('ends the connection when stdout carries anything but ACP', async t => {
 });
 
 test('refuses another ACP protocol version', async t => {
-	const error = await failure(folder('future'));
+	const error = await failure(fakeProject('future'));
 	t.is(error.code, 'UNSUPPORTED');
 	t.is(
 		error.message,
@@ -128,8 +130,69 @@ test('refuses another ACP protocol version', async t => {
 });
 
 test('gives up when Nanocoder does not answer', async t => {
-	const error = await failure(folder('silent'), {initializeTimeoutMs: 200});
+	const error = await failure(fakeProject('silent'), {
+		initializeTimeoutMs: 200,
+	});
 	t.is(error.message, 'Nanocoder did not answer within 0.2 seconds');
+});
+
+test('opens a session at the project root and sets its mode before handing it out', async t => {
+	const root = fakeProject();
+	const connection = await connect(root);
+	const session = await connection.newSession('normal');
+	await connection.close();
+	t.deepEqual(session, {id: 'fake-session', mode: 'normal'});
+	const requests = fakeEvents(connection.stderr.lines()).filter(
+		event => event.method,
+	);
+	t.deepEqual(
+		requests.map(event => event.method),
+		['initialize', 'session/new', 'session/set_mode'],
+	);
+	t.like(requests[1].params, {cwd: root, mcpServers: []});
+	t.deepEqual(requests[2].params, {
+		sessionId: 'fake-session',
+		modeId: 'normal',
+	});
+});
+
+test('never sends a mode Nanocoder does not offer', async t => {
+	const connection = await connect(fakeProject('no-normal'));
+	const error = await rejection(connection.newSession('normal'));
+	await connection.close();
+	t.is(error.code, 'UNSUPPORTED');
+	t.is(error.message, 'Nanocoder does not offer the normal mode');
+	const methods = fakeEvents(connection.stderr.lines()).map(e => e.method);
+	t.false(methods.includes('session/set_mode'));
+	t.true(methods.includes('session/close'));
+});
+
+test('closes the session when its mode cannot be set', async t => {
+	const connection = await connect(fakeProject('mode-fails'));
+	const error = await rejection(connection.newSession('normal'));
+	await connection.close();
+	t.is(error.message, 'Nanocoder did not set the normal mode');
+	const methods = fakeEvents(connection.stderr.lines()).map(e => e.method);
+	t.true(methods.includes('session/close'));
+});
+
+test('reports a session Nanocoder could not start', async t => {
+	const connection = await connect(fakeProject('no-session'));
+	const error = await rejection(connection.newSession('normal'));
+	await connection.close();
+	t.is(error.message, 'Nanocoder could not start a session');
+});
+
+test('describes how Nanocoder stopped', t => {
+	t.is(
+		describeExit({code: null, signal: 'SIGKILL'}),
+		'Nanocoder stopped before it was ready (signal SIGKILL)',
+	);
+	t.is(
+		describeExit({code: 2, signal: null}),
+		'Nanocoder stopped before it was ready (exit code 2)',
+	);
+	t.is(describeExit({code: null, signal: null}), 'Nanocoder could not start');
 });
 
 test("picks Nanocoder's own line out of other stderr output", t => {
