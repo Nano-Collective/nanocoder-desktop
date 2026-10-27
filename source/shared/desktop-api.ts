@@ -1,6 +1,6 @@
 import type {
 	AppInfo,
-	ConnectedAgent,
+	ConnectResult,
 	IpcResult,
 	NanocoderRuntime,
 } from '@/shared/ipc';
@@ -8,5 +8,5 @@ import type {
 export interface DesktopApi {
 	getAppInfo(): Promise<IpcResult<AppInfo>>;
 	getNanocoderRuntime(): Promise<IpcResult<NanocoderRuntime>>;
-	connectNanocoder(): Promise<IpcResult<ConnectedAgent | null>>;
+	connectNanocoder(): Promise<IpcResult<ConnectResult>>;
 }

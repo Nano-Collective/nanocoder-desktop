@@ -2,13 +2,21 @@ import {useEffect, useState} from 'react';
 import type {
 	AppInfo,
 	ConnectedAgent,
+	ConnectResult,
 	IpcResult,
 	NanocoderRuntime,
+	SessionInfo,
 } from '@/shared/ipc';
 
 const yesNo = (value: boolean) => (value ? 'yes' : 'no');
 
-function AgentDetails({agent}: {agent: ConnectedAgent}) {
+function AgentDetails({
+	agent,
+	session,
+}: {
+	agent: ConnectedAgent;
+	session: SessionInfo;
+}) {
 	const {capabilities} = agent;
 	return (
 		<section aria-label="Connected agent">
@@ -16,6 +24,9 @@ function AgentDetails({agent}: {agent: ConnectedAgent}) {
 				Connected to {agent.name ?? 'an unnamed agent'}{' '}
 				{agent.version ?? '(no version)'} over ACP protocol version{' '}
 				{agent.protocolVersion} in {agent.root}
+			</p>
+			<p>
+				Session {session.id} in {session.mode} mode
 			</p>
 			<dl>
 				<dt>Resume sessions</dt>
@@ -39,9 +50,7 @@ export function App() {
 		null,
 	);
 	const [connecting, setConnecting] = useState(false);
-	const [agent, setAgent] = useState<IpcResult<ConnectedAgent | null> | null>(
-		null,
-	);
+	const [opened, setOpened] = useState<IpcResult<ConnectResult> | null>(null);
 
 	useEffect(() => {
 		void window.desktop.getAppInfo().then(result => {
@@ -56,10 +65,12 @@ export function App() {
 		setConnecting(true);
 		const result = await window.desktop.connectNanocoder();
 		setConnecting(false);
-		if (!result.ok || result.value) {
-			setAgent(result);
+		if (!result.ok || result.value.status !== 'cancelled') {
+			setOpened(result);
 		}
 	};
+
+	const outcome = opened?.ok ? opened.value : null;
 
 	return (
 		<main>
@@ -77,8 +88,13 @@ export function App() {
 					{connecting ? 'Starting Nanocoder' : 'Open a project folder'}
 				</button>
 			)}
-			{agent?.ok && agent.value && <AgentDetails agent={agent.value} />}
-			{agent && !agent.ok && <p role="alert">{agent.error.message}</p>}
+			{outcome?.status === 'connected' && (
+				<AgentDetails agent={outcome.agent} session={outcome.session} />
+			)}
+			{outcome?.status === 'untrusted' && (
+				<p role="alert">Not opened. {outcome.message}</p>
+			)}
+			{opened && !opened.ok && <p role="alert">{opened.error.message}</p>}
 		</main>
 	);
 }

@@ -200,20 +200,20 @@ Published Nanocoder 1.31.0 lacks `session/close`, the trust check and per-sessio
 
 **Build**
 
-- [ ] Trust launch: after the user confirms, start Nanocoder once with `NANOCODER_TRUST_DIRECTORY=1` and stdin closed, then launch without it (`ACP-20`, `DEC-30`)
-- [ ] Recognise Nanocoder's trust refusals and show its reason with the prompt again, with no automatic restart (`ACP-20`, `ACP-17`)
-- [ ] A minimal trust confirmation that shows Nanocoder's reason and the folder; the full list of what will run comes in phase 1.2 (`CHAT-02`)
+- [x] Trust launch: after the user confirms, start Nanocoder once with `NANOCODER_TRUST_DIRECTORY=1` and stdin closed, then launch without it (`ACP-20`, `DEC-30`) ([`trust.spec.ts`](../source/main/nanocoder/trust.spec.ts), [`acp-client.acp.ts`](../source/main/nanocoder/acp-client.acp.ts))
+- [x] Recognise Nanocoder's trust refusals and show its reason with the prompt again, with no automatic restart (`ACP-20`, `ACP-17`) ([`open-project.spec.ts`](../source/main/nanocoder/open-project.spec.ts), [`connect.e2e.ts`](../e2e/connect.e2e.ts))
+- [x] A minimal trust confirmation that shows Nanocoder's reason and the folder; the full list of what will run comes in phase 1.2 (`CHAT-02`) ([`connect.e2e.ts`](../e2e/connect.e2e.ts))
 - [x] Raise the Nanocoder issue for a trust status command, a fingerprint-bound grant, a refusal exit code and a versioned fingerprint ([nanocoder#1899](https://github.com/Nano-Collective/nanocoder/issues/1899))
-- [ ] A minimal `session/new` at the project root, so there is a session to set the mode on (`ACP-05`)
-- [ ] Send `session/set_mode` after every `session/new`, checked against `availableModes`, and block prompts until it succeeds; G.5 calls the same step after `session/resume` (`ACP-13`, `DEC-31`)
+- [x] A minimal `session/new` at the project root, so there is a session to set the mode on (`ACP-05`) ([`acp-client.spec.ts`](../source/main/nanocoder/acp-client.spec.ts), [`acp-client.acp.ts`](../source/main/nanocoder/acp-client.acp.ts))
+- [x] Send `session/set_mode` after every `session/new`, checked against `availableModes`, and block prompts until it succeeds; G.5 calls the same step after `session/resume` (`ACP-13`, `DEC-31`) ([`acp-client.spec.ts`](../source/main/nanocoder/acp-client.spec.ts))
 - [x] Add the mode changes to [#12](https://github.com/Nano-Collective/nanocoder-desktop/issues/12): `--mode` for ACP, an error for unknown modes, the applied mode reported ([nanocoder#1900](https://github.com/Nano-Collective/nanocoder/issues/1900)); the effective approval policy waits for Milestone 3
 
 **Results we want**
 
 - [x] Both decisions recorded in [`decisions.md`](decisions.md) (`DEC-30`, `DEC-31`)
-- [ ] A changed fingerprint makes `--acp` exit with a reason the desktop shows
-- [ ] `NANOCODER_TRUST_DIRECTORY` is never in the environment of a running session
-- [ ] A session takes no prompt until `session/set_mode` succeeds, and a mode missing from `availableModes` is never sent
+- [x] A changed fingerprint makes `--acp` exit with a reason the desktop shows ([`acp-client.acp.ts`](../source/main/nanocoder/acp-client.acp.ts), run on Linux against Nanocoder `8a5f4d4` on 2026-10-27)
+- [x] `NANOCODER_TRUST_DIRECTORY` is never in the environment of a running session ([`launch.spec.ts`](../source/main/nanocoder/launch.spec.ts), [`open-project.spec.ts`](../source/main/nanocoder/open-project.spec.ts))
+- [x] A session takes no prompt until `session/set_mode` succeeds, and a mode missing from `availableModes` is never sent ([`acp-client.spec.ts`](../source/main/nanocoder/acp-client.spec.ts))
 
 The two checks that need a real turn moved to G.4 and G.5: a protected tool call producing a permission request, and plugins loading at the project root.
 

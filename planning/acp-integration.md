@@ -179,6 +179,7 @@ Known gaps until the Nanocoder changes land:
 - The trust launch loads the project config and starts its MCP servers once, with the variable set, before it sees stdin close.
 - Trust entries carry no fingerprint version, and the inputs change between Nanocoder versions. A CLI and a bundled Nanocoder on different versions each see the other's entry as changed, so the user is asked again after each switch.
 - The desktop's prompt list can drift from what Nanocoder fingerprints.
+- To learn the trust verdict, the desktop starts `nanocoder --acp`. Its imports load the project `.env` into its environment before the trust check, except protected keys such as `NANOCODER_TRUST_DIRECTORY` ([source](https://github.com/Nano-Collective/nanocoder/blob/f5d82179f5032dc4990916e22a72d02f0feb2343/source/config/index.ts#L58)); on a refusal it exits without running anything. The status command in [nanocoder#1899][nc1899] would avoid this launch.
 
 To check: in phase G.3, a changed fingerprint makes `--acp` exit with a reason the desktop can show; in G.4, which runs real turns, plugins load for a session at the project root.
 

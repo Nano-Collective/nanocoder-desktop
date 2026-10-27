@@ -29,11 +29,13 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/ipc/index.ts` | Registers the IPC handlers |
 | `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path |
 | `source/main/nanocoder/launch.ts` | Starts Nanocoder with an argument array and no shell |
-| `source/main/nanocoder/acp-client.ts` | Starts `nanocoder --acp` in the project root and sends `initialize` |
+| `source/main/nanocoder/acp-client.ts` | Starts `nanocoder --acp` in the project root, sends `initialize`, and opens sessions with their mode set |
+| `source/main/nanocoder/trust.ts` | Reads Nanocoder's trust refusals and runs the short trust launch (`DEC-30`) |
+| `source/main/nanocoder/open-project.ts` | Connects, asks before trusting a folder, then opens a session in the starting mode |
 | `source/main/nanocoder/protocol-stream.ts` | Reads stdout as ACP only; anything else ends the connection |
 | `source/main/nanocoder/stderr-ring.ts` | Bounded, redacted, in-memory ring for Nanocoder's stderr |
 | `source/main/nanocoder/capabilities.ts` | Records the version and capabilities from `initialize` |
-| `source/main/nanocoder/fixtures/fake-nanocoder.mjs` | A fake `nanocoder --acp` for unit and end-to-end tests |
+| `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp` and test helpers for unit and end-to-end tests |
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
 | `source/preload/index.ts` | The `window.desktop` bridge |
 | `e2e/*.e2e.ts` | Playwright tests against the built app |

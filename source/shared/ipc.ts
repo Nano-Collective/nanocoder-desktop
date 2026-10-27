@@ -50,3 +50,20 @@ export interface ConnectedAgent {
 	version: string | null;
 	capabilities: AgentCapabilities;
 }
+
+export type NanocoderMode =
+	| 'normal'
+	| 'auto-accept'
+	| 'yolo'
+	| 'plan'
+	| 'architect';
+
+export interface SessionInfo {
+	id: string;
+	mode: NanocoderMode;
+}
+
+export type ConnectResult =
+	| {status: 'connected'; agent: ConnectedAgent; session: SessionInfo}
+	| {status: 'untrusted'; message: string}
+	| {status: 'cancelled'};
