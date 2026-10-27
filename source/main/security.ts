@@ -14,7 +14,7 @@ function originOf(url: string): string | null {
 	}
 }
 
-export function isAllowedNavigation(
+export function isAllowedOrigin(
 	url: string,
 	allowedOrigins: readonly string[],
 ): boolean {

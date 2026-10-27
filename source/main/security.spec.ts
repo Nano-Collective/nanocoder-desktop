@@ -3,30 +3,28 @@ import test from 'ava';
 import {
 	APP_ORIGIN,
 	contentSecurityPolicy,
-	isAllowedNavigation,
+	isAllowedOrigin,
 	resolveRendererFile,
 } from '@/main/security';
 
 const root = path.resolve('/app/out/renderer');
 
 test('allows navigation within the app origin', t => {
-	t.true(isAllowedNavigation('app://renderer/index.html', [APP_ORIGIN]));
+	t.true(isAllowedOrigin('app://renderer/index.html', [APP_ORIGIN]));
 });
 
 test('refuses navigation to other origins', t => {
-	t.false(isAllowedNavigation('https://example.com/', [APP_ORIGIN]));
-	t.false(isAllowedNavigation('file:///etc/passwd', [APP_ORIGIN]));
-	t.false(isAllowedNavigation('app://other/index.html', [APP_ORIGIN]));
+	t.false(isAllowedOrigin('https://example.com/', [APP_ORIGIN]));
+	t.false(isAllowedOrigin('file:///etc/passwd', [APP_ORIGIN]));
+	t.false(isAllowedOrigin('app://other/index.html', [APP_ORIGIN]));
 });
 
 test('refuses malformed navigation targets', t => {
-	t.false(isAllowedNavigation('not a url', [APP_ORIGIN]));
+	t.false(isAllowedOrigin('not a url', [APP_ORIGIN]));
 });
 
 test('allows the development server origin when it is listed', t => {
-	t.true(
-		isAllowedNavigation('http://localhost:5173/', ['http://localhost:5173']),
-	);
+	t.true(isAllowedOrigin('http://localhost:5173/', ['http://localhost:5173']));
 });
 
 test('maps the root and files to the renderer folder', t => {

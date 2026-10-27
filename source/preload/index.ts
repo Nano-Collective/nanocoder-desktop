@@ -1,7 +1,9 @@
-import {contextBridge} from 'electron';
-import {APP_NAME} from '@/shared/app-info';
+import {contextBridge, ipcRenderer} from 'electron';
 import type {DesktopApi} from '@/shared/desktop-api';
+import {CHANNELS} from '@/shared/ipc';
 
-const api: DesktopApi = {appName: APP_NAME};
+const api: DesktopApi = {
+	getAppInfo: () => ipcRenderer.invoke(CHANNELS.getAppInfo, {}),
+};
 
 contextBridge.exposeInMainWorld('desktop', api);

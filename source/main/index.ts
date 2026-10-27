@@ -1,11 +1,12 @@
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {app, BrowserWindow, net, protocol, session} from 'electron';
+import {registerIpcHandlers} from '@/main/ipc';
 import {
 	APP_ORIGIN,
 	APP_SCHEME,
 	contentSecurityPolicy,
-	isAllowedNavigation,
+	isAllowedOrigin,
 	resolveRendererFile,
 } from '@/main/security';
 import {APP_NAME} from '@/shared/app-info';
@@ -66,12 +67,12 @@ function lockDownSession(): void {
 app.on('web-contents-created', (_event, contents) => {
 	contents.setWindowOpenHandler(() => ({action: 'deny'}));
 	contents.on('will-navigate', (event, url) => {
-		if (!isAllowedNavigation(url, allowedOrigins)) {
+		if (!isAllowedOrigin(url, allowedOrigins)) {
 			event.preventDefault();
 		}
 	});
 	contents.on('will-redirect', (event, url) => {
-		if (!isAllowedNavigation(url, allowedOrigins)) {
+		if (!isAllowedOrigin(url, allowedOrigins)) {
 			event.preventDefault();
 		}
 	});
@@ -108,6 +109,7 @@ function createWindow(): void {
 void app.whenReady().then(() => {
 	serveRenderer();
 	lockDownSession();
+	registerIpcHandlers(allowedOrigins);
 	createWindow();
 	app.on('activate', () => {
 		if (BrowserWindow.getAllWindows().length === 0) {

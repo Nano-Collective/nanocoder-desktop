@@ -1,3 +1,5 @@
+import type {AppInfo, IpcResult} from '@/shared/ipc';
+
 export interface DesktopApi {
-	appName: string;
+	getAppInfo(): Promise<IpcResult<AppInfo>>;
 }

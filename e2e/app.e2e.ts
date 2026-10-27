@@ -18,10 +18,29 @@ test.afterAll(async () => {
 	await app.close();
 });
 
-test('shows the app shell through the preload bridge', async () => {
+test('shows the app shell, loaded over IPC', async () => {
 	await expect(page.getByRole('heading', {level: 1})).toHaveText(
 		'Nanocoder Desktop',
 	);
+});
+
+test('the preload bridge exposes typed methods only', async () => {
+	const keys = await page.evaluate(() =>
+		Object.keys((window as {desktop?: object}).desktop ?? {}),
+	);
+	expect(keys).toEqual(['getAppInfo']);
+});
+
+test('the bridge returns the standard result shape', async () => {
+	const result = await page.evaluate(() =>
+		(
+			window as {desktop?: {getAppInfo(): Promise<unknown>}}
+		).desktop?.getAppInfo(),
+	);
+	expect(result).toEqual({
+		ok: true,
+		value: {name: 'Nanocoder Desktop', version: expect.any(String)},
+	});
 });
 
 test('loads the renderer over the app protocol, not file://', async () => {
