@@ -196,14 +196,15 @@ Published Nanocoder 1.31.0 lacks `session/close`, the trust check and per-sessio
 
 ### Phase G.3: settle trust and starting mode
 
-Needs `OQ-15` answered. `OQ-14` has a proposal, `DEC-30` ([Directory trust](acp-integration.md#directory-trust)).
+`OQ-14` and `OQ-15` have proposals: `DEC-30` ([Directory trust](acp-integration.md#directory-trust)) and `DEC-31` ([Session mode](acp-integration.md#session-mode)).
 
 **Build**
 
 - [ ] Trust launch: after the user confirms, start Nanocoder once with `NANOCODER_TRUST_DIRECTORY=1` and stdin closed, then launch without it (`ACP-20`, `DEC-30`)
 - [ ] Recognise Nanocoder's trust refusals and show its reason with the prompt again, with no automatic restart (`ACP-20`, `ACP-17`)
 - [ ] Raise the Nanocoder issue for a trust status command, a fingerprint-bound grant, a refusal exit code and a versioned fingerprint
-- [ ] Set the agreed starting mode on every new session (`ACP-13`)
+- [ ] Send `session/set_mode` after every `session/new` and `session/resume`, checked against `availableModes`, and block prompts until it succeeds (`ACP-13`, `DEC-31`)
+- [ ] Add the mode changes to [#12](https://github.com/Nano-Collective/nanocoder-desktop/issues/12): `--mode` for ACP, an error for unknown modes, the applied mode reported, the effective approval policy
 
 **Results we want**
 
@@ -211,7 +212,7 @@ Needs `OQ-15` answered. `OQ-14` has a proposal, `DEC-30` ([Directory trust](acp-
 - [ ] A changed fingerprint makes `--acp` exit with a reason the desktop shows
 - [ ] Plugins load for a session at the project root
 - [ ] `NANOCODER_TRUST_DIRECTORY` is never in the environment of a running session
-- [ ] A new session reports the agreed mode, not `auto-accept` by accident
+- [ ] A protected tool call in a new session and in a resumed one produces a permission request, since Nanocoder does not report the applied mode
 
 ### Phase G.4: a real turn with approvals
 
@@ -381,7 +382,7 @@ Can run in parallel with G.4 and G.5.
 **Build**
 
 - [ ] Model and provider controls labelled as project-wide (`CHAT-10`, `ACP-14`)
-- [ ] Mode control, set between turns only (`CHAT-11`, `ACP-13`)
+- [ ] Mode control, set between turns only, with an explicit project default and a confirmation for `yolo` (`CHAT-11`, `ACP-13`, `DEC-31`)
 - [ ] One root turn per project process (`CHAT-17`)
 
 **Results we want**
@@ -682,7 +683,7 @@ Needs `DEC-15` agreed.
 **Results we want**
 
 - [ ] A form submission by the agent asks for approval first
-- [ ] Public-site control is refused in `auto-accept` and `yolo` modes
+- [ ] Public-site control is paused outside `normal` mode, with the reason shown
 - [ ] The user can take over mid-action and the agent stops
 
 ### Phase 3.10: Nanocoder's own browser and external pages

@@ -33,9 +33,10 @@ Columns in the whitepaper's diagram are Decided. Columns marked "added" are Sugg
 |---|---|---|---|
 | `project` | `id` | text, primary key | Desktop-generated UUID. |
 | | `canonical_root` | text, unique | Real path used for every security check (`SEC-03`). |
-| | `session_cwd` | text | Directory passed to ACP. Usually equal to the root. |
+| | `session_cwd` | text | Directory passed to ACP. Equal to the root in v1 (`DEC-30`). |
 | | `display_name` | text | |
 | | `trusted` | integer (boolean) | Desktop trust flag. Gates Git and watchers; Nanocoder's own store gates Nanocoder, and one prompt sets both (`CHAT-02`, `DEC-30`). |
+| | `default_mode` | text: `normal`, `auto-accept`, `plan`, `architect` | Added: the mode new threads start in, changed only on purpose. Never `yolo` (`DEC-31`). |
 | | `last_opened_at` | text (ISO 8601) | Indexed for the recent list. |
 | | `created_at` | text | Added. |
 | `thread` | `id` | text, primary key | |
@@ -46,6 +47,7 @@ Columns in the whitepaper's diagram are Decided. Columns marked "added" are Sugg
 | | `run_state` | text: the seven thread states | Last known state, so a crash is visible on next launch. |
 | | `last_activity_at` | text | Indexed with `project_id`. |
 | | `session_cwd` | text | Added: the cwd this session was created with, since Nanocoder resumes in the persisted directory. |
+| | `mode` | text | Added: the thread's mode, sent again after every resume. `yolo` is not restored (`DEC-31`). |
 | | `view_only_reason` | text, nullable | Added: why the thread is view-only. |
 | `turn_summary` | `id` | text, primary key | |
 | | `thread_id` | text, foreign key, cascade | Indexed. |

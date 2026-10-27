@@ -3,7 +3,7 @@
 The isolated, agent-controlled browser: navigation, agent control, approvals, downloads, settings, and annotations as a follow-up.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-27
 - Drafted by: @akramcodez
 
 ## Purpose
@@ -107,7 +107,7 @@ Chromium behaviour is the same on all three platforms because Electron bundles i
 
 ## Dependencies on Nanocoder changes
 
-`mcpServers` ([#116][i116]), `set_mode` mid-turn ([nanocoder#1857][nc1857]), a way to disable the built-in `browser` tool (`OQ-13`).
+`mcpServers` ([#116][i116]), `set_mode` mid-turn ([nanocoder#1857][nc1857]), a way to disable the built-in `browser` tool (`OQ-13`), and a way to read the effective approval policy, since `alwaysAllow` skips approvals even in `normal` (`DEC-31`).
 
 ## Open questions
 

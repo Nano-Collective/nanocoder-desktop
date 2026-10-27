@@ -226,8 +226,8 @@ sequenceDiagram
         F-->>N: Messages and metadata
         N-->>S: session/update replay (user, thought, message, completed tool calls)
         N-->>S: Resume response (modes, config options, _meta artefacts)
+        S->>N: session/set_mode(thread mode, checked against availableModes)
         S-->>R: Rebuilt conversation, thread Ready
-        S->>N: session/set_mode(desktop default mode)
     else Session missing
         N-->>S: Error "Session not found on disk"
         S-->>R: Thread ViewOnly, with recovery actions

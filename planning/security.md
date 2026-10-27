@@ -123,7 +123,7 @@ Proposed (awaiting @will-lamerton), from @puri-adityakumar's [reply][i108-c]:
 ### Residual risk
 
 - **Labels are not a control.** A model can follow labelled text. Labelling helps the model and the reader; the approval gates are the real control.
-- **Modes are the weak point.** At Nanocoder `8a5f4d4`, ACP sessions start in `auto-accept`, where file edits apply without a prompt ([source][nc-mode]), and a mode change during a turn is not applied to that turn ([nanocoder#1857][nc1857]). The desktop must set the mode before the first turn (`ACP-13`) and must not enable public-site control in a session that is not in `normal` mode.
+- **Modes are the weak point.** At Nanocoder `8a5f4d4`, ACP sessions start in `auto-accept`, where file edits apply without a prompt ([source][nc-mode]), and a mode change during a turn is not applied to that turn ([nanocoder#1857][nc1857]). The desktop must set the mode before the first turn (`ACP-13`) and must not enable public-site control in a session that is not in `normal` mode. Threads start in `normal`, and a thread takes no prompt until its mode is set (`DEC-31`). Even `normal` does not ask for tools in Nanocoder's `alwaysAllow`, which is checked before the mode ([source][nc-approval]).
 - **Other web paths exist.** Nanocoder's `fetch_url`, `web_search` and built-in `browser` tools bring web content into the agent regardless of the desktop (`OQ-13`).
 
 ## Path canonicalisation
@@ -242,3 +242,4 @@ Related, Open: Scriptura recorded the same Apple Developer account question as b
 [nc-hooks-trust]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/docs/features/hooks.md?plain=1#L237-L243
 [nc-workspace]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/pnpm-workspace.yaml
 [nc-prchecks]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/.github/workflows/pr-checks.yml
+[nc-approval]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/tools/approval-policy.ts#L49-L63

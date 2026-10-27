@@ -24,7 +24,7 @@ Let the user add a project, start or resume durable Nanocoder chats, follow each
 | CHAT-08 | After the app and Nanocoder restart, opening a thread resumes it with `session/resume` and the next prompt continues with the model context intact (`SP-06`). | Decided ([whitepaper][wp-resume]) |
 | CHAT-09 | A thread whose session is missing becomes view-only: it shows desktop metadata (title, last activity, touched files), says why, and offers "start a new thread in this project" and "remove". | Decided ([whitepaper][wp-states]); actions are Suggestion (not discussed) |
 | CHAT-10 | Model and provider controls use Nanocoder's config options, are labelled as applying to the whole project, and are disabled while any turn in the project runs (`ACP-14`). | Decided that model state is process-global ([whitepaper][wp-risks]); the guard is Suggestion (not discussed) |
-| CHAT-11 | A mode control offers Nanocoder's five modes, is set explicitly on every new or resumed session, and changes only between turns (`ACP-13`). | Open (`OQ-15`) |
+| CHAT-11 | A mode control offers Nanocoder's five modes, is set on every new or resumed session, and changes only between turns (`ACP-13`). New threads start in the project default, `normal` unless the user chose another with "Use as this project's default". `yolo` needs a confirmation and is never a default or restored ([Session mode](../acp-integration.md#session-mode)). | Proposed (awaiting @will-lamerton) (`DEC-31`) |
 | CHAT-12 | Titles come from `_nanocoder/sessionTitleChanged`; the user can rename through `renameSession` when available. | Suggestion (not discussed), based on [#122][pr122] |
 | CHAT-13 | Archive and unarchive are desktop metadata only. | Decided ([whitepaper][wp-states]) |
 | CHAT-14 | "Remove from desktop" removes desktop rows. "Delete chat history" also calls `session/delete`, after a separate confirmation. | Suggestion (not discussed) |
@@ -94,11 +94,11 @@ See [`security.md`](../security.md): `SEC-02` (IPC), `SEC-07` (no transcripts st
 
 ## Dependencies on Nanocoder changes
 
-`session/close` (merged), `set_mode` mid-turn ([nanocoder#1857][nc1857]), retention handling (`OQ-16`). See [`acp-integration.md`](../acp-integration.md#nanocoder-changes-needed).
+`session/close` (merged), `set_mode` mid-turn ([nanocoder#1857][nc1857]), `--mode` for ACP and an error for unknown modes (`DEC-31`), retention handling (`OQ-16`). See [`acp-integration.md`](../acp-integration.md#nanocoder-changes-needed).
 
 ## Open questions
 
-`OQ-14` (trust, proposed in `DEC-30`), `OQ-15` (starting mode), `OQ-16` (retention), `OQ-19` (switching project mid-turn).
+`OQ-14` (trust, proposed in `DEC-30`), `OQ-15` (starting mode, proposed in `DEC-31`), `OQ-16` (retention), `OQ-19` (switching project mid-turn).
 
 ## Acceptance criteria
 
