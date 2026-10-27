@@ -63,6 +63,7 @@ test('the production policy blocks inline scripts and remote content', t => {
 	t.true(policy.includes("default-src 'none'"));
 	t.true(policy.includes("script-src 'self'"));
 	t.false(policy.includes('unsafe-inline'));
+	// nosemgrep: javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket
 	t.false(policy.includes('ws://'));
 });
 

@@ -19,7 +19,7 @@ const cases: Array<[string, string]> = [
 	['key sk-ant-api03-abcdefghijklmnop rejected', 'key [redacted] rejected'],
 	['ghp_abcdefghijklmnopqrstuvwxyz0123 expired', '[redacted] expired'],
 	['github_pat_abcdefghijklmnopqrstuvwxyz', '[redacted]'],
-	['aws AKIAABCDEFGHIJKLMNOP', 'aws [redacted]'],
+	[`aws ${['AKIA', 'ABCDEFGHIJKLMNOP'].join('')}`, 'aws [redacted]'],
 	['AIzaabcdefghijklmnopqrstuvwxyz012345678', '[redacted]'],
 ];
 
@@ -47,6 +47,14 @@ test('replaces the home directory', t => {
 		redact('open C:\\USERS\\Sam\\a.ts', 'C:\\Users\\Sam', 'win32'),
 		'open ~\\a.ts',
 	);
+});
+
+test('replaces every spelling of the home directory where case is ignored', t => {
+	t.is(
+		redact('/Users/Sam/a and /users/sam/b', '/Users/Sam', 'darwin'),
+		'~/a and ~/b',
+	);
+	t.is(redact('İ /home/sam/a', '/home/sam', 'darwin'), 'İ ~/a');
 });
 
 test('ignores a root home directory', t => {

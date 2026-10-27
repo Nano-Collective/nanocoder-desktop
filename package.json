@@ -79,6 +79,7 @@
 		],
 		"exclude": [
 			"source/**/*.spec.ts",
+			"source/**/fixtures/**",
 			"source/main/index.ts",
 			"source/preload/**",
 			"source/renderer/**"

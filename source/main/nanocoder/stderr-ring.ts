@@ -19,8 +19,27 @@ const SECRET_PATTERNS: ReadonlyArray<[RegExp, string]> = [
 	],
 ];
 
-function escapeRegExp(text: string): string {
-	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function replaceAll(
+	text: string,
+	needle: string,
+	replacement: string,
+	ignoreCase: boolean,
+): string {
+	// Lowercasing can change a string's length; then fall back to an exact match.
+	const fold = ignoreCase && text.toLowerCase().length === text.length;
+	const haystack = fold ? text.toLowerCase() : text;
+	const target = fold ? needle.toLowerCase() : needle;
+	let result = '';
+	let from = 0;
+	for (
+		let at = haystack.indexOf(target);
+		at !== -1;
+		at = haystack.indexOf(target, from)
+	) {
+		result += text.slice(from, at) + replacement;
+		from = at + target.length;
+	}
+	return result + text.slice(from);
 }
 
 export function redact(
@@ -33,8 +52,8 @@ export function redact(
 		result = result.replace(pattern, replacement);
 	}
 	if (homeDir && homeDir.length > 1) {
-		const flags = platform === 'win32' || platform === 'darwin' ? 'gi' : 'g';
-		result = result.replace(new RegExp(escapeRegExp(homeDir), flags), '~');
+		const ignoreCase = platform === 'win32' || platform === 'darwin';
+		result = replaceAll(result, homeDir, '~', ignoreCase);
 	}
 	return result;
 }

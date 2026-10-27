@@ -3,6 +3,7 @@ import test from 'ava';
 import {
 	type ConnectOptions,
 	connectNanocoder,
+	describeExit,
 	NanocoderFailure,
 	nanocoderMessage,
 } from '@/main/nanocoder/acp-client';
@@ -183,6 +184,18 @@ test('reports a session Nanocoder could not start', async t => {
 	const error = await rejection(connection.newSession('normal'));
 	await connection.close();
 	t.is(error.message, 'Nanocoder could not start a session');
+});
+
+test('describes how Nanocoder stopped', t => {
+	t.is(
+		describeExit({code: null, signal: 'SIGKILL'}),
+		'Nanocoder stopped before it was ready (signal SIGKILL)',
+	);
+	t.is(
+		describeExit({code: 2, signal: null}),
+		'Nanocoder stopped before it was ready (exit code 2)',
+	);
+	t.is(describeExit({code: null, signal: null}), 'Nanocoder could not start');
 });
 
 test("picks Nanocoder's own line out of other stderr output", t => {

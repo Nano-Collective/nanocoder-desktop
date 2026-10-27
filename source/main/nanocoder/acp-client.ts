@@ -57,7 +57,7 @@ export interface ConnectOptions {
 	initializeTimeoutMs?: number;
 }
 
-function describeExit(exit: Exit): string {
+export function describeExit(exit: Exit): string {
 	if (exit.signal) {
 		return `Nanocoder stopped before it was ready (signal ${exit.signal})`;
 	}
