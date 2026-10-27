@@ -25,19 +25,20 @@ function replaceAll(
 	replacement: string,
 	ignoreCase: boolean,
 ): string {
-	// Lowercasing can change a string's length; then fall back to an exact match.
-	const fold = ignoreCase && text.toLowerCase().length === text.length;
-	const haystack = fold ? text.toLowerCase() : text;
-	const target = fold ? needle.toLowerCase() : needle;
+	const matches = (candidate: string) =>
+		candidate === needle ||
+		(ignoreCase && candidate.toLowerCase() === needle.toLowerCase());
 	let result = '';
 	let from = 0;
-	for (
-		let at = haystack.indexOf(target);
-		at !== -1;
-		at = haystack.indexOf(target, from)
-	) {
-		result += text.slice(from, at) + replacement;
-		from = at + target.length;
+	let at = 0;
+	while (at <= text.length - needle.length) {
+		if (matches(text.slice(at, at + needle.length))) {
+			result += text.slice(from, at) + replacement;
+			at += needle.length;
+			from = at;
+		} else {
+			at++;
+		}
 	}
 	return result + text.slice(from);
 }

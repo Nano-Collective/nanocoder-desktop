@@ -54,7 +54,19 @@ test('replaces every spelling of the home directory where case is ignored', t =>
 		redact('/Users/Sam/a and /users/sam/b', '/Users/Sam', 'darwin'),
 		'~/a and ~/b',
 	);
-	t.is(redact('İ /home/sam/a', '/home/sam', 'darwin'), 'İ ~/a');
+});
+
+test('still ignores case when the line holds a character that lowercases longer', t => {
+	t.is(redact('/users/sam/İ', '/Users/Sam', 'darwin'), '~/İ');
+	t.is(redact('İ /USERS/SAM/a', '/Users/Sam', 'win32'), 'İ ~/a');
+	t.is(redact('/home/İsam/x /HOME/İSAM/y', '/home/İsam', 'win32'), '~/x ~/y');
+});
+
+test('matches the home directory exactly where case matters', t => {
+	t.is(
+		redact('/home/sam/a /HOME/SAM/b', '/home/sam', 'linux'),
+		'~/a /HOME/SAM/b',
+	);
 });
 
 test('ignores a root home directory', t => {
