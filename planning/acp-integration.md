@@ -155,6 +155,8 @@ The six findings from [#122][pr122], checked at both commits, then the quirks th
 | 27 | Mode read-back | Not checked | `session/set_mode` returns `{}` and sends no update ([source][nc-set-mode]); `currentModeId` in the session response stays `auto-accept` ([source][nc-register]) | Check the mode by behaviour, not by what is reported (`DEC-31`). |
 | 28 | `--mode` with `--acp` | Not checked | Parsed but not passed to the ACP server ([source][nc-cli-mode]) | Ask Nanocoder to pass it through, so a missed `set_mode` fails closed (`DEC-31`). |
 | 29 | `alwaysAllow` and modes | Not checked | Checked before the mode, so listed tools never ask, even in `normal` ([source][nc-approval]) | Say so in the UI (`DEC-31`). |
+| 30 | Permission options | Not checked | Always `Allow` (`allow_once`) and `Deny` (`reject_once`); there is no "always" option ([source][nc-permission]) | Show the options as sent (`ACP-10`). |
+| 31 | Answering a request | Not checked | A rejected tool is marked `failed` and the model is told "Tool call denied by user"; the turn goes on. A `cancelled` answer ends the turn with `cancelled` ([source][nc-permission]) | The desktop reports the stop reason as Nanocoder gives it (`G.4`). |
 
 ## Directory trust
 
@@ -353,3 +355,4 @@ Nanocoder already has unit-level ACP specs (`acp-agent.spec.ts`, `acp-capabiliti
 [nc1900]: https://github.com/Nano-Collective/nanocoder/issues/1900
 [nc1889]: https://github.com/Nano-Collective/nanocoder/issues/1889
 [nc1689]: https://github.com/Nano-Collective/nanocoder/issues/1689
+[nc-permission]: https://github.com/Nano-Collective/nanocoder/blob/f5d82179f5032dc4990916e22a72d02f0feb2343/source/acp/acp-permission.ts#L11-L76

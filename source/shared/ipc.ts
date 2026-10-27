@@ -21,6 +21,10 @@ export const CHANNELS = {
 	getAppInfo: 'app:get-info',
 	getNanocoderRuntime: 'nanocoder:get-runtime',
 	connectNanocoder: 'nanocoder:connect',
+	sendPrompt: 'nanocoder:send-prompt',
+	answerPermission: 'nanocoder:answer-permission',
+	// Pushed from main to the renderer.
+	nanocoderEvent: 'nanocoder:event',
 } as const;
 
 export interface AppInfo {
@@ -67,3 +71,39 @@ export type ConnectResult =
 	| {status: 'connected'; agent: ConnectedAgent; session: SessionInfo}
 	| {status: 'untrusted'; message: string}
 	| {status: 'cancelled'};
+
+export type PermissionOptionKind =
+	| 'allow_once'
+	| 'allow_always'
+	| 'reject_once'
+	| 'reject_always';
+
+// Nanocoder's own options, passed on unchanged (ACP-10).
+export interface PermissionOptionInfo {
+	id: string;
+	name: string;
+	kind: PermissionOptionKind;
+}
+
+export interface PermissionRequestInfo {
+	id: string;
+	title: string;
+	options: PermissionOptionInfo[];
+}
+
+export type TurnEvent =
+	| {type: 'text'; text: string}
+	| {type: 'tool'; id: string; title?: string; status?: string}
+	| {type: 'permission'; request: PermissionRequestInfo}
+	| {type: 'permission-closed'; id: string};
+
+export type StopReason =
+	| 'end_turn'
+	| 'max_tokens'
+	| 'max_turn_requests'
+	| 'refusal'
+	| 'cancelled';
+
+export interface TurnResult {
+	stopReason: StopReason;
+}

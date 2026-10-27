@@ -34,8 +34,11 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/open-project.ts` | Connects, asks before trusting a folder, then opens a session in the starting mode |
 | `source/main/nanocoder/protocol-stream.ts` | Reads stdout as ACP only; anything else ends the connection |
 | `source/main/nanocoder/stderr-ring.ts` | Bounded, redacted, in-memory ring for Nanocoder's stderr |
+| `source/main/nanocoder/permissions.ts` | Holds each permission request until the user answers; only an option Nanocoder offered counts |
+| `source/main/nanocoder/turn-events.ts` | Turns ACP session updates into the few events the UI shows |
+| `source/renderer/transcript.ts` | Merges turn events into the conversation the UI shows |
 | `source/main/nanocoder/capabilities.ts` | Records the version and capabilities from `initialize` |
-| `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp` and test helpers for unit and end-to-end tests |
+| `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp`, a scripted model provider and test helpers |
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
 | `source/preload/index.ts` | The `window.desktop` bridge |
 | `e2e/*.e2e.ts` | Playwright tests against the built app |
@@ -67,6 +70,7 @@ These hold in every change:
 - Processes start from an absolute path with an argument array and `shell: false`. No `PATH` lookup at launch, and never a binary from the project's own folder.
 - Nanocoder's stdout carries ACP only: a line that is not a JSON-RPC frame ends the connection. Its stderr is redacted into a bounded in-memory ring, and only Nanocoder's own `[nanocoder]` message reaches the UI.
 - Nanocoder's directory trust is recorded only by the trust launch right after the user confirms (`DEC-30`). No `--trust-directory`, no `NANOCODER_TRUST_DIRECTORY` on any other launch, and an inherited one is dropped.
+- Permission requests are answered only by the user, from the main process: the renderer sends a request id and an option id, and both are checked against what Nanocoder offered. With no handler, a request is answered as cancelled, never allowed (`ACP-10`).
 - Every Nanocoder session gets its mode with `session/set_mode` before its first prompt, checked against `availableModes`. A thread takes no prompt until that succeeds, and `yolo` is never restored (`DEC-31`).
 - Paths are canonicalised and checked to stay inside their root before use.
 - Chat messages, file contents, tool results, Nanocoder's stderr and secrets are never written to disk or logs.
@@ -85,7 +89,7 @@ These hold in every change:
 - Unit tests are AVA `.spec.ts` files beside the code, run in plain Node. Keep logic in modules that do not import Electron, so it can be tested.
 - A security rule needs a test that proves the refusal, not only the happy path.
 - Tests never sleep for a fixed time; they wait for an event.
-- End-to-end tests live in `e2e/`. ACP integration tests are `*.acp.ts`; they keep Nanocoder's config in a temporary folder and need a Nanocoder build with the ACP trust check.
+- End-to-end tests live in `e2e/`. ACP integration tests are `*.acp.ts`; they keep Nanocoder's config in a temporary folder, use a scripted model provider (no API key) and need a Nanocoder build with the ACP trust check.
 - Coverage stays at or above 80% of lines.
 
 ## AI Coding Assistance Notes

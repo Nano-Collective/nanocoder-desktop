@@ -1,11 +1,19 @@
-import {useEffect, useState} from 'react';
+import {type FormEvent, useEffect, useState} from 'react';
+import {
+	addUserMessage,
+	applyEvent,
+	emptyTranscript,
+	type Transcript,
+} from '@/renderer/transcript';
 import type {
 	AppInfo,
 	ConnectedAgent,
 	ConnectResult,
 	IpcResult,
 	NanocoderRuntime,
+	PermissionRequestInfo,
 	SessionInfo,
+	TurnResult,
 } from '@/shared/ipc';
 
 const yesNo = (value: boolean) => (value ? 'yes' : 'no');
@@ -44,6 +52,43 @@ function AgentDetails({
 	);
 }
 
+function PermissionCard({request}: {request: PermissionRequestInfo}) {
+	return (
+		<section aria-label="Permission request">
+			<p>Nanocoder asks to run: {request.title}</p>
+			{request.options.map(option => (
+				<button
+					key={option.id}
+					type="button"
+					onClick={() => {
+						void window.desktop.answerPermission(request.id, option.id);
+					}}
+				>
+					{option.name}
+				</button>
+			))}
+		</section>
+	);
+}
+
+function Conversation({transcript}: {transcript: Transcript}) {
+	return (
+		<ol aria-label="Conversation">
+			{transcript.items.map((item, index) => (
+				<li key={item.kind === 'tool' ? item.id : `${item.kind}-${index}`}>
+					{item.kind === 'user' && <>You: {item.text}</>}
+					{item.kind === 'agent' && <>Nanocoder: {item.text}</>}
+					{item.kind === 'tool' && (
+						<>
+							Tool {item.title}: {item.status}
+						</>
+					)}
+				</li>
+			))}
+		</ol>
+	);
+}
+
 export function App() {
 	const [info, setInfo] = useState<AppInfo | null>(null);
 	const [runtime, setRuntime] = useState<IpcResult<NanocoderRuntime> | null>(
@@ -51,6 +96,18 @@ export function App() {
 	);
 	const [connecting, setConnecting] = useState(false);
 	const [opened, setOpened] = useState<IpcResult<ConnectResult> | null>(null);
+	const [transcript, setTranscript] = useState<Transcript>(emptyTranscript);
+	const [draft, setDraft] = useState('');
+	const [sending, setSending] = useState(false);
+	const [turn, setTurn] = useState<IpcResult<TurnResult> | null>(null);
+
+	useEffect(
+		() =>
+			window.desktop.onNanocoderEvent(event => {
+				setTranscript(current => applyEvent(current, event));
+			}),
+		[],
+	);
 
 	useEffect(() => {
 		void window.desktop.getAppInfo().then(result => {
@@ -67,7 +124,21 @@ export function App() {
 		setConnecting(false);
 		if (!result.ok || result.value.status !== 'cancelled') {
 			setOpened(result);
+			setTranscript(emptyTranscript);
+			setTurn(null);
 		}
+	};
+
+	const send = async (event: FormEvent) => {
+		event.preventDefault();
+		const text = draft.trim();
+		if (!text || sending) return;
+		setDraft('');
+		setSending(true);
+		setTurn(null);
+		setTranscript(current => addUserMessage(current, text));
+		setTurn(await window.desktop.sendPrompt(text));
+		setSending(false);
 	};
 
 	const outcome = opened?.ok ? opened.value : null;
@@ -91,6 +162,29 @@ export function App() {
 			{outcome?.status === 'connected' && (
 				<AgentDetails agent={outcome.agent} session={outcome.session} />
 			)}
+			{outcome?.status === 'connected' && (
+				<form onSubmit={send}>
+					<label>
+						Message
+						<input
+							value={draft}
+							onChange={event => setDraft(event.target.value)}
+							disabled={sending}
+						/>
+					</label>
+					<button type="submit" disabled={sending || draft.trim() === ''}>
+						Send
+					</button>
+				</form>
+			)}
+			{outcome?.status === 'connected' && (
+				<Conversation transcript={transcript} />
+			)}
+			{transcript.permission && (
+				<PermissionCard request={transcript.permission} />
+			)}
+			{turn?.ok && <p>Turn ended: {turn.value.stopReason}</p>}
+			{turn && !turn.ok && <p role="alert">{turn.error.message}</p>}
 			{outcome?.status === 'untrusted' && (
 				<p role="alert">Not opened. {outcome.message}</p>
 			)}
