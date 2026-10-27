@@ -3,7 +3,7 @@
 The whitepaper's open risks, expanded with likelihood, impact, mitigation, owner and trigger, plus the risks this plan found.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-27
 - Drafted by: @akramcodez
 
 Likelihood and impact are this plan's estimates: Suggestion (not discussed). "NC core team" means `@Nano-Collective/core-team`.
@@ -33,7 +33,7 @@ Source: [whitepaper, Open risks][wp-risks].
 | RISK-12 | Nanocoder's built-in `browser` tool bypasses the desktop's browsing policy | High once Milestone 3 ships | High | `OQ-13` | NC core team with Nanocoder maintainers | Agent reaches a public site with desktop public browsing off |
 | RISK-13 | No signing identity or owner for releases | High | High (`SP-01`) | `OQ-10` | @will-lamerton (governance) | First public binary is due |
 | RISK-14 | Sessions start in `auto-accept`, so edits apply without approval | Certain unless the desktop sets the mode | High (`SP-04`) | `ACP-13`, `OQ-15` | NC core team | A first turn edits files without a prompt |
-| RISK-15 | Desktop and Nanocoder trust disagree, so ACP refuses to start | High on first use | Medium (`SP-02`) | `OQ-14` | NC core team | Startup exits with Nanocoder's trust message |
+| RISK-15 | Desktop and Nanocoder trust disagree (first use, a changed fingerprint, another path spelling or another Nanocoder version), so ACP refuses to start | High on first use | Medium (`SP-02`) | `DEC-30`: one prompt, and Nanocoder's reason with the prompt again on refusal | NC core team | Startup exits with Nanocoder's trust message |
 | RISK-16 | Build starts before Stage 4 prerequisites are recorded | Already happened (repository exists) | Low technically, real for process | `OQ-20`, `OQ-21` | @will-lamerton | Code merged before #115 and #117 are recorded |
 | RISK-17 | The next Nanocoder release, which carries `session/close`, the trust check and per-session `cwd`, is late | Medium | Medium (the gate and prototype run on unreleased code) | Gate against Nanocoder `main`; ask for release timing ([proposed issue H](proposed-issues.md#h-release-timing)) | NC core team with Nanocoder maintainers | The technical gate starts before that release exists |
 | RISK-18 | `node:sqlite` changes behaviour while it is a release candidate | Low | Medium (desktop store) | Store specs on Node 24; `better-sqlite3` fallback behind the same interface (`DEC-04`) | NC core team | A Node or Electron upgrade breaks the store specs |

@@ -3,7 +3,7 @@
 How the desktop drives `nanocoder --acp`: methods, capability negotiation, supported versions, known Nanocoder quirks, and the Nanocoder changes the plan depends on.
 
 - Status: Draft
-- Last updated: 2026-10-23
+- Last updated: 2026-10-27
 - Drafted by: @akramcodez
 
 ## Baseline
@@ -32,10 +32,10 @@ Nanocoder declares `@agentclientprotocol/sdk` `^1.3.0` and its lockfile resolves
 | ACP-14 | Treat model and provider selection as process-global. Allow a change only when no turn is running in the project's process, and say that it applies to every thread in the project. | Decided that it is process-global ([whitepaper, Open risks][wp-risks]); the guard is Suggestion (not discussed) |
 | ACP-15 | Treat stdout as protocol only. A frame that does not parse ends the connection and fails the process. | Decided ([whitepaper, Architecture][wp-arch]) |
 | ACP-16 | Keep stderr in a bounded, redacted, in-memory ring that is never persisted and leaves the machine only after the user reviews it. | Decided ([whitepaper][wp-arch]) |
-| ACP-17 | Supervise the process: detect exit, keep the exit code and signal, mark running threads Failed, restart with limited backoff, resume the open thread. | Decided ([whitepaper, Process policy][wp-process]); backoff policy Suggestion (not discussed) |
+| ACP-17 | Supervise the process: detect exit, keep the exit code and signal, mark running threads Failed, restart with limited backoff, resume the open thread. Never restart automatically when the process exits before `initialize` returns, as it does on a trust refusal. | Decided ([whitepaper, Process policy][wp-process]); backoff policy Suggestion (not discussed); no restart of a trust refusal Proposed (awaiting @will-lamerton) (`DEC-30`); other exits before `initialize` Suggestion (not discussed) |
 | ACP-18 | Discover sessions with `session/list` on a best-effort basis. The stored Nanocoder session ID is the durable join key; listing never decides whether a known thread exists. | Decided ([whitepaper, Project and session identity][wp-identity]) |
 | ACP-19 | When `session/resume` reports a missing session, move the thread to ViewOnly and explain the likely cause (deleted, or removed by Nanocoder's retention settings). | Decided (ViewOnly state); the explanation is Suggestion (not discussed) |
-| ACP-20 | Never start ACP in a project the user has not trusted. If Nanocoder refuses the directory, show its message and a way forward. | Open (`OQ-14`): how desktop trust maps to Nanocoder trust |
+| ACP-20 | Never start ACP in a project the user has not trusted. After the user confirms, record trust in Nanocoder's own store with one short trust launch; no other launch sets a trust override. If Nanocoder refuses at startup, show its reason and the trust prompt again. See [Directory trust](#directory-trust). | Proposed (awaiting @will-lamerton) (`DEC-30`, [#4][i4]) |
 | ACP-21 | Run the shared ACP conformance tests against every Nanocoder version the desktop supports. | Proposed (awaiting @will-lamerton) ([#118][i118]) |
 | ACP-22 | Pass the desktop's browser-control MCP server in `mcpServers` on `session/new` and `session/resume` once Nanocoder honours it, and advertise agent browser control only when that server and the browser view are both ready. | Proposed (awaiting @will-lamerton) ([#116][i116]); transport Open (`OQ-17`) |
 | ACP-23 | Shut the project process down after an idle period, closing open sessions first, and resume on next use. | Decided in principle ([whitepaper, Process policy][wp-process]); the period is Suggestion (not discussed) |
@@ -138,7 +138,7 @@ The six findings from [#122][pr122], checked at both commits, then the quirks th
 | 10 | Session retention | Not checked | Sessions idle for 30 days, and the oldest beyond 100, are deleted by default ([source][nc-retention]) | ViewOnly with an explanation (`ACP-19`, `OQ-16`). |
 | 11 | `session/resume` working directory | Not checked | Uses the persisted directory and ignores the client's ([source][nc-resume]) | Store both canonical root and session cwd (`DATA-02`). |
 | 12 | Resume does not restore the session's model | Not checked | The resumed session uses the process's current model ([source][nc-resume]) | Show the current model on resume; do not imply the old one is active. |
-| 13 | Directory trust at startup | No check | `--acp` exits if the spawn directory is untrusted ([nanocoder#1847][nc1847]) | `ACP-20`, `OQ-14`. |
+| 13 | Directory trust at startup | No check | `--acp` exits if the spawn directory is untrusted ([nanocoder#1847][nc1847]) | `ACP-20`, `DEC-30` ([Directory trust](#directory-trust)). |
 | 14 | Project configuration scope | Not checked | Read once from the spawn directory; plugins load per session ([docs][nc-acp-req]) | One process per project, spawned at the root. |
 | 15 | Subagent approvals | Not checked | Always ask regardless of mode, are marked completed on approval before running, and share one handler per process ([docs][nc-acp-limits], [source][nc-global-handler]) | See [`subagents.md`](features/subagents.md). |
 | 16 | Failed tool status | Not checked | Only output starting with `Error` is reported as failed; fixed upstream after `8a5f4d4` in [`6dac501`][nc-6dac501] | Require a version with the fix for accurate status. |
@@ -147,6 +147,36 @@ The six findings from [#122][pr122], checked at both commits, then the quirks th
 | 19 | `timeline/list` scope | Not checked | Requires the session to be loaded in memory ([source][nc-ext]) | Call it only after `session/resume`. |
 | 20 | Extension method names | Bare names | Still bare (`renameSession`, `timeline/list`), against ACP's rule that custom methods start with `_` ([ACP extensibility][acp-ext]) | One adapter that tries both forms. |
 | 21 | Published versus `main` | 1.30.0 published | Published 1.31.0 predates rows 1, 13, 17 and per-session `cwd`; they are pending changesets ([changesets][nc-cs-dir]) | Run the gate against `main` until the next release. |
+| 22 | Trust refusal exit code | No check | Exits with code 1, the same as any other startup failure ([source][nc-acp-exit]) | Match the message text until a refusal has its own code (`DEC-30`). |
+| 23 | Trust matching | No check | Exact resolved path, no symlink or case folding, plus an unversioned fingerprint ([source][nc-trust-match]). `main` adds a project `.env`, confirmation-relaxing settings and provider `baseUrl`s to the fingerprint ([`69b4891`][nc-69b4891]) | Launch at the canonical root; expect a re-prompt when the Nanocoder version changes (`DEC-30`). |
+| 24 | Plugin trust per session | Not checked | Checked against the session's own working directory, not the spawn root ([source][nc-plugin-trust]) | Sessions at the project root in v1 (`DEC-30`). |
+| 25 | Environment inheritance | Not checked | Hooks and the bash tool inherit Nanocoder's whole environment ([hooks][nc-hook-env], [bash][nc-bash-env]) | `NANOCODER_TRUST_DIRECTORY` only on the trust launch (`DEC-30`). |
+
+## Directory trust
+
+Proposed (awaiting @will-lamerton) (`DEC-30`), agreed in [#4][i4] ([pick][i4-pick], [review][i4-review]). Nanocoder owns the trust store. The desktop asks, records trust through Nanocoder, and never writes Nanocoder's files.
+
+Since [nanocoder#1847][nc1847], `nanocoder --acp` exits when its working directory is not trusted ([source][nc-server]). Nanocoder trusts a folder by its resolved path and a fingerprint of what the folder will run ([source][nc-trust-match]), so a later change to that is asked about again.
+
+| Step | Behaviour | Why |
+|---|---|---|
+| Before trust | File tree only. No Nanocoder, no Git, no watchers that follow config (`SEC-17`). | Nanocoder config and Git config (`core.fsmonitor`) can run code. |
+| Prompt | Lists what will run, read as files without running anything: plugins, hooks, MCP servers, formatters, LSP servers, custom tools, subscribed skills, agents and commands, a project `.env`, the settings that relax confirmations (`alwaysAllow`, `defaultMode`, `sandbox`, `verify.trustLevel`) and provider `baseUrl`s. | The inputs Nanocoder fingerprints on `main` ([`69b4891`][nc-69b4891]). Replaced by Nanocoder's own summary once it can print one ([Nanocoder changes needed](#nanocoder-changes-needed)). |
+| Trust launch | After the user confirms, start `nanocoder --acp` once with `NANOCODER_TRUST_DIRECTORY=1` and stdin closed, wait for it to exit, then launch normally. | Nanocoder saves the folder and its fingerprint in its own store. `--trust-directory` is not used: it lasts one run, so per-session plugins never load and config changes are never checked again. |
+| Every other launch | No `NANOCODER_TRUST_DIRECTORY` and no `--trust-directory`. An inherited `NANOCODER_TRUST_DIRECTORY` is dropped (`SEC-05`, done in phase G.2). | Hooks and the bash tool inherit Nanocoder's environment ([hooks][nc-hook-env], [bash][nc-bash-env]). With the variable set, a `nanocoder` the agent runs would trust its own folder without asking, and Nanocoder would re-trust a changed config silently. |
+| Later refusal | Nanocoder writes that the directory `is not trusted`, has `changed since you trusted it` or `needs re-approval after the upgrade`, then exits. The desktop shows that reason and the prompt again, and never restarts automatically (`ACP-17`). | The fingerprint catches new hooks or MCP servers, for example after a `git pull`. A refusal and other startup failures share exit code 1 ([source][nc-acp-exit]), so the desktop matches the message text until Nanocoder gives a refusal its own code. |
+| Paths | Launch at the canonical project root (`SEC-03`). | Nanocoder matches the exact resolved path ([source][nc-trust-match]). A trust the CLI saved under another spelling of the path costs one extra prompt. |
+| Sessions | Suggestion (not discussed): in v1, every session's working directory is the project root. | Nanocoder checks plugin trust against the session's own working directory ([source][nc-plugin-trust]), so a session in a subfolder would run without plugins. |
+| Scope | Nanocoder's store is shared with the Nanocoder CLI on this machine. The desktop's own `trusted` flag (`DATA-02`) gates Git and watchers. One prompt sets both. | One trust store for Nanocoder, owned by Nanocoder. |
+
+Known gaps until the Nanocoder changes land:
+
+- The trust launch saves the fingerprint the folder has at launch, not the one the user was shown. Nanocoder's own prompt passes the fingerprint it showed ([source][nc-grant]); the variable cannot.
+- The trust launch loads the project config and starts its MCP servers once, with the variable set, before it sees stdin close.
+- Trust entries carry no fingerprint version, and the inputs change between Nanocoder versions. A CLI and a bundled Nanocoder on different versions each see the other's entry as changed, so the user is asked again after each switch.
+- The desktop's prompt list can drift from what Nanocoder fingerprints.
+
+To check in phase G.3: a changed fingerprint makes `--acp` exit with a reason the desktop can show, and plugins load for a session at the project root.
 
 ## Session discovery and identity
 
@@ -188,6 +218,10 @@ The UI says what is true: the model control belongs to the project, not the thre
 | Prefix extension methods with `_` and advertise them under `_meta` in `agentCapabilities` | ACP requires the prefix and recommends advertising extensions ([ACP extensibility][acp-ext]); removes version guessing for `renameSession` and `timeline/*`. | Finding 2 in [#122][pr122] | Open | Nice to have | Open |
 | Exempt client-referenced sessions from retention, or expose retention settings over ACP | Durable threads (`SP-06`). | New issue needed | Open | Milestone 4 | Open (`OQ-16`) |
 | Report failed tool calls by `isError` | Accurate tool status in the chat. | [`6dac501`][nc-6dac501] | @addyCooks | Technical gate | Decided (on upstream `main`) |
+| A read-only trust status command: summary, fingerprint and status (trusted, not trusted, changed, needs re-approval) as JSON, without loading project config | The prompt shows exactly what Nanocoder fingerprints, and the desktop can check before launching (`DEC-30`). | New issue needed (one issue for the four trust rows) | Open | Milestone 1 (phase 1.2) | Open (raised in [#4 review][i4-review]) |
+| Save trust for a given fingerprint, refusing if the folder has changed since | Ties consent to what the user saw and replaces the `NANOCODER_TRUST_DIRECTORY` trust launch (`DEC-30`). | Same issue | Open | Milestone 1 (phase 1.2) | Open |
+| A distinct exit code for a trust refusal | A refusal and other startup failures share exit code 1 ([source][nc-acp-exit]). | Same issue | Open | Nice to have | Open (raised in [#4 review][i4-review]) |
+| Version the trust fingerprint and treat an older version as "needs re-approval" | Stops the CLI and a bundled Nanocoder on different versions from re-asking each other. | Same issue | Open | Before the bundled release (`REL-02`) | Open (raised in [#4 review][i4-review]) |
 | Isolate model state per session | Parallel root turns. | Whitepaper risk | Open | Later | Open |
 
 ## Shared ACP conformance tests
@@ -269,3 +303,13 @@ Nanocoder already has unit-level ACP specs (`acp-agent.spec.ts`, `acp-capabiliti
 [nc-cs-close]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/.changeset/acp-close-session.md
 [nc-cs-dir]: https://github.com/Nano-Collective/nanocoder/tree/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/.changeset
 [el-releases]: https://releases.electronjs.org/release/v45.0.0
+[i4]: https://github.com/Nano-Collective/nanocoder-desktop/issues/4
+[i4-pick]: https://github.com/Nano-Collective/nanocoder-desktop/issues/4#issuecomment-6412265511
+[i4-review]: https://github.com/Nano-Collective/nanocoder-desktop/issues/4#issuecomment-6413819518
+[nc-trust-match]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/config/preferences.ts#L216-L231
+[nc-grant]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/config/preferences.ts#L285-L299
+[nc-plugin-trust]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/plugins/host.ts#L72-L88
+[nc-acp-exit]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/acp/acp-server.ts#L27-L48
+[nc-hook-env]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/services/lifecycle-hooks.ts#L326-L327
+[nc-bash-env]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/services/bash-executor.ts#L194
+[nc-69b4891]: https://github.com/Nano-Collective/nanocoder/commit/69b4891cf47ac372d90ed1509a744de5635478a0

@@ -3,7 +3,7 @@
 The processes, trust boundaries, IPC contract, process policy, thread state machine and key sequences of Nanocoder Desktop.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-27
 - Drafted by: @akramcodez
 
 ## Scope
@@ -137,7 +137,7 @@ From the [whitepaper, Sources of truth][wp-truth] (Decided), with the reading ru
 | Change status and review | Git repository and index | Recomputed from `git`. Agent events only label which files a turn touched. |
 | Navigation, recent and archive state, touched-file summaries, subagent-run projections, UI state | Desktop SQLite | Owned by the desktop. Losing it loses navigation, not history (`DATA-08`). |
 | Browser cookies, storage, cache, history | Browser partition | Owned by Electron's session storage for that partition. Cleared from settings (`BRW-08`). |
-| Directory trust | Nanocoder's trust store, and the desktop's project trust flag | Overlap to resolve (`OQ-14`). |
+| Directory trust | Nanocoder's trust store for Nanocoder; the desktop's `trusted` flag for Git and watchers | One prompt sets both (`DEC-30`, [Directory trust](acp-integration.md#directory-trust)). |
 
 ## Thread state machine
 

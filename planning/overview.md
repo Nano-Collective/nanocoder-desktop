@@ -3,7 +3,7 @@
 What Nanocoder Desktop is, who it is for, what v1 includes and excludes, and what would prove it works.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-27
 - Drafted by: @akramcodez
 
 ## What it is
@@ -125,7 +125,7 @@ The first release succeeds when a user can do each of the following ([whitepaper
 | ID | A user can | Main requirements | Notes |
 |---|---|---|---|
 | SP-01 | Install and launch the app on each supported operating system. | `REL-05`, `REL-07` | Signing and notarisation have no owner ([#120][i120], Open). Without them, macOS Gatekeeper blocks the app by default. |
-| SP-02 | Open a real repository. | `CHAT-01`, `CHAT-02`, `FILE-01` | Nanocoder refuses to start ACP in an untrusted directory ([nanocoder#1847][nc1847]). How desktop trust maps to Nanocoder trust is `OQ-14`. |
+| SP-02 | Open a real repository. | `CHAT-01`, `CHAT-02`, `FILE-01` | Nanocoder refuses to start ACP in an untrusted directory ([nanocoder#1847][nc1847]). How desktop trust maps to Nanocoder trust is proposed in `DEC-30`. |
 | SP-03 | Start a Nanocoder chat and see structured streaming and tool activity. | `CHAT-04`, `CHAT-05`, `ACP-05` | |
 | SP-04 | Approve or reject a protected operation. | `CHAT-06`, `CHAT-11`, `ACP-10`, `ACP-13` | ACP sessions start in `auto-accept`, where file edits apply without a prompt ([source][nc-mode]). The desktop must choose the starting mode (`OQ-15`). |
 | SP-05 | Delegate a bounded subtask, observe the child run, and stop it when needed. | `SUB-01` to `SUB-04` | At the inspected commit, ACP exposes no child IDs and no per-child cancel. Stopping means cancelling the whole turn unless Nanocoder changes ([`subagents.md`](features/subagents.md)). |
@@ -158,7 +158,7 @@ The whitepaper's split ([Composition with Nanocoder][wp-split]), with the rows t
 | Window and panel state | Semantic memory |
 | Update and packaging UX | Timeline, retry, revert and artefacts |
 
-Two rows overlap and need a decision: directory trust (`OQ-14`) and browsing (`OQ-13`).
+Two rows overlap: directory trust, which has a proposal (`DEC-30`), and browsing (`OQ-13`), which still needs one.
 
 ## Relationship to Scriptura
 

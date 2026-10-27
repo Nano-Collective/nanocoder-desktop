@@ -5,7 +5,7 @@ import type {NanocoderRuntime} from '@/shared/ipc';
 const BLOCKED_ENV = new Set([
 	'NODE_OPTIONS',
 	'ELECTRON_RUN_AS_NODE',
-	// Trust is the desktop's decision (OQ-14), never inherited from a shell.
+	// Set only by the trust launch (DEC-30), never inherited from a shell.
 	'NANOCODER_TRUST_DIRECTORY',
 ]);
 

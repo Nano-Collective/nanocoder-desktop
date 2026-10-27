@@ -3,7 +3,7 @@
 Every decision the plan relies on, with its status, where it was made, and what is still missing.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-27
 - Drafted by: @akramcodez
 
 ## How to read this register
@@ -52,7 +52,7 @@ The date is when the decision or proposal was made, not when it was recorded her
 | DEC-27 | TypeScript toolchain defaults: pnpm, ESM, strict TypeScript, Biome, AVA through `tsx`, c8 with an 80% line floor and fail-on-drop, Knip, changesets, the shared `pr-checks` caller, both rulesets, `CODEOWNERS` naming `@Nano-Collective/core-team`. | Decided | [Stack suggestions][stack], [Project infrastructure][infra] | | Stack suggestions are defaults, not laws. Any divergence is documented in `CONTRIBUTING.md` ([Creating a new project][creating]). |
 | DEC-28 | Electron-specific tooling: `electron-vite`, `electron-builder` with `electron-updater`, its built-in native rebuild, `node-pty` with `@xterm/xterm`, Git's own diff output, CodeMirror 6 read-only, Playwright, `zod` 4, and linted spec files. | Decided | [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3), [picks](https://github.com/Nano-Collective/nanocoder-desktop/issues/3#issuecomment-6412135950), [review](https://github.com/Nano-Collective/nanocoder-desktop/issues/3#issuecomment-6413649344) | 2026-10-26 | Review points (Playwright needs the `nodeCliInspect` fuse, macOS `.zip`, `node-pty` on Linux) are in [`tech-stack.md`](tech-stack.md#electron-specific-choices). |
 | DEC-29 | How the desktop handles Nanocoder's built-in `browser` tool, which drives its own headless Chromium. | Open | [nanocoder#1626][nc1626] | | `OQ-13`. |
-| DEC-30 | How desktop project trust relates to Nanocoder's directory trust, which `nanocoder --acp` now enforces at startup. | Open | [nanocoder#1847][nc1847] | | `OQ-14`. |
+| DEC-30 | Desktop trust maps to Nanocoder's own trust store. The desktop asks the user, then records trust through Nanocoder with one short launch under `NANOCODER_TRUST_DIRECTORY=1`. No other launch sets it or passes `--trust-directory`, and an inherited value is dropped. The desktop never writes Nanocoder's files. A later refusal shows Nanocoder's reason and the prompt again, never an automatic restart. | Proposed (awaiting @will-lamerton) | [#4](https://github.com/Nano-Collective/nanocoder-desktop/issues/4), [pick](https://github.com/Nano-Collective/nanocoder-desktop/issues/4#issuecomment-6412265511), [review](https://github.com/Nano-Collective/nanocoder-desktop/issues/4#issuecomment-6413819518) | 2026-10-27 | Details and known gaps in [`acp-integration.md`](acp-integration.md#directory-trust). The review asks Nanocoder for a read-only trust status command, a grant tied to the fingerprint shown, a distinct refusal exit code and a versioned fingerprint ([Nanocoder changes needed](acp-integration.md#nanocoder-changes-needed)). `OQ-14`. |
 | DEC-31 | Which ACP mode desktop threads start in. Nanocoder starts every ACP session in `auto-accept`. | Open | [Source][nc-mode] | | `OQ-15`. DEC-15 depends on `normal` mode. |
 | DEC-32 | Keep this planning set in `planning/`, not `docs/`, so the docs site does not publish drafts. | Suggestion (not discussed) | [`lib/projects.ts`][projects-ts] | 2026-10-23 | Chosen by @akramcodez while drafting. Raise with the NC core team when this set is first reviewed. |
 | DEC-33 | Thread state machine: New, Ready, Running, WaitingApproval, Interrupted, Failed, ViewOnly; archive is separate UI metadata. | Decided | [Whitepaper, Thread states][wp-states] | 2026-10-12 | Behaviour per state is in [`architecture.md`](architecture.md#thread-state-machine). |
@@ -66,8 +66,8 @@ The date is when the decision or proposal was made, not when it was recorded her
 | Status | Entries |
 |---|---|
 | Decided | 20 (`DEC-01` to `DEC-08`, `DEC-21` to `DEC-28`, `DEC-33` to `DEC-35`, `DEC-37`) |
-| Proposed (awaiting @will-lamerton) | 11 (`DEC-09` to `DEC-19`) |
-| Open | 5 (`DEC-20`, `DEC-29` to `DEC-31`, `DEC-36`) |
+| Proposed (awaiting @will-lamerton) | 12 (`DEC-09` to `DEC-19`, `DEC-30`) |
+| Open | 4 (`DEC-20`, `DEC-29`, `DEC-31`, `DEC-36`) |
 | Suggestion (not discussed) | 1 (`DEC-32`) |
 
 ## What @will-lamerton needs to answer
@@ -77,7 +77,7 @@ Ordered by what they block.
 | Blocks | Decision | Ask |
 |---|---|---|
 | Repository setup (Stage 4) | `DEC-09`, `DEC-10` | Settle the maintainer commitment and repository shape and record them on the whitepaper page, as [#115][i115] and [#117][i117] require. Confirm the repository that already exists is the intended one. |
-| Technical gate | `DEC-11`, `DEC-12`, `DEC-31` | Agree the bundling direction and version policy, and the starting ACP mode. |
+| Technical gate | `DEC-11`, `DEC-12`, `DEC-30`, `DEC-31` | Agree the bundling direction and version policy, the trust mapping, and the starting ACP mode. |
 | Milestone 1 | `DEC-15` | Agree the browser trust boundary, since the starting mode depends on it. |
 | Milestone 1 (first UI work) | `DEC-36` | Accept `DESIGN.md`'s visual identity as a documented divergence, or adopt the NC default. |
 | Milestone 2 | `DEC-14` | Decide whether the "Agent changes" view is v1 or later. |

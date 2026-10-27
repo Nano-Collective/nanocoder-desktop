@@ -64,7 +64,7 @@ These hold in every change:
 - Every IPC handler goes through `registerHandler`, with a `zod` `strictObject` schema. It returns an `IpcResult`; throw `IpcFailure` for a specific error code.
 - Processes start from an absolute path with an argument array and `shell: false`. No `PATH` lookup at launch, and never a binary from the project's own folder.
 - Nanocoder's stdout carries ACP only: a line that is not a JSON-RPC frame ends the connection. Its stderr is redacted into a bounded in-memory ring, and only Nanocoder's own `[nanocoder]` message reaches the UI.
-- The desktop never turns on Nanocoder's directory trust by accident: no `--trust-directory`, and an inherited `NANOCODER_TRUST_DIRECTORY` is dropped.
+- Nanocoder's directory trust is recorded only by the trust launch right after the user confirms (`DEC-30`). No `--trust-directory`, no `NANOCODER_TRUST_DIRECTORY` on any other launch, and an inherited one is dropped.
 - Paths are canonicalised and checked to stay inside their root before use.
 - Chat messages, file contents, tool results, Nanocoder's stderr and secrets are never written to disk or logs.
 - The app renderer loads nothing remote and keeps its strict Content Security Policy.

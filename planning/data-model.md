@@ -3,7 +3,7 @@
 What the desktop stores in SQLite, how it migrates, and what it never stores.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-27
 - Drafted by: @akramcodez
 
 ## Principle
@@ -35,7 +35,7 @@ Columns in the whitepaper's diagram are Decided. Columns marked "added" are Sugg
 | | `canonical_root` | text, unique | Real path used for every security check (`SEC-03`). |
 | | `session_cwd` | text | Directory passed to ACP. Usually equal to the root. |
 | | `display_name` | text | |
-| | `trusted` | integer (boolean) | Desktop trust flag (`CHAT-02`, `OQ-14`). |
+| | `trusted` | integer (boolean) | Desktop trust flag. Gates Git and watchers; Nanocoder's own store gates Nanocoder, and one prompt sets both (`CHAT-02`, `DEC-30`). |
 | | `last_opened_at` | text (ISO 8601) | Indexed for the recent list. |
 | | `created_at` | text | Added. |
 | `thread` | `id` | text, primary key | |

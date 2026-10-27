@@ -3,7 +3,7 @@
 Projects, threads, durable resume, view-only threads, approvals, and model and mode controls.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-27
 - Drafted by: @akramcodez
 
 ## Purpose
@@ -15,7 +15,7 @@ Let the user add a project, start or resume durable Nanocoder chats, follow each
 | ID | Requirement | Status and source |
 |---|---|---|
 | CHAT-01 | Add a project by choosing a folder in a main-process picker. Store its canonical root, session cwd and display name. Git is not required; Git review is disabled without it (`GIT-13`). | Decided ([whitepaper][wp-identity]) |
-| CHAT-02 | Ask the user to trust a project before starting Nanocoder, Git or watchers in it. | Open (`OQ-14`) |
+| CHAT-02 | Ask the user to trust a project before starting Nanocoder, Git or watchers in it, listing what Nanocoder will run. One prompt covers the desktop and Nanocoder ([Directory trust](../acp-integration.md#directory-trust)). | Proposed (awaiting @will-lamerton) (`DEC-30`) |
 | CHAT-03 | List a project's threads by last activity, with archived threads separate. | Decided ([whitepaper][wp-states]) |
 | CHAT-04 | A new thread calls `session/new` on first prompt and stores the session ID before showing anything else. | Decided ([whitepaper][wp-durable]) |
 | CHAT-05 | Stream user messages, reasoning, agent messages, tool calls, tool updates (with diffs when Nanocoder sends them) and available commands, in order. | Decided ([whitepaper][wp-scope]) |
@@ -98,7 +98,7 @@ See [`security.md`](../security.md): `SEC-02` (IPC), `SEC-07` (no transcripts st
 
 ## Open questions
 
-`OQ-14` (trust), `OQ-15` (starting mode), `OQ-16` (retention), `OQ-19` (switching project mid-turn).
+`OQ-14` (trust, proposed in `DEC-30`), `OQ-15` (starting mode), `OQ-16` (retention), `OQ-19` (switching project mid-turn).
 
 ## Acceptance criteria
 

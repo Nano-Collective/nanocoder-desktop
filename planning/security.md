@@ -3,7 +3,7 @@
 The threat model, trust boundaries and security rules for Nanocoder Desktop, including the browser-to-agent boundary and signing.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-27
 - Drafted by: @akramcodez
 
 ## Why this matters here
@@ -92,7 +92,7 @@ flowchart LR
 | SEC-14 | Releases are signed, updates are signed, and Electron and Chromium security releases are applied promptly. | Decided as a requirement ([whitepaper][wp-threat]); how is Open ([#120][i120]) |
 | SEC-15 | The app UI loads only bundled code over a custom protocol (not `file://`), with a restrictive Content Security Policy. Navigation away from the app and new windows are denied in app UI renderers. | Suggestion (not discussed), from [Electron security guidance][el-security] items 7, 13, 14 and 18 |
 | SEC-16 | `shell.openExternal` is called only for `http:` and `https:` URLs (and `mailto:` if needed), only after a user action, and never with a URL taken straight from page or model content without showing it first. | Suggestion (not discussed), from [Electron security guidance][el-security] item 15 |
-| SEC-17 | The desktop runs nothing project-defined (Nanocoder, Git status, file watchers that follow config) until the user has trusted the project. Opening an untrusted folder shows its tree name only. | Open (`OQ-14`) |
+| SEC-17 | The desktop runs nothing project-defined (Nanocoder, Git status, file watchers that follow config) until the user has trusted the project. Opening an untrusted folder shows its tree name only. | Proposed (awaiting @will-lamerton) (`DEC-30`) |
 | SEC-18 | Dependencies pass `pnpm audit`, Semgrep and CodeQL in CI, the lockfile is frozen, Electron is pinned to an exact version, and GitHub Actions are pinned by commit SHA. | Decided (audit, Semgrep, CodeQL: [Project infrastructure][infra]); pinning is Suggestion (not discussed) |
 | SEC-19 | Electron fuses are reviewed and set at packaging time. Any fuse left on (for example `runAsNode`, if Nanocoder runs under Electron's Node mode) is documented with its reason. Playwright needs `nodeCliInspect` on, so end-to-end tests use a test build with that fuse on, and a test checks the shipped build's fuses ([#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3)). | Suggestion (not discussed), from [Electron security guidance][el-security] item 19 and [fuses][el-fuses] |
 | SEC-20 | ACP client callbacks get least privilege: root-checked text reads only, no writes, no terminal, and no reads of files the user excluded. | Decided ([whitepaper, Why ACP][wp-why]) |
@@ -147,7 +147,7 @@ What that means in practice, Suggestion (not discussed):
 - **Resolve once, show always.** The prototype finds the installed Nanocoder package, resolves its `bin` entry (`dist/cli.js`, [source][nc-bin]) and a Node runtime to absolute paths, shows both with the version, and stores them. It does not search `PATH` again at launch.
 - **No shims on Windows.** The npm-installed `nanocoder` command on Windows is a `.cmd` wrapper, which Node can only run through a shell. The desktop launches `[node, absolute path to dist/cli.js, "--acp"]` instead.
 - **Never the project's own copy.** A `node_modules/.bin/nanocoder` inside the opened repository is not a trusted runtime. Nanocoder's VS Code extension had exactly this bug ([nanocoder#1730][nc1730]).
-- **A clean environment.** Pass the user's environment so providers keep working, but drop variables that change how the runtime loads code, such as `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE` (unless the desktop sets the latter deliberately, `OQ-22`). Also drop `NANOCODER_TRUST_DIRECTORY`, so Nanocoder's directory trust is never inherited from a shell (`OQ-14`). Done in phase G.2.
+- **A clean environment.** Pass the user's environment so providers keep working, but drop variables that change how the runtime loads code, such as `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE` (unless the desktop sets the latter deliberately, `OQ-22`). Also drop `NANOCODER_TRUST_DIRECTORY`, so Nanocoder's directory trust is never inherited from a shell (`DEC-30`). Done in phase G.2.
 - **The same rules for every launch.** Git, the external editor and the PTY shell follow the same pattern.
 
 ## Secrets and diagnostics

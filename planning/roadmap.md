@@ -196,16 +196,21 @@ Published Nanocoder 1.31.0 lacks `session/close`, the trust check and per-sessio
 
 ### Phase G.3: settle trust and starting mode
 
-Needs `OQ-14` and `OQ-15` answered.
+Needs `OQ-15` answered. `OQ-14` has a proposal, `DEC-30` ([Directory trust](acp-integration.md#directory-trust)).
 
 **Build**
 
-- [ ] Apply the agreed trust mapping (`ACP-20`)
+- [ ] Trust launch: after the user confirms, start Nanocoder once with `NANOCODER_TRUST_DIRECTORY=1` and stdin closed, then launch without it (`ACP-20`, `DEC-30`)
+- [ ] Recognise Nanocoder's trust refusals and show its reason with the prompt again, with no automatic restart (`ACP-20`, `ACP-17`)
+- [ ] Raise the Nanocoder issue for a trust status command, a fingerprint-bound grant, a refusal exit code and a versioned fingerprint
 - [ ] Set the agreed starting mode on every new session (`ACP-13`)
 
 **Results we want**
 
 - [ ] Both decisions recorded in [`decisions.md`](decisions.md)
+- [ ] A changed fingerprint makes `--acp` exit with a reason the desktop shows
+- [ ] Plugins load for a session at the project root
+- [ ] `NANOCODER_TRUST_DIRECTORY` is never in the environment of a running session
 - [ ] A new session reports the agreed mode, not `auto-accept` by accident
 
 ### Phase G.4: a real turn with approvals
@@ -278,7 +283,7 @@ Can run in parallel with G.4 and G.5.
 
 - [ ] Add a project through a main-process folder picker (`CHAT-01`)
 - [ ] Store the canonical root, session cwd and display name
-- [ ] Trust prompt before anything project-defined runs (`CHAT-02`, `SEC-17`)
+- [ ] Trust prompt before anything project-defined runs, listing what Nanocoder will run (`CHAT-02`, `SEC-17`, `DEC-30`)
 - [ ] Recent projects list and "locate" for a moved project
 
 **Results we want**
