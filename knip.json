@@ -6,8 +6,7 @@
 		"source/renderer/main.tsx",
 		"e2e/**/*.e2e.ts",
 		"scripts/*.{js,mjs}",
-		"ava.acp.config.js",
-		".changeset/changelog.cjs"
+		"ava.acp.config.js"
 	],
 	"project": ["source/**/*.{ts,tsx}", "e2e/**/*.ts"],
 	"ignoreBinaries": ["semgrep"],

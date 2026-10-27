@@ -4,6 +4,8 @@ import {CHANNELS} from '@/shared/ipc';
 
 const api: DesktopApi = {
 	getAppInfo: () => ipcRenderer.invoke(CHANNELS.getAppInfo, {}),
+	getNanocoderRuntime: () =>
+		ipcRenderer.invoke(CHANNELS.getNanocoderRuntime, {}),
 };
 
 contextBridge.exposeInMainWorld('desktop', api);

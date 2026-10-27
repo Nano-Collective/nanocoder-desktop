@@ -2,6 +2,16 @@ import type {z} from 'zod';
 import {isAllowedOrigin} from '@/main/security';
 import type {IpcError, IpcResult} from '@/shared/ipc';
 
+export class IpcFailure extends Error {
+	constructor(
+		readonly code: IpcError['code'],
+		message: string,
+		readonly retryable = false,
+	) {
+		super(message);
+	}
+}
+
 export interface Sender {
 	url: string | undefined;
 	isMainFrame: boolean;
@@ -45,6 +55,9 @@ export async function handleRequest<Request, Value>(options: {
 	try {
 		return {ok: true, value: await options.handler(parsed.data)};
 	} catch (error) {
+		if (error instanceof IpcFailure) {
+			return failure(error.code, error.message, error.retryable);
+		}
 		console.error(error);
 		return failure('INTERNAL', 'Something went wrong');
 	}

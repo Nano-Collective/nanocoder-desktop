@@ -19,9 +19,18 @@ export type IpcResult<T> = {ok: true; value: T} | {ok: false; error: IpcError};
 
 export const CHANNELS = {
 	getAppInfo: 'app:get-info',
+	getNanocoderRuntime: 'nanocoder:get-runtime',
 } as const;
 
 export interface AppInfo {
 	name: string;
 	version: string;
+}
+
+export interface NanocoderRuntime {
+	nodePath: string;
+	nodeVersion: string;
+	cliPath: string;
+	version: string;
+	source: 'override' | 'path';
 }

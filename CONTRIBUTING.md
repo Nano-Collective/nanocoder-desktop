@@ -25,7 +25,7 @@ The toolchain (roadmap phase S.2) and the Electron skeleton (phase S.3) are in p
 - Node.js 22 or newer.
 - pnpm 11, through Corepack.
 - Git.
-- Nanocoder. Until the next Nanocoder release, use a build of Nanocoder `main`: published 1.31.0 does not have `session/close`, the ACP trust check or per-session working directories, which the desktop needs.
+- Nanocoder. Until the next Nanocoder release, use a build of Nanocoder `main`: published 1.31.0 does not have `session/close`, the ACP trust check or per-session working directories, which the desktop needs. Point the app at it with `NANOCODER_DESKTOP_CLI=/absolute/path/to/nanocoder/dist/cli.js`. `NANOCODER_DESKTOP_NODE` sets the Node.js runtime the same way. Without them, the app finds `nanocoder` and `node` on your `PATH`.
 - On Linux only: Python 3, `make` and a C++ compiler, because `node-pty` has no prebuilt Linux binary and builds from source.
 
 ### Setup steps

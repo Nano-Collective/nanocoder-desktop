@@ -28,7 +28,7 @@ test('the preload bridge exposes typed methods only', async () => {
 	const keys = await page.evaluate(() =>
 		Object.keys((window as {desktop?: object}).desktop ?? {}),
 	);
-	expect(keys).toEqual(['getAppInfo']);
+	expect(keys).toEqual(['getAppInfo', 'getNanocoderRuntime']);
 });
 
 test('the bridge returns the standard result shape', async () => {
@@ -41,6 +41,22 @@ test('the bridge returns the standard result shape', async () => {
 		ok: true,
 		value: {name: 'Nanocoder Desktop', version: expect.any(String)},
 	});
+});
+
+test('reports the Nanocoder runtime or why it is unavailable', async () => {
+	const result = (await page.evaluate(() =>
+		(
+			window as {desktop?: {getNanocoderRuntime(): Promise<unknown>}}
+		).desktop?.getNanocoderRuntime(),
+	)) as {ok: boolean; value?: Record<string, string>; error?: {code: string}};
+	if (result.ok) {
+		expect(result.value?.cliPath).toMatch(/cli\.js$/);
+		expect(result.value?.nodeVersion).toMatch(/^v\d+\./);
+	} else {
+		expect(['NOT_FOUND', 'DENIED', 'UNSUPPORTED']).toContain(
+			result.error?.code,
+		);
+	}
 });
 
 test('loads the renderer over the app protocol, not file://', async () => {

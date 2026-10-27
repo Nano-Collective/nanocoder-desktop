@@ -2,6 +2,7 @@ import test from 'ava';
 import {z} from 'zod';
 import {
 	handleRequest,
+	IpcFailure,
 	isTrustedSender,
 	type Sender,
 } from '@/main/ipc/handle-request';
@@ -91,6 +92,26 @@ test('turns a thrown error into INTERNAL without leaking its message', async t =
 			code: 'INTERNAL',
 			message: 'Something went wrong',
 			retryable: false,
+		},
+	});
+});
+
+test('returns the code of an IpcFailure thrown by the handler', async t => {
+	const result = await handleRequest({
+		sender: appSender,
+		payload: {name: 'ada'},
+		schema,
+		handler: () => {
+			throw new IpcFailure('NOT_FOUND', 'Nanocoder is not installed', true);
+		},
+		allowedOrigins: [APP_ORIGIN],
+	});
+	t.deepEqual(result, {
+		ok: false,
+		error: {
+			code: 'NOT_FOUND',
+			message: 'Nanocoder is not installed',
+			retryable: true,
 		},
 	});
 });
