@@ -202,23 +202,27 @@ Published Nanocoder 1.31.0 lacks `session/close`, the trust check and per-sessio
 
 - [ ] Trust launch: after the user confirms, start Nanocoder once with `NANOCODER_TRUST_DIRECTORY=1` and stdin closed, then launch without it (`ACP-20`, `DEC-30`)
 - [ ] Recognise Nanocoder's trust refusals and show its reason with the prompt again, with no automatic restart (`ACP-20`, `ACP-17`)
+- [ ] A minimal trust confirmation that shows Nanocoder's reason and the folder; the full list of what will run comes in phase 1.2 (`CHAT-02`)
 - [x] Raise the Nanocoder issue for a trust status command, a fingerprint-bound grant, a refusal exit code and a versioned fingerprint ([nanocoder#1899](https://github.com/Nano-Collective/nanocoder/issues/1899))
-- [ ] Send `session/set_mode` after every `session/new` and `session/resume`, checked against `availableModes`, and block prompts until it succeeds (`ACP-13`, `DEC-31`)
+- [ ] A minimal `session/new` at the project root, so there is a session to set the mode on (`ACP-05`)
+- [ ] Send `session/set_mode` after every `session/new`, checked against `availableModes`, and block prompts until it succeeds; G.5 calls the same step after `session/resume` (`ACP-13`, `DEC-31`)
 - [x] Add the mode changes to [#12](https://github.com/Nano-Collective/nanocoder-desktop/issues/12): `--mode` for ACP, an error for unknown modes, the applied mode reported ([nanocoder#1900](https://github.com/Nano-Collective/nanocoder/issues/1900)); the effective approval policy waits for Milestone 3
 
 **Results we want**
 
-- [ ] Both decisions recorded in [`decisions.md`](decisions.md)
+- [x] Both decisions recorded in [`decisions.md`](decisions.md) (`DEC-30`, `DEC-31`)
 - [ ] A changed fingerprint makes `--acp` exit with a reason the desktop shows
-- [ ] Plugins load for a session at the project root
 - [ ] `NANOCODER_TRUST_DIRECTORY` is never in the environment of a running session
-- [ ] A protected tool call in a new session and in a resumed one produces a permission request, since Nanocoder does not report the applied mode
+- [ ] A session takes no prompt until `session/set_mode` succeeds, and a mode missing from `availableModes` is never sent
+
+The two checks that need a real turn moved to G.4 and G.5: a protected tool call producing a permission request, and plugins loading at the project root.
 
 ### Phase G.4: a real turn with approvals
 
 **Build**
 
 - [ ] `session/new` with a provider-backed model (`ACP-05`)
+- [ ] A scripted model provider for the ACP integration tests, so turns run in CI without an API key ([`testing-strategy.md`](testing-strategy.md))
 - [ ] A prompt that triggers a protected tool
 - [ ] Permission requests answered from a minimal UI (`ACP-10`)
 
@@ -226,6 +230,8 @@ Published Nanocoder 1.31.0 lacks `session/close`, the trust check and per-sessio
 
 - [ ] Allow once runs the tool
 - [ ] Reject stops the tool and the turn continues as Nanocoder reports
+- [ ] After `session/set_mode` to `normal`, a protected tool call in a new session produces a permission request, since Nanocoder does not report the applied mode (`DEC-31`)
+- [ ] Plugins load for a session at the project root (`DEC-30`)
 
 ### Phase G.5: restart and resume
 
@@ -238,6 +244,7 @@ Published Nanocoder 1.31.0 lacks `session/close`, the trust check and per-sessio
 
 - [ ] A follow-up question that only earlier context can answer is answered correctly
 - [ ] Resuming a deleted session fails cleanly
+- [ ] A protected tool call in a resumed session produces a permission request, because the mode is sent again after `session/resume` (`DEC-31`)
 - [ ] Passes on macOS, Windows and Linux, with a short write-up committed
 
 ### Phase G.6: measure the runtime

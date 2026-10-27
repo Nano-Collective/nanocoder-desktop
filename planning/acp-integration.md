@@ -180,7 +180,7 @@ Known gaps until the Nanocoder changes land:
 - Trust entries carry no fingerprint version, and the inputs change between Nanocoder versions. A CLI and a bundled Nanocoder on different versions each see the other's entry as changed, so the user is asked again after each switch.
 - The desktop's prompt list can drift from what Nanocoder fingerprints.
 
-To check in phase G.3: a changed fingerprint makes `--acp` exit with a reason the desktop can show, and plugins load for a session at the project root.
+To check: in phase G.3, a changed fingerprint makes `--acp` exit with a reason the desktop can show; in G.4, which runs real turns, plugins load for a session at the project root.
 
 ## Session mode
 
@@ -199,7 +199,7 @@ Nanocoder registers every new, loaded and resumed ACP session in `auto-accept` a
 | Public browsing | Paused outside `normal`, with the reason shown (`BRW-16`). | Keeps the [#108][i108] boundary. |
 | Limits of `normal` | The mode control says that tools in Nanocoder's `alwaysAllow` run without asking in every mode. The trust prompt calls out a project-level `alwaysAllow` or `defaultMode` (`DEC-30`). | Nanocoder checks `alwaysAllow` before the mode ([source][nc-approval]). |
 
-To check in phase G.3, by behaviour, since Nanocoder does not report the applied mode: a protected tool call in a new session and in a resumed one produces a permission request.
+To check by behaviour, since Nanocoder does not report the applied mode: in G.4, a protected tool call in a new session produces a permission request; in G.5, so does one in a resumed session. G.3 checks the plumbing: no prompt before `set_mode` succeeds, and no mode outside `availableModes` is sent.
 
 ## Session discovery and identity
 
