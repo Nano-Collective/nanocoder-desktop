@@ -202,9 +202,9 @@ Published Nanocoder 1.31.0 lacks `session/close`, the trust check and per-sessio
 
 - [ ] Trust launch: after the user confirms, start Nanocoder once with `NANOCODER_TRUST_DIRECTORY=1` and stdin closed, then launch without it (`ACP-20`, `DEC-30`)
 - [ ] Recognise Nanocoder's trust refusals and show its reason with the prompt again, with no automatic restart (`ACP-20`, `ACP-17`)
-- [ ] Raise the Nanocoder issue for a trust status command, a fingerprint-bound grant, a refusal exit code and a versioned fingerprint
+- [x] Raise the Nanocoder issue for a trust status command, a fingerprint-bound grant, a refusal exit code and a versioned fingerprint ([nanocoder#1899](https://github.com/Nano-Collective/nanocoder/issues/1899))
 - [ ] Send `session/set_mode` after every `session/new` and `session/resume`, checked against `availableModes`, and block prompts until it succeeds (`ACP-13`, `DEC-31`)
-- [ ] Add the mode changes to [#12](https://github.com/Nano-Collective/nanocoder-desktop/issues/12): `--mode` for ACP, an error for unknown modes, the applied mode reported, the effective approval policy
+- [x] Add the mode changes to [#12](https://github.com/Nano-Collective/nanocoder-desktop/issues/12): `--mode` for ACP, an error for unknown modes, the applied mode reported ([nanocoder#1900](https://github.com/Nano-Collective/nanocoder/issues/1900)); the effective approval policy waits for Milestone 3
 
 **Results we want**
 
