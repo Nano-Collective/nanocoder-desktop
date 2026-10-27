@@ -92,7 +92,8 @@ jobs:
       - if: steps.tests.outputs.found == 'true'
         run: pnpm install --frozen-lockfile
 
-      - if: steps.tests.outputs.found == 'true'
+      # Not on Windows: pnpm's node_modules links do not survive a cache restore there.
+      - if: steps.tests.outputs.found == 'true' && runner.os != 'Windows'
         id: nanocoder-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
