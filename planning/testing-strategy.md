@@ -75,7 +75,9 @@ Connect `agent-browser connect 9333`. The Chromium debugging endpoint is bound t
 
 `tsconfig.e2e.json` checks the launcher, Knip discovers it through `qa:launch`, and Playwright's `*.e2e.ts` match does not run it as a test. Packaging includes `out/` and package metadata only, with explicit exclusions for `e2e/` and `.qa/`.
 
-Workspace contract tests in `source/main/ipc/workspace.spec.ts` cover every added handler's malformed, unknown-field and wrong-sender refusals, unavailable services, and injected-service dispatch. They also refuse content in storage patches, renderer-selected paths, `yolo` defaults and untrusted start/restart intents. `e2e/app.e2e.ts` checks the real bridge, unavailable results, validation and data-only subscription teardown.
+Workspace contract tests in `source/main/ipc/workspace.spec.ts` cover every added handler's malformed, unknown-field and wrong-sender refusals, unavailable services, and injected-service dispatch. They also refuse content in storage patches, renderer-selected paths, `yolo` defaults and untrusted start/restart intents. `e2e/app.e2e.ts` checks the real bridge, unavailable project actions, validation and data-only subscription teardown.
+
+Phase 1.1 store tests in `source/main/store/store.spec.ts` use real temporary SQLite files in plain Node. They cover every numbered migration, previous-version backup, rollback, newer-version refusal, corruption quarantine, schema-wide privacy introspection, canonical paths, sidecar-link refusal, metadata queries and persistence. `e2e/store.e2e.ts` repeats persistence, migration backup and corrupt-file startup against Electron's bundled Node. `e2e/connect.e2e.ts` scans the database and sidecars after a fake conversation for prompt, agent and tool text. Every end-to-end launcher uses a separate temporary profile so tests never write the normal desktop store.
 
 ## Packaged restart-and-resume test
 

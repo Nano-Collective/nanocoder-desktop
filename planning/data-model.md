@@ -3,7 +3,7 @@
 What the desktop stores in SQLite, how it migrates, and what it never stores.
 
 - Status: Draft
-- Last updated: 2026-10-27
+- Last updated: 2026-10-29
 - Drafted by: @akramcodez
 
 ## Principle
@@ -47,7 +47,7 @@ Columns in the whitepaper's diagram are Decided. Columns marked "added" are Sugg
 | | `run_state` | text: the seven thread states | Last known state, so a crash is visible on next launch. |
 | | `last_activity_at` | text | Indexed with `project_id`. |
 | | `session_cwd` | text | Added: the cwd this session was created with, since Nanocoder resumes in the persisted directory. |
-| | `mode` | text | Added: the thread's mode, sent again after every resume. `yolo` is not restored (`DEC-31`). |
+| | `mode` | text | Added: the thread's persisted mode, sent again after every resume. Saving `yolo` stores the project default instead (`DEC-31`); the live mode stays in memory. |
 | | `view_only_reason` | text, nullable | Added: why the thread is view-only. |
 | `turn_summary` | `id` | text, primary key | |
 | | `thread_id` | text, foreign key, cascade | Indexed. |
@@ -65,6 +65,7 @@ Columns in the whitepaper's diagram are Decided. Columns marked "added" are Sugg
 | `browser_tab` | `id`, `project_id`, `url`, `title` | | v1 has one tab. URLs can be sensitive; cleared with browser data (`BRW-08`). |
 | `setting` | `key` text primary key, `value` JSON | | Added (`DATA-09`). |
 | `schema_migration` | `version` integer primary key, `applied_at` | | Added (`DATA-03`). |
+| `ui_state` | `id` integer primary key (always 1), `value` JSON | | Added: one bounded, allowlisted UI-state object (`DATA-10`), not drafts or conversation data. |
 
 ## Indexes
 
@@ -103,6 +104,17 @@ Decided (`DATA-04`): transcripts and message text, file contents, tool inputs an
 
 Suggestion (not discussed): migrations live as numbered files in the source tree, run at startup before any window opens, and refuse to run against a database from a newer app version (the user is told to update instead).
 
+Phase 1.1 implements this in [`source/main/store/`](../source/main/store/), behind the library-independent `SqlDriver` contract (`DEC-04`). Main opens `desktop.sqlite` under Electron's `userData` directory before registering the workspace handlers or opening a window. The SQLite adapter uses WAL, foreign keys and parameterised statements. It turns database failures into fixed error messages, without logging SQL or values.
+
+- `001-metadata.ts` creates the eight planned tables and their indexes; `002-ui-state.ts` adds the single UI-state row. Each migration commits its schema, `schema_migration` record and SQLite `user_version` together.
+- An existing database gets an online SQLite backup before the first pending migration, including committed WAL changes. Backups are named `desktop.sqlite.backup-<uuid>`. A backup failure stops the upgrade. `STORE_TOO_NEW` refuses a newer version without replacing or upgrading it.
+- Startup runs `PRAGMA integrity_check`. Corrupt data or an invalid migration record moves the database and any surviving journal/WAL sidecars into `desktop.sqlite.corrupt-<uuid>/`, then starts fresh. These files and backups are not automatically deleted.
+- The database directory is canonicalised. Existing database and sidecar symlinks, hard links and non-files are refused. New database and backup files are created with owner-only permissions where the platform supports them.
+- Settings and UI state use strict allowlists on both IPC patches and store writes. Main alone may store an existing canonical Nanocoder override file; the renderer cannot supply it. Persistence does not yet apply settings to the technical-gate UI or restore window geometry.
+- Project availability is derived on read, not persisted. Repositories reject non-canonical or escaping session directories and cross-project thread moves. Services must still re-check roots before running anything. Repositories remove desktop rows only.
+
+Evidence: [`store.spec.ts`](../source/main/store/store.spec.ts) introspects every migrated table for prohibited content columns and covers migrations, backups, rollback, refusal, recovery and metadata round trips. [`store.e2e.ts`](../e2e/store.e2e.ts) exercises the built main process, persistence across restart and corrupt-file startup; [`connect.e2e.ts`](../e2e/connect.e2e.ts) scans SQLite after a fake conversation and tool call.
+
 ## Browser partition
 
 Open (whitepaper question 6, `OQ-06`): one app-wide persistent partition, or one per project.
@@ -117,6 +129,8 @@ Either way the partition is persistent, separate from the user's normal browser 
 ## SQLite library
 
 Decided in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3) (`DEC-04`): `node:sqlite`, with `better-sqlite3` as the fallback behind the same interface. In the check posted on #3, `node:sqlite` opened an in-memory database and a WAL file in Electron 45.0.0 on Windows. It is a release candidate on Node 24.15 and later and still active development on Node 22, so store specs run on Node 24 as well. The candidates considered:
+
+Checked again on macOS arm64 for phase 1.1: Electron 45.1.0 embeds Node 24.22.1. The built main process opens the real store, migrates it, backs it up and recovers corruption without a SQLite flag ([`store.e2e.ts`](../e2e/store.e2e.ts)). An Electron Node-mode check also passed with warning suppression removed and emitted no warning. The local Node 25 Playwright runner emits an SQLite `ExperimentalWarning`; it does not affect the tests or require an app flag.
 
 | Candidate | Notes |
 |---|---|

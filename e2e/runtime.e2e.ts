@@ -21,7 +21,7 @@ test.afterAll(() => {
 
 test('finds Nanocoder installed after the app started, without a restart', async () => {
 	const app = await electron.launch({
-		args: ['.'],
+		args: ['.', `--user-data-dir=${path.join(work, 'profile')}`],
 		env: {
 			...process.env,
 			NANOCODER_DESKTOP_CLI: fakeCli,

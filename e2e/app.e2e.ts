@@ -1,3 +1,6 @@
+import {mkdtempSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import {
 	type ElectronApplication,
 	_electron as electron,
@@ -10,14 +13,16 @@ import {CHANNELS, type ProjectEvent} from '@/shared/ipc';
 
 let app: ElectronApplication;
 let page: Page;
+const profile = mkdtempSync(path.join(tmpdir(), 'nd-app-e2e-'));
 
 test.beforeAll(async () => {
-	app = await electron.launch({args: ['.']});
+	app = await electron.launch({args: ['.', `--user-data-dir=${profile}`]});
 	page = await app.firstWindow();
 });
 
 test.afterAll(async () => {
 	await app.close();
+	rmSync(profile, {recursive: true, force: true});
 });
 
 test('shows the app shell, loaded over IPC', async () => {
@@ -42,9 +47,9 @@ test('the preload bridge exposes typed methods only', async () => {
 	expect(keys).not.toContain('ipcRenderer');
 });
 
-test('workspace methods return UNAVAILABLE until their services land', async () => {
+test('project actions return UNAVAILABLE until their services land', async () => {
 	const result = await page.evaluate(() =>
-		(window as unknown as {desktop: DesktopApi}).desktop.getSettings({}),
+		(window as unknown as {desktop: DesktopApi}).desktop.addProject({}),
 	);
 	expect(result).toEqual({
 		ok: false,

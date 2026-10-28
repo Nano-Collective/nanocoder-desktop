@@ -3,6 +3,8 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
+	readFileSync,
 	realpathSync,
 	rmSync,
 	writeFileSync,
@@ -76,7 +78,7 @@ test.beforeAll(async () => {
 	);
 	copyFileSync('source/main/nanocoder/fixtures/fake-nanocoder.mjs', fakeCli);
 	app = await electron.launch({
-		args: ['.'],
+		args: ['.', `--user-data-dir=${path.join(work, 'profile')}`],
 		env: {
 			...process.env,
 			NANOCODER_DESKTOP_CLI: fakeCli,
@@ -319,4 +321,32 @@ test('validates a prompt', async () => {
 	const wrongType = await bridge('sendPrompt', {text: 'x'});
 	expect(empty.error?.code).toBe('VALIDATION');
 	expect(wrongType.error?.code).toBe('VALIDATION');
+});
+
+test('conversation and tool text never enters the desktop database', async () => {
+	await openFolder(project('privacy'));
+	const marker = 'fixture-private-prompt-not-for-storage';
+	await page.getByLabel('Message').fill(marker);
+	await page.getByRole('button', {name: 'Send'}).click();
+	await cards().getByRole('button', {name: 'Allow'}).click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
+		marker,
+	);
+	const profile = path.join(work, 'profile');
+	const files = readdirSync(profile).filter(name =>
+		/^desktop\.sqlite(?:-(?:wal|shm))?$/.test(name),
+	);
+	expect(files).toContain('desktop.sqlite');
+	for (const name of files) {
+		const bytes = readFileSync(path.join(profile, name));
+		for (const text of [
+			marker,
+			'Working on it.',
+			'execute_bash: echo hi',
+			'Tool ran.',
+		]) {
+			expect(bytes.includes(text)).toBe(false);
+		}
+	}
 });

@@ -1,7 +1,8 @@
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {app, BrowserWindow, net, protocol, session} from 'electron';
+import {app, BrowserWindow, dialog, net, protocol, session} from 'electron';
 import {closeNanocoder, registerIpcHandlers} from '@/main/ipc';
+import {IpcFailure} from '@/main/ipc/handle-request';
 import {createQuitHandler} from '@/main/lifecycle';
 import {
 	APP_ORIGIN,
@@ -10,6 +11,8 @@ import {
 	isAllowedOrigin,
 	resolveRendererFile,
 } from '@/main/security';
+import {desktopStoreFactory} from '@/main/store';
+import {createNodeSqliteDriver} from '@/main/store/node-sqlite';
 import {APP_NAME} from '@/shared/app-info';
 
 const devServerUrl = process.env.ELECTRON_RENDERER_URL;
@@ -107,17 +110,32 @@ function createWindow(): void {
 	void window.loadURL(devServerUrl ?? `${APP_ORIGIN}/index.html`);
 }
 
-void app.whenReady().then(() => {
-	serveRenderer();
-	lockDownSession();
-	registerIpcHandlers(allowedOrigins);
-	createWindow();
-	app.on('activate', () => {
-		if (BrowserWindow.getAllWindows().length === 0) {
-			createWindow();
-		}
+void app
+	.whenReady()
+	.then(async () => {
+		const store = await desktopStoreFactory.open({
+			databasePath: path.join(app.getPath('userData'), 'desktop.sqlite'),
+			driver: createNodeSqliteDriver(),
+		});
+		serveRenderer();
+		lockDownSession();
+		registerIpcHandlers(allowedOrigins, {store});
+		createWindow();
+		app.on('activate', () => {
+			if (BrowserWindow.getAllWindows().length === 0) {
+				createWindow();
+			}
+		});
+	})
+	.catch((error: unknown) => {
+		dialog.showErrorBox(
+			'Cannot open Nanocoder Desktop',
+			error instanceof IpcFailure
+				? error.message
+				: 'The desktop could not start',
+		);
+		app.quit();
 	});
-});
 
 app.on('window-all-closed', () => {
 	if (process.platform !== 'darwin') {
