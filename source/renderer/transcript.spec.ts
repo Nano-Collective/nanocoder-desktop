@@ -5,6 +5,23 @@ import {
 	emptyTranscript,
 } from '@/renderer/transcript';
 
+test('rebuilds a resumed thread from its replayed events', t => {
+	let transcript = emptyTranscript;
+	for (const event of [
+		{type: 'user', text: 'Earlier question'},
+		{type: 'text', text: 'Earlier answer'},
+		{type: 'tool', id: 'c1', title: 'ls', status: 'completed'},
+	] as const) {
+		transcript = applyEvent(transcript, event);
+	}
+	t.deepEqual(transcript.items, [
+		{kind: 'user', text: 'Earlier question'},
+		{kind: 'agent', text: 'Earlier answer'},
+		{kind: 'tool', id: 'c1', title: 'ls', status: 'completed'},
+	]);
+	t.deepEqual(transcript.permissions, []);
+});
+
 test('joins consecutive agent text into one message', t => {
 	let transcript = addUserMessage(emptyTranscript, 'Hi');
 	transcript = applyEvent(transcript, {type: 'text', text: 'Hello, '});

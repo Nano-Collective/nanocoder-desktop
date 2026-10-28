@@ -276,6 +276,162 @@ test('tells an error Nanocoder reports apart from Nanocoder stopping', async t =
 	);
 });
 
+test('resumes a session, rebuilds it from the replay and sets its mode', async t => {
+	const root = fakeProject();
+	const live: string[] = [];
+	const connection = await connect(root, {
+		onUpdate: update => live.push(update.sessionUpdate),
+	});
+	const {session, history} = await connection.resumeSession(
+		'fake-session',
+		'normal',
+	);
+	await connection.close();
+
+	t.deepEqual(session, {id: 'fake-session', mode: 'normal'});
+	t.deepEqual(history, [
+		{type: 'user', text: 'Earlier question'},
+		{type: 'text', text: 'Earlier answer'},
+		{
+			type: 'tool',
+			id: 'old_call',
+			title: 'execute_bash: echo old',
+			status: 'completed',
+		},
+	]);
+	// Replayed updates are history, not new activity (ACP-07).
+	t.deepEqual(live, []);
+	const requests = fakeEvents(connection.stderr.lines()).filter(e => e.method);
+	t.deepEqual(
+		requests.map(e => e.method),
+		['initialize', 'session/resume', 'session/set_mode'],
+	);
+	t.like(requests[1].params, {sessionId: 'fake-session', cwd: root});
+	t.deepEqual(requests[2].params, {
+		sessionId: 'fake-session',
+		modeId: 'normal',
+	});
+});
+
+test('shows later updates as live again once the replay is over', async t => {
+	const live: string[] = [];
+	const connection = await connect(fakeProject(), {
+		onUpdate: update => live.push(update.sessionUpdate),
+		onPermission: async () => ({
+			outcome: {outcome: 'selected', optionId: 'allow'},
+		}),
+	});
+	await connection.resumeSession('fake-session', 'normal');
+	await connection.prompt('fake-session', 'Next question');
+	await connection.close();
+	t.deepEqual(live, [
+		'agent_message_chunk',
+		'tool_call',
+		'tool_call_update',
+		'agent_message_chunk',
+	]);
+});
+
+test('explains a session Nanocoder no longer has', async t => {
+	const connection = await connect(fakeProject());
+	const error = await rejection(connection.resumeSession('gone', 'normal'));
+	await connection.close();
+	t.is(error.code, 'NOT_FOUND');
+	t.is(
+		error.message,
+		"Nanocoder no longer has this session. It was deleted, or removed by Nanocoder's retention settings.",
+	);
+	const methods = fakeEvents(connection.stderr.lines()).map(e => e.method);
+	t.false(methods.includes('session/set_mode'));
+});
+
+test('does not call a failed resume a missing session', async t => {
+	const connection = await connect(fakeProject('resume-fails'));
+	const error = await rejection(
+		connection.resumeSession('fake-session', 'normal'),
+	);
+	await connection.close();
+	t.is(error.code, 'AGENT_UNAVAILABLE');
+	t.is(error.message, 'Nanocoder could not resume the session');
+});
+
+test('does not try to resume when Nanocoder does not advertise it', async t => {
+	const connection = await connect(fakeProject('no-resume'));
+	const error = await rejection(
+		connection.resumeSession('fake-session', 'normal'),
+	);
+	await connection.close();
+	t.is(error.code, 'UNSUPPORTED');
+	const methods = fakeEvents(connection.stderr.lines()).map(e => e.method);
+	t.false(methods.includes('session/resume'));
+});
+
+test('never sends a mode a resumed session does not offer, and closes it', async t => {
+	const connection = await connect(fakeProject('no-normal'));
+	const error = await rejection(
+		connection.resumeSession('fake-session', 'normal'),
+	);
+	await connection.close();
+	t.is(error.message, 'Nanocoder does not offer the normal mode');
+	const methods = fakeEvents(connection.stderr.lines()).map(e => e.method);
+	t.false(methods.includes('session/set_mode'));
+	t.true(methods.includes('session/close'));
+});
+
+test('closes a resumed session whose mode cannot be set', async t => {
+	const connection = await connect(fakeProject('mode-fails'));
+	const error = await rejection(
+		connection.resumeSession('fake-session', 'normal'),
+	);
+	await connection.close();
+	t.is(error.message, 'Nanocoder did not set the normal mode');
+	t.true(
+		fakeEvents(connection.stderr.lines()).some(
+			e => e.method === 'session/close',
+		),
+	);
+});
+
+test('deletes a session only when Nanocoder advertises deleting', async t => {
+	const connection = await connect(fakeProject());
+	await connection.deleteSession('fake-session');
+	await connection.close();
+	t.true(
+		fakeEvents(connection.stderr.lines()).some(
+			e => e.method === 'session/delete',
+		),
+	);
+});
+
+test('does not try to delete when Nanocoder does not advertise it', async t => {
+	const connection = await connect(fakeProject('no-delete'));
+	const error = await rejection(connection.deleteSession('fake-session'));
+	await connection.close();
+	t.is(error.code, 'UNSUPPORTED');
+	t.false(
+		fakeEvents(connection.stderr.lines()).some(
+			e => e.method === 'session/delete',
+		),
+	);
+});
+
+test('reports a delete Nanocoder refuses', async t => {
+	const connection = await connect(fakeProject('delete-fails'));
+	const error = await rejection(connection.deleteSession('fake-session'));
+	await connection.close();
+	t.is(error.message, 'Nanocoder could not delete the session');
+});
+
+test('does not call Nanocoder stopping during a resume a missing session', async t => {
+	const connection = await connect(fakeProject('die-in-resume'));
+	const error = await rejection(
+		connection.resumeSession('fake-session', 'normal'),
+	);
+	await connection.close();
+	t.is(error.code, 'AGENT_UNAVAILABLE');
+	t.is(error.message, 'Nanocoder could not resume the session');
+});
+
 test('describes how Nanocoder stopped', t => {
 	t.is(
 		describeExit({code: null, signal: 'SIGKILL'}),

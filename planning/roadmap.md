@@ -230,22 +230,22 @@ The two checks that need a real turn moved to G.4 and G.5: a protected tool call
 
 - [x] Allow once runs the tool ([`turn.acp.ts`](../source/main/nanocoder/turn.acp.ts), [`connect.e2e.ts`](../e2e/connect.e2e.ts))
 - [x] Reject stops the tool and the turn continues as Nanocoder reports: the tool is marked `failed`, the model is told "Tool call denied by user", and the turn ends with `end_turn` ([`turn.acp.ts`](../source/main/nanocoder/turn.acp.ts))
-- [x] After `session/set_mode` to `normal`, a protected tool call in a new session produces a permission request, since Nanocoder does not report the applied mode (`DEC-31`) ([`turn.acp.ts`](../source/main/nanocoder/turn.acp.ts))
+- [x] After `session/set_mode` to `normal`, a protected tool call in a new session produces a permission request, since Nanocoder does not report the applied mode (`DEC-31`): a file edit asks in `normal` and runs without asking in `auto-accept`; `execute_bash` asks in every mode, so it cannot show this ([`turn.acp.ts`](../source/main/nanocoder/turn.acp.ts))
 - [x] Plugins load for a session at the project root (`DEC-30`) ([`turn.acp.ts`](../source/main/nanocoder/turn.acp.ts))
 
 ### Phase G.5: restart and resume
 
 **Build**
 
-- [ ] End both processes, restart, `session/resume` (`ACP-06`, `ACP-07`)
-- [ ] Missing-session path (`ACP-19`)
+- [x] End both processes, restart, `session/resume` (`ACP-06`, `ACP-07`) ([`resume.acp.ts`](../source/main/nanocoder/resume.acp.ts), [`acp-client.spec.ts`](../source/main/nanocoder/acp-client.spec.ts))
+- [x] Missing-session path (`ACP-19`) ([`resume.acp.ts`](../source/main/nanocoder/resume.acp.ts), [`acp-client.spec.ts`](../source/main/nanocoder/acp-client.spec.ts))
 
 **Results we want**
 
-- [ ] A follow-up question that only earlier context can answer is answered correctly
-- [ ] Resuming a deleted session fails cleanly
-- [ ] A protected tool call in a resumed session produces a permission request, because the mode is sent again after `session/resume` (`DEC-31`)
-- [ ] Passes on macOS, Windows and Linux, with a short write-up committed
+- [x] A follow-up question that only earlier context can answer is answered correctly: shown by the earlier exchange reaching the model; a real model's answer is the manual restart test ([`resume.acp.ts`](../source/main/nanocoder/resume.acp.ts))
+- [x] Resuming a deleted session fails cleanly ([`resume.acp.ts`](../source/main/nanocoder/resume.acp.ts))
+- [x] A protected tool call in a resumed session produces a permission request, because the mode is sent again after `session/resume` (`DEC-31`): a file edit asks in `normal` and runs without asking in `auto-accept` ([`resume.acp.ts`](../source/main/nanocoder/resume.acp.ts))
+- [x] Passes on macOS, Windows and Linux, with a short write-up committed: [`technical-gate.md`](technical-gate.md), and the ACP job on [#20](https://github.com/Nano-Collective/nanocoder-desktop/pull/20) passes on all three
 
 ### Phase G.6: measure the runtime
 

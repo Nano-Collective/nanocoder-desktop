@@ -37,6 +37,7 @@ Visual design: see [`DESIGN.md`](../DESIGN.md).
 | 15 | [`glossary.md`](glossary.md) | Terms the set relies on. |
 | 16 | [`sources.md`](sources.md) | Everything read to write this set, with commits and dates. |
 | 17 | [`proposed-issues.md`](proposed-issues.md) | Drafts of the issues this plan needs raised, ready to post. |
+| 18 | [`technical-gate.md`](technical-gate.md) | What the technical gate proved, what Nanocoder does that the plan did not know, and what the tests do not prove. |
 
 Feature files:
 
