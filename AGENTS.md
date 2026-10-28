@@ -42,6 +42,8 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
 | `source/preload/index.ts` | The `window.desktop` bridge |
 | `e2e/*.e2e.ts` | Playwright tests against the built app |
+| `scripts/node-sidecar.json` | The pinned Node sidecar: exact version and SHA-256 per platform (`DEC-38`) |
+| `scripts/fetch-node-sidecar.mjs`, `scripts/measure-runtime.mjs` | Download and verify the sidecar; measure both runtimes (phase G.6) |
 | `electron.vite.config.ts`, `electron-builder.yml` | Build and packaging |
 | `.github/workflows/desktop-checks.yml` | Local CI jobs beside the shared `pr-checks` |
 
@@ -55,6 +57,8 @@ pnpm test:ava          # unit tests
 pnpm test:e2e          # build, then Playwright (use xvfb-run on headless Linux)
 pnpm test:acp          # ACP integration tests (*.acp.ts), needs NANOCODER_CLI
 pnpm package:dir       # unpacked app for this platform in release/
+pnpm fetch:node        # download the pinned Node sidecar into .cache/, checked against its pinned SHA-256
+pnpm measure:runtime   # Phase G.6: startup and memory under Electron's Node mode and the sidecar (needs NANOCODER_CLI)
 pnpm format            # apply Biome formatting
 pnpm changeset         # add a changeset for a user-facing change
 ```

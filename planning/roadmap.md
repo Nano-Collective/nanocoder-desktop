@@ -253,14 +253,14 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Build**
 
-- [ ] Run Nanocoder under Electron's Node mode on all three platforms (Electron 45 embeds Node 24.22.0)
-- [ ] Run it under a bundled Node 22 sidecar on all three platforms, with the checksum of the official download verified for each OS and architecture
-- [ ] Record the installer size the sidecar adds, and the macOS entitlements the bundled Node needs under the hardened runtime
-- [ ] Run a turn on a machine without Node installed, and note what MCP servers or hooks that call `node`, `npm` or `npx` need
+- [x] Run Nanocoder under Electron's Node mode on all three platforms (Electron 45 embeds Node 24.22.0) ([`measure-runtime.mjs`](../scripts/measure-runtime.mjs), the ACP job on [#21](https://github.com/Nano-Collective/nanocoder-desktop/pull/21), [`technical-gate.md`](technical-gate.md#the-runtime-g6))
+- [x] Run it under a bundled Node 22 sidecar on all three platforms, with the checksum of the official download verified for each OS and architecture ([`node-sidecar.json`](../scripts/node-sidecar.json), [`runtime.spec.mjs`](../scripts/lib/runtime.spec.mjs), the ACP job on [#21](https://github.com/Nano-Collective/nanocoder-desktop/pull/21)); macOS x64 is pinned but was not run
+- [ ] Record the installer size the sidecar adds, and the macOS entitlements the bundled Node needs under the hardened runtime: the unpacked and download sizes are recorded; the entitlement test was inconclusive under ad hoc signing and needs the real identity in phase 4.2
+- [ ] Run a turn on a machine without Node installed, and note what MCP servers or hooks that call `node`, `npm` or `npx` need: `initialize` works with no `node` on `PATH` on all three platforms; a full turn and the MCP and hook notes are still to do
 
 **Results we want**
 
-- [ ] `PERF-02` startup time, idle memory and any failures recorded for both on all three platforms
+- [x] `PERF-02` startup time, idle memory and any failures recorded for both on all three platforms ([`technical-gate.md`](technical-gate.md#the-runtime-g6))
 - [ ] The numbers recorded in [`technical-gate.md`](technical-gate.md) and posted on the work list ([#17](https://github.com/Nano-Collective/nanocoder-desktop/issues/17)), and the runtime change from the whitepaper's default recorded upstream (`DEC-38`)
 
 ## Milestone 1: conversation workspace
