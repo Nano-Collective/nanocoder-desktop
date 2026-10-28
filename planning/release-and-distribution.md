@@ -55,7 +55,7 @@ Nanocoder needs Node 22 or newer ([source][nc-engines]).
 
 | Option | For | Against | State |
 |---|---|---|---|
-| Electron's Node mode (`ELECTRON_RUN_AS_NODE`) | No second runtime. Electron 45.0.0 embeds Node 24.22.0 ([releases][el-releases]). | Keeps the `runAsNode` fuse on ([fuses][el-fuses], `SEC-19`), which Electron's checklist warns can let external scripts run commands through the app. Nanocoder's Node version moves with every Electron upgrade, and 24 is not the line Nanocoder's CI tests. | Viable; measured in G.6 |
+| Electron's Node mode (`ELECTRON_RUN_AS_NODE`) | No second runtime. Electron 45.1.0 embeds Node 24.22.1 ([releases][el-releases]). | Keeps the `runAsNode` fuse on ([fuses][el-fuses], `SEC-19`), which Electron's checklist warns can let external scripts run commands through the app. Nanocoder's Node version moves with every Electron upgrade, and 24 is not the line Nanocoder's CI tests. | Viable; measured in G.6 |
 | Utility process | Electron-supported child API. | Cannot write to the child's stdin ([utility process][el-utility]), so it cannot carry ACP over stdio. | Ruled out |
 | Bundled Node sidecar | Runtime independent of Electron upgrades; the `runAsNode`, `nodeOptions` and `nodeCliInspect` fuses can be off. | Larger installer; one more binary to sign, notarise and update. | Proposed for public builds (`DEC-38`); the whitepaper's fallback ([whitepaper][wp-dist]) |
 
@@ -120,7 +120,7 @@ The README, every release title and the app's about information say the project 
 [projects-ts]: https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/lib/projects.ts
 [el-fuses]: https://www.electronjs.org/docs/latest/tutorial/fuses
 [el-utility]: https://www.electronjs.org/docs/latest/api/utility-process
-[el-releases]: https://releases.electronjs.org/release/v45.0.0
+[el-releases]: https://releases.electronjs.org/release/v45.1.0
 [i117]: https://github.com/Nano-Collective/docs/issues/117
 [i117-c]: https://github.com/Nano-Collective/docs/issues/117#issuecomment-6208555047
 [i120]: https://github.com/Nano-Collective/docs/issues/120

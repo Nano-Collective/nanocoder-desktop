@@ -20,4 +20,6 @@ allowBuilds:
   electron-winstaller: false
   esbuild: true
 
-auditConfig: { ignoreGhsas: null }
+# Dev-only (electron-builder -> ajv). Remove once ajv requires a patched fast-uri.
+overrides:
+  fast-uri: ^3.1.9

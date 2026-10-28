@@ -57,7 +57,7 @@ Electron downloads its binary the first time it runs. On Linux without a display
 - `pnpm test:lint`: lint check with Biome
 - `pnpm test:ava`: the AVA test suite
 - `pnpm test:knip`: unused files, exports and dependencies
-- `pnpm test:audit`: dependency audit
+- `pnpm test:audit`: dependency audit at high severity and above. An advisory with no fix fails it until it is fixed or ignored by id, so nothing is ignored silently
 - `pnpm test:security`: Semgrep, if installed
 
 Tests use AVA through `tsx`, live in `.spec.ts` files beside the code they test, and run serially. End-to-end tests live in `e2e/`, use Playwright against the built app, and run with `pnpm test:e2e`, separately from `pnpm test:all`. ACP integration tests are `*.acp.ts` files run with `pnpm test:acp` against a real Nanocoder build, whose `dist/cli.js` path goes in `NANOCODER_CLI`. Use a build of Nanocoder `main` with the ACP directory trust check. The tests keep Nanocoder's configuration in a temporary folder, so yours is never touched, and they use a scripted model provider, so no API key is needed. Coverage is measured with c8, with an 80% line floor that cannot drop. The full strategy, including cross-platform and end-to-end tests, is in [`planning/testing-strategy.md`](planning/testing-strategy.md).

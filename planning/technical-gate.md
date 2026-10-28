@@ -48,6 +48,8 @@ The ACP job on [#21](https://github.com/Nano-Collective/nanocoder-desktop/pull/2
 | Linux x64 | Electron's Node mode | 24.22.0 | 418 ms (405 to 1129) | 266 MB | 0 of 5 |
 | Linux x64 | Node sidecar | 22.23.4 | 493 ms (489 to 501) | 207 MB | 0 of 5 |
 
+These runs used Electron 45.0.0 (Node 24.22.0). After the bump to 45.1.0 (Node 24.22.1), a local re-run gave 670 ms and 236 MB for Electron's Node mode and 705 ms and 219 MB for the sidecar, with no failures.
+
 On a developer machine (Linux, WSL2, Nanocoder 1.31.0 `dist`) three repeats gave 582 to 642 ms and 235 MB for Electron's Node mode, and 661 to 729 ms and 216 to 219 MB for the sidecar.
 
 - **Nothing fails, and everything is far under the 5 second line in `PERF-02`.** Nanocoder runs under Node 24 in Electron's Node mode as well as under Node 22.
