@@ -11,19 +11,26 @@ test('maps agent text', t => {
 	);
 });
 
-test('maps a replayed user message', t => {
-	t.deepEqual(
-		toTurnEvent({
-			sessionUpdate: 'user_message_chunk',
-			content: {type: 'text', text: 'Earlier question'},
-		}),
-		{type: 'user', text: 'Earlier question'},
-	);
+test('maps a user message only when building history', t => {
+	const chunk = {
+		sessionUpdate: 'user_message_chunk' as const,
+		content: {type: 'text' as const, text: 'Earlier question'},
+	};
+	t.deepEqual(toTurnEvent(chunk, {history: true}), {
+		type: 'user',
+		text: 'Earlier question',
+	});
+	// A live echo would show the message twice, because the UI adds it when it is sent.
+	t.is(toTurnEvent(chunk), undefined);
+	t.is(toTurnEvent(chunk, {history: false}), undefined);
 	t.is(
-		toTurnEvent({
-			sessionUpdate: 'user_message_chunk',
-			content: {type: 'image', data: 'AA==', mimeType: 'image/png'},
-		}),
+		toTurnEvent(
+			{
+				sessionUpdate: 'user_message_chunk',
+				content: {type: 'image', data: 'AA==', mimeType: 'image/png'},
+			},
+			{history: true},
+		),
 		undefined,
 	);
 });
@@ -34,7 +41,10 @@ test('drops an empty text chunk, which only carries metadata', t => {
 		'user_message_chunk',
 	] as const) {
 		t.is(
-			toTurnEvent({sessionUpdate, content: {type: 'text', text: ''}}),
+			toTurnEvent(
+				{sessionUpdate, content: {type: 'text', text: ''}},
+				{history: true},
+			),
 			undefined,
 		);
 	}

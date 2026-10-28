@@ -11,8 +11,11 @@ const hasText = (content: {
 } => content.type === 'text' && !!content.text;
 
 // Anything the desktop does not show yet is dropped, never guessed at.
+// The user's own message is shown when it is sent, so a live update never maps it;
+// only a resume's replay does (`history`).
 export function toTurnEvent(
 	update: SessionNotification['update'],
+	{history = false}: {history?: boolean} = {},
 ): TurnEvent | undefined {
 	switch (update.sessionUpdate) {
 		case 'agent_message_chunk':
@@ -20,7 +23,7 @@ export function toTurnEvent(
 				? {type: 'text', text: update.content.text}
 				: undefined;
 		case 'user_message_chunk':
-			return hasText(update.content)
+			return history && hasText(update.content)
 				? {type: 'user', text: update.content.text}
 				: undefined;
 		case 'tool_call':

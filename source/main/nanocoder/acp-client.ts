@@ -266,7 +266,8 @@ export async function connectNanocoder(
 		return {id: created.sessionId, mode};
 	};
 
-	// Nanocoder resumes a session in the working directory it saved, and starts it in auto-accept.
+	// The project root is sent, but Nanocoder ignores it and resumes in the directory it saved (the desktop
+	// only creates sessions at the root, DEC-30), then starts the session in auto-accept.
 	const resumeSession = async (
 		sessionId: string,
 		mode: NanocoderMode,
@@ -296,7 +297,9 @@ export async function connectNanocoder(
 		await applyMode(sessionId, mode, resumed.modes?.availableModes);
 		return {
 			session: {id: sessionId, mode},
-			history: replayed.flatMap(update => toTurnEvent(update) ?? []),
+			history: replayed.flatMap(
+				update => toTurnEvent(update, {history: true}) ?? [],
+			),
 		};
 	};
 

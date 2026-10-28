@@ -39,6 +39,7 @@ Observed against Nanocoder `8a5f4d4` and `main` at `f5d8217`. The first six rows
 - **Cancel during a turn or a pending permission.** Not built yet (`ACP-09`).
 - **Two sessions with different working directories in one process.** Sessions run at the project root in v1 (`DEC-30`).
 - **Retention.** A session deleted by Nanocoder's retention looks the same as a deleted one; the desktop cannot tell them apart (`OQ-16`).
+- **The directory a session resumes in.** The desktop sends the project root, but Nanocoder ignores it and resumes in the directory it saved, and the resume response does not report it. Sessions the desktop creates are saved at the root (`DEC-30`); one created by the CLI in a subfolder would resume there. `session/list` shows each session's directory, so a check belongs with the thread store in phase 1.1.
 - **A resumed thread in the app.** Resuming works in the client and in `openProject`, but no screen offers it yet. The thread store comes in phase 1.1.
 
 ## Platforms
@@ -46,7 +47,7 @@ Observed against Nanocoder `8a5f4d4` and `main` at `f5d8217`. The first six rows
 | Platform | Unit, end-to-end and ACP tests | Recorded |
 |---|---|---|
 | Linux | Pass | 2026-10-28, local, against Nanocoder `main` |
-| macOS | Run by the ACP job on the pull request | Pending |
-| Windows | Run by the ACP job on the pull request | Pending |
+| macOS | Pass | 2026-10-28, the ACP job on [#20](https://github.com/Nano-Collective/nanocoder-desktop/pull/20), against the pinned Nanocoder build |
+| Windows | Pass | 2026-10-28, the ACP job on [#20](https://github.com/Nano-Collective/nanocoder-desktop/pull/20), built fresh because its cache does not restore there |
 
-Fill in the last two rows from the pull request's ACP job before ticking the last G.5 result.
+The unit, end-to-end and packaging jobs also pass on all three.
