@@ -1,4 +1,4 @@
-import {type FormEvent, useEffect, useState} from 'react';
+import {type FormEvent, useCallback, useEffect, useState} from 'react';
 import {
 	addUserMessage,
 	applyEvent,
@@ -109,14 +109,18 @@ export function App() {
 		[],
 	);
 
+	const checkRuntime = useCallback(() => {
+		void window.desktop.getNanocoderRuntime().then(setRuntime);
+	}, []);
+
 	useEffect(() => {
 		void window.desktop.getAppInfo().then(result => {
 			if (result.ok) {
 				setInfo(result.value);
 			}
 		});
-		void window.desktop.getNanocoderRuntime().then(setRuntime);
-	}, []);
+		checkRuntime();
+	}, [checkRuntime]);
 
 	const connect = async () => {
 		setConnecting(true);
@@ -146,14 +150,26 @@ export function App() {
 	return (
 		<main>
 			<h1>{info?.name}</h1>
-			{info && <p>Version {info.version}. Pre-v0.1. Nothing here works yet.</p>}
+			{info && (
+				<p>
+					Version {info.version}. Pre-v0.1: an early build, with most features
+					still to come.
+				</p>
+			)}
 			{runtime?.ok && (
 				<p>
 					Nanocoder {runtime.value.version} at {runtime.value.cliPath}, on
 					Node.js {runtime.value.nodeVersion} at {runtime.value.nodePath}
 				</p>
 			)}
-			{runtime && !runtime.ok && <p role="alert">{runtime.error.message}</p>}
+			{runtime && !runtime.ok && (
+				<>
+					<p role="alert">{runtime.error.message}</p>
+					<button type="button" onClick={checkRuntime}>
+						Check again
+					</button>
+				</>
+			)}
 			{runtime?.ok && (
 				<button type="button" onClick={connect} disabled={connecting}>
 					{connecting ? 'Starting Nanocoder' : 'Open a project folder'}

@@ -16,7 +16,8 @@ import {
 } from '@/main/nanocoder/acp-client';
 import {openProject} from '@/main/nanocoder/open-project';
 import {PermissionBroker} from '@/main/nanocoder/permissions';
-import {type Resolution, resolveNanocoder} from '@/main/nanocoder/runtime';
+import {resolveNanocoder} from '@/main/nanocoder/runtime';
+import {createLookup} from '@/main/nanocoder/runtime-lookup';
 import type {TrustReason, TrustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
 import {isAllowedOrigin} from '@/main/security';
@@ -40,7 +41,13 @@ const TRUST_TITLES: Record<TrustReason, string> = {
 	'needs-re-approval': 'Approve this folder again?',
 };
 
-let runtime: Promise<Resolution> | undefined;
+const lookupRuntime = createLookup(() =>
+	resolveNanocoder({
+		env: process.env,
+		platform: process.platform,
+		untrustedRoots: [],
+	}),
+);
 let connection: NanocoderConnection | undefined;
 let session: SessionInfo | undefined;
 let connecting = false;
@@ -68,12 +75,7 @@ function forget(next: NanocoderConnection): void {
 }
 
 async function nanocoderRuntime(): Promise<NanocoderRuntime> {
-	runtime ??= resolveNanocoder({
-		env: process.env,
-		platform: process.platform,
-		untrustedRoots: [],
-	});
-	const resolution = await runtime;
+	const resolution = await lookupRuntime();
 	if (!resolution.ok) {
 		throw new IpcFailure(resolution.code, resolution.message);
 	}
