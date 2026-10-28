@@ -79,88 +79,78 @@ Everything in [`repo-setup.md`](repo-setup.md). Run before the technical gate.
 
 **Build**
 
-- [ ] `LICENSE` (MIT, copyright "Nano Collective")
-- [ ] `CONTRIBUTING.md` linking the Code of Conduct, Economics Charter and `MAINTAINING.md`
-- [ ] `README.md` following the brand pattern, replacing the empty file
-- [ ] `CODEOWNERS` with `* @Nano-Collective/core-team`
-- [ ] `AGENTS.md` for coding agents, and a `CLAUDE.md` containing `@AGENTS.md`, as nanocoder, get-md, docs and taskforest do
-- [ ] Bug report, feature request and pull request templates
-
+- [x] `LICENSE` (MIT, copyright "Nano Collective") ([`LICENSE`](../LICENSE))
+- [x] `CONTRIBUTING.md` linking the Code of Conduct, Economics Charter and `MAINTAINING.md` ([`CONTRIBUTING.md`](../CONTRIBUTING.md))
+- [x] `README.md` following the brand pattern, replacing the empty file ([`README.md`](../README.md))
+- [x] `CODEOWNERS` with `* @Nano-Collective/core-team` ([`CODEOWNERS`](../.github/CODEOWNERS))
+- [x] `AGENTS.md` for coding agents, and a `CLAUDE.md` containing `@AGENTS.md`, as nanocoder, get-md, docs and taskforest do ([`AGENTS.md`](../AGENTS.md), [`CLAUDE.md`](../CLAUDE.md))
+- [x] Bug report, feature request and pull request templates ([`.github/`](../.github))
 **Results we want**
 
-- [ ] README opens with the project name, the canonical tagline and a pre-v0.1 note
-- [ ] CONTRIBUTING links rather than restates NC policy
-
+- [x] README opens with the project name, the canonical tagline and a pre-v0.1 note ([`README.md`](../README.md))
+- [x] CONTRIBUTING links rather than restates NC policy ([`CONTRIBUTING.md`](../CONTRIBUTING.md))
 ### Phase S.2: toolchain
 
 **Build**
 
-- [ ] `package.json` with pnpm 11, Node `>=22`, ESM and the full script contract
-- [ ] `tsconfig.json` with `strict` and the `@/*` to `source/*` alias
-- [ ] `biome.json` copied from Nanocoder, with `.changeset/pre.json` excluded
-- [ ] Husky and lint-staged
-- [ ] `knip.json` with `semgrep` in `ignoreBinaries`
-- [ ] AVA through `tsx`, serial, with c8 at 80% lines
-- [ ] `pnpm-workspace.yaml` resolution policy (`SEC-18`)
-
+- [x] `package.json` with pnpm 11, Node `>=22`, ESM and the full script contract ([`package.json`](../package.json))
+- [x] `tsconfig.json` with `strict` and the `@/*` to `source/*` alias ([`tsconfig.json`](../tsconfig.json))
+- [x] `biome.json` copied from Nanocoder, with `.changeset/pre.json` excluded ([`biome.json`](../biome.json))
+- [x] Husky and lint-staged ([`pre-commit`](../.husky/pre-commit))
+- [x] `knip.json` with `semgrep` in `ignoreBinaries` ([`knip.json`](../knip.json))
+- [x] AVA through `tsx`, serial, with c8 at 80% lines ([`package.json`](../package.json))
+- [x] `pnpm-workspace.yaml` resolution policy (`SEC-18`) ([`pnpm-workspace.yaml`](../pnpm-workspace.yaml))
 **Results we want**
 
-- [ ] `pnpm test:all` passes on a single smoke spec
-- [ ] A staged badly formatted file is fixed on commit
-
+- [x] `pnpm test:all` passes on a single smoke spec: it now passes on every pull request in the shared `pr-checks`
+- [x] A staged badly formatted file is fixed on commit: checked on 2026-10-28 by staging an unformatted file and running lint-staged ([`pre-commit`](../.husky/pre-commit))
 ### Phase S.3: Electron skeleton
 
 Uses the choices decided in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3) ([`tech-stack.md`](tech-stack.md#electron-specific-choices)).
 
 **Build**
 
-- [ ] `electron-vite` and `electron-builder` set up, building to `out/` and `release/`
-- [ ] Main, preload and renderer entry points in the `source/` layout
-- [ ] Hardened app renderer: sandbox, context isolation, no Node, custom protocol, Content Security Policy (`SEC-01`, `SEC-15`)
-- [ ] Navigation and new-window requests denied in the app renderer
-
+- [x] `electron-vite` and `electron-builder` set up, building to `out/` and `release/` ([`electron.vite.config.ts`](../electron.vite.config.ts), [`electron-builder.yml`](../electron-builder.yml))
+- [x] Main, preload and renderer entry points in the `source/` layout ([`source/`](../source))
+- [x] Hardened app renderer: sandbox, context isolation, no Node, custom protocol, Content Security Policy (`SEC-01`, `SEC-15`) ([`index.ts`](../source/main/index.ts), [`security.ts`](../source/main/security.ts))
+- [x] Navigation and new-window requests denied in the app renderer ([`app.e2e.ts`](../e2e/app.e2e.ts))
 **Results we want**
 
-- [ ] The app starts and shows an empty shell on macOS, Windows and Linux
-- [ ] A spec proves the renderer cannot reach Node or navigate away
-- [ ] Playwright launches a test build (with `nodeCliInspect` on) on all three platforms
-- [ ] `node:sqlite` works in the Electron main process; native `.node` files are unpacked from the `asar` archive
-
+- [x] The app starts and shows an empty shell on macOS, Windows and Linux: the End to End job passes on all three platforms on every push to `main` ([`desktop-checks.yml`](../.github/workflows/desktop-checks.yml))
+- [x] A spec proves the renderer cannot reach Node or navigate away ([`app.e2e.ts`](../e2e/app.e2e.ts))
+- [x] Playwright launches a test build (with `nodeCliInspect` on) on all three platforms: the End to End job, all three platforms
+- [ ] `node:sqlite` works in the Electron main process; native `.node` files are unpacked from the `asar` archive: `node:sqlite` works ([`app.e2e.ts`](../e2e/app.e2e.ts)); unpacking `.node` files is configured in `asarUnpack` but untested until a native module arrives
 ### Phase S.4: CI and release scaffolding
 
 **Build**
 
-- [ ] `pr-checks.yml` caller with `validate-changesets: true`
-- [ ] Local macOS and Windows unit jobs, each on Node 22 and 24 ([#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10))
-- [ ] ACP integration job on all three platforms, with its own test pattern and script, against a cached Nanocoder `main` build
-- [ ] Package smoke job behind a job-level condition, with Xvfb on Linux and `macos-15-intel` for the x64 build
-- [ ] End-to-end job (advisory), switched on for every pull request once Milestone 1 starts
-- [ ] Actions pinned by commit SHA
-- [ ] `nc-review.yml` and `.github/nc-review/rubric.md`
-- [ ] Changesets scaffold with `changeset pre enter alpha` and `pre.json` committed
-- [ ] `release-prepare.yml`, `changeset-check.yml`, `update-badges.yml`
-
+- [x] `pr-checks.yml` caller with `validate-changesets: true` ([`pr-checks.yml`](../.github/workflows/pr-checks.yml))
+- [x] Local macOS and Windows unit jobs, each on Node 22 and 24 ([#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10)) ([`desktop-checks.yml`](../.github/workflows/desktop-checks.yml))
+- [x] ACP integration job on all three platforms, with its own test pattern and script, against a cached Nanocoder `main` build ([`desktop-checks.yml`](../.github/workflows/desktop-checks.yml))
+- [x] Package smoke job behind a job-level condition, with Xvfb on Linux and `macos-15-intel` for the x64 build ([`desktop-checks.yml`](../.github/workflows/desktop-checks.yml))
+- [x] End-to-end job (advisory), switched on for every pull request once Milestone 1 starts: it runs on pushes to `main` and, since 2026-10-28, on pull requests too, ahead of Milestone 1 ([`desktop-checks.yml`](../.github/workflows/desktop-checks.yml), `DEC-37`)
+- [x] Actions pinned by commit SHA: every `uses:` in the workflows is pinned
+- [x] `nc-review.yml` and `.github/nc-review/rubric.md` ([`nc-review.yml`](../.github/workflows/nc-review.yml), [`rubric.md`](../.github/nc-review/rubric.md))
+- [x] Changesets scaffold with `changeset pre enter alpha` and `pre.json` committed ([`pre.json`](../.changeset/pre.json))
+- [x] `release-prepare.yml`, `changeset-check.yml`, `update-badges.yml` ([`workflows`](../.github/workflows))
 **Results we want**
 
-- [ ] All six prefixed required checks report green on a test pull request
-- [ ] Both rulesets applied in `evaluate` mode, then `active`
-- [ ] The first Version Packages pull request proposes an `alpha` version, not a stable one
-- [ ] Job times on macOS and Windows recorded; flake rate reviewed after two weeks
-
+- [x] All six prefixed required checks report green on a test pull request: green on every pull request from [#18](https://github.com/Nano-Collective/nanocoder-desktop/pull/18) to [#21](https://github.com/Nano-Collective/nanocoder-desktop/pull/21)
+- [ ] Both rulesets applied in `evaluate` mode, then `active`: applied in `evaluate` mode, not yet `active`; going active ends direct pushes to `main`
+- [ ] The first Version Packages pull request proposes an `alpha` version, not a stable one: not yet seen, because no changeset has been added
+- [ ] Job times on macOS and Windows recorded; flake rate reviewed after two weeks: not yet done
 ### Phase S.5: IPC foundation
 
 **Build**
 
-- [ ] Shared IPC types module
-- [ ] Runtime schema validation and sender checks for every handler (`SEC-02`)
-- [ ] One result shape and the error codes in [`architecture.md`](architecture.md#ipc-contract-principles)
-- [ ] One sample method wired end to end
-
+- [x] Shared IPC types module ([`ipc.ts`](../source/shared/ipc.ts))
+- [x] Runtime schema validation and sender checks for every handler (`SEC-02`) ([`handle-request.ts`](../source/main/ipc/handle-request.ts))
+- [x] One result shape and the error codes in [`architecture.md`](architecture.md#ipc-contract-principles) ([`ipc.ts`](../source/shared/ipc.ts))
+- [x] One sample method wired end to end: `app:get-info` ([`app.e2e.ts`](../e2e/app.e2e.ts))
 **Results we want**
 
-- [ ] A malformed request is rejected with `VALIDATION` in a spec
-- [ ] A request from an unexpected sender is rejected in a spec
-
+- [x] A malformed request is rejected with `VALIDATION` in a spec ([`handle-request.spec.ts`](../source/main/ipc/handle-request.spec.ts))
+- [x] A request from an unexpected sender is rejected in a spec ([`handle-request.spec.ts`](../source/main/ipc/handle-request.spec.ts))
 ## Technical gate
 
 Decided ([whitepaper, Next steps][wp-next]): prove the ACP boundary before Milestone 1. Exit when durable continuation works end to end.
@@ -171,16 +161,13 @@ Published Nanocoder 1.31.0 lacks `session/close`, the trust check and per-sessio
 
 **Build**
 
-- [ ] Resolve the installed Nanocoder package to an absolute Node runtime and `dist/cli.js` (`REL-01`)
-- [ ] Show the resolved paths and version to the user
-- [ ] Launch with an argument array and no shell (`ACP-01`, `SEC-05`)
-
+- [x] Resolve the installed Nanocoder package to an absolute Node runtime and `dist/cli.js` (`REL-01`) ([`runtime.ts`](../source/main/nanocoder/runtime.ts))
+- [x] Show the resolved paths and version to the user ([`app.tsx`](../source/renderer/app.tsx))
+- [x] Launch with an argument array and no shell (`ACP-01`, `SEC-05`) ([`launch.ts`](../source/main/nanocoder/launch.ts), [`launch.spec.ts`](../source/main/nanocoder/launch.spec.ts))
 **Results we want**
 
-- [ ] A `nanocoder` inside the project's own `node_modules` is refused
-- [ ] Windows launches without going through the `.cmd` wrapper
-
-### Phase G.2: connect over ACP
+- [x] A `nanocoder` inside the project's own `node_modules` is refused ([`runtime.spec.ts`](../source/main/nanocoder/runtime.spec.ts))
+- [x] Windows launches without going through the `.cmd` wrapper: the wrapper is parsed, never run ([`runtime.spec.ts`](../source/main/nanocoder/runtime.spec.ts)), and the Windows ACP job launches `node` with `cli.js`### Phase G.2: connect over ACP
 
 **Build**
 
