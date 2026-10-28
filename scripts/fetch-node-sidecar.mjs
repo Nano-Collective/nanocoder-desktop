@@ -2,7 +2,7 @@ import {execFileSync} from 'node:child_process';
 import {existsSync, mkdirSync, readFileSync, rmSync, statSync} from 'node:fs';
 import {writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import {nodeBinaryPath, platformKey, verifyArchive} from './lib/runtime.mjs';
+import {nodeBinaryPath, pinnedArchive, verifyArchive} from './lib/runtime.mjs';
 
 // Downloads the pinned Node and checks it against the checksum pinned in node-sidecar.json,
 // which came from the official SHASUMS256.txt. To move the pin, take the new hashes from the
@@ -11,9 +11,7 @@ const pin = JSON.parse(
 	readFileSync(new URL('./node-sidecar.json', import.meta.url), 'utf8'),
 );
 const cacheDir = path.resolve('.cache', 'node-sidecar');
-const key = platformKey(process.platform, process.arch);
-const archive = pin.archives[key];
-if (!archive) throw new Error(`Nothing is pinned for ${key}`);
+const {key, archive} = pinnedArchive(pin, process.platform, process.arch);
 
 const binary = nodeBinaryPath(cacheDir, pin.version, key, process.platform);
 if (!existsSync(binary)) {

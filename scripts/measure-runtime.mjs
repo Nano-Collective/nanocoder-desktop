@@ -15,17 +15,20 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createInterface} from 'node:readline';
 import {
-	formatMb,
+	classifyInitializeReply,
+	formatReport,
+	measurementEnv,
 	nodeBinaryPath,
 	parseResidentKb,
-	platformKey,
+	pinnedArchive,
 	summarise,
 } from './lib/runtime.mjs';
 
 // Phase G.6: runs `nanocoder --acp` under Electron's Node mode and under the pinned Node sidecar,
 // and records PERF-02 (spawn to `initialize` answered), idle memory and failures for each.
 // Usage: node scripts/measure-runtime.mjs --cli /absolute/path/to/nanocoder/dist/cli.js [--runs 5]
-// The fixtures are throwaway: a temporary Nanocoder config and data folder, trusted for the run.
+// The fixtures are throwaway: a temporary Nanocoder config and data folder, trusted once by a
+// separate trust launch, as the desktop does (DEC-30), so the measured launches set nothing.
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
 	const at = args.indexOf(`--${name}`);
@@ -43,12 +46,8 @@ const pin = JSON.parse(
 	readFileSync(new URL('./node-sidecar.json', import.meta.url), 'utf8'),
 );
 const cacheDir = path.resolve('.cache', 'node-sidecar');
-const sidecar = nodeBinaryPath(
-	cacheDir,
-	pin.version,
-	platformKey(process.platform, process.arch),
-	process.platform,
-);
+const {key} = pinnedArchive(pin, process.platform, process.arch);
+const sidecar = nodeBinaryPath(cacheDir, pin.version, key, process.platform);
 const electron = createRequire(import.meta.url)('electron');
 
 const work = realpathSync(mkdtempSync(path.join(tmpdir(), 'nd-measure-')));
@@ -70,18 +69,11 @@ writeFileSync(
 	}),
 );
 
-const baseEnv = Object.fromEntries(
-	Object.entries(process.env).filter(
-		([key]) =>
-			!['NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE', 'NODE_ENV'].includes(key),
-	),
-);
+const baseEnv = measurementEnv(process.env);
 const env = {
 	...baseEnv,
 	NANOCODER_CONFIG_DIR: path.join(work, 'config'),
 	NANOCODER_DATA_DIR: path.join(work, 'data'),
-	// Measurement only: the desktop never sets this outside the trust launch (DEC-30).
-	NANOCODER_TRUST_DIRECTORY: '1',
 };
 
 function residentKb(pid) {
@@ -141,13 +133,11 @@ function launch(runtime, extraEnv = {}) {
 			finish({ok: false, reason: message || `exited with code ${code}`}),
 		);
 		createInterface({input: child.stdout}).on('line', line => {
-			let reply;
-			try {
-				reply = JSON.parse(line);
-			} catch {
-				return finish({ok: false, reason: 'stdout was not ACP'});
+			const reply = classifyInitializeReply(line);
+			if (reply.kind === 'ignore') return;
+			if (reply.kind === 'failed') {
+				return finish({ok: false, reason: reply.reason});
 			}
-			if (reply.id !== 0) return;
 			const startupMs = performance.now() - started;
 			setTimeout(
 				() => finish({ok: true, startupMs, residentKb: residentKb(child.pid)}),
@@ -186,7 +176,7 @@ async function measure(name, runtime, extraEnv) {
 }
 
 // A machine without Node: the sidecar must not need `node` on PATH.
-async function withoutNodeOnPath(runtime) {
+async function withoutNodeOnPath(runtime, extraEnv = {}) {
 	const systemDirs =
 		process.platform === 'win32'
 			? [path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32')]
@@ -194,7 +184,7 @@ async function withoutNodeOnPath(runtime) {
 	const bare = {PATH: systemDirs.join(path.delimiter)};
 	const probe = spawnSync('node', ['-v'], {env: bare});
 	if (!probe.error?.code) return {valid: false};
-	return {valid: true, result: await launch(runtime, bare)};
+	return {valid: true, result: await launch(runtime, {...extraEnv, ...bare})};
 }
 
 // macOS: does the sidecar start under the hardened runtime, and with which entitlements?
@@ -219,21 +209,51 @@ async function hardenedRuntime() {
 			plist,
 			`<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>${entitlements.map(key => `<key>${key}</key><true/>`).join('')}</dict></plist>\n`,
 		);
-		execFileSync('codesign', [
-			'--force',
-			'--options',
-			'runtime',
-			'--entitlements',
-			plist,
-			'--sign',
-			'-',
-			copy,
-		]);
+		try {
+			execFileSync(
+				'codesign',
+				[
+					'--force',
+					'--options',
+					'runtime',
+					'--entitlements',
+					plist,
+					'--sign',
+					'-',
+					copy,
+				],
+				{stdio: 'pipe'},
+			);
+		} catch (error) {
+			outcomes.push({
+				label,
+				ok: false,
+				reason: `codesign failed: ${error.status ?? error.code}`,
+			});
+			continue;
+		}
 		const result = await launch(copy);
 		outcomes.push({label, ok: result.ok, reason: result.reason});
 	}
 	return outcomes;
 }
+
+// One trust launch with the variable set and stdin closed, like the desktop's (DEC-30).
+await new Promise(resolve => {
+	const trust = spawn(sidecar, [cli, '--acp'], {
+		cwd: project,
+		env: {...env, NANOCODER_TRUST_DIRECTORY: '1'},
+		stdio: ['pipe', 'ignore', 'ignore'],
+		windowsHide: true,
+	});
+	trust.stdin.end();
+	const timer = setTimeout(() => trust.kill(), TIMEOUT_MS);
+	trust.on('close', () => {
+		clearTimeout(timer);
+		resolve();
+	});
+	trust.on('error', resolve);
+});
 
 const sidecarBytes = statSync(sidecar).size;
 const report = {
@@ -245,7 +265,9 @@ const report = {
 		await measure('Node sidecar', sidecar, {}),
 	],
 	noNodeOnPath: {
-		'Electron Node mode': await withoutNodeOnPath(electron).then(r =>
+		'Electron Node mode': await withoutNodeOnPath(electron, {
+			ELECTRON_RUN_AS_NODE: '1',
+		}).then(r =>
 			r.valid ? {ok: r.result.ok, reason: r.result.reason} : {valid: false},
 		),
 		'Node sidecar': await withoutNodeOnPath(sidecar).then(r =>
@@ -257,39 +279,9 @@ const report = {
 };
 rmSync(work, {recursive: true, force: true});
 
-const fmt = summary =>
-	summary
-		? `${summary.median.toFixed(0)} (${summary.min.toFixed(0)} to ${summary.max.toFixed(0)})`
-		: 'n/a';
-const lines = [
-	`### Runtime measurement, ${report.platform}`,
-	'',
-	'| Runtime | Node | Startup ms, median (range) | Idle memory MB, median (range) | Failures |',
-	'|---|---|---|---|---|',
-	...report.runtimes.map(
-		r =>
-			`| ${r.name} | ${r.node} | ${fmt(r.startupMs)} | ${fmt(r.residentMb)} | ${r.failures} of ${r.runs}${r.failureReasons.length ? `: ${r.failureReasons.join('; ')}` : ''} |`,
-	),
-	'',
-	`Sidecar binary: ${formatMb(sidecarBytes)} unpacked (${pin.version}).`,
-	'',
-	...Object.entries(report.noNodeOnPath).map(
-		([name, outcome]) =>
-			`- ${name} without Node on PATH: ${outcome.valid === false ? 'not testable here, a system Node is on the minimal PATH' : outcome.ok ? 'starts' : `fails (${outcome.reason})`}`,
-	),
-	...(report.hardenedRuntime
-		? [
-				'',
-				'Hardened runtime, sidecar signed ad hoc:',
-				...report.hardenedRuntime.map(
-					o => `- ${o.label}: ${o.ok ? 'starts' : `fails (${o.reason})`}`,
-				),
-			]
-		: []),
-	'',
-];
-console.log(lines.join('\n'));
+const text = formatReport(report, pin.version);
+console.log(text);
 if (process.env.GITHUB_STEP_SUMMARY) {
-	appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+	appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${text}\n`);
 }
 console.log(JSON.stringify(report));
