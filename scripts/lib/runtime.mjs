@@ -151,3 +151,10 @@ export function formatReport(report, version) {
 		'',
 	].join('\n');
 }
+
+// `codesign -dv --verbose=2` prints, for example, "flags=0x10002(adhoc,runtime)". Without
+// "runtime" the binary is not under the hardened runtime and the experiment proves nothing.
+export function hasRuntimeFlag(codesignOutput) {
+	const flags = /flags=0x[0-9a-f]+\(([^)]*)\)/.exec(codesignOutput)?.[1] ?? '';
+	return flags.split(',').includes('runtime');
+}

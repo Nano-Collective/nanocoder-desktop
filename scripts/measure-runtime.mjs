@@ -17,6 +17,7 @@ import {createInterface} from 'node:readline';
 import {
 	classifyInitializeReply,
 	formatReport,
+	hasRuntimeFlag,
 	measurementEnv,
 	nodeBinaryPath,
 	parseResidentKb,
@@ -229,6 +230,17 @@ async function hardenedRuntime() {
 				label,
 				ok: false,
 				reason: `codesign failed: ${error.status ?? error.code}`,
+			});
+			continue;
+		}
+		const signed = spawnSync('codesign', ['-dv', '--verbose=2', copy], {
+			encoding: 'utf8',
+		});
+		if (!hasRuntimeFlag(`${signed.stderr}${signed.stdout}`)) {
+			outcomes.push({
+				label,
+				ok: false,
+				reason: 'signed without the runtime flag',
 			});
 			continue;
 		}

@@ -6,6 +6,7 @@ import {
 	classifyInitializeReply,
 	formatMb,
 	formatReport,
+	hasRuntimeFlag,
 	measurementEnv,
 	median,
 	nodeBinaryPath,
@@ -239,4 +240,20 @@ test('leaves out the hardened runtime section off macOS and shows missing number
 	);
 	t.false(text.includes('Hardened runtime'));
 	t.true(text.includes('| Node sidecar | 22.23.4 | n/a | n/a | 1 of 5 |'));
+});
+
+test('tells whether a signed binary is under the hardened runtime', t => {
+	t.true(
+		hasRuntimeFlag(
+			'CodeDirectory v=20500 size=2148 flags=0x10002(adhoc,runtime) hashes=58+7',
+		),
+	);
+	t.true(hasRuntimeFlag('flags=0x10000(runtime)'));
+	t.false(
+		hasRuntimeFlag(
+			'CodeDirectory v=20400 size=2148 flags=0x2(adhoc) hashes=58+7',
+		),
+	);
+	t.false(hasRuntimeFlag('flags=0x0(none)'));
+	t.false(hasRuntimeFlag('no signature'));
 });
