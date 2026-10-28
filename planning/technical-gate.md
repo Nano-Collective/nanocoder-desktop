@@ -33,6 +33,25 @@ Observed against Nanocoder `8a5f4d4` and `main` at `f5d8217`. The first six rows
 | `execute_bash` asks in every mode except `yolo` | A file edit is what shows the mode: `write_file` asks in `normal` and runs without asking in `auto-accept`. |
 | Trust refusals share exit code 1 with other startup failures | Matches the message text ([nanocoder#1899](https://github.com/Nano-Collective/nanocoder/issues/1899)). |
 
+## The runtime (G.6)
+
+`scripts/measure-runtime.mjs` runs `nanocoder --acp` five times under each runtime and records `PERF-02` (spawn to `initialize` answered), memory after the process has settled for two seconds, and failures. It also starts each runtime with only the system folders on `PATH`, to see whether either needs a `node` of its own. On macOS it signs a copy of the sidecar with the hardened runtime and tries it with no entitlements, then with the ones V8 may need. The sidecar is the pinned Node in `scripts/node-sidecar.json`, downloaded by `scripts/fetch-node-sidecar.mjs` and refused unless its SHA-256 matches the pin. The ACP job runs it on every pull request, on all three platforms, as an advisory step.
+
+Linux, run locally on 2026-10-28 against the `dist/cli.js` of Nanocoder 1.31.0 (`8a5f4d4`), five runs each:
+
+| Runtime | Node | Startup, median (range) | Idle memory, median (range) | Failures |
+|---|---|---|---|---|
+| Electron's Node mode | 24.22.0 | 1367 ms (1025 to 3146) | 235 MB (234 to 236) | 0 of 5 |
+| Node sidecar | 22.23.4 | 1380 ms (1351 to 1984) | 217 MB (213 to 223) | 0 of 5 |
+
+- **Startup and memory are close.** Both are far under the 5 second line in `PERF-02`, and the sidecar uses about 18 MB less. The widest ranges come from the first, cold run.
+- **No failures.** Nanocoder runs under Node 24 in Electron's Node mode as well as under Node 22.
+- **No Node on `PATH`.** Both start with only `/usr/bin` and `/bin` on `PATH`, where this machine has no `node`. This shows the sidecar needs no Node of its own. It does not show what an MCP server or hook that runs `node`, `npm` or `npx` needs; that still has to be documented.
+- **Size.** The sidecar adds a 119.1 MB Node binary on Linux (the downloaded archive is 56.8 MB). An installer compresses it, so the cost to a download is nearer the archive than the unpacked size. macOS and Windows sizes come from the pull request's run.
+- **Pinned download.** Node `v22.23.4`, released 2026-10-20, with the hashes of the official `SHASUMS256.txt` for macOS arm64 and x64, Linux x64 and Windows x64. A wrong hash is refused and leaves nothing in the cache.
+
+Still to record from the pull request's ACP job: the same table for macOS and Windows, the sidecar's size on each, and whether the sidecar starts under the macOS hardened runtime with no entitlements, `allow-jit`, or `allow-jit` with `allow-unsigned-executable-memory`. Ad hoc signing stands in for the real signing identity (`OQ-10`), so the entitlement answer needs confirming with the real one.
+
 ## What the tests do not prove
 
 - **A model that remembers.** The scripted model replays fixed answers, so "the follow-up is answered correctly" is shown by what Nanocoder sends the model: the earlier user and assistant messages, then the new question. Whether a real model answers well is the manual packaged restart-and-resume test in [`testing-strategy.md`](testing-strategy.md#packaged-restart-and-resume-test).
@@ -40,6 +59,7 @@ Observed against Nanocoder `8a5f4d4` and `main` at `f5d8217`. The first six rows
 - **Two sessions with different working directories in one process.** Sessions run at the project root in v1 (`DEC-30`).
 - **Retention.** A session deleted by Nanocoder's retention looks the same as a deleted one; the desktop cannot tell them apart (`OQ-16`).
 - **The directory a session resumes in.** The desktop sends the project root, but Nanocoder ignores it and resumes in the directory it saved, and the resume response does not report it. Sessions the desktop creates are saved at the root (`DEC-30`); one created by the CLI in a subfolder would resume there. `session/list` shows each session's directory, so a check belongs with the thread store in phase 1.1.
+- **Memory with a project open.** The G.6 figure is the idle process after `initialize`, with no session. `PERF-09` is measured later, in the app.
 - **A resumed thread in the app.** Resuming works in the client and in `openProject`, but no screen offers it yet. The thread store comes in phase 1.1.
 
 ## Platforms

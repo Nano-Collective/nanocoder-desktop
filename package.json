@@ -49,7 +49,9 @@
 		"changeset": "changeset",
 		"changeset:version": "changeset version && node scripts/normalize-changelog.js",
 		"prepare": "husky",
-		"postinstall": "electron-builder install-app-deps"
+		"postinstall": "electron-builder install-app-deps",
+		"fetch:node": "node scripts/fetch-node-sidecar.mjs",
+		"measure:runtime": "node scripts/measure-runtime.mjs"
 	},
 	"lint-staged": {
 		"*.{js,ts,jsx,tsx,json,md}": [
@@ -58,14 +60,16 @@
 	},
 	"ava": {
 		"extensions": [
-			"ts"
+			"ts",
+			"mjs"
 		],
 		"nodeArguments": [
 			"--import=tsx",
 			"--no-warnings"
 		],
 		"files": [
-			"source/**/*.spec.ts"
+			"source/**/*.spec.ts",
+			"scripts/**/*.spec.mjs"
 		],
 		"workerThreads": false,
 		"serial": true,

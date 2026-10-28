@@ -253,8 +253,8 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Build**
 
-- [ ] Run Nanocoder under Electron's Node mode on all three platforms (Electron 45 embeds Node 24.22.0)
-- [ ] Run it under a bundled Node 22 sidecar on all three platforms, with the checksum of the official download verified for each OS and architecture
+- [ ] Run Nanocoder under Electron's Node mode on all three platforms (Electron 45 embeds Node 24.22.0): Linux done locally, macOS and Windows come from the pull request's ACP job ([`measure-runtime.mjs`](../scripts/measure-runtime.mjs), [`technical-gate.md`](technical-gate.md#the-runtime-g6))
+- [ ] Run it under a bundled Node 22 sidecar on all three platforms, with the checksum of the official download verified for each OS and architecture: the pin and the verifying download are built and tested ([`node-sidecar.json`](../scripts/node-sidecar.json), [`runtime.spec.mjs`](../scripts/lib/runtime.spec.mjs)); Linux done locally
 - [ ] Record the installer size the sidecar adds, and the macOS entitlements the bundled Node needs under the hardened runtime
 - [ ] Run a turn on a machine without Node installed, and note what MCP servers or hooks that call `node`, `npm` or `npx` need
 
