@@ -26,6 +26,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/index.ts` | App entry: `app://` protocol, CSP, sandbox, navigation and window rules |
 | `source/main/lifecycle.ts` | Testable service disposal and quit guard; supervisor cleanup finishes before the store closes |
 | `source/main/security.ts` | Origin checks, renderer file resolution, Content Security Policy |
+| `source/main/paths.ts` | Shared main-only path containment; callers canonicalise filesystem paths before checking |
 | `source/main/ipc/handle-request.ts` | Sender check, schema validation and the result shape for every IPC call |
 | `source/main/ipc/index.ts` | Registers the IPC handlers |
 | `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |

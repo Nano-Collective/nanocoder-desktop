@@ -9,6 +9,7 @@ import {
 import path from 'node:path';
 import {promisify} from 'node:util';
 import {childEnv} from '@/main/nanocoder/launch';
+import {isInside} from '@/main/paths';
 import type {NanocoderRuntime} from '@/shared/ipc';
 
 const PACKAGE_NAME = '@nanocollective/nanocoder';
@@ -114,23 +115,6 @@ function readPackageVersion(cliPath: string): string | undefined {
 	}
 }
 
-export function isInside(
-	child: string,
-	roots: readonly string[],
-	platform: NodeJS.Platform,
-): boolean {
-	const fold = (p: string) =>
-		platform === 'win32' || platform === 'darwin' ? p.toLowerCase() : p;
-	const flavour = platform === 'win32' ? path.win32 : path.posix;
-	return roots.some(root => {
-		const relative = flavour.relative(fold(root), fold(child));
-		return (
-			relative === '' ||
-			(!relative.startsWith('..') && !flavour.isAbsolute(relative))
-		);
-	});
-}
-
 async function defaultNodeVersion(
 	nodePath: string,
 	signal?: AbortSignal,
@@ -150,7 +134,20 @@ export async function resolveNanocoder(
 	options: ResolveOptions,
 ): Promise<Resolution> {
 	options.signal?.throwIfAborted();
-	const {env, platform, untrustedRoots} = options;
+	const {env, platform} = options;
+	let untrustedRoots: string[];
+	try {
+		untrustedRoots = options.untrustedRoots.map(root => {
+			if (!path.isAbsolute(root)) throw new Error('Project root is relative');
+			return realpathSync(root);
+		});
+	} catch {
+		return {
+			ok: false,
+			code: 'DENIED',
+			message: 'The project root is unavailable',
+		};
+	}
 	const dirs = pathDirectories(env);
 	const exe = (name: string) =>
 		platform === 'win32' ? [`${name}.exe`] : [name];

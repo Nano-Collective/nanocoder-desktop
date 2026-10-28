@@ -1,5 +1,14 @@
 import {randomUUID} from 'node:crypto';
-import {existsSync, renameSync, symlinkSync} from 'node:fs';
+import {
+	chmodSync,
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	renameSync,
+	symlinkSync,
+	writeFileSync,
+} from 'node:fs';
+import path from 'node:path';
 import test from 'ava';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {connectNanocoder} from '@/main/nanocoder/acp-client';
@@ -10,7 +19,7 @@ import {
 	removeFakeProjects,
 } from '@/main/nanocoder/fixtures/fake-project';
 import {connectProject} from '@/main/nanocoder/open-project';
-import type {Resolution} from '@/main/nanocoder/runtime';
+import {type Resolution, resolveNanocoder} from '@/main/nanocoder/runtime';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
 import type {ProjectEvent, ProjectInfo} from '@/shared/ipc';
 
@@ -211,6 +220,42 @@ test('refuses untrusted metadata and roots that are missing, relative or changed
 
 const symlinkTest = process.platform === 'win32' ? test.skip : test;
 symlinkTest(
+	'pre-trust launch rechecks CLI and Node links into the project',
+	async t => {
+		for (const which of ['cli', 'node']) {
+			const chosen = {...project(), trusted: false};
+			const target = path.join(chosen.canonicalRoot, '..tools', which);
+			mkdirSync(path.dirname(target), {recursive: true});
+			writeFileSync(target, '');
+			const link = path.join(fakeProject(), 'runtime-link');
+			symlinkSync(target, link);
+			let confirmations = 0;
+			const supervisor = make({
+				resolveRuntime: async () => ({
+					ok: true,
+					runtime: {
+						...runtime,
+						...(which === 'cli' ? {cliPath: link} : {nodePath: link}),
+					},
+				}),
+				confirmTrust: async () => {
+					confirmations++;
+					return true;
+				},
+			});
+			t.teardown(() => supervisor.close());
+			const state = await supervisor.probeProject(chosen);
+			t.is(state.status, 'failed', which);
+			t.regex(state.reason ?? '', /runtime changed or is inside/);
+			t.is(confirmations, 0);
+			t.throws(() => supervisor.getConnection(chosen.id), {
+				instanceOf: IpcFailure,
+			});
+		}
+	},
+);
+
+symlinkTest(
 	'refuses a saved canonical root that now resolves through a link',
 	async t => {
 		const supervisor = make();
@@ -281,6 +326,110 @@ test('records runtime resolution failures without exposing unexpected error deta
 		t.is(state.status, 'failed');
 		t.false(state.reason?.includes('secret'));
 		await supervisor.close();
+	}
+});
+
+test('an untrusted project probe refuses exact ..tools override paths before any launch', async t => {
+	for (const which of ['cli', 'node']) {
+		const chosen = {...project(), trusted: false};
+		const tools = path.join(chosen.canonicalRoot, '..tools');
+		const [cli, externalCli] = [
+			path.join(tools, 'nanocoder'),
+			fakeProject(),
+		].map(base => {
+			const file = path.join(base, 'dist', 'cli.js');
+			mkdirSync(path.dirname(file), {recursive: true});
+			writeFileSync(
+				path.join(base, 'package.json'),
+				JSON.stringify({
+					name: '@nanocollective/nanocoder',
+					version: '9.9.9',
+					type: 'module',
+					bin: {nanocoder: 'dist/cli.js'},
+				}),
+			);
+			copyFileSync(fakeRuntime.cliPath, file);
+			return file;
+		});
+		const node = path.join(tools, 'node');
+		writeFileSync(node, '');
+		chmodSync(node, 0o755);
+		let launches = 0;
+		let confirmations = 0;
+		let probed = false;
+		const supervisor = make({
+			resolveRuntime: (root, signal) =>
+				resolveNanocoder({
+					env: {
+						NANOCODER_DESKTOP_CLI: which === 'cli' ? cli : externalCli,
+						NANOCODER_DESKTOP_NODE: which === 'node' ? node : process.execPath,
+					},
+					platform: process.platform,
+					untrustedRoots: [root],
+					signal,
+					readNodeVersion: async () => {
+						probed = true;
+						return 'v24.0.0';
+					},
+				}),
+			connect: async options => {
+				launches++;
+				return connectProject(options);
+			},
+			confirmTrust: async () => {
+				confirmations++;
+				return true;
+			},
+		});
+		t.teardown(() => supervisor.close());
+		const state = await supervisor.probeProject(chosen);
+		t.is(state.status, 'failed', which);
+		t.regex(state.reason ?? '', /inside the project folder/);
+		t.is(launches, 0);
+		t.is(confirmations, 0);
+		t.false(probed);
+		t.throws(() => supervisor.getConnection(chosen.id), {
+			instanceOf: IpcFailure,
+		});
+	}
+});
+
+test('the pre-launch guard independently rejects ..tools runtimes from an injected resolver', async t => {
+	for (const which of ['cli', 'node']) {
+		const chosen = {...project(), trusted: false};
+		const file = path.join(
+			chosen.canonicalRoot,
+			'..tools',
+			which === 'cli' ? 'nanocoder/dist/cli.js' : 'node',
+		);
+		mkdirSync(path.dirname(file), {recursive: true});
+		writeFileSync(file, '');
+		let launches = 0;
+		let confirmations = 0;
+		const supervisor = make({
+			resolveRuntime: async () => ({
+				ok: true,
+				runtime: {
+					...runtime,
+					...(which === 'cli' ? {cliPath: file} : {nodePath: file}),
+				},
+			}),
+			connect: async options => {
+				await options.beforeLaunch?.();
+				launches++;
+				return connectProject(options);
+			},
+			confirmTrust: async () => {
+				confirmations++;
+				return true;
+			},
+		});
+		t.teardown(() => supervisor.close());
+		const state = await supervisor.probeProject(chosen);
+		t.is(state.status, 'failed', which);
+		t.regex(state.reason ?? '', /runtime changed or is inside/);
+		t.is(launches, 0);
+		t.is(confirmations, 0);
 	}
 });
 

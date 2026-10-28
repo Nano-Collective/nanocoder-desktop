@@ -10,11 +10,12 @@ import {
 import {capabilityGates, describeAgent} from '@/main/nanocoder/capabilities';
 import {connectProject} from '@/main/nanocoder/open-project';
 import {PermissionBroker} from '@/main/nanocoder/permissions';
-import {isInside, type Resolution} from '@/main/nanocoder/runtime';
+import type {Resolution} from '@/main/nanocoder/runtime';
 import type {NanocoderSupervisor} from '@/main/nanocoder/supervisor-contracts';
 import type {TrustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
 import {versionPolicy} from '@/main/nanocoder/version-policy';
+import {isInside} from '@/main/paths';
 import type {
 	CapabilityGates,
 	DiagnosticsSnapshot,

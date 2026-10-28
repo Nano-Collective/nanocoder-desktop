@@ -1,5 +1,6 @@
 import {
 	chmodSync,
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	realpathSync,
@@ -12,7 +13,6 @@ import path from 'node:path';
 import test from 'ava';
 import {
 	cliFromShim,
-	isInside,
 	pathDirectories,
 	resolveNanocoder,
 } from '@/main/nanocoder/runtime';
@@ -303,14 +303,167 @@ test('explicit overrides never bypass project-local CLI or Node refusal', async 
 	}
 });
 
+test('overrides in ..tools never reach the Node version probe', async t => {
+	for (const which of ['cli', 'node']) {
+		const root = tempDir();
+		const tools = path.join(root, '..tools');
+		const localCli = makePackage(path.join(tools, 'nanocoder'));
+		const localNode = makeFile(path.join(tools, 'node'));
+		let probed = false;
+		const result = await resolveNanocoder({
+			env: {
+				NANOCODER_DESKTOP_CLI:
+					which === 'cli' ? localCli : makePackage(tempDir()),
+				NANOCODER_DESKTOP_NODE: which === 'node' ? localNode : process.execPath,
+			},
+			platform: process.platform,
+			untrustedRoots: [root],
+			readNodeVersion: async () => {
+				probed = true;
+				return 'v24.0.0';
+			},
+		});
+		t.false(result.ok, which);
+		if (!result.ok) {
+			t.is(result.code, 'DENIED');
+			t.regex(result.message, /inside the project folder/);
+		}
+		t.false(probed);
+	}
+});
+
+symlinkTest(
+	'a real project-local ..tools/node cannot run even its version probe',
+	async t => {
+		const root = tempDir();
+		const marker = path.join(tempDir(), 'controlled-node-probe-ran');
+		const node = makeFile(
+			path.join(root, '..tools', 'node'),
+			`#!${realpathSync(process.execPath)}\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'fixture');\nconsole.log('v24.0.0');\n`,
+		);
+		const result = await resolveNanocoder({
+			env: {
+				NANOCODER_DESKTOP_CLI: makePackage(tempDir()),
+				NANOCODER_DESKTOP_NODE: node,
+			},
+			platform: process.platform,
+			untrustedRoots: [root],
+		});
+		t.false(result.ok);
+		if (!result.ok) t.is(result.code, 'DENIED');
+		t.false(existsSync(marker));
+	},
+);
+
+test('PATH discovery refuses CLI and Node targets inside ..tools', async t => {
+	for (const which of ['cli', 'node']) {
+		const root = tempDir();
+		const tools = path.join(root, '..tools');
+		const bin = path.join(tools, 'bin');
+		makePackage(
+			path.join(tools, 'node_modules', '@nanocollective', 'nanocoder'),
+		);
+		makeFile(
+			path.join(
+				bin,
+				process.platform === 'win32' ? 'nanocoder.cmd' : 'nanocoder',
+			),
+			'exec node "$basedir/../node_modules/@nanocollective/nanocoder/dist/cli.js"',
+		);
+		makeFile(
+			path.join(bin, process.platform === 'win32' ? 'node.exe' : 'node'),
+		);
+		let probed = false;
+		const result = await resolveNanocoder({
+			env: {
+				PATH: bin,
+				...(which === 'node'
+					? {NANOCODER_DESKTOP_CLI: makePackage(tempDir())}
+					: {}),
+			},
+			platform: process.platform,
+			untrustedRoots: [root],
+			readNodeVersion: async () => {
+				probed = true;
+				return 'v24.0.0';
+			},
+		});
+		t.false(result.ok, which);
+		if (!result.ok) t.is(result.code, 'DENIED');
+		t.false(probed);
+	}
+});
+
+test('a sibling sharing the project prefix is not a project-local runtime', async t => {
+	const work = tempDir();
+	const root = path.join(work, 'project');
+	mkdirSync(root);
+	const sibling = path.join(work, 'project-other');
+	const result = await resolveNanocoder({
+		env: {
+			NANOCODER_DESKTOP_CLI: makePackage(sibling),
+			NANOCODER_DESKTOP_NODE: makeFile(path.join(sibling, 'node')),
+		},
+		platform: process.platform,
+		untrustedRoots: [root],
+		readNodeVersion: v22,
+	});
+	t.true(result.ok);
+});
+
+test('unavailable or relative excluded roots fail closed before version probing', async t => {
+	for (const root of [path.join(tempDir(), 'missing'), 'relative']) {
+		let probed = false;
+		const result = await resolveNanocoder({
+			env: {
+				NANOCODER_DESKTOP_CLI: makePackage(tempDir()),
+				NANOCODER_DESKTOP_NODE: process.execPath,
+			},
+			platform: process.platform,
+			untrustedRoots: [root],
+			readNodeVersion: async () => {
+				probed = true;
+				return 'v24.0.0';
+			},
+		});
+		t.false(result.ok);
+		if (!result.ok) t.is(result.code, 'DENIED');
+		t.false(probed);
+	}
+});
+
+symlinkTest(
+	'excluded roots are canonicalised before comparing runtime targets',
+	async t => {
+		const root = tempDir();
+		const alias = path.join(tempDir(), 'project-link');
+		symlinkSync(root, alias, 'dir');
+		const result = await resolveNanocoder({
+			env: {
+				NANOCODER_DESKTOP_CLI: makePackage(
+					path.join(root, '..tools', 'nanocoder'),
+				),
+				NANOCODER_DESKTOP_NODE: process.execPath,
+			},
+			platform: process.platform,
+			untrustedRoots: [alias],
+			readNodeVersion: v22,
+		});
+		t.false(result.ok);
+		if (!result.ok) t.is(result.code, 'DENIED');
+	},
+);
+
 symlinkTest(
 	'refuses outside override links whose CLI or Node target is inside the project',
 	async t => {
 		for (const which of ['cli', 'node']) {
 			const root = tempDir();
 			const outside = tempDir();
-			const cli = makePackage(which === 'cli' ? root : outside);
-			const node = makeFile(path.join(root, 'node'));
+			const cli = makePackage(
+				which === 'cli' ? path.join(root, '..tools', 'nanocoder') : outside,
+			);
+			const node = makeFile(path.join(root, '..tools', 'node'));
 			const link = path.join(tempDir(), which === 'cli' ? 'cli.js' : 'node');
 			symlinkSync(which === 'cli' ? cli : node, link);
 			let executed = false;
@@ -429,11 +582,4 @@ test('the actual Node version subprocess is cancelled with its lookup', async t 
 	const result = await pending;
 	t.false(result.ok);
 	if (!result.ok) t.is(result.code, 'UNSUPPORTED');
-});
-
-test('compares paths case-insensitively only where the platform does', t => {
-	t.true(isInside('/Work/Project/node_modules/x', ['/work/project'], 'darwin'));
-	t.false(isInside('/Work/Project/node_modules/x', ['/work/project'], 'linux'));
-	t.false(isInside('/work/project-other/x', ['/work/project'], 'linux'));
-	t.true(isInside('/work/project', ['/work/project'], 'linux'));
 });
