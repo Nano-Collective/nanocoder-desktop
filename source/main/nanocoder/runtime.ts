@@ -1,15 +1,9 @@
 import {execFile} from 'node:child_process';
-import {
-	accessSync,
-	constants,
-	readFileSync,
-	realpathSync,
-	statSync,
-} from 'node:fs';
+import {accessSync, constants, readFileSync, statSync} from 'node:fs';
 import path from 'node:path';
 import {promisify} from 'node:util';
 import {childEnv} from '@/main/nanocoder/launch';
-import {isInside} from '@/main/paths';
+import {canonicalPathSync, isInside} from '@/main/paths';
 import type {NanocoderRuntime} from '@/shared/ipc';
 
 const PACKAGE_NAME = '@nanocollective/nanocoder';
@@ -83,14 +77,14 @@ export function cliFromShim(shimPath: string): string | undefined {
 
 function locateCli(binPath: string): string | undefined {
 	try {
-		const real = realpathSync(binPath);
+		const real = canonicalPathSync(binPath);
 		if (/[\\/]dist[\\/]cli\.js$/.test(real)) return real;
 	} catch {
 		return undefined;
 	}
 	const fromShim = cliFromShim(binPath);
 	try {
-		return fromShim ? realpathSync(fromShim) : undefined;
+		return fromShim ? canonicalPathSync(fromShim) : undefined;
 	} catch {
 		return undefined;
 	}
@@ -139,7 +133,7 @@ export async function resolveNanocoder(
 	try {
 		untrustedRoots = options.untrustedRoots.map(root => {
 			if (!path.isAbsolute(root)) throw new Error('Project root is relative');
-			return realpathSync(root);
+			return canonicalPathSync(root);
 		});
 	} catch {
 		return {
@@ -208,7 +202,7 @@ export async function resolveNanocoder(
 			message: 'Node.js is not installed or not on PATH',
 		};
 	}
-	const nodePath = realpathSync(nodeFound);
+	const nodePath = canonicalPathSync(nodeFound);
 	if (isInside(nodePath, untrustedRoots, platform)) {
 		return {
 			ok: false,

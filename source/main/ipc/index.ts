@@ -1,5 +1,4 @@
 import {randomUUID} from 'node:crypto';
-import {realpath} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import path from 'node:path';
 import {
@@ -8,6 +7,7 @@ import {
 	dialog,
 	type MessageBoxOptions,
 	type OpenDialogOptions,
+	type WebContents,
 } from 'electron';
 import {z} from 'zod';
 import {IpcFailure} from '@/main/ipc/handle-request';
@@ -19,7 +19,12 @@ import {NanocoderFailure} from '@/main/nanocoder/acp-client';
 import {resolveNanocoder} from '@/main/nanocoder/runtime';
 import {createLookup} from '@/main/nanocoder/runtime-lookup';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
+import {
+	prepareSession,
+	stopDetachedTurns,
+} from '@/main/nanocoder/technical-sessions';
 import type {TrustReason, TrustRefusal} from '@/main/nanocoder/trust';
+import {canonicalPath} from '@/main/paths';
 import {isAllowedOrigin} from '@/main/security';
 import {APP_NAME} from '@/shared/app-info';
 import {
@@ -52,7 +57,7 @@ let supervisor: ProjectSupervisor | undefined;
 let activeProjectId: string | undefined;
 let session: SessionInfo | undefined;
 let connecting = false;
-let shuttingDown = false;
+let rendererCleanup: Promise<void> = Promise.resolve();
 const technicalProjects = new Map<string, ProjectInfo>();
 const technicalSessions = new Map<string, SessionInfo>();
 let appOrigins: readonly string[] = [];
@@ -62,7 +67,10 @@ let unsubscribeProjectEvents: (() => void) | undefined;
 // Only windows showing the app get events; the renderer never sees the IPC event object.
 function sendEvent(event: TurnEvent): void {
 	for (const window of BrowserWindow.getAllWindows()) {
-		if (isAllowedOrigin(window.webContents.getURL(), appOrigins)) {
+		if (
+			!window.webContents.isDestroyed() &&
+			isAllowedOrigin(window.webContents.getURL(), appOrigins)
+		) {
 			window.webContents.send(CHANNELS.nanocoderEvent, event);
 		}
 	}
@@ -86,7 +94,7 @@ async function chooseProjectRoot(): Promise<string | undefined> {
 		? await dialog.showOpenDialog(window, options)
 		: await dialog.showOpenDialog(options);
 	const [folder] = picked.filePaths;
-	return picked.canceled || !folder ? undefined : realpath(folder);
+	return picked.canceled || !folder ? undefined : canonicalPath(folder);
 }
 
 // A native dialog in main, so the renderer can never grant trust on the user's behalf.
@@ -110,7 +118,7 @@ async function confirmTrust(refusal: TrustRefusal): Promise<boolean> {
 }
 
 async function connect(): Promise<ConnectResult> {
-	if (shuttingDown || !supervisor) {
+	if (runtimeDiscovery.signal.aborted || !supervisor) {
 		throw new IpcFailure(
 			'AGENT_UNAVAILABLE',
 			'The desktop cannot start a project now',
@@ -123,7 +131,8 @@ async function connect(): Promise<ConnectResult> {
 	try {
 		const root = await chooseProjectRoot();
 		if (!root) return {status: 'cancelled'};
-		if (shuttingDown)
+		await rendererCleanup;
+		if (runtimeDiscovery.signal.aborted)
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'The desktop is shutting down');
 		activeProjectId = undefined;
 		session = undefined;
@@ -158,20 +167,12 @@ async function connect(): Promise<ConnectResult> {
 			);
 		}
 		const connection = supervisor.getConnection(project.id);
-		session = technicalSessions.get(project.id);
-		if (!session) {
-			try {
-				session = await connection.newSession(project.defaultMode);
-				technicalSessions.set(project.id, session);
-			} catch (error) {
-				await supervisor.stop(project.id);
-				throw error;
-			}
-		} else if (!wasReady) {
-			session = (
-				await connection.resumeSession(session.id, project.defaultMode)
-			).session;
-		}
+		session = await prepareSession(
+			supervisor,
+			project,
+			technicalSessions,
+			wasReady,
+		);
 		return {status: 'connected', agent: connection.agent, session};
 	} catch (error) {
 		if (error instanceof NanocoderFailure)
@@ -218,7 +219,6 @@ function answerPermission({
 }
 
 export function closeNanocoder(): Promise<void> {
-	shuttingDown = true;
 	runtimeDiscovery.abort();
 	return disposeDesktop({
 		unsubscribe: unsubscribeProjectEvents,
@@ -226,6 +226,30 @@ export function closeNanocoder(): Promise<void> {
 		supervisor: workspaceServices.supervisor,
 		store: workspaceServices.store,
 	});
+}
+
+function watchRenderer(contents: WebContents): void {
+	let attached = false;
+	const detach = () => {
+		if (!attached || !supervisor) return;
+		activeProjectId = undefined;
+		session = undefined;
+		rendererCleanup = Promise.allSettled([
+			rendererCleanup,
+			stopDetachedTurns(supervisor, technicalProjects.values()),
+		]).then(() => {});
+	};
+	contents.on('did-finish-load', () => {
+		attached = isAllowedOrigin(contents.getURL(), appOrigins);
+	});
+	contents.on(
+		'did-start-navigation',
+		(_event, _url, isInPlace, isMainFrame) => {
+			if (isMainFrame && !isInPlace) detach();
+		},
+	);
+	contents.on('render-process-gone', detach);
+	contents.once('destroyed', detach);
 }
 
 export function registerIpcHandlers(
@@ -255,6 +279,9 @@ export function registerIpcHandlers(
 		...services,
 		supervisor: services.supervisor ?? supervisor,
 	};
+	app.on('web-contents-created', (_event, contents) => watchRenderer(contents));
+	for (const window of BrowserWindow.getAllWindows())
+		watchRenderer(window.webContents);
 	registerWorkspaceHandlers(registerHandler, allowedOrigins, workspaceServices);
 	unsubscribeProjectEvents = workspaceServices.supervisor?.subscribe(event => {
 		if (
@@ -265,7 +292,10 @@ export function registerIpcHandlers(
 			for (const turn of event.events) sendEvent(turn);
 		}
 		for (const window of BrowserWindow.getAllWindows()) {
-			if (isAllowedOrigin(window.webContents.getURL(), appOrigins)) {
+			if (
+				!window.webContents.isDestroyed() &&
+				isAllowedOrigin(window.webContents.getURL(), appOrigins)
+			) {
 				window.webContents.send(CHANNELS.projectEvent, event);
 			}
 		}

@@ -176,6 +176,13 @@ export async function connectNanocoder(
 			}),
 		);
 
+	const closeQuietly = async (sessionId: string) => {
+		if (!canCloseSession) return;
+		await connection.agent
+			.request(methods.agent.session.close, {sessionId})
+			.catch(() => undefined);
+	};
+
 	let closing: Promise<void> | undefined;
 	const close = (): Promise<void> => {
 		closing ??= (async () => {
@@ -192,15 +199,7 @@ export async function connectNanocoder(
 				child.stdout.destroy();
 				child.stderr.destroy();
 			}, grace * 2);
-			if (canCloseSession) {
-				await Promise.all(
-					[...readySessions].map(sessionId =>
-						connection.agent
-							.request(methods.agent.session.close, {sessionId})
-							.catch(() => {}),
-					),
-				);
-			}
+			await Promise.all([...readySessions].map(closeQuietly));
 			await Promise.allSettled([...activePrompts]);
 			readySessions.clear();
 			child.stdin.end();
@@ -268,13 +267,6 @@ export async function connectNanocoder(
 
 	const agent = describeAgent(options.root, response);
 	canCloseSession = agent.capabilities.sessions.close;
-
-	const closeQuietly = async (sessionId: string) => {
-		if (!agent.capabilities.sessions.close) return;
-		await connection.agent
-			.request(methods.agent.session.close, {sessionId})
-			.catch(() => undefined);
-	};
 
 	// A session is handed out only once its mode is set, so nothing can prompt it before (DEC-31).
 	const applyMode = async (

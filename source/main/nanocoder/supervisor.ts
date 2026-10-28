@@ -1,4 +1,4 @@
-import {realpath, stat} from 'node:fs/promises';
+import {stat} from 'node:fs/promises';
 import path from 'node:path';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {untilAborted} from '@/main/nanocoder/abort';
@@ -15,7 +15,7 @@ import type {NanocoderSupervisor} from '@/main/nanocoder/supervisor-contracts';
 import type {TrustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
 import {versionPolicy} from '@/main/nanocoder/version-policy';
-import {isInside} from '@/main/paths';
+import {canonicalPath, isInside} from '@/main/paths';
 import type {
 	CapabilityGates,
 	DiagnosticsSnapshot,
@@ -34,7 +34,7 @@ interface Entry {
 	starting?: Promise<SupervisorState>;
 	stopping?: Promise<SupervisorState>;
 	permissions: Map<string, PermissionBroker>;
-	activeTurn?: {sessionId: string};
+	activeTurn?: {sessionId: string; cancelled: boolean; settled: Promise<void>};
 }
 
 interface SupervisorOptions {
@@ -200,10 +200,12 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			permissions: new Map(),
 		};
 		this.entries.set(project.id, entry);
+		entry.starting = Promise.resolve()
+			.then(() => this.launch(entry))
+			.finally(() => {
+				entry.starting = undefined;
+			});
 		this.publish(entry);
-		entry.starting = this.launch(entry).finally(() => {
-			entry.starting = undefined;
-		});
 		return entry.starting;
 	}
 
@@ -213,7 +215,10 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			abort: {signal},
 		} = entry;
 		const validateRoot = async () => {
-			const root = await untilAborted(realpath(project.canonicalRoot), signal);
+			const root = await untilAborted(
+				canonicalPath(project.canonicalRoot),
+				signal,
+			);
 			const info = await untilAborted(stat(root), signal);
 			if (
 				!info.isDirectory() ||
@@ -259,8 +264,8 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 					await validateRoot();
 					const paths = await untilAborted(
 						Promise.all([
-							realpath(resolved.runtime.cliPath),
-							realpath(resolved.runtime.nodePath),
+							canonicalPath(resolved.runtime.cliPath),
+							canonicalPath(resolved.runtime.nodePath),
 						]),
 						signal,
 					);
@@ -281,7 +286,12 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 					if (event) this.turn(entry, notification.sessionId, event);
 				},
 				onPermission: request => {
-					if (signal.aborted)
+					if (
+						signal.aborted ||
+						!entry.activeTurn ||
+						entry.activeTurn.sessionId !== request.sessionId ||
+						entry.activeTurn.cancelled
+					)
 						return Promise.resolve({outcome: {outcome: 'cancelled'}});
 					let broker = entry.permissions.get(request.sessionId);
 					if (!broker) {
@@ -376,11 +386,19 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				'Nanocoder is already working on a turn',
 				true,
 			);
-		const turn = {sessionId};
+		let settle!: () => void;
+		const turn = {
+			sessionId,
+			cancelled: false,
+			settled: new Promise<void>(resolve => {
+				settle = resolve;
+			}),
+		};
 		entry.activeTurn = turn;
 		entry.state.activeThreadId = sessionId;
 		this.publish(entry);
 		try {
+			if (turn.cancelled) return {stopReason: 'cancelled'};
 			return await connection.prompt(sessionId, text);
 		} finally {
 			if (entry.activeTurn === turn) {
@@ -388,6 +406,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				entry.state.activeThreadId = null;
 				if (!entry.abort.signal.aborted) this.publish(entry);
 			}
+			settle();
 		}
 	}
 
@@ -407,8 +426,16 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 
 	async cancel(projectId: string, sessionId: string): Promise<void> {
 		const connection = this.getConnection(projectId);
-		this.entries.get(projectId)?.permissions.get(sessionId)?.cancelAll();
-		await connection.cancel(sessionId);
+		const entry = this.entries.get(projectId);
+		const turn = entry?.activeTurn;
+		if (!turn || turn.sessionId !== sessionId) return;
+		turn.cancelled = true;
+		entry?.permissions.get(sessionId)?.cancelAll();
+		try {
+			await connection.cancel(sessionId);
+		} finally {
+			await turn.settled;
+		}
 	}
 
 	stop(projectId: string): Promise<SupervisorState> {

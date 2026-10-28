@@ -1,5 +1,29 @@
+import {existsSync, mkdirSync, mkdtempSync, rmSync, statSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import test from 'ava';
-import {isInside} from '@/main/paths';
+import {canonicalPath, canonicalPathSync, isInside} from '@/main/paths';
+
+test('native canonicalisation follows the actual volume case identity', async t => {
+	const work = canonicalPathSync(mkdtempSync(path.join(tmpdir(), 'nd-case-')));
+	t.teardown(() => rmSync(work, {recursive: true, force: true}));
+	const root = path.join(work, 'CaseProject');
+	const alias = path.join(work, 'caseproject');
+	mkdirSync(root);
+	if (existsSync(alias)) {
+		t.is(statSync(alias).dev, statSync(root).dev);
+		t.is(statSync(alias).ino, statSync(root).ino);
+		t.is(canonicalPathSync(alias), canonicalPathSync(root));
+		t.is(await canonicalPath(alias), canonicalPathSync(root));
+		t.log('case-insensitive volume: native realpath returns on-disk casing');
+	} else {
+		mkdirSync(alias);
+		t.not(canonicalPathSync(alias), canonicalPathSync(root));
+		t.false(isInside(await canonicalPath(alias), [canonicalPathSync(root)]));
+		t.log('case-sensitive volume: distinct case names remain distinct');
+	}
+	await t.throwsAsync(canonicalPath(path.join(work, 'missing')));
+});
 
 test('two-dot-prefixed names are children, not parent segments', t => {
 	for (const child of [

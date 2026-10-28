@@ -439,3 +439,133 @@ test('the native-picked root is used to refuse a project-local runtime override'
 	);
 	await expect(page.getByLabel('Message')).toHaveCount(0);
 });
+
+async function recordRecoveryProjects(): Promise<void> {
+	await page.evaluate(() => {
+		const state = window as unknown as {
+			desktop: DesktopApi;
+			recoveryEvents: ProjectEvent[];
+		};
+		state.recoveryEvents = [];
+		state.desktop.onProjectEvent(event => state.recoveryEvents.push(event));
+	});
+}
+
+async function recoveryProjectId(root: string): Promise<string> {
+	return page.evaluate(root => {
+		const events = (window as unknown as {recoveryEvents: ProjectEvent[]})
+			.recoveryEvents;
+		const event = events.find(
+			event => event.type === 'supervisor' && event.state.agent?.root === root,
+		);
+		if (!event) throw new Error('Missing project state');
+		return event.projectId;
+	}, root);
+}
+
+test('a failed cached resume closes its process and the next open prepares a fresh session', async () => {
+	await recordRecoveryProjects();
+	const root = project('resume-clean-retry');
+	await openFolder(root);
+	const projectId = await recoveryProjectId(root);
+	const stopped = await page.evaluate(
+		projectId =>
+			(window as unknown as {desktop: DesktopApi}).desktop.stopProject({
+				projectId,
+			}),
+		projectId,
+	);
+	expect(stopped.ok).toBe(true);
+	writeFileSync(path.join(root, '.fake-nanocoder'), 'missing-session');
+	await openFolder(root);
+	await expect(page.getByRole('alert')).toContainText(
+		'Nanocoder no longer has this session',
+	);
+	await expect(page.getByLabel('Message')).toHaveCount(0);
+	const state = await page.evaluate(
+		projectId =>
+			(window as unknown as {desktop: DesktopApi}).desktop.getSupervisorState({
+				projectId,
+			}),
+		projectId,
+	);
+	expect(state.ok && state.value.status).toBe('stopped');
+	await openFolder(root);
+	await expect(
+		page.getByRole('region', {name: 'Connected agent'}),
+	).toContainText('Session fake-session in normal mode');
+	await sendMessage();
+	await expect(cards()).toBeVisible();
+	await cards().getByRole('button', {name: 'Deny'}).click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+});
+
+test('reloading during approval cancels hidden requests and leaves a usable session on reopen', async () => {
+	await recordRecoveryProjects();
+	const root = project('reload-pending', 'two-tools');
+	await openFolder(root);
+	const projectId = await recoveryProjectId(root);
+	await sendMessage();
+	await expect(cards()).toHaveCount(2);
+	const stale = (await permissionIds()).at(-1) ?? '';
+	await page.reload();
+	await expect
+		.poll(async () => {
+			const state = await page.evaluate(
+				projectId =>
+					(
+						window as unknown as {desktop: DesktopApi}
+					).desktop.getSupervisorState({projectId}),
+				projectId,
+			);
+			return state.ok && state.value.status;
+		})
+		.toBe('stopped');
+	expect((await bridge('answerPermission', stale, 'allow')).error?.code).toBe(
+		'NOT_FOUND',
+	);
+	await openFolder(root);
+	await expect(cards()).toHaveCount(0);
+	await sendMessage();
+	await expect(cards()).toHaveCount(2);
+	await cards().first().getByRole('button', {name: 'Deny'}).click();
+	await cards().first().getByRole('button', {name: 'Deny'}).click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+test('closing and reopening the macOS window cancels hidden approval state', async () => {
+	test.skip(
+		process.platform !== 'darwin',
+		'Closing the last window quits on other platforms',
+	);
+	await recordRecoveryProjects();
+	const root = project('window-reopen-pending');
+	await openFolder(root);
+	const projectId = await recoveryProjectId(root);
+	await sendMessage();
+	await expect(cards()).toBeVisible();
+	await page.close();
+	const opened = app.waitForEvent('window');
+	await app.evaluate(({app}) => {
+		app.emit('activate');
+	});
+	page = await opened;
+	await expect
+		.poll(async () => {
+			const state = await page.evaluate(
+				projectId =>
+					(
+						window as unknown as {desktop: DesktopApi}
+					).desktop.getSupervisorState({projectId}),
+				projectId,
+			);
+			return state.ok && state.value.status;
+		})
+		.toBe('stopped');
+	await openFolder(root);
+	await sendMessage();
+	await expect(cards()).toBeVisible();
+	await cards().getByRole('button', {name: 'Deny'}).click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+});

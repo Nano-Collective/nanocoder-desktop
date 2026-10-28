@@ -303,6 +303,56 @@ test('explicit overrides never bypass project-local CLI or Node refusal', async 
 	}
 });
 
+test('true-cased and case-aliased project runtimes are refused before execution', async t => {
+	const work = tempDir();
+	const root = path.join(work, 'CaseProject');
+	const alias = path.join(work, 'caseproject');
+	mkdirSync(root);
+	const cli = makePackage(path.join(root, 'nanocoder'));
+	const marker = path.join(work, 'controlled-probe-ran');
+	const node = makeFile(
+		path.join(root, 'bin', 'node'),
+		`#!${realpathSync.native(process.execPath)}\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'fixture');\nconsole.log('v24.0.0');\n`,
+	);
+	const spellings = existsSync(alias) ? [root, alias] : [root];
+	for (const spelling of spellings) {
+		for (const which of ['cli', 'node']) {
+			const result = await resolveNanocoder({
+				env: {
+					NANOCODER_DESKTOP_CLI:
+						which === 'cli'
+							? path.join(spelling, 'nanocoder/dist/cli.js')
+							: makePackage(tempDir()),
+					NANOCODER_DESKTOP_NODE:
+						which === 'node'
+							? path.join(spelling, 'bin/node')
+							: process.execPath,
+				},
+				platform: process.platform,
+				untrustedRoots: [root],
+			});
+			t.false(result.ok, which);
+			if (!result.ok) t.is(result.code, 'DENIED');
+		}
+	}
+	t.false(existsSync(marker));
+	if (!existsSync(alias)) {
+		mkdirSync(alias);
+		const result = await resolveNanocoder({
+			env: {
+				NANOCODER_DESKTOP_CLI: makePackage(path.join(alias, 'nanocoder')),
+				NANOCODER_DESKTOP_NODE: makeFile(path.join(alias, 'bin/node')),
+			},
+			platform: process.platform,
+			untrustedRoots: [root],
+			readNodeVersion: v22,
+		});
+		t.true(result.ok);
+	}
+	t.true(existsSync(cli));
+	t.true(existsSync(node));
+});
+
 test('overrides in ..tools never reach the Node version probe', async t => {
 	for (const which of ['cli', 'node']) {
 		const root = tempDir();

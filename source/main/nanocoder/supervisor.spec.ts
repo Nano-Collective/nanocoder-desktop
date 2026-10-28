@@ -11,7 +11,10 @@ import {
 import path from 'node:path';
 import test from 'ava';
 import {IpcFailure} from '@/main/ipc/handle-request';
-import {connectNanocoder} from '@/main/nanocoder/acp-client';
+import {
+	type ConnectOptions,
+	connectNanocoder,
+} from '@/main/nanocoder/acp-client';
 import {
 	fakeEvents,
 	fakeProject,
@@ -75,6 +78,171 @@ function nextEvent(
 }
 
 test.after.always(removeFakeProjects);
+
+test('a reentrant starting subscriber shares ownership and all children exit on close', async t => {
+	const chosen = project();
+	let lookups = 0;
+	const connections: Awaited<ReturnType<typeof connectNanocoder>>[] = [];
+	const supervisor = make({
+		resolveRuntime: async () => {
+			lookups++;
+			return {ok: true, runtime};
+		},
+		connect: async options => {
+			const connection = await connectProject(options);
+			if (!('status' in connection)) connections.push(connection);
+			return connection;
+		},
+	});
+	t.teardown(() => supervisor.close());
+	let nested: Promise<unknown> | undefined;
+	supervisor.subscribe(event => {
+		if (
+			event.type === 'supervisor' &&
+			event.state.status === 'starting' &&
+			!nested
+		)
+			nested = supervisor.ensureProcess(chosen);
+	});
+	const start = supervisor.ensureProcess(chosen);
+	t.is(nested, start);
+	await start;
+	t.is(lookups, 1);
+	t.is(connections.length, 1);
+	await supervisor.close();
+	t.deepEqual(await connections[0].exited, {code: 0, signal: null});
+});
+
+test('shutdown from the starting publication owns and aborts the registered start', async t => {
+	const chosen = project();
+	let lookups = 0;
+	const supervisor = make({
+		resolveRuntime: async () => {
+			lookups++;
+			return {ok: true, runtime};
+		},
+	});
+	let closing: Promise<void> | undefined;
+	supervisor.subscribe(event => {
+		if (event.type === 'supervisor' && event.state.status === 'starting')
+			closing = supervisor.close();
+	});
+	await supervisor.ensureProcess(chosen);
+	await closing;
+	t.is(lookups, 0);
+	t.is(supervisor.getState(chosen.id).status, 'stopped');
+	t.throws(() => supervisor.ensureProcess(project()), {instanceOf: IpcFailure});
+});
+
+test('cancellation rejects late permissions until the turn settles and allows a new turn', async t => {
+	const outcomes: string[] = [];
+	const supervisor = make({
+		connect: options =>
+			connectProject({
+				...options,
+				onPermission: async request => {
+					const response = await options.onPermission?.(request);
+					if (!response) throw new Error('Missing permission handler');
+					outcomes.push(response.outcome.outcome);
+					return response;
+				},
+			}),
+	});
+	t.teardown(() => supervisor.close());
+	const chosen = project('two-tools');
+	await supervisor.ensureProcess(chosen);
+	const connection = supervisor.getConnection(chosen.id);
+	const {id} = await connection.newSession('normal');
+	let approvals = 0;
+	let cancelled: Promise<void> | undefined;
+	const unsubscribe = supervisor.subscribe(event => {
+		if (event.type === 'turn' && event.events[0].type === 'permission') {
+			approvals++;
+			if (approvals === 1) cancelled = supervisor.cancel(chosen.id, id);
+		}
+	});
+	t.deepEqual(await supervisor.prompt(chosen.id, id, 'cancel both'), {
+		stopReason: 'cancelled',
+	});
+	await cancelled;
+	unsubscribe();
+	t.is(approvals, 1);
+	t.is(supervisor.getState(chosen.id).activeThreadId, null);
+	t.deepEqual(outcomes, ['cancelled', 'cancelled']);
+	const next = nextEvent(
+		supervisor,
+		event => event.type === 'turn' && event.events[0].type === 'permission',
+	);
+	const following = supervisor.prompt(chosen.id, id, 'next turn');
+	await next;
+	await supervisor.cancel(chosen.id, id);
+	t.deepEqual(await following, {stopReason: 'cancelled'});
+});
+
+test('permissions outside the active session are cancelled instead of becoming hidden approvals', async t => {
+	let request: ConnectOptions['onPermission'];
+	let approvals = 0;
+	const supervisor = make({
+		connect: options => {
+			request = options.onPermission;
+			return connectProject(options);
+		},
+	});
+	t.teardown(() => supervisor.close());
+	const chosen = project();
+	supervisor.subscribe(event => {
+		if (event.type === 'turn' && event.events[0].type === 'permission')
+			approvals++;
+	});
+	await supervisor.ensureProcess(chosen);
+	const ask = request;
+	if (!ask) throw new Error('Missing permission handler');
+	const permission = {
+		sessionId: 'other-session',
+		toolCall: {toolCallId: 'other'},
+		options: [{optionId: 'allow', name: 'Allow', kind: 'allow_once' as const}],
+	};
+	t.deepEqual(await ask(permission), {outcome: {outcome: 'cancelled'}});
+	const {id} = await supervisor.getConnection(chosen.id).newSession('normal');
+	const waiting = nextEvent(
+		supervisor,
+		event => event.type === 'turn' && event.events[0].type === 'permission',
+	);
+	const turn = supervisor.prompt(chosen.id, id, 'live');
+	await waiting;
+	t.deepEqual(await ask(permission), {outcome: {outcome: 'cancelled'}});
+	t.is(approvals, 1);
+	await supervisor.cancel(chosen.id, id);
+	await turn;
+});
+
+test('cancellation from the active-state publication prevents the prompt entirely', async t => {
+	const supervisor = make();
+	t.teardown(() => supervisor.close());
+	const chosen = project();
+	await supervisor.ensureProcess(chosen);
+	const connection = supervisor.getConnection(chosen.id);
+	const {id} = await connection.newSession('normal');
+	let cancelled: Promise<void> | undefined;
+	supervisor.subscribe(event => {
+		if (
+			event.type === 'supervisor' &&
+			event.state.activeThreadId === id &&
+			!cancelled
+		)
+			cancelled = supervisor.cancel(chosen.id, id);
+	});
+	t.deepEqual(await supervisor.prompt(chosen.id, id, 'not sent'), {
+		stopReason: 'cancelled',
+	});
+	await cancelled;
+	t.false(
+		fakeEvents(connection.stderr.lines()).some(
+			event => event.method === 'session/prompt',
+		),
+	);
+	t.is(supervisor.getState(chosen.id).activeThreadId, null);
+});
 
 test('coalesces simultaneous starts for one project at its canonical root', async t => {
 	const roots: string[] = [];

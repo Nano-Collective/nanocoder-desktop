@@ -1,6 +1,19 @@
+import {realpath, realpathSync} from 'node:fs';
 import path from 'node:path';
 
-// Filesystem callers must resolve symlinks before comparing paths.
+export const canonicalPathSync = (file: string): string =>
+	realpathSync.native(file);
+
+export function canonicalPath(file: string): Promise<string> {
+	return new Promise((resolve, reject) => {
+		realpath.native(file, (error, resolved) => {
+			if (error) reject(error);
+			else resolve(resolved);
+		});
+	});
+}
+
+// Filesystem callers use native realpath to resolve symlinks and case aliases.
 export function isInside(
 	child: string,
 	roots: readonly string[],

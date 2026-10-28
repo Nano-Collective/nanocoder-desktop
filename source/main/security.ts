@@ -1,6 +1,5 @@
-import {realpathSync} from 'node:fs';
 import path from 'node:path';
-import {isInside} from '@/main/paths';
+import {canonicalPathSync, isInside} from '@/main/paths';
 
 export const APP_SCHEME = 'app';
 const APP_HOST = 'renderer';
@@ -55,8 +54,8 @@ export function resolveRendererFile(
 	const resolved = path.resolve(root, relative);
 	if (!isInside(resolved, [root])) return null;
 	try {
-		const canonicalRoot = realpathSync(root);
-		const canonicalFile = realpathSync(resolved);
+		const canonicalRoot = canonicalPathSync(root);
+		const canonicalFile = canonicalPathSync(resolved);
 		return isInside(canonicalFile, [canonicalRoot]) ? canonicalFile : null;
 	} catch {
 		return null;

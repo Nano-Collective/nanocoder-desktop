@@ -49,22 +49,18 @@ export async function trustDirectory(options: {
 	child.stdout.resume();
 	child.stderr.resume();
 	const abort = () => child.kill();
-	options.signal?.addEventListener('abort', abort, {once: true});
-	const timer = setTimeout(abort, options.timeoutMs ?? TRUST_TIMEOUT_MS);
-	const kill = setTimeout(
-		() => {
-			child.kill('SIGKILL');
-			child.stdout.destroy();
-			child.stderr.destroy();
-		},
-		(options.timeoutMs ?? TRUST_TIMEOUT_MS) + 5_000,
-	);
-	// An aborted trust launch must not retain its normal one-minute timeout.
 	const forceAbort = () => {
 		child.kill('SIGKILL');
 		child.stdout.destroy();
 		child.stderr.destroy();
 	};
+	options.signal?.addEventListener('abort', abort, {once: true});
+	const timer = setTimeout(abort, options.timeoutMs ?? TRUST_TIMEOUT_MS);
+	const kill = setTimeout(
+		forceAbort,
+		(options.timeoutMs ?? TRUST_TIMEOUT_MS) + 5_000,
+	);
+	// An aborted trust launch must not retain its normal one-minute timeout.
 	options.signal?.addEventListener('abort', forceAbort, {once: true});
 	await exited;
 	clearTimeout(timer);

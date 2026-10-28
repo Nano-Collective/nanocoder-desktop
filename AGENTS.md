@@ -26,7 +26,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/index.ts` | App entry: `app://` protocol, CSP, sandbox, navigation and window rules |
 | `source/main/lifecycle.ts` | Testable service disposal and quit guard; supervisor cleanup finishes before the store closes |
 | `source/main/security.ts` | Origin checks, renderer file resolution, Content Security Policy |
-| `source/main/paths.ts` | Shared main-only path containment; callers canonicalise filesystem paths before checking |
+| `source/main/paths.ts` | Shared native realpath canonicalisation (symlinks and volume case aliases) and component containment |
 | `source/main/ipc/handle-request.ts` | Sender check, schema validation and the result shape for every IPC call |
 | `source/main/ipc/index.ts` | Registers the IPC handlers |
 | `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |
@@ -34,6 +34,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/store/contracts.ts` | Metadata store, repositories and replaceable SQLite driver seam (`DEC-04`) |
 | `source/main/nanocoder/supervisor-contracts.ts` | Main-only per-project supervisor interface |
 | `source/main/nanocoder/supervisor.ts` | One canonical-root process per project, scoped events and permissions, abortable starts and awaited shutdown |
+| `source/main/nanocoder/technical-sessions.ts` | Technical-gate mode-ready session cache and safe active-turn cleanup when a renderer detaches |
 | `source/main/nanocoder/version-policy.ts` | Provisional minimum version, fail-closed parsing and untested-version warnings (`ACP-04`, `OQ-02`) |
 | `source/main/nanocoder/abort.ts` | Cancels pending lookups and trust confirmations without allowing late launches |
 | `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path |
