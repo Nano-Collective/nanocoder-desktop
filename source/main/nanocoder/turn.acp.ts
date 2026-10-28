@@ -25,6 +25,12 @@ const runtime = {nodePath: process.execPath, cliPath: cli};
 const clientInfo = {name: 'nanocoder-desktop', version: '0.0.0-test'};
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-turn-')));
 
+test.before(() => {
+	if (!path.isAbsolute(cli)) {
+		throw new Error('Set NANOCODER_CLI to the absolute path of dist/cli.js');
+	}
+});
+
 test.after.always(() => {
 	rmSync(work, {recursive: true, force: true});
 });

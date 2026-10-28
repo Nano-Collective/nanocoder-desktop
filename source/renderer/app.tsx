@@ -180,9 +180,9 @@ export function App() {
 			{outcome?.status === 'connected' && (
 				<Conversation transcript={transcript} />
 			)}
-			{transcript.permission && (
-				<PermissionCard request={transcript.permission} />
-			)}
+			{transcript.permissions.map(request => (
+				<PermissionCard key={request.id} request={request} />
+			))}
 			{turn?.ok && <p>Turn ended: {turn.value.stopReason}</p>}
 			{turn && !turn.ok && <p role="alert">{turn.error.message}</p>}
 			{outcome?.status === 'untrusted' && (

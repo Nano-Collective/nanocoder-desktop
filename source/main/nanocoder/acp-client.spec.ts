@@ -259,6 +259,23 @@ test('reports a Nanocoder that stops during the turn', async t => {
 	t.is((result as Error).message, 'Nanocoder stopped during the turn');
 });
 
+test('tells an error Nanocoder reports apart from Nanocoder stopping', async t => {
+	const root = fakeProject('prompt-error');
+	const connection = await connect(root, {homeDir: path.dirname(root)});
+	const session = await connection.newSession('normal');
+	const error = await rejection(connection.prompt(session.id, 'Hi'));
+	const stillRunning = await Promise.race([
+		connection.exited.then(() => false),
+		new Promise<boolean>(resolve => setTimeout(resolve, 200, true)),
+	]);
+	await connection.close();
+	t.true(stillRunning);
+	t.is(
+		error.message,
+		`Nanocoder could not finish the turn: Provider failed for ~${path.sep}${path.basename(root)}`,
+	);
+});
+
 test('describes how Nanocoder stopped', t => {
 	t.is(
 		describeExit({code: null, signal: 'SIGKILL'}),

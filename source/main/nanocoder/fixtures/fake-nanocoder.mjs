@@ -59,7 +59,10 @@ const ask = (method, params) =>
 		send({id, method, params});
 	});
 
-const TOOL = {toolCallId: 'call_1', title: 'execute_bash: echo hi'};
+const OPTIONS = [
+	{optionId: 'allow', name: 'Allow', kind: 'allow_once'},
+	{optionId: 'deny', name: 'Deny', kind: 'reject_once'},
+];
 const say = (sessionId, text) =>
 	notify('session/update', {
 		sessionId,
@@ -68,41 +71,70 @@ const say = (sessionId, text) =>
 			content: {type: 'text', text},
 		},
 	});
-const tool = (sessionId, update) =>
+const tool = (sessionId, toolCallId, update) =>
 	notify('session/update', {
 		sessionId,
-		update: {
-			sessionUpdate: 'tool_call_update',
-			toolCallId: 'call_1',
-			...update,
-		},
+		update: {sessionUpdate: 'tool_call_update', toolCallId, ...update},
 	});
 
-// One turn: some text, a protected tool call that waits for the client's answer, more text.
+// One turn: some text, protected tool calls that wait for the client's answers, more text.
 async function runTurn(id, {sessionId}) {
 	if (mode === 'die-in-turn') process.exit(3);
+	if (mode === 'prompt-error') {
+		send({
+			id,
+			error: {code: -32603, message: `Provider failed for ${process.cwd()}`},
+		});
+		return;
+	}
 	say(sessionId, 'Working on it. ');
-	notify('session/update', {
-		sessionId,
-		update: {sessionUpdate: 'tool_call', ...TOOL, status: 'pending'},
-	});
-	const {outcome} = await ask('session/request_permission', {
-		sessionId,
-		toolCall: {...TOOL, status: 'pending'},
-		options: [
-			{optionId: 'allow', name: 'Allow', kind: 'allow_once'},
-			{optionId: 'deny', name: 'Deny', kind: 'reject_once'},
-		],
-	});
-	log({answer: outcome});
-	if (outcome.outcome !== 'selected') {
-		tool(sessionId, {status: 'failed'});
+	const calls = mode === 'two-tools' ? ['call_1', 'call_2'] : ['call_1'];
+	const title = toolCallId => `execute_bash: echo ${toolCallId}`;
+	for (const toolCallId of calls) {
+		notify('session/update', {
+			sessionId,
+			update: {
+				sessionUpdate: 'tool_call',
+				toolCallId,
+				title: calls.length > 1 ? title(toolCallId) : 'execute_bash: echo hi',
+				status: 'pending',
+			},
+		});
+	}
+	const answers = await Promise.all(
+		calls.map(toolCallId =>
+			ask('session/request_permission', {
+				sessionId,
+				toolCall: {
+					toolCallId,
+					title: calls.length > 1 ? title(toolCallId) : 'execute_bash: echo hi',
+					status: 'pending',
+				},
+				options: OPTIONS,
+			}),
+		),
+	);
+	log({answer: answers[0].outcome});
+	if (answers.some(({outcome}) => outcome.outcome !== 'selected')) {
+		for (const toolCallId of calls)
+			tool(sessionId, toolCallId, {status: 'failed'});
 		send({id, result: {stopReason: 'cancelled'}});
 		return;
 	}
-	const allowed = outcome.optionId === 'allow';
-	tool(sessionId, {status: allowed ? 'completed' : 'failed'});
-	say(sessionId, allowed ? 'Tool ran.' : 'Tool denied.');
+	const allowed = answers.map(({outcome}) => outcome.optionId === 'allow');
+	calls.forEach((toolCallId, index) =>
+		tool(sessionId, toolCallId, {
+			status: allowed[index] ? 'completed' : 'failed',
+		}),
+	);
+	say(
+		sessionId,
+		calls.length > 1
+			? 'Both answered.'
+			: allowed[0]
+				? 'Tool ran.'
+				: 'Tool denied.',
+	);
 	send({id, result: {stopReason: 'end_turn'}});
 }
 

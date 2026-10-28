@@ -7,10 +7,11 @@ export type TranscriptItem =
 
 export interface Transcript {
 	items: TranscriptItem[];
-	permission: PermissionRequestInfo | null;
+	// Every request still waiting for an answer, oldest first.
+	permissions: PermissionRequestInfo[];
 }
 
-export const emptyTranscript: Transcript = {items: [], permission: null};
+export const emptyTranscript: Transcript = {items: [], permissions: []};
 
 export function addUserMessage(
 	transcript: Transcript,
@@ -66,10 +67,21 @@ export function applyEvent(
 			};
 		}
 		case 'permission':
-			return {...transcript, permission: event.request};
+			return {
+				...transcript,
+				permissions: [
+					...transcript.permissions.filter(
+						request => request.id !== event.request.id,
+					),
+					event.request,
+				],
+			};
 		case 'permission-closed':
-			return transcript.permission?.id === event.id
-				? {...transcript, permission: null}
-				: transcript;
+			return {
+				...transcript,
+				permissions: transcript.permissions.filter(
+					request => request.id !== event.id,
+				),
+			};
 	}
 }

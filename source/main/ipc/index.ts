@@ -19,6 +19,7 @@ import {PermissionBroker} from '@/main/nanocoder/permissions';
 import {type Resolution, resolveNanocoder} from '@/main/nanocoder/runtime';
 import type {TrustReason, TrustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
+import {isAllowedOrigin} from '@/main/security';
 import {APP_NAME} from '@/shared/app-info';
 import {
 	type AppInfo,
@@ -43,12 +44,16 @@ let runtime: Promise<Resolution> | undefined;
 let connection: NanocoderConnection | undefined;
 let session: SessionInfo | undefined;
 let connecting = false;
-let turnRunning = false;
+// The turn in flight, if any. A new connection drops it, so a stale turn cannot block the next one.
+let activeTurn: object | undefined;
+let appOrigins: readonly string[] = [];
 
-// Only the app's own window gets events; the renderer never sees the IPC event object.
+// Only windows showing the app get events; the renderer never sees the IPC event object.
 function sendEvent(event: TurnEvent): void {
 	for (const window of BrowserWindow.getAllWindows()) {
-		window.webContents.send(CHANNELS.nanocoderEvent, event);
+		if (isAllowedOrigin(window.webContents.getURL(), appOrigins)) {
+			window.webContents.send(CHANNELS.nanocoderEvent, event);
+		}
 	}
 }
 
@@ -58,6 +63,7 @@ function forget(next: NanocoderConnection): void {
 	if (connection !== next) return;
 	connection = undefined;
 	session = undefined;
+	activeTurn = undefined;
 	permissions.cancelAll();
 }
 
@@ -120,6 +126,7 @@ async function connect(): Promise<ConnectResult> {
 		await connection?.close();
 		connection = undefined;
 		session = undefined;
+		activeTurn = undefined;
 		const outcome = await openProject({
 			runtime: resolved,
 			root,
@@ -161,14 +168,15 @@ async function sendPrompt({text}: {text: string}): Promise<TurnResult> {
 	if (!connection || !session) {
 		throw new IpcFailure('AGENT_UNAVAILABLE', 'No project is open');
 	}
-	if (turnRunning) {
+	if (activeTurn) {
 		throw new IpcFailure(
 			'BUSY',
 			'Nanocoder is already working on a turn',
 			true,
 		);
 	}
-	turnRunning = true;
+	const turn = {};
+	activeTurn = turn;
 	try {
 		return await connection.prompt(session.id, text).catch((error: unknown) => {
 			if (error instanceof NanocoderFailure) {
@@ -177,7 +185,7 @@ async function sendPrompt({text}: {text: string}): Promise<TurnResult> {
 			throw error;
 		});
 	} finally {
-		turnRunning = false;
+		if (activeTurn === turn) activeTurn = undefined;
 	}
 }
 
@@ -203,6 +211,7 @@ export function closeNanocoder(): void {
 }
 
 export function registerIpcHandlers(allowedOrigins: readonly string[]): void {
+	appOrigins = allowedOrigins;
 	registerHandler(
 		CHANNELS.getAppInfo,
 		z.strictObject({}),

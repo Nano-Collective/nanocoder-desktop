@@ -53,21 +53,61 @@ test('updates a tool call by id and keeps what the update leaves out', t => {
 	]);
 });
 
+const request = (id: string) => ({
+	id,
+	title: `execute_bash: ${id}`,
+	options: [{id: 'allow', name: 'Allow', kind: 'allow_once' as const}],
+});
+
 test('shows a permission request until it closes', t => {
-	const request = {
-		id: 'permission-1',
-		title: 'execute_bash: ls',
-		options: [{id: 'allow', name: 'Allow', kind: 'allow_once' as const}],
-	};
-	let transcript = applyEvent(emptyTranscript, {type: 'permission', request});
-	t.deepEqual(transcript.permission, request);
+	let transcript = applyEvent(emptyTranscript, {
+		type: 'permission',
+		request: request('permission-1'),
+	});
+	t.deepEqual(transcript.permissions, [request('permission-1')]);
 
 	transcript = applyEvent(transcript, {type: 'permission-closed', id: 'other'});
-	t.deepEqual(transcript.permission, request);
+	t.deepEqual(transcript.permissions, [request('permission-1')]);
 
 	transcript = applyEvent(transcript, {
 		type: 'permission-closed',
 		id: 'permission-1',
 	});
-	t.is(transcript.permission, null);
+	t.deepEqual(transcript.permissions, []);
+});
+
+test('keeps every waiting request, so none can be left unanswerable', t => {
+	let transcript = applyEvent(emptyTranscript, {
+		type: 'permission',
+		request: request('permission-1'),
+	});
+	transcript = applyEvent(transcript, {
+		type: 'permission',
+		request: request('permission-2'),
+	});
+	t.deepEqual(
+		transcript.permissions.map(({id}) => id),
+		['permission-1', 'permission-2'],
+	);
+
+	transcript = applyEvent(transcript, {
+		type: 'permission-closed',
+		id: 'permission-1',
+	});
+	t.deepEqual(
+		transcript.permissions.map(({id}) => id),
+		['permission-2'],
+	);
+});
+
+test('does not list the same request twice', t => {
+	let transcript = applyEvent(emptyTranscript, {
+		type: 'permission',
+		request: request('permission-1'),
+	});
+	transcript = applyEvent(transcript, {
+		type: 'permission',
+		request: request('permission-1'),
+	});
+	t.is(transcript.permissions.length, 1);
 });

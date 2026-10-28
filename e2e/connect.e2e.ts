@@ -84,6 +84,24 @@ test.beforeAll(async () => {
 		},
 	});
 	page = await app.firstWindow();
+	// Records the id of every permission request the app is shown, through the real bridge.
+	await page.evaluate(() => {
+		const seen: string[] = [];
+		const state = window as unknown as {
+			permissionIds: string[];
+			desktop: {
+				onNanocoderEvent(
+					listener: (event: {type: string; request?: {id: string}}) => void,
+				): void;
+			};
+		};
+		state.permissionIds = seen;
+		state.desktop.onNanocoderEvent(event => {
+			if (event.type === 'permission' && event.request) {
+				seen.push(event.request.id);
+			}
+		});
+	});
 });
 
 test.afterAll(async () => {
@@ -174,11 +192,22 @@ test('reports a second refusal without asking again', async () => {
 	await expect(alert).not.toContainText('unrelated warning');
 });
 
-async function startTurn(name: string): Promise<void> {
-	await openFolder(project(name));
+async function sendMessage(): Promise<void> {
 	await page.getByLabel('Message').fill('Run the command');
 	await page.getByRole('button', {name: 'Send'}).click();
 }
+
+async function startTurn(name: string, mode?: string): Promise<void> {
+	await openFolder(project(name, mode));
+	await sendMessage();
+}
+
+const permissionIds = () =>
+	page.evaluate(
+		() => (window as unknown as {permissionIds: string[]}).permissionIds,
+	);
+
+const cards = () => page.getByRole('region', {name: 'Permission request'});
 
 test("shows the permission request with Nanocoder's options and waits for the user", async () => {
 	await startTurn('wait');
@@ -229,32 +258,59 @@ test('reject once: the tool is marked failed and the turn goes on', async () => 
 
 test('only an option Nanocoder offered can answer a waiting request', async () => {
 	await startTurn('refusals');
-	await expect(
-		page.getByRole('region', {name: 'Permission request'}),
-	).toBeVisible();
+	await expect(cards()).toBeVisible();
+	const live = (await permissionIds()).at(-1) ?? '';
+	expect(live).toMatch(/^permission-\d+$/);
 
-	const unknownOption = await bridge(
-		'answerPermission',
-		'permission-1',
-		'allow_always',
-	);
-	const unknownRequest = await bridge(
-		'answerPermission',
-		'permission-99',
-		'allow',
-	);
+	// The live request, with an option Nanocoder did not offer: refused, and still waiting.
+	const unoffered = await bridge('answerPermission', live, 'allow_always');
+	expect(unoffered.ok).toBe(false);
+	expect(unoffered.error?.code).toBe('NOT_FOUND');
+	await expect(cards()).toBeVisible();
+
+	// A request that was never issued, and a malformed call.
+	const unknown = await bridge('answerPermission', 'permission-9999', 'allow');
 	const malformed = await bridge('answerPermission', 1, ['allow']);
-	expect(unknownOption.error?.code).toBe('NOT_FOUND');
-	expect(unknownRequest.error?.code).toBe('NOT_FOUND');
+	expect(unknown.error?.code).toBe('NOT_FOUND');
 	expect(malformed.error?.code).toBe('VALIDATION');
-	await expect(
-		page.getByRole('region', {name: 'Permission request'}),
-	).toBeVisible();
+	await expect(cards()).toBeVisible();
 
-	await page
-		.getByRole('region', {name: 'Permission request'})
-		.getByRole('button', {name: 'Allow'})
-		.click();
+	// The same live request still accepts an option it offered.
+	const offered = await bridge('answerPermission', live, 'allow');
+	expect(offered.ok).toBe(true);
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+});
+
+test('shows every waiting request, so none is left unanswerable', async () => {
+	await startTurn('two-requests', 'two-tools');
+	await expect(cards()).toHaveCount(2);
+	await expect(cards().first()).toContainText('execute_bash: echo call_1');
+	await expect(cards().last()).toContainText('execute_bash: echo call_2');
+
+	await cards().last().getByRole('button', {name: 'Deny'}).click();
+	await expect(cards()).toHaveCount(1);
+	await expect(cards().first()).toContainText('echo call_1');
+	await expect(page.getByText('Turn ended')).toHaveCount(0);
+
+	await cards().first().getByRole('button', {name: 'Allow'}).click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
+		'Both answered.',
+	);
+	await expect(cards()).toHaveCount(0);
+});
+
+test('opening another project is not blocked by a turn left open', async () => {
+	await startTurn('left-open');
+	await expect(cards()).toBeVisible();
+
+	await openFolder(project('next-project'));
+	await expect(cards()).toHaveCount(0);
+	await sendMessage();
+
+	await expect(cards()).toBeVisible();
+	await expect(page.getByText('already working')).toHaveCount(0);
+	await cards().getByRole('button', {name: 'Allow'}).click();
 	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
 });
 

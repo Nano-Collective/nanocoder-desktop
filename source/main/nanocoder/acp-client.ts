@@ -4,6 +4,7 @@ import {
 	type Implementation,
 	methods,
 	PROTOCOL_VERSION,
+	RequestError,
 	type RequestPermissionRequest,
 	type RequestPermissionResponse,
 	type SessionNotification,
@@ -14,7 +15,7 @@ import {
 	ProtocolViolation,
 	protocolStream,
 } from '@/main/nanocoder/protocol-stream';
-import {StderrRing} from '@/main/nanocoder/stderr-ring';
+import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
 import {type TrustRefusal, trustRefusal} from '@/main/nanocoder/trust';
 import type {
 	ConnectedAgent,
@@ -225,10 +226,13 @@ export async function connectNanocoder(
 				sessionId,
 				prompt: [{type: 'text', text}],
 			})
-			.catch(() => {
+			.catch((error: unknown) => {
+				// An error answer means Nanocoder is still running; anything else is the connection going.
 				throw new NanocoderFailure(
 					'AGENT_UNAVAILABLE',
-					'Nanocoder stopped during the turn',
+					error instanceof RequestError
+						? `Nanocoder could not finish the turn: ${redact(error.message, options.homeDir)}`
+						: 'Nanocoder stopped during the turn',
 				);
 			});
 		return {stopReason: response.stopReason};
