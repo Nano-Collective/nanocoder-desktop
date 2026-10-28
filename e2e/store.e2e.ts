@@ -1,3 +1,4 @@
+import {type ChildProcess, spawn} from 'node:child_process';
 import {
 	mkdtempSync,
 	readdirSync,
@@ -10,6 +11,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {_electron as electron, expect, test} from '@playwright/test';
+import {childEnv} from '@/main/nanocoder/launch';
 import type {DesktopApi} from '@/shared/desktop-api';
 
 let profile: string;
@@ -24,6 +26,55 @@ const launch = () =>
 	electron.launch({
 		args: ['.', `--user-data-dir=${profile}`],
 	});
+
+test('a second instance exits and asks the profile owner to show and focus its window', async () => {
+	const app = await launch();
+	let second: ChildProcess | undefined;
+	try {
+		await app.firstWindow();
+		expect(
+			await app.evaluate(({app: main, BrowserWindow}) => {
+				const window = BrowserWindow.getAllWindows()[0];
+				window.hide();
+				const focus = window.focus.bind(window);
+				let focused = false;
+				window.focus = () => {
+					focused = true;
+					focus();
+				};
+				(globalThis as {secondInstance?: Promise<boolean>}).secondInstance =
+					new Promise(resolve =>
+						main.once('second-instance', () =>
+							resolve(focused && window.isVisible()),
+						),
+					);
+				return main.hasSingleInstanceLock();
+			}),
+		).toBe(true);
+		const executable = await app.evaluate(() => process.execPath);
+		const child = spawn(
+			executable,
+			[path.resolve(import.meta.dirname, '..'), `--user-data-dir=${profile}`],
+			{env: childEnv(process.env), shell: false, stdio: 'ignore'},
+		);
+		second = child;
+		const exit = await new Promise((resolve, reject) => {
+			child.once('error', reject);
+			child.once('exit', (code, signal) => resolve({code, signal}));
+		});
+		expect(exit).toEqual({code: 0, signal: null});
+		expect(
+			await app.evaluate(
+				() =>
+					(globalThis as {secondInstance?: Promise<boolean>}).secondInstance,
+			),
+		).toBe(true);
+		expect(app.windows()).toHaveLength(1);
+	} finally {
+		if (second?.exitCode === null && second.signalCode === null) second.kill();
+		await app.close();
+	}
+});
 
 test('the built main process persists settings and UI state under userData', async () => {
 	let app = await launch();
@@ -54,7 +105,14 @@ test('the built main process persists settings and UI state under userData', asy
 				},
 			}),
 		);
-		expect(state.ok).toBe(true);
+		expect(state).toMatchObject({
+			ok: true,
+			value: {
+				window: {width: 1240, height: 840, x: null, y: null, maximised: false},
+				inspector: 'review',
+				bottomPanel: 'terminal',
+			},
+		});
 		const location = await app.evaluate(({app: main}) => ({
 			path: main.getPath('userData'),
 			electron: process.versions.electron,
@@ -117,7 +175,7 @@ test('the built app quarantines a corrupt store and keeps starting', async () =>
 });
 
 test('Electron backs up the previous schema before upgrading it', async () => {
-	const {migrations} = await import('../source/main/store/migrations');
+	const {migrations} = await import('@/main/store/migrations');
 	const db = new DatabaseSync(path.join(profile, 'desktop.sqlite'));
 	db.exec(migrations[0].sql);
 	db.prepare('INSERT INTO schema_migration VALUES (?, ?)').run(

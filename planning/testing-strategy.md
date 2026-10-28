@@ -79,6 +79,8 @@ Workspace contract tests in `source/main/ipc/workspace.spec.ts` cover every adde
 
 Phase 1.1 store tests in `source/main/store/store.spec.ts` use real temporary SQLite files in plain Node. They cover every numbered migration, previous-version backup, rollback, newer-version refusal, corruption quarantine, schema-wide privacy introspection, canonical paths, sidecar-link refusal, metadata queries and persistence. `e2e/store.e2e.ts` repeats persistence, migration backup and corrupt-file startup against Electron's bundled Node. `e2e/connect.e2e.ts` scans the database and sidecars after a fake conversation for prompt, agent and tool text. Every end-to-end launcher uses a separate temporary profile so tests never write the normal desktop store.
 
+Store regressions also cover simultaneous previous-version opens with an event barrier, write-lock ownership before settings/UI reads, newer-but-corrupt schemas, metadata-only updates after a folder moves, mixed timestamp precision and stale runtime overrides. A native crashed-WAL fixture proves committed data reaches the quarantined database after close/checkpoint, without promising original WAL/SHM bytes. The built-app suite launches a second process for the same profile and checks its clean exit and the owner's window focus request.
+
 ## Packaged restart-and-resume test
 
 Required before release ([whitepaper, Resume sequence][wp-resume]). Protocol, per platform, on a packaged build and a machine that has never run the app:

@@ -2,7 +2,12 @@ import {z} from 'zod';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import type {registerHandler as registerIpcHandler} from '@/main/ipc/register';
 import type {WorkspaceServices} from '@/main/ipc/workspace-services';
-import {settingsPatch, uiPatch} from '@/main/store/validation';
+import {
+	defaultMode,
+	mode,
+	settingsPatch,
+	uiPatch,
+} from '@/main/store/validation';
 import {
 	CHANNELS,
 	type WorkspaceMethod,
@@ -13,8 +18,6 @@ import {
 const id = z.uuid();
 const project = {projectId: id};
 const thread = {...project, threadId: id};
-const mode = z.enum(['normal', 'auto-accept', 'plan', 'architect', 'yolo']);
-const defaultMode = mode.exclude(['yolo']);
 const empty = z.strictObject({});
 const projectRequest = z.strictObject(project);
 const threadRequest = z.strictObject(thread);

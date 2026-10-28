@@ -32,6 +32,15 @@ protocol.registerSchemesAsPrivileged([
 	},
 ]);
 app.enableSandbox();
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+app.on('second-instance', () => {
+	const window = BrowserWindow.getAllWindows()[0];
+	if (!window) return;
+	if (window.isMinimized()) window.restore();
+	window.show();
+	window.focus();
+});
 
 function serveRenderer(): void {
 	protocol.handle(APP_SCHEME, async request => {
@@ -113,6 +122,7 @@ function createWindow(): void {
 void app
 	.whenReady()
 	.then(async () => {
+		if (!primaryInstance) return;
 		const store = await desktopStoreFactory.open({
 			databasePath: path.join(app.getPath('userData'), 'desktop.sqlite'),
 			driver: createNodeSqliteDriver(),

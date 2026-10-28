@@ -1,3 +1,4 @@
+import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {
 	linkSync,
@@ -231,7 +232,7 @@ test('a failed migration rolls back its schema and recorded version', t => {
 			db.exec(sql);
 		},
 	};
-	t.throws(() => migrate(injected, 0), {code: 'INTERNAL'});
+	t.throws(() => migrate(injected), {code: 'INTERNAL'});
 	t.is(schemaVersion(db), 1);
 	t.is(
 		db
@@ -296,7 +297,7 @@ test('corrupt bytes are moved aside and a fresh database starts', async t => {
 	);
 });
 
-test('an integrity-check failure preserves the database and sidecars together', async t => {
+test('sidecars left after a connection closes are moved with the database', async t => {
 	const f = fixture(t);
 	writeFileSync(f.filename, 'fixture db');
 	writeFileSync(`${f.filename}-wal`, 'fixture wal');
@@ -310,8 +311,9 @@ test('an integrity-check failure preserves the database and sidecars together', 
 			first = false;
 			return {
 				exec: () => {},
-				prepare: () => ({
-					get: () => undefined,
+				prepare: sql => ({
+					get: () =>
+						sql === 'PRAGMA user_version' ? {user_version: 0} : undefined,
 					run: () => ({changes: 0}),
 					all: () => [{integrity_check: 'fixture corruption'}],
 				}),
@@ -638,7 +640,292 @@ test('repositories mark missing and replaced roots without following them', asyn
 	t.is(store.projects.get(row.id)?.availability, 'missing');
 	symlinkSync(moved, root, process.platform === 'win32' ? 'junction' : 'dir');
 	t.is(store.projects.get(row.id)?.availability, 'changed');
-	t.throws(() => store.projects.save(row), {code: 'DENIED'});
+	t.throws(() => store.projects.save({...row, trusted: true}), {
+		code: 'DENIED',
+	});
+});
+
+test('concurrent opens recheck the migration version under the write lock', async t => {
+	const f = fixture(t);
+	const previous = f.driver.open(f.filename);
+	previous.exec(migrations[0].sql);
+	previous
+		.prepare('INSERT INTO schema_migration VALUES (?, ?)')
+		.run(1, '2026-10-29T12:00:00.000Z');
+	previous.prepare('INSERT INTO setting VALUES (?, ?)').run('theme', '"light"');
+	previous.exec('PRAGMA user_version = 1');
+	previous.close();
+	let arrived = 0;
+	let release!: () => void;
+	const barrier = new Promise<void>(resolve => {
+		release = resolve;
+	});
+	const backups: string[] = [];
+	const driver: SqlDriver = {
+		open: f.driver.open,
+		backup: async (db, filename) => {
+			await f.driver.backup(db, filename);
+			backups.push(filename);
+			if (++arrived === 2) release();
+			await barrier;
+		},
+	};
+	const stores = await Promise.all([
+		desktopStoreFactory.open({databasePath: f.filename, driver}),
+		desktopStoreFactory.open({databasePath: f.filename, driver}),
+	]);
+	for (const store of stores) {
+		t.teardown(() => store.close());
+		t.is(store.getSettings().theme, 'light');
+	}
+	t.is(backups.length, 2);
+	for (const filename of backups) {
+		const db = f.driver.open(filename);
+		t.is(schemaVersion(db), 1);
+		db.close();
+	}
+	stores[0].updateSettings({editor: 'zed'});
+	stores[1].updateSettings({defaultMode: 'plan'});
+	t.like(stores[0].getSettings(), {
+		editor: 'zed',
+		defaultMode: 'plan',
+		theme: 'light',
+	});
+	stores[0].updateUiState({inspector: 'review'});
+	stores[1].updateUiState({bottomPanel: 'terminal'});
+	t.like(stores[0].getUiState(), {
+		inspector: 'review',
+		bottomPanel: 'terminal',
+	});
+	const db = f.driver.open(f.filename);
+	t.teardown(() => db.close());
+	t.is(schemaVersion(db), 2);
+	t.deepEqual(
+		db
+			.prepare('SELECT version FROM schema_migration ORDER BY version')
+			.all()
+			.map(row => row.version),
+		[1, 2],
+	);
+});
+
+test('settings and UI patches hold the write lock before reading the previous state', async t => {
+	const f = fixture(t);
+	(await f.open()).close();
+	const rival = f.driver.open(f.filename);
+	t.teardown(() => rival.close());
+	let armed = false;
+	let locked = false;
+	let reads = 0;
+	const driver: SqlDriver = {
+		...f.driver,
+		open: filename => {
+			const db = f.driver.open(filename);
+			return {
+				...db,
+				exec: sql => {
+					db.exec(sql);
+					if (sql === 'BEGIN IMMEDIATE') locked = true;
+					if (sql === 'COMMIT' || sql === 'ROLLBACK') locked = false;
+				},
+				prepare: sql => {
+					if (
+						armed &&
+						(sql === 'SELECT key, value FROM setting' ||
+							sql === 'SELECT value FROM ui_state WHERE id = 1')
+					) {
+						reads++;
+						t.true(locked);
+						t.throws(() => rival.exec('BEGIN IMMEDIATE'), {code: 'INTERNAL'});
+					}
+					return db.prepare(sql);
+				},
+			};
+		},
+	};
+	const store = await desktopStoreFactory.open({
+		databasePath: f.filename,
+		driver,
+	});
+	t.teardown(() => store.close());
+	armed = true;
+	store.updateSettings({theme: 'light'});
+	store.updateUiState({inspector: 'review'});
+	armed = false;
+	t.is(reads, 2);
+	t.false(locked);
+	rival.exec('BEGIN IMMEDIATE');
+	rival.exec('ROLLBACK');
+	t.is(store.getSettings().theme, 'light');
+	t.is(store.getUiState().inspector, 'review');
+});
+
+for (const version of [2, 3]) {
+	test(`a failed integrity check cannot replace a newer ledger with user_version ${version}`, async t => {
+		const f = fixture(t);
+		(await f.open()).close();
+		const db = f.driver.open(f.filename);
+		db.exec(`
+			CREATE TABLE future_table(n INTEGER CHECK(n >= 0)) STRICT;
+			PRAGMA ignore_check_constraints = ON;
+			INSERT INTO future_table VALUES (-1);
+			PRAGMA ignore_check_constraints = OFF;
+		`);
+		db.prepare('INSERT INTO schema_migration VALUES (?, ?)').run(
+			3,
+			'2026-10-29T12:00:00.000Z',
+		);
+		db.exec(`PRAGMA user_version = ${version}`);
+		t.true(
+			db
+				.prepare('PRAGMA integrity_check')
+				.all()
+				.some(row => row.integrity_check !== 'ok'),
+		);
+		db.close();
+		const before = readFileSync(f.filename);
+		await t.throwsAsync(f.open, {code: 'STORE_TOO_NEW'});
+		t.deepEqual(readFileSync(f.filename), before);
+		t.deepEqual(readdirSync(f.root), ['desktop.sqlite']);
+	});
+}
+
+test('metadata can be updated when its unchanged saved directory is missing', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const root = path.join(f.root, 'project');
+	mkdirSync(root);
+	const owner = project(root);
+	const saved = thread(owner);
+	store.projects.save(owner);
+	store.threads.save(saved);
+	renameSync(root, `${root}-moved`);
+	store.threads.save({...saved, archiveState: 'archived'});
+	const archived = store.threads.get(owner.id, saved.id);
+	t.is(archived?.archiveState, 'archived');
+	store.threads.save({...saved, archiveState: 'archived', runState: 'failed'});
+	t.is(store.threads.get(owner.id, saved.id)?.runState, 'failed');
+	t.is(store.threads.get(owner.id, saved.id)?.archiveState, 'archived');
+	store.projects.save({...owner, displayName: 'missing project'});
+	t.is(store.projects.get(owner.id)?.displayName, 'missing project');
+	t.throws(() => store.threads.save({...saved, id: randomUUID()}), {
+		code: 'DENIED',
+	});
+	t.throws(
+		() => store.threads.save({...saved, sessionCwd: `${root}-missing`}),
+		{code: 'DENIED'},
+	);
+	t.throws(() => store.projects.save({...owner, trusted: true}), {
+		code: 'DENIED',
+	});
+});
+
+test('mixed ISO precision is normalised and recent lists use chronological order', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const other = path.join(f.root, 'other');
+	mkdirSync(other);
+	const earlier = '2026-10-29T12:00:00Z';
+	const later = '2026-10-29T12:00:00.100Z';
+	const one = project(f.root, {lastOpenedAt: earlier, createdAt: earlier});
+	const two = project(other, {lastOpenedAt: later});
+	store.projects.save(one);
+	store.projects.save(two);
+	const first = thread(one, {lastActivityAt: earlier});
+	const last = thread(one, {lastActivityAt: later});
+	store.threads.save(first);
+	store.threads.save(last);
+	t.deepEqual(
+		store.projects.list().map(row => row.id),
+		[two.id, one.id],
+	);
+	t.deepEqual(
+		store.threads.list(one.id, 'active').map(row => row.id),
+		[last.id, first.id],
+	);
+	t.is(store.projects.get(one.id)?.createdAt, '2026-10-29T12:00:00.000Z');
+	const db = f.driver.open(f.filename);
+	t.teardown(() => db.close());
+	t.is(
+		db.prepare('SELECT last_opened_at FROM project WHERE id = ?').get(one.id)
+			?.last_opened_at,
+		'2026-10-29T12:00:00.000Z',
+	);
+	t.is(
+		db.prepare('SELECT last_activity_at FROM thread WHERE id = ?').get(first.id)
+			?.last_activity_at,
+		'2026-10-29T12:00:00.000Z',
+	);
+	db.prepare('UPDATE project SET last_opened_at = ? WHERE id = ?').run(
+		earlier,
+		one.id,
+	);
+	db.prepare('UPDATE thread SET last_activity_at = ? WHERE id = ?').run(
+		earlier,
+		first.id,
+	);
+	t.deepEqual(
+		store.projects.list().map(row => row.id),
+		[two.id, one.id],
+	);
+	t.deepEqual(
+		store.threads.list(one.id, 'active').map(row => row.id),
+		[last.id, first.id],
+	);
+});
+
+test('a stale runtime override does not block unrelated settings and can be cleared', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const cli = path.join(f.root, 'fixture-cli.js');
+	writeFileSync(cli, '');
+	store.updateSettings({nanocoderOverridePath: cli});
+	renameSync(cli, `${cli}-moved`);
+	t.is(store.updateSettings({theme: 'light'}).theme, 'light');
+	t.is(
+		store.updateSettings({nanocoderOverridePath: cli}).nanocoderOverridePath,
+		cli,
+	);
+	t.throws(
+		() => store.updateSettings({nanocoderOverridePath: `${cli}-missing`}),
+		{code: 'VALIDATION'},
+	);
+	t.is(
+		store.updateSettings({nanocoderOverridePath: null}).nanocoderOverridePath,
+		null,
+	);
+});
+
+test('native WAL recovery preserves committed data after SQLite closes and checkpoints', async t => {
+	const f = fixture(t);
+	(await f.open()).close();
+	const script = `
+		const {DatabaseSync} = require('node:sqlite');
+		const db = new DatabaseSync(process.argv[1]);
+		db.exec('PRAGMA journal_mode = WAL; UPDATE schema_migration SET version = 0 WHERE version = 1');
+		process.kill(process.pid, 'SIGKILL');
+	`;
+	const crashed = spawnSync(process.execPath, ['-e', script, f.filename], {
+		stdio: 'ignore',
+	});
+	t.is(crashed.error, undefined);
+	t.not(crashed.status, 0);
+	t.true(readdirSync(f.root).includes('desktop.sqlite-wal'));
+	t.true(readdirSync(f.root).includes('desktop.sqlite-shm'));
+	(await f.open()).close();
+	const directory = readdirSync(f.root).find(name =>
+		name.includes('.corrupt-'),
+	) as string;
+	t.deepEqual(readdirSync(path.join(f.root, directory)), ['desktop.sqlite']);
+	const preserved = f.driver.open(
+		path.join(f.root, directory, 'desktop.sqlite'),
+	);
+	t.teardown(() => preserved.close());
+	t.is(
+		preserved.prepare('SELECT min(version) AS n FROM schema_migration').get()
+			?.n,
+		0,
+	);
 });
 
 test('foreign keys cascade metadata for turns, agents, terminal and browser', async t => {

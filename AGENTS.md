@@ -23,7 +23,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 
 | Path | Purpose |
 |---|---|
-| `source/main/index.ts` | App entry: `app://` protocol, CSP, sandbox, navigation and window rules |
+| `source/main/index.ts` | App entry: profile ownership lock, `app://` protocol, CSP, sandbox, navigation and window rules |
 | `source/main/lifecycle.ts` | Testable service disposal and quit guard; supervisor cleanup finishes before the store closes |
 | `source/main/security.ts` | Origin checks, renderer file resolution, Content Security Policy |
 | `source/main/ipc/handle-request.ts` | Sender check, schema validation and the result shape for every IPC call |

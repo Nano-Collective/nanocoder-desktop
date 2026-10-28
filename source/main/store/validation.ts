@@ -2,9 +2,18 @@ import path from 'node:path';
 import {z} from 'zod';
 import {IpcFailure} from '@/main/ipc/handle-request';
 
-const mode = z.enum(['normal', 'auto-accept', 'plan', 'architect', 'yolo']);
-const defaultMode = mode.exclude(['yolo']);
+export const mode = z.enum([
+	'normal',
+	'auto-accept',
+	'plan',
+	'architect',
+	'yolo',
+]);
+export const defaultMode = mode.exclude(['yolo']);
 const id = z.uuid();
+const timestamp = z.iso
+	.datetime()
+	.transform(value => new Date(value).toISOString());
 const absolutePath = z
 	.string()
 	.min(1)
@@ -18,11 +27,7 @@ export const settingsPatch = z.strictObject({
 	theme: z.enum(['dark', 'light', 'system']).optional(),
 });
 
-export const settingsSchema = settingsPatch.extend({
-	publicBrowsingEnabled: z.boolean(),
-	defaultMode,
-	editor: z.enum(['system', 'code', 'cursor', 'zed']),
-	theme: z.enum(['dark', 'light', 'system']),
+export const settingsSchema = settingsPatch.required().extend({
 	nanocoderOverridePath: absolutePath.nullable(),
 });
 
@@ -52,8 +57,8 @@ export const projectSchema = z.strictObject({
 	displayName: z.string().min(1).max(500),
 	trusted: z.boolean(),
 	defaultMode,
-	lastOpenedAt: z.iso.datetime(),
-	createdAt: z.iso.datetime(),
+	lastOpenedAt: timestamp,
+	createdAt: timestamp,
 	availability: z.enum(['available', 'missing', 'changed']),
 });
 
@@ -72,7 +77,7 @@ export const threadSchema = z.strictObject({
 		'failed',
 		'view-only',
 	]),
-	lastActivityAt: z.iso.datetime(),
+	lastActivityAt: timestamp,
 	sessionCwd: absolutePath,
 	mode,
 	viewOnlyReason: z.string().max(1_000).nullable(),

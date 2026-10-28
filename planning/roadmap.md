@@ -262,7 +262,7 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Build**
 
-- [x] SQLite connection in the main process (`DATA-01`) ([`store.e2e.ts`](../e2e/store.e2e.ts), `userData` and Electron's bundled Node)
+- [x] SQLite connection in the main process (`DATA-01`) ([`store.e2e.ts`](../e2e/store.e2e.ts), profile ownership, `userData` and Electron's bundled Node)
 - [x] Tables from [`data-model.md`](data-model.md) (`DATA-02`) ([`store.spec.ts`](../source/main/store/store.spec.ts), schema introspection, metadata round trips and cascades)
 - [x] Numbered migrations with a backup before upgrade (`DATA-03`) ([`store.spec.ts`](../source/main/store/store.spec.ts), [`store.e2e.ts`](../e2e/store.e2e.ts))
 - [x] Integrity check and recovery on startup (`DATA-08`) ([`store.spec.ts`](../source/main/store/store.spec.ts), [`store.e2e.ts`](../e2e/store.e2e.ts))
@@ -270,7 +270,7 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Results we want**
 
-- [x] Migrations run from an empty database and from the previous version ([`store.spec.ts`](../source/main/store/store.spec.ts), versions 0 and 1 to 2; newer versions refused)
+- [x] Migrations run from an empty database and from the previous version ([`store.spec.ts`](../source/main/store/store.spec.ts), versions 0 and 1 to 2, concurrent upgrade rechecks and newer-but-corrupt refusal)
 - [x] A corrupt database is moved aside and the app still starts ([`store.e2e.ts`](../e2e/store.e2e.ts), preserved corrupt bytes and fresh settings)
 - [x] No table has a column for message text, file contents or tool output (`DATA-04`) ([`store.spec.ts`](../source/main/store/store.spec.ts), introspection over every migrated table; [`connect.e2e.ts`](../e2e/connect.e2e.ts), no conversation or tool text in SQLite)
 

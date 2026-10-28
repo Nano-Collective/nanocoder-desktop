@@ -72,43 +72,47 @@ function createStore(database: SqlDatabase): DesktopStore {
 	return {
 		...repositories(database),
 		getSettings,
-		updateSettings: patch => {
-			const settings = validate(settingsSchema, {...getSettings(), ...patch});
-			if (settings.nanocoderOverridePath !== null) {
-				try {
-					settings.nanocoderOverridePath = realpathSync.native(
-						settings.nanocoderOverridePath,
-					);
-					if (!statSync(settings.nanocoderOverridePath).isFile())
-						throw new Error();
-				} catch {
-					throw new IpcFailure(
-						'VALIDATION',
-						'Choose an available Nanocoder file',
-					);
-				}
-			}
+		updateSettings: patch =>
 			transaction(database, () => {
+				const previous = getSettings();
+				const settings = validate(settingsSchema, {...previous, ...patch});
+				if (
+					settings.nanocoderOverridePath !== null &&
+					settings.nanocoderOverridePath !== previous.nanocoderOverridePath
+				) {
+					try {
+						settings.nanocoderOverridePath = realpathSync.native(
+							settings.nanocoderOverridePath,
+						);
+						if (!statSync(settings.nanocoderOverridePath).isFile())
+							throw new Error();
+					} catch {
+						throw new IpcFailure(
+							'VALIDATION',
+							'Choose an available Nanocoder file',
+						);
+					}
+				}
 				const statement = database.prepare(
 					'INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
 				);
 				for (const [key, value] of Object.entries(settings)) {
 					statement.run(key, JSON.stringify(value));
 				}
-			});
-			return settings;
-		},
+				return settings;
+			}),
 		getUiState,
-		updateUiState: patch => {
-			const parsed = validate(uiPatch, patch);
-			const state = validate(uiSchema, {...getUiState(), ...parsed});
-			database
-				.prepare(
-					'INSERT INTO ui_state (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value',
-				)
-				.run(JSON.stringify(state));
-			return state;
-		},
+		updateUiState: patch =>
+			transaction(database, () => {
+				const parsed = validate(uiPatch, patch);
+				const state = validate(uiSchema, {...getUiState(), ...parsed});
+				database
+					.prepare(
+						'INSERT INTO ui_state (id, value) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value',
+					)
+					.run(JSON.stringify(state));
+				return state;
+			}),
 		close: () => {
 			if (closed) return;
 			database.close();
@@ -124,14 +128,22 @@ async function openStore(options: StoreOptions): Promise<DesktopStore> {
 		let version: number;
 		try {
 			database = options.driver.open(filename);
-			const result = database.prepare('PRAGMA integrity_check').all();
-			if (result.length !== 1 || result[0].integrity_check !== 'ok') {
-				throw new IpcFailure(
-					'STORE_CORRUPT',
-					'The database integrity check failed',
-				);
-			}
-			version = schemaVersion(database);
+			const opened = database;
+			version = transaction(
+				opened,
+				() => {
+					const current = schemaVersion(opened);
+					const result = opened.prepare('PRAGMA integrity_check').all();
+					if (result.length !== 1 || result[0].integrity_check !== 'ok') {
+						throw new IpcFailure(
+							'STORE_CORRUPT',
+							'The database integrity check failed',
+						);
+					}
+					return current;
+				},
+				'read',
+			);
 		} catch (error) {
 			if (!(error instanceof IpcFailure) || error.code !== 'STORE_CORRUPT')
 				throw error;
@@ -146,7 +158,7 @@ async function openStore(options: StoreOptions): Promise<DesktopStore> {
 			if (existed) {
 				await options.driver.backup(database, reserveBackupPath(filename));
 			}
-			migrate(database, version);
+			migrate(database);
 		}
 		database.exec('PRAGMA foreign_keys = ON');
 		database.exec('PRAGMA journal_mode = WAL');

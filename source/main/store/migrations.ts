@@ -8,8 +8,12 @@ export const migrations = [
 	{version: 2, sql: uiStateSql},
 ] as const;
 
-export function transaction<T>(database: SqlDatabase, action: () => T): T {
-	database.exec('BEGIN IMMEDIATE');
+export function transaction<T>(
+	database: SqlDatabase,
+	action: () => T,
+	kind: 'read' | 'write' = 'write',
+): T {
+	database.exec(kind === 'read' ? 'BEGIN' : 'BEGIN IMMEDIATE');
 	try {
 		const result = action();
 		database.exec('COMMIT');
@@ -60,9 +64,10 @@ export function schemaVersion(database: SqlDatabase): number {
 	return version;
 }
 
-export function migrate(database: SqlDatabase, from: number): void {
-	for (const migration of migrations.slice(from)) {
+export function migrate(database: SqlDatabase): void {
+	for (const migration of migrations) {
 		transaction(database, () => {
+			if (schemaVersion(database) >= migration.version) return;
 			database.exec(migration.sql);
 			database
 				.prepare(

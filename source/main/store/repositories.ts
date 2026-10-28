@@ -48,9 +48,7 @@ function threadFrom(row: Record<string, SqlValue>): ThreadInfo {
 }
 
 function requireCanonical(filename: string): void {
-	try {
-		if (realpathSync.native(filename) === filename) return;
-	} catch {}
+	if (availability(filename) === 'available') return;
 	throw new IpcFailure(
 		'DENIED',
 		'The metadata path must be canonical and available',
@@ -64,7 +62,9 @@ export function repositories(database: SqlDatabase): {
 	const projects: ProjectRepository = {
 		list: () =>
 			database
-				.prepare('SELECT * FROM project ORDER BY last_opened_at DESC, id')
+				.prepare(
+					'SELECT * FROM project ORDER BY julianday(last_opened_at) DESC, id',
+				)
 				.all()
 				.map(projectFrom),
 		get: id => {
@@ -75,7 +75,15 @@ export function repositories(database: SqlDatabase): {
 		},
 		save: input => {
 			const project = validate(projectSchema, input);
-			requireCanonical(project.canonicalRoot);
+			const existing = projects.get(project.id);
+			if (
+				!existing ||
+				existing.canonicalRoot !== project.canonicalRoot ||
+				existing.sessionCwd !== project.sessionCwd ||
+				(!existing.trusted && project.trusted)
+			) {
+				requireCanonical(project.canonicalRoot);
+			}
 			if (project.sessionCwd !== project.canonicalRoot) {
 				throw new IpcFailure(
 					'OUTSIDE_ROOT',
@@ -113,7 +121,7 @@ export function repositories(database: SqlDatabase): {
 			database
 				.prepare(`
 			SELECT * FROM thread WHERE project_id = ? AND archive_state = ?
-			ORDER BY last_activity_at DESC, id
+			ORDER BY julianday(last_activity_at) DESC, id
 		`)
 				.all(projectId, archiveState)
 				.map(threadFrom),
@@ -128,22 +136,27 @@ export function repositories(database: SqlDatabase): {
 			const project = projects.get(thread.projectId);
 			if (!project) throw new IpcFailure('NOT_FOUND', 'Project not found');
 			const existing = database
-				.prepare('SELECT project_id FROM thread WHERE id = ?')
+				.prepare('SELECT project_id, session_cwd FROM thread WHERE id = ?')
 				.get(thread.id);
 			if (existing && existing.project_id !== thread.projectId) {
 				throw new IpcFailure('DENIED', 'A thread cannot move between projects');
 			}
-			requireCanonical(thread.sessionCwd);
-			const relative = path.relative(project.canonicalRoot, thread.sessionCwd);
-			if (
-				relative === '..' ||
-				relative.startsWith(`..${path.sep}`) ||
-				path.isAbsolute(relative)
-			) {
-				throw new IpcFailure(
-					'OUTSIDE_ROOT',
-					'The thread session is outside its project',
+			if (!existing || existing.session_cwd !== thread.sessionCwd) {
+				requireCanonical(thread.sessionCwd);
+				const relative = path.relative(
+					project.canonicalRoot,
+					thread.sessionCwd,
 				);
+				if (
+					relative === '..' ||
+					relative.startsWith(`..${path.sep}`) ||
+					path.isAbsolute(relative)
+				) {
+					throw new IpcFailure(
+						'OUTSIDE_ROOT',
+						'The thread session is outside its project',
+					);
+				}
 			}
 			database
 				.prepare(`
