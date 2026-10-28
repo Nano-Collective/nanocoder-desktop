@@ -4,6 +4,9 @@ import {
 	type Implementation,
 	methods,
 	PROTOCOL_VERSION,
+	type RequestPermissionRequest,
+	type RequestPermissionResponse,
+	type SessionNotification,
 } from '@agentclientprotocol/sdk';
 import {describeAgent} from '@/main/nanocoder/capabilities';
 import {type Exit, launchNanocoder, waitForExit} from '@/main/nanocoder/launch';
@@ -18,6 +21,7 @@ import type {
 	NanocoderMode,
 	NanocoderRuntime,
 	SessionInfo,
+	TurnResult,
 } from '@/shared/ipc';
 
 const INITIALIZE_TIMEOUT_MS = 60_000;
@@ -45,6 +49,7 @@ export interface NanocoderConnection {
 	readonly stderr: StderrRing;
 	readonly exited: Promise<Exit>;
 	newSession(mode: NanocoderMode): Promise<SessionInfo>;
+	prompt(sessionId: string, text: string): Promise<TurnResult>;
 	close(): Promise<void>;
 }
 
@@ -55,6 +60,11 @@ export interface ConnectOptions {
 	env?: NodeJS.ProcessEnv;
 	homeDir?: string;
 	initializeTimeoutMs?: number;
+	onUpdate?: (update: SessionNotification['update']) => void;
+	// Without it, every permission request is answered as cancelled: nothing is allowed by default.
+	onPermission?: (
+		request: RequestPermissionRequest,
+	) => Promise<RequestPermissionResponse>;
 }
 
 export function describeExit(exit: Exit): string {
@@ -93,13 +103,22 @@ export async function connectNanocoder(
 	child.stderr.on('data', (chunk: string) => stderr.write(chunk));
 	child.stderr.on('end', () => stderr.flush());
 
-	const connection = client({name: options.clientInfo.name}).connect(
-		protocolStream(child.stdout, child.stdin, line => {
-			violated = true;
-			stderr.append(`[stdout] ${line}`);
-			child.kill();
-		}),
-	);
+	const connection = client({name: options.clientInfo.name})
+		.onRequest(methods.client.session.requestPermission, ({params}) =>
+			options.onPermission
+				? options.onPermission(params)
+				: {outcome: {outcome: 'cancelled'}},
+		)
+		.onNotification(methods.client.session.update, ({params}) => {
+			options.onUpdate?.(params.update);
+		})
+		.connect(
+			protocolStream(child.stdout, child.stdin, line => {
+				violated = true;
+				stderr.append(`[stdout] ${line}`);
+				child.kill();
+			}),
+		);
 
 	const close = async (): Promise<void> => {
 		child.stdin.end();
@@ -197,5 +216,23 @@ export async function connectNanocoder(
 		return {id: sessionId, mode};
 	};
 
-	return {agent, stderr, exited, newSession, close};
+	const prompt = async (
+		sessionId: string,
+		text: string,
+	): Promise<TurnResult> => {
+		const response = await connection.agent
+			.request(methods.agent.session.prompt, {
+				sessionId,
+				prompt: [{type: 'text', text}],
+			})
+			.catch(() => {
+				throw new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'Nanocoder stopped during the turn',
+				);
+			});
+		return {stopReason: response.stopReason};
+	};
+
+	return {agent, stderr, exited, newSession, prompt, close};
 }

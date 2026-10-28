@@ -95,6 +95,34 @@ test('shows the Nanocoder it will launch', async () => {
 	await expect(page.getByText(`Nanocoder 9.9.9 at ${fakeCli}`)).toBeVisible();
 });
 
+interface Bridge {
+	sendPrompt(text: unknown): Promise<{ok: boolean; error?: {code: string}}>;
+	answerPermission(
+		id: unknown,
+		optionId: unknown,
+	): Promise<{ok: boolean; error?: {code: string}}>;
+}
+
+const bridge = <K extends keyof Bridge>(
+	method: K,
+	...args: Parameters<Bridge[K]>
+) =>
+	page.evaluate(
+		([name, values]) =>
+			(
+				window as unknown as {
+					desktop: Record<string, (...a: unknown[]) => unknown>;
+				}
+			).desktop[name](...values),
+		[method, args] as const,
+	) as ReturnType<Bridge[K]>;
+
+test('refuses a prompt before any project is open', async () => {
+	const result = await bridge('sendPrompt', 'Hello');
+	expect(result.ok).toBe(false);
+	expect(result.error?.code).toBe('AGENT_UNAVAILABLE');
+});
+
 test('opens a trusted folder in normal mode without asking', async () => {
 	const root = project('trusted');
 	await openFolder(root);
@@ -144,4 +172,95 @@ test('reports a second refusal without asking again', async () => {
 	const alert = page.getByRole('alert');
 	await expect(alert).toContainText('is not trusted');
 	await expect(alert).not.toContainText('unrelated warning');
+});
+
+async function startTurn(name: string): Promise<void> {
+	await openFolder(project(name));
+	await page.getByLabel('Message').fill('Run the command');
+	await page.getByRole('button', {name: 'Send'}).click();
+}
+
+test("shows the permission request with Nanocoder's options and waits for the user", async () => {
+	await startTurn('wait');
+	const card = page.getByRole('region', {name: 'Permission request'});
+	await expect(card).toContainText('execute_bash: echo hi');
+	await expect(card.getByRole('button')).toHaveText(['Allow', 'Deny']);
+	// Nothing answers for the user: the turn is still open.
+	await expect(page.getByText('Turn ended')).toHaveCount(0);
+	await expect(page.getByRole('button', {name: 'Send'})).toBeDisabled();
+	await card.getByRole('button', {name: 'Deny'}).click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+});
+
+test('allow once: the tool runs and the turn ends', async () => {
+	await startTurn('allow-once');
+	await page
+		.getByRole('region', {name: 'Permission request'})
+		.getByRole('button', {name: 'Allow'})
+		.click();
+
+	const conversation = page.getByRole('list', {name: 'Conversation'});
+	await expect(conversation).toContainText('You: Run the command');
+	await expect(conversation).toContainText('Nanocoder: Working on it.');
+	await expect(conversation).toContainText(
+		'Tool execute_bash: echo hi: completed',
+	);
+	await expect(conversation).toContainText('Tool ran.');
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(
+		page.getByRole('region', {name: 'Permission request'}),
+	).toHaveCount(0);
+});
+
+test('reject once: the tool is marked failed and the turn goes on', async () => {
+	await startTurn('reject-once');
+	await page
+		.getByRole('region', {name: 'Permission request'})
+		.getByRole('button', {name: 'Deny'})
+		.click();
+
+	const conversation = page.getByRole('list', {name: 'Conversation'});
+	await expect(conversation).toContainText(
+		'Tool execute_bash: echo hi: failed',
+	);
+	await expect(conversation).toContainText('Tool denied.');
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+});
+
+test('only an option Nanocoder offered can answer a waiting request', async () => {
+	await startTurn('refusals');
+	await expect(
+		page.getByRole('region', {name: 'Permission request'}),
+	).toBeVisible();
+
+	const unknownOption = await bridge(
+		'answerPermission',
+		'permission-1',
+		'allow_always',
+	);
+	const unknownRequest = await bridge(
+		'answerPermission',
+		'permission-99',
+		'allow',
+	);
+	const malformed = await bridge('answerPermission', 1, ['allow']);
+	expect(unknownOption.error?.code).toBe('NOT_FOUND');
+	expect(unknownRequest.error?.code).toBe('NOT_FOUND');
+	expect(malformed.error?.code).toBe('VALIDATION');
+	await expect(
+		page.getByRole('region', {name: 'Permission request'}),
+	).toBeVisible();
+
+	await page
+		.getByRole('region', {name: 'Permission request'})
+		.getByRole('button', {name: 'Allow'})
+		.click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+});
+
+test('validates a prompt', async () => {
+	const empty = await bridge('sendPrompt', '   ');
+	const wrongType = await bridge('sendPrompt', {text: 'x'});
+	expect(empty.error?.code).toBe('VALIDATION');
+	expect(wrongType.error?.code).toBe('VALIDATION');
 });

@@ -221,17 +221,17 @@ The two checks that need a real turn moved to G.4 and G.5: a protected tool call
 
 **Build**
 
-- [ ] `session/new` with a provider-backed model (`ACP-05`)
-- [ ] A scripted model provider for the ACP integration tests, so turns run in CI without an API key ([`testing-strategy.md`](testing-strategy.md))
-- [ ] A prompt that triggers a protected tool
-- [ ] Permission requests answered from a minimal UI (`ACP-10`)
+- [x] `session/new` with a provider-backed model (`ACP-05`) ([`turn.acp.ts`](../source/main/nanocoder/turn.acp.ts))
+- [x] A scripted model provider for the ACP integration tests, so turns run in CI without an API key ([`testing-strategy.md`](testing-strategy.md)) ([`scripted-provider.ts`](../source/main/nanocoder/fixtures/scripted-provider.ts))
+- [x] A prompt that triggers a protected tool (`execute_bash`, which always asks) ([`turn.acp.ts`](../source/main/nanocoder/turn.acp.ts))
+- [x] Permission requests answered from a minimal UI (`ACP-10`) ([`permissions.spec.ts`](../source/main/nanocoder/permissions.spec.ts), [`connect.e2e.ts`](../e2e/connect.e2e.ts))
 
 **Results we want**
 
-- [ ] Allow once runs the tool
-- [ ] Reject stops the tool and the turn continues as Nanocoder reports
-- [ ] After `session/set_mode` to `normal`, a protected tool call in a new session produces a permission request, since Nanocoder does not report the applied mode (`DEC-31`)
-- [ ] Plugins load for a session at the project root (`DEC-30`)
+- [x] Allow once runs the tool ([`turn.acp.ts`](../source/main/nanocoder/turn.acp.ts), [`connect.e2e.ts`](../e2e/connect.e2e.ts))
+- [x] Reject stops the tool and the turn continues as Nanocoder reports: the tool is marked `failed`, the model is told "Tool call denied by user", and the turn ends with `end_turn` ([`turn.acp.ts`](../source/main/nanocoder/turn.acp.ts))
+- [x] After `session/set_mode` to `normal`, a protected tool call in a new session produces a permission request, since Nanocoder does not report the applied mode (`DEC-31`) ([`turn.acp.ts`](../source/main/nanocoder/turn.acp.ts))
+- [x] Plugins load for a session at the project root (`DEC-30`) ([`turn.acp.ts`](../source/main/nanocoder/turn.acp.ts))
 
 ### Phase G.5: restart and resume
 

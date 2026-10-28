@@ -15,8 +15,10 @@ import {
 	NanocoderFailure,
 } from '@/main/nanocoder/acp-client';
 import {openProject} from '@/main/nanocoder/open-project';
+import {PermissionBroker} from '@/main/nanocoder/permissions';
 import {type Resolution, resolveNanocoder} from '@/main/nanocoder/runtime';
 import type {TrustReason, TrustRefusal} from '@/main/nanocoder/trust';
+import {toTurnEvent} from '@/main/nanocoder/turn-events';
 import {APP_NAME} from '@/shared/app-info';
 import {
 	type AppInfo,
@@ -24,6 +26,9 @@ import {
 	type ConnectResult,
 	type NanocoderMode,
 	type NanocoderRuntime,
+	type SessionInfo,
+	type TurnEvent,
+	type TurnResult,
 } from '@/shared/ipc';
 
 const DEFAULT_MODE: NanocoderMode = 'normal';
@@ -36,7 +41,25 @@ const TRUST_TITLES: Record<TrustReason, string> = {
 
 let runtime: Promise<Resolution> | undefined;
 let connection: NanocoderConnection | undefined;
+let session: SessionInfo | undefined;
 let connecting = false;
+let turnRunning = false;
+
+// Only the app's own window gets events; the renderer never sees the IPC event object.
+function sendEvent(event: TurnEvent): void {
+	for (const window of BrowserWindow.getAllWindows()) {
+		window.webContents.send(CHANNELS.nanocoderEvent, event);
+	}
+}
+
+const permissions = new PermissionBroker(sendEvent);
+
+function forget(next: NanocoderConnection): void {
+	if (connection !== next) return;
+	connection = undefined;
+	session = undefined;
+	permissions.cancelAll();
+}
 
 async function nanocoderRuntime(): Promise<NanocoderRuntime> {
 	runtime ??= resolveNanocoder({
@@ -93,8 +116,10 @@ async function connect(): Promise<ConnectResult> {
 		const root = await chooseProjectRoot();
 		if (!root) return {status: 'cancelled'};
 		const resolved = await nanocoderRuntime();
+		permissions.cancelAll();
 		await connection?.close();
 		connection = undefined;
+		session = undefined;
 		const outcome = await openProject({
 			runtime: resolved,
 			root,
@@ -106,6 +131,11 @@ async function connect(): Promise<ConnectResult> {
 			homeDir: homedir(),
 			mode: DEFAULT_MODE,
 			confirmTrust,
+			onUpdate: update => {
+				const event = toTurnEvent(update);
+				if (event) sendEvent(event);
+			},
+			onPermission: request => permissions.request(request),
 		}).catch((error: unknown) => {
 			if (error instanceof NanocoderFailure) {
 				throw new IpcFailure(
@@ -119,16 +149,56 @@ async function connect(): Promise<ConnectResult> {
 		if (outcome.status === 'untrusted') return outcome;
 		const next = outcome.connection;
 		connection = next;
-		void next.exited.then(() => {
-			if (connection === next) connection = undefined;
-		});
+		session = outcome.session;
+		void next.exited.then(() => forget(next));
 		return {status: 'connected', agent: next.agent, session: outcome.session};
 	} finally {
 		connecting = false;
 	}
 }
 
+async function sendPrompt({text}: {text: string}): Promise<TurnResult> {
+	if (!connection || !session) {
+		throw new IpcFailure('AGENT_UNAVAILABLE', 'No project is open');
+	}
+	if (turnRunning) {
+		throw new IpcFailure(
+			'BUSY',
+			'Nanocoder is already working on a turn',
+			true,
+		);
+	}
+	turnRunning = true;
+	try {
+		return await connection.prompt(session.id, text).catch((error: unknown) => {
+			if (error instanceof NanocoderFailure) {
+				throw new IpcFailure(error.code, error.message);
+			}
+			throw error;
+		});
+	} finally {
+		turnRunning = false;
+	}
+}
+
+function answerPermission({
+	id,
+	optionId,
+}: {
+	id: string;
+	optionId: string;
+}): null {
+	if (!permissions.answer(id, optionId)) {
+		throw new IpcFailure(
+			'NOT_FOUND',
+			'That permission request is no longer waiting',
+		);
+	}
+	return null;
+}
+
 export function closeNanocoder(): void {
+	permissions.cancelAll();
 	void connection?.close();
 }
 
@@ -149,6 +219,18 @@ export function registerIpcHandlers(allowedOrigins: readonly string[]): void {
 		CHANNELS.connectNanocoder,
 		z.strictObject({}),
 		connect,
+		allowedOrigins,
+	);
+	registerHandler(
+		CHANNELS.sendPrompt,
+		z.strictObject({text: z.string().trim().min(1).max(100_000)}),
+		sendPrompt,
+		allowedOrigins,
+	);
+	registerHandler(
+		CHANNELS.answerPermission,
+		z.strictObject({id: z.string().max(64), optionId: z.string().max(200)}),
+		answerPermission,
 		allowedOrigins,
 	);
 }

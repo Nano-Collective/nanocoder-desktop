@@ -32,6 +32,9 @@ test('the preload bridge exposes typed methods only', async () => {
 		'getAppInfo',
 		'getNanocoderRuntime',
 		'connectNanocoder',
+		'sendPrompt',
+		'answerPermission',
+		'onNanocoderEvent',
 	]);
 });
 

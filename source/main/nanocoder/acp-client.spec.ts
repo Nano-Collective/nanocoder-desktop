@@ -183,6 +183,82 @@ test('reports a session Nanocoder could not start', async t => {
 	t.is(error.message, 'Nanocoder could not start a session');
 });
 
+async function turn(
+	mode: string | undefined,
+	answer: string | undefined,
+	prompt = 'Run it.',
+) {
+	const asked: string[] = [];
+	const updates: string[] = [];
+	const connection = await connect(fakeProject(mode), {
+		onUpdate: update => updates.push(update.sessionUpdate),
+		onPermission: answer
+			? async request => {
+					asked.push(request.toolCall.title ?? '');
+					return {outcome: {outcome: 'selected', optionId: answer}};
+				}
+			: undefined,
+	});
+	const session = await connection.newSession('normal');
+	const result = await connection.prompt(session.id, prompt).then(
+		value => value,
+		(error: unknown) => error,
+	);
+	await connection.close();
+	return {
+		asked,
+		updates,
+		result,
+		events: fakeEvents(connection.stderr.lines()),
+	};
+}
+
+test('sends the prompt and returns how the turn ended', async t => {
+	const {asked, updates, result, events} = await turn(
+		undefined,
+		'allow',
+		'Hi there',
+	);
+	t.deepEqual(result, {stopReason: 'end_turn'});
+	t.deepEqual(asked, ['execute_bash: echo hi']);
+	t.deepEqual(updates, [
+		'agent_message_chunk',
+		'tool_call',
+		'tool_call_update',
+		'agent_message_chunk',
+	]);
+	const prompt = events.find(event => event.method === 'session/prompt');
+	t.deepEqual(prompt?.params, {
+		sessionId: 'fake-session',
+		prompt: [{type: 'text', text: 'Hi there'}],
+	});
+});
+
+test('passes the answer on exactly as chosen', async t => {
+	const allow = await turn(undefined, 'allow');
+	const deny = await turn(undefined, 'deny');
+	t.deepEqual(allow.events.find(e => e.answer)?.answer, {
+		outcome: 'selected',
+		optionId: 'allow',
+	});
+	t.deepEqual(deny.events.find(e => e.answer)?.answer, {
+		outcome: 'selected',
+		optionId: 'deny',
+	});
+});
+
+test('answers as cancelled when nothing is there to ask', async t => {
+	const {result, events} = await turn(undefined, undefined);
+	t.deepEqual(result, {stopReason: 'cancelled'});
+	t.deepEqual(events.find(e => e.answer)?.answer, {outcome: 'cancelled'});
+});
+
+test('reports a Nanocoder that stops during the turn', async t => {
+	const {result} = await turn('die-in-turn', 'allow');
+	t.true(result instanceof NanocoderFailure);
+	t.is((result as Error).message, 'Nanocoder stopped during the turn');
+});
+
 test('describes how Nanocoder stopped', t => {
 	t.is(
 		describeExit({code: null, signal: 'SIGKILL'}),

@@ -49,14 +49,80 @@ const results = {
 	'session/close': () => ({}),
 };
 
+const waiting = new Map();
+let nextId = 1000;
+const notify = (method, params) => send({method, params});
+const ask = (method, params) =>
+	new Promise(resolve => {
+		const id = nextId++;
+		waiting.set(id, resolve);
+		send({id, method, params});
+	});
+
+const TOOL = {toolCallId: 'call_1', title: 'execute_bash: echo hi'};
+const say = (sessionId, text) =>
+	notify('session/update', {
+		sessionId,
+		update: {
+			sessionUpdate: 'agent_message_chunk',
+			content: {type: 'text', text},
+		},
+	});
+const tool = (sessionId, update) =>
+	notify('session/update', {
+		sessionId,
+		update: {
+			sessionUpdate: 'tool_call_update',
+			toolCallId: 'call_1',
+			...update,
+		},
+	});
+
+// One turn: some text, a protected tool call that waits for the client's answer, more text.
+async function runTurn(id, {sessionId}) {
+	if (mode === 'die-in-turn') process.exit(3);
+	say(sessionId, 'Working on it. ');
+	notify('session/update', {
+		sessionId,
+		update: {sessionUpdate: 'tool_call', ...TOOL, status: 'pending'},
+	});
+	const {outcome} = await ask('session/request_permission', {
+		sessionId,
+		toolCall: {...TOOL, status: 'pending'},
+		options: [
+			{optionId: 'allow', name: 'Allow', kind: 'allow_once'},
+			{optionId: 'deny', name: 'Deny', kind: 'reject_once'},
+		],
+	});
+	log({answer: outcome});
+	if (outcome.outcome !== 'selected') {
+		tool(sessionId, {status: 'failed'});
+		send({id, result: {stopReason: 'cancelled'}});
+		return;
+	}
+	const allowed = outcome.optionId === 'allow';
+	tool(sessionId, {status: allowed ? 'completed' : 'failed'});
+	say(sessionId, allowed ? 'Tool ran.' : 'Tool denied.');
+	send({id, result: {stopReason: 'end_turn'}});
+}
+
 function serve() {
 	if (mode === 'garbage') {
 		process.stdout.write('Starting Nanocoder...\n');
 	}
 	createInterface({input: process.stdin})
 		.on('line', line => {
-			const {id, method, params} = JSON.parse(line);
+			const {id, method, params, result: answered} = JSON.parse(line);
+			if (method === undefined) {
+				waiting.get(id)?.(answered);
+				waiting.delete(id);
+				return;
+			}
 			log({method, params});
+			if (method === 'session/prompt') {
+				void runTurn(id, params);
+				return;
+			}
 			if (id === undefined || (method === 'initialize' && mode === 'silent')) {
 				return;
 			}
