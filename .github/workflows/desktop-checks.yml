@@ -174,8 +174,6 @@ jobs:
 
   e2e:
     name: End to End (${{ matrix.os }})
-    # Switch on for pull requests once Milestone 1 starts (DEC-37).
-    if: github.event_name != 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

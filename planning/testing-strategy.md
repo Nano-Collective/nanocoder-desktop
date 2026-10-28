@@ -119,7 +119,7 @@ Decided in [#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10)
 | Unit and main-process tests | `macos-latest`, `windows-latest`, each on Node 22 and 24 | Every pull request | The AVA suite, including the `node:sqlite` store specs on Node 24 |
 | ACP integration | All three | Every pull request | Its own test pattern and script, outside `ava.files`, so the shared unit job never needs Nanocoder. Runs against a pinned Nanocoder `main` build, built in CI and cached, until the next Nanocoder release |
 | Package smoke | Linux under Xvfb, `macos-latest` (arm64), `macos-15-intel` (x64), `windows-latest` | Pushes to `main`, and pull requests that touch packaging config | Build an unsigned installer, launch it, check it exits cleanly. Filtered by a job-level condition, never a workflow `paths:` filter, which would leave a required check pending |
-| End to end | All three, Linux under Xvfb | Every pull request to `main` once Milestone 1 starts | Playwright against a test build with the `nodeCliInspect` fuse on |
+| End to end | All three, Linux under Xvfb | Every pull request to `main`, and every push to it. Switched on in the technical gate, ahead of Milestone 1, because the IPC and UI glue is covered only by these tests | Playwright against a test build with the `nodeCliInspect` fuse on |
 
 - **Required checks.** Only the six NC checks are required, as in Nanocoder. The local jobs start advisory; the unit jobs can become required once stable, which is the NC core team's call.
 - **Actions** are pinned by commit SHA.
