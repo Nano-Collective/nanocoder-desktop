@@ -37,20 +37,28 @@ Observed against Nanocoder `8a5f4d4` and `main` at `f5d8217`. The first six rows
 
 `scripts/measure-runtime.mjs` runs `nanocoder --acp` five times under each runtime and records `PERF-02` (spawn to `initialize` answered), memory after the process has settled for two seconds, and failures. It also starts each runtime with only the system folders on `PATH`, to see whether either needs a `node` of its own. On macOS it signs a copy of the sidecar with the hardened runtime and tries it with no entitlements, then with the ones V8 may need. The sidecar is the pinned Node in `scripts/node-sidecar.json`, downloaded by `scripts/fetch-node-sidecar.mjs` and refused unless its SHA-256 matches the pin. The ACP job runs it on every pull request, on all three platforms, as an advisory step. An `initialize` that returns an error counts as a failure, and a `codesign` failure is recorded as that attempt's result instead of ending the run. The trust is recorded once by a separate trust launch, as the desktop does (`DEC-30`), so the measured launches set no trust variable.
 
-Linux, run locally on 2026-10-28 against the `dist/cli.js` of Nanocoder 1.31.0 (`8a5f4d4`), five launches each, the last three repeats:
+The ACP job on [#21](https://github.com/Nano-Collective/nanocoder-desktop/pull/21) ran it on 2026-10-28 on GitHub's runners, against the pinned Nanocoder build, five launches each:
 
-| Runtime | Node | Startup, median of the repeats | Idle memory, median | Failures |
-|---|---|---|---|---|
-| Electron's Node mode | 24.22.0 | 582 to 642 ms | 235 MB | 0 of 5, every repeat |
-| Node sidecar | 22.23.4 | 661 to 729 ms | 216 to 219 MB | 0 of 5, every repeat |
+| Platform | Runtime | Node | Startup, median (range) | Idle memory, median | Failures |
+|---|---|---|---|---|---|
+| macOS arm64 | Electron's Node mode | 24.22.0 | 653 ms (458 to 736) | 218 MB | 0 of 5 |
+| macOS arm64 | Node sidecar | 22.23.4 | 535 ms (507 to 711) | 216 MB | 0 of 5 |
+| Windows x64 | Electron's Node mode | 24.22.0 | 1036 ms (1018 to 1152) | 179 MB | 0 of 5 |
+| Windows x64 | Node sidecar | 22.23.4 | 1218 ms (1176 to 1311) | 150 MB | 0 of 5 |
+| Linux x64 | Electron's Node mode | 24.22.0 | 418 ms (405 to 1129) | 266 MB | 0 of 5 |
+| Linux x64 | Node sidecar | 22.23.4 | 493 ms (489 to 501) | 207 MB | 0 of 5 |
 
-- **Startup and memory are close.** Both are far under the 5 second line in `PERF-02`. Electron's Node mode starts about 70 ms faster and the sidecar uses about 17 MB less. An earlier run with the first version of the harness gave about 1.3 s for both. The cause is not established (machine load or a cold disk cache are the likely ones), so read these as a range, not a precise figure.
-- **No failures.** Nanocoder runs under Node 24 in Electron's Node mode as well as under Node 22.
-- **No Node on `PATH`.** With only `/usr/bin` and `/bin` on `PATH`, where this machine has no `node`, both start, and Electron was run with `ELECTRON_RUN_AS_NODE` set. The first version of the harness left that variable out for Electron, which launches it as a GUI app and exits with an error, so its Electron result was not a Node-mode measurement; the review caught it and the harness is fixed. This shows the sidecar needs no Node of its own. It does not show what an MCP server or hook that runs `node`, `npm` or `npx` needs; that still has to be documented.
-- **Size.** The sidecar adds a 119.1 MB Node binary on Linux (the downloaded archive is 56.8 MB). An installer compresses it, so the cost to a download is nearer the archive than the unpacked size. macOS and Windows sizes come from the pull request's run.
+On a developer machine (Linux, WSL2, Nanocoder 1.31.0 `dist`) three repeats gave 582 to 642 ms and 235 MB for Electron's Node mode, and 661 to 729 ms and 216 to 219 MB for the sidecar.
+
+- **Nothing fails, and everything is far under the 5 second line in `PERF-02`.** Nanocoder runs under Node 24 in Electron's Node mode as well as under Node 22.
+- **Startup does not separate the two.** Which one is faster flips between platforms, and an earlier CI run on macOS had them the other way round (562 ms against 624 ms). Treat startup as a tie.
+- **Memory favours the sidecar on Linux (207 against 266 MB) and Windows (150 against 179 MB), and is level on macOS.** Windows is the slowest platform to start, about a second for both.
+- **No Node on `PATH`.** With only the system folders on `PATH`, both runtimes start on all three platforms, Electron with `ELECTRON_RUN_AS_NODE` set. The first version of the harness left that variable out for Electron, which launches it as a GUI app and exits with an error, so its Electron result was not a Node-mode measurement; the review caught it and the harness is fixed. This shows the sidecar needs no Node of its own. It does not show what an MCP server or hook that runs `node`, `npm` or `npx` needs; that still has to be documented.
+- **Size the sidecar adds.** Linux x64: 119.1 MB unpacked, 56.8 MB downloaded. macOS arm64: 107.8 MB unpacked, 50.0 MB downloaded. Windows x64: 83.0 MB unpacked, 35.6 MB downloaded. An installer compresses, so the added download is nearer the archive than the unpacked size. macOS x64 was not measured, because the job runs on an arm64 runner. Electron's Node mode adds nothing.
 - **Pinned download.** Node `v22.23.4`, released 2026-10-20, with the hashes of the official `SHASUMS256.txt` for macOS arm64 and x64, Linux x64 and Windows x64. A wrong hash is refused and leaves nothing in the cache.
+- **macOS hardened runtime: inconclusive.** The sidecar started with the hardened-runtime flag set and no entitlements, with `allow-jit`, and with `allow-jit` and `allow-unsigned-executable-memory`; the harness checks the flag with `codesign` before each launch. That is surprising for a runtime that generates code, so the ad hoc signature on a CI runner probably does not enforce the restriction the way a notarised build does. Do not read it as "no entitlements are needed". Suggestion (not discussed): sign the sidecar with `allow-jit` and `allow-unsigned-executable-memory`, as Electron's own helper apps do, and confirm with the real signing identity in phase 4.2 (`OQ-10`).
 
-Still to record from the pull request's ACP job: the same table for macOS and Windows, the sidecar's size on each, and whether the sidecar starts under the macOS hardened runtime with no entitlements, `allow-jit`, or `allow-jit` with `allow-unsigned-executable-memory`. Ad hoc signing stands in for the real signing identity (`OQ-10`), so the entitlement answer needs confirming with the real one.
+**What this says about `DEC-38`.** The numbers give no performance reason to prefer Electron's Node mode, and the sidecar uses less memory on two of three platforms. The cost is 36 to 57 MB of download per platform and one more binary to sign and notarise.
 
 ## What the tests do not prove
 

@@ -70,7 +70,7 @@ What the sidecar decision adds, from the review in [#2](https://github.com/Nano-
 - **Fuses.** Turn off `runAsNode`, `nodeOptions` and `nodeCliInspect` in the shipped build. The sidecar still honours `NODE_EXTRA_CA_CERTS` for provider calls. A packaged-build test fails if any of the three is on (`SEC-19`).
 - **A clean environment.** Electron's fuses do not protect a standalone Node, and `NODE_OPTIONS` can make it run an extra script before Nanocoder starts. A packaged test starts the sidecar with `NODE_OPTIONS` set in the environment and checks that the script does not run (`SEC-05`). The desktop already drops it at launch.
 - **A machine without Node.** Test the packaged app where Node, npm and npx are not installed. The sidecar runs Nanocoder, but MCP servers or hooks that call `node`, `npm` or `npx` may need extra setup. Document what works out of the box.
-- **Size and signing.** Record the installer size the sidecar adds on each platform, and the macOS entitlements the bundled Node needs under the hardened runtime.
+- **Size and signing.** The sidecar adds a 36 to 57 MB download per platform (83 to 119 MB unpacked), measured in G.6. Record the installer size it adds, and confirm the macOS entitlements the bundled Node needs under the hardened runtime with the real signing identity: the G.6 test under ad hoc signing was inconclusive.
 
 ## Packaging targets
 
