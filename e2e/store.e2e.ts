@@ -11,7 +11,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {_electron as electron, expect, test} from '@playwright/test';
-import {childEnv} from '@/main/nanocoder/launch';
+import {childEnv, waitForExit} from '@/main/nanocoder/launch';
 import type {DesktopApi} from '@/shared/desktop-api';
 
 let profile: string;
@@ -58,10 +58,7 @@ test('a second instance exits and asks the profile owner to show and focus its w
 			{env: childEnv(process.env), shell: false, stdio: 'ignore'},
 		);
 		second = child;
-		const exit = await new Promise((resolve, reject) => {
-			child.once('error', reject);
-			child.once('exit', (code, signal) => resolve({code, signal}));
-		});
+		const exit = await waitForExit(child);
 		expect(exit).toEqual({code: 0, signal: null});
 		expect(
 			await app.evaluate(
@@ -113,10 +110,7 @@ test('a second instance reopens a windowless macOS owner with working storage IP
 			{env: childEnv(process.env), shell: false, stdio: 'ignore'},
 		);
 		second = child;
-		const exit = await new Promise((resolve, reject) => {
-			child.once('error', reject);
-			child.once('exit', (code, signal) => resolve({code, signal}));
-		});
+		const exit = await waitForExit(child);
 		expect(exit).toEqual({code: 0, signal: null});
 		const page = await reopened;
 		await expect(page.getByRole('heading', {level: 1})).toHaveText(
@@ -141,6 +135,62 @@ test('a second instance reopens a windowless macOS owner with working storage IP
 	} finally {
 		if (second?.exitCode === null && second.signalCode === null) second.kill();
 		await app.close();
+	}
+});
+
+test('native quit ignores activation and second-instance requests during disposal', async () => {
+	const app = await launch();
+	try {
+		await app.firstWindow();
+		const result = await app.evaluate(
+			({app: main, BrowserWindow}) =>
+				new Promise(resolve => {
+					const scope = globalThis as {
+						quitProbe?: {remove(): void};
+					};
+					const probe = {
+						inspecting: false,
+						hold(event: {preventDefault(): void}) {
+							if (probe.inspecting) event.preventDefault();
+						},
+						remove() {
+							main.removeListener('before-quit', probe.hold);
+						},
+					};
+					scope.quitProbe = probe;
+					main.on('before-quit', probe.hold);
+					main.once('will-quit', () => {
+						probe.inspecting = true;
+						const before = BrowserWindow.getAllWindows().length;
+						main.emit('activate');
+						const afterActivate = BrowserWindow.getAllWindows().length;
+						main.emit('second-instance');
+						resolve({
+							before,
+							afterActivate,
+							afterSecondInstance: BrowserWindow.getAllWindows().length,
+						});
+					});
+					main.quit();
+				}),
+		);
+		expect(result).toEqual({
+			before: 0,
+			afterActivate: 0,
+			afterSecondInstance: 0,
+		});
+	} finally {
+		try {
+			await app.evaluate(() =>
+				(
+					globalThis as {
+						quitProbe?: {remove(): void};
+					}
+				).quitProbe?.remove(),
+			);
+		} finally {
+			await app.close();
+		}
 	}
 });
 

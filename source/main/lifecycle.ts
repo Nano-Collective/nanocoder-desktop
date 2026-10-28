@@ -3,15 +3,10 @@ interface Closeable {
 }
 
 export function createWindowRequestHandler(openOrFocus: () => void) {
-	let isReady = false;
-	let pending = false;
+	let state: 'starting' | 'ready' | 'stopped' = 'starting';
 	let opening = false;
 	const request = () => {
-		if (!isReady) {
-			pending = true;
-			return;
-		}
-		if (opening) return;
+		if (state !== 'ready' || opening) return;
 		opening = true;
 		try {
 			openOrFocus();
@@ -22,10 +17,15 @@ export function createWindowRequestHandler(openOrFocus: () => void) {
 	return {
 		request,
 		ready: () => {
-			isReady = true;
-			if (!pending) return;
-			pending = false;
+			if (state !== 'starting') return;
+			state = 'ready';
 			request();
+		},
+		stop: () => {
+			state = 'stopped';
+		},
+		get stopped() {
+			return state === 'stopped';
 		},
 	};
 }

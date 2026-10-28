@@ -33,7 +33,6 @@ protocol.registerSchemesAsPrivileged([
 ]);
 app.enableSandbox();
 const primaryInstance = app.requestSingleInstanceLock();
-if (!primaryInstance) app.quit();
 const windowRequests = createWindowRequestHandler(() => {
 	const window = BrowserWindow.getAllWindows()[0];
 	if (!window) {
@@ -46,7 +45,9 @@ const windowRequests = createWindowRequestHandler(() => {
 });
 app.on('second-instance', windowRequests.request);
 app.on('activate', windowRequests.request);
-if (primaryInstance) windowRequests.request();
+app.on('before-quit', windowRequests.stop);
+app.on('will-quit', windowRequests.stop);
+if (!primaryInstance) app.quit();
 
 function serveRenderer(): void {
 	protocol.handle(APP_SCHEME, async request => {
@@ -111,6 +112,7 @@ function createWindow(): void {
 		},
 	});
 	window.once('ready-to-show', () => {
+		if (windowRequests.stopped) return;
 		if (smokeTest) {
 			app.exit(0);
 			return;
@@ -129,17 +131,22 @@ function createWindow(): void {
 void app
 	.whenReady()
 	.then(async () => {
-		if (!primaryInstance) return;
+		if (!primaryInstance || windowRequests.stopped) return;
 		const store = await desktopStoreFactory.open({
 			databasePath: path.join(app.getPath('userData'), 'desktop.sqlite'),
 			driver: createNodeSqliteDriver(),
 		});
+		if (windowRequests.stopped) {
+			store.close();
+			return;
+		}
 		serveRenderer();
 		lockDownSession();
 		registerIpcHandlers(allowedOrigins, {store});
 		windowRequests.ready();
 	})
 	.catch((error: unknown) => {
+		if (windowRequests.stopped) return;
 		dialog.showErrorBox(
 			'Cannot open Nanocoder Desktop',
 			error instanceof IpcFailure

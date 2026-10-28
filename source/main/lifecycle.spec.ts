@@ -26,15 +26,15 @@ test('window requests wait for store and IPC readiness and coalesce during start
 	t.deepEqual(calls, ['store', 'ipc', 'window']);
 });
 
-test('ready window requests handle every later activation', t => {
+test('first readiness fulfils initial demand and handles later activations', t => {
 	let requests = 0;
 	const windows = createWindowRequestHandler(() => requests++);
 	windows.ready();
-	t.is(requests, 0);
-	windows.request();
 	t.is(requests, 1);
 	windows.request();
 	t.is(requests, 2);
+	windows.request();
+	t.is(requests, 3);
 });
 
 test('a reentrant window request cannot create another window', t => {
@@ -44,8 +44,9 @@ test('a reentrant window request cannot create another window', t => {
 		windows.request();
 	});
 	windows.ready();
-	windows.request();
 	t.is(requests, 1);
+	windows.request();
+	t.is(requests, 2);
 });
 
 test('a failed window request does not block later activations', t => {
@@ -53,10 +54,59 @@ test('a failed window request does not block later activations', t => {
 	const windows = createWindowRequestHandler(() => {
 		if (++requests === 1) throw new Error('fixture window failure');
 	});
-	windows.ready();
-	t.throws(windows.request, {message: 'fixture window failure'});
+	t.throws(windows.ready, {message: 'fixture window failure'});
 	windows.request();
 	t.is(requests, 2);
+});
+
+test('window requests are ignored while asynchronous quit disposal runs', async t => {
+	let requests = 0;
+	const windows = createWindowRequestHandler(() => requests++);
+	t.false(windows.stopped);
+	windows.ready();
+	const started = deferred();
+	const cleanup = deferred();
+	const quit = deferred();
+	const handler = createQuitHandler(async () => {
+		started.resolve();
+		await cleanup.promise;
+	}, quit.resolve);
+	windows.stop();
+	handler({preventDefault: () => {}});
+	await started.promise;
+	t.true(windows.stopped);
+	windows.request();
+	windows.request();
+	windows.ready();
+	t.is(requests, 1);
+	cleanup.resolve();
+	await quit.promise;
+	windows.request();
+	t.is(requests, 1);
+});
+
+test('quitting drops window requests queued during startup', t => {
+	let requests = 0;
+	const windows = createWindowRequestHandler(() => requests++);
+	windows.request();
+	windows.request();
+	windows.stop();
+	windows.ready();
+	windows.request();
+	t.true(windows.stopped);
+	t.is(requests, 0);
+});
+
+test('readiness cannot restart a stopped window handler even without an initial request', t => {
+	let requests = 0;
+	const windows = createWindowRequestHandler(() => requests++);
+	windows.stop();
+	windows.ready();
+	windows.stop();
+	windows.ready();
+	windows.request();
+	t.true(windows.stopped);
+	t.is(requests, 0);
 });
 
 test('disposal keeps the store open until supervisor and connection cleanup finish', async t => {
