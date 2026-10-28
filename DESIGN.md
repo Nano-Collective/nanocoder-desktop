@@ -328,7 +328,7 @@ Nanocoder Desktop is a workspace for handing a task to an agent and reviewing th
 - **Dark first.** Dark is the default theme. Light is a full theme, not an afterthought, and every token has a light pair.
 - **Honest states.** Running, waiting for approval, failed and view-only each look different at a glance, in both the rail and the title bar.
 
-The chassis is the "monocode" language named in the mockup: a neutral hue-240 grey ramp with no saturation in the surfaces. The accent comes from the Nano Collective brand: CLI blue (`#3b82f6`) shifted lighter for dark backgrounds, and the docs site link blue (`#0000ee`) in light.
+The chassis is the "monocode" language named in the mockup: a neutral hue-240 grey ramp with no saturation in the surfaces. The accent comes from the mockup, which took its look from the Nanocoder landing page and modern agent workspaces rather than the CLI's default theme. The light accent `#0000ee` matches the docs site link colour. The Brand Guidelines do not publish a palette yet, so the mockup is the source.
 
 ## Colors
 
@@ -374,6 +374,13 @@ Known contrast gaps. These are the mockup's values and they fall short of AA. Fi
 | `error` on `diff-del` | light | 4.12:1 |
 | `error` on `diff-del` | dark | 4.30:1 |
 | `success` on `surface-panel` | light | 4.35:1 |
+| `warning` on `surface-panel` (file tree status letters) | light | 4.17:1 |
+| `success` on `surface-elevated` | light | 4.05:1 |
+| `error` on `surface-elevated` | light | 4.27:1 |
+| `error` on `surface-elevated` | dark | 4.34:1 |
+| `on-surface-muted` on `primary-soft` (selected rail row) | light | 4.499:1 |
+
+The table lists the pairings the design is known to use. Checking every text colour on every surface finds more pairs under 4.5:1 (for example `skill` on `surface-elevated`, light, 3.11:1); they matter only if the design puts that text on that surface. Recheck the ratios whenever a token changes.
 
 ## Typography
 
@@ -550,7 +557,7 @@ With "reduce motion" on, the spinner, cursor and pulse stop and transitions are 
 
 ## Open design questions
 
-- **Palette and token format.** The NC project guide names Tokyo Night as the default palette, with tokens in OKLch ([Visual identity][nc-visual]). This file uses the mockup's monocode palette in hex. Either keep it and document the divergence in `CONTRIBUTING.md`, or move to Tokyo Night. Decision `DEC-36` in the planning set.
+- **Palette and token format.** Settled (`DEC-36`): keep the mockup's monocode palette in hex. The NC project guide names Tokyo Night in OKLch as the default ([Visual identity][nc-visual]); the divergence is documented in `CONTRIBUTING.md`.
 - **Browser placement.** The mockup put the browser in the inspector. This file follows the whitepaper, which puts it in the bottom panel with the terminal. Moving it needs a whitepaper change first.
 - **Mockup sync.** The mockup still shows a per-subagent cancel, fixed approval labels and the lowercase product name. Update it to match this file.
 - **Light muted ink.** The mockup's token export says `hsl(225 10% 44%)` but the rendered frame uses `hsl(225 10% 40%)`. This file uses 40%, which has more contrast; confirm.

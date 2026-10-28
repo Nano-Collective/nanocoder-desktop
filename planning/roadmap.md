@@ -265,7 +265,7 @@ Can run in parallel with G.4 and G.5.
 
 **Goal.** Trusted projects, durable threads, streaming and approvals, model and mode controls, process errors and bounded subagent runs ([whitepaper][wp-next]).
 
-**Blockers.** Technical gate; `OQ-03`, `OQ-19`; `DEC-36` before the first UI work. **Risks.** `RISK-04`, `RISK-05`, `RISK-06`, `RISK-11`, `RISK-14`.
+**Blockers.** Technical gate; `OQ-03`, `OQ-19`. **Risks.** `RISK-04`, `RISK-05`, `RISK-06`, `RISK-11`, `RISK-14`.
 
 ### Phase 1.1: desktop store
 
