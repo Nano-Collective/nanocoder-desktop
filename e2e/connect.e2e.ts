@@ -569,3 +569,255 @@ test('closing and reopening the macOS window cancels hidden approval state', asy
 	await cards().getByRole('button', {name: 'Deny'}).click();
 	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
 });
+
+test('reload during new or resumed mode preparation frees the latch before another folder opens', async () => {
+	for (const resume of [false, true]) {
+		await recordRecoveryProjects();
+		const root = project(
+			`reload-mode-${resume}`,
+			resume ? undefined : 'slow-mode',
+		);
+		if (resume) {
+			await openFolder(root);
+			const projectId = await recoveryProjectId(root);
+			expect(
+				(
+					await page.evaluate(
+						projectId =>
+							(window as unknown as {desktop: DesktopApi}).desktop.stopProject({
+								projectId,
+							}),
+						projectId,
+					)
+				).ok,
+			).toBe(true);
+			writeFileSync(path.join(root, '.fake-nanocoder'), 'slow-mode');
+		}
+		await app.evaluate(({dialog}, root) => {
+			dialog.showOpenDialog = (async () => ({
+				canceled: false,
+				filePaths: [root],
+			})) as typeof dialog.showOpenDialog;
+		}, root);
+		await page.getByRole('button', {name: 'Open a project folder'}).click();
+		await expect
+			.poll(() =>
+				page.evaluate(() =>
+					(
+						window as unknown as {recoveryEvents: ProjectEvent[]}
+					).recoveryEvents.some(
+						event =>
+							event.type === 'turn' &&
+							event.events.some(
+								item =>
+									item.type === 'text' && item.text.includes('mode waiting'),
+							),
+					),
+				),
+			)
+			.toBe(true);
+		const projectId = await recoveryProjectId(root);
+		expect((await bridge('sendPrompt', 'not ready')).error?.code).toBe(
+			'AGENT_UNAVAILABLE',
+		);
+		await page.reload();
+		const other = project(`reload-mode-other-${resume}`);
+		await openFolder(other);
+		await expect(
+			page.getByRole('region', {name: 'Connected agent'}),
+		).toContainText(other);
+		const state = await page.evaluate(
+			projectId =>
+				(window as unknown as {desktop: DesktopApi}).desktop.getSupervisorState(
+					{projectId},
+				),
+			projectId,
+		);
+		expect(state.ok && state.value.status).toBe('stopped');
+		writeFileSync(path.join(root, '.fake-nanocoder'), 'ok');
+		await openFolder(root);
+		await expect(
+			page.getByRole('region', {name: 'Connected agent'}),
+		).toContainText(root);
+		await sendMessage();
+		await expect(cards()).toBeVisible();
+		await cards().getByRole('button', {name: 'Deny'}).click();
+		await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+		await expect(page.getByRole('alert')).toHaveCount(0);
+	}
+});
+
+test('idle reconnect replays all feature reasons and the version warning before a prompt', async () => {
+	const root = project('reload-idle-gates', 'minimum-no-gates');
+	await openFolder(root);
+	const features = () => page.getByRole('region', {name: 'Nanocoder features'});
+	await expect(features().locator('dd')).toHaveCount(9);
+	const reasons = await features().locator('dd').allTextContents();
+	await page.reload();
+	await recordRecoveryProjects();
+	await openFolder(root);
+	await expect(features().locator('dd')).toHaveText(reasons);
+	for (const reason of reasons) expect(reason).toMatch(/^unavailable: .+/);
+	await expect(features().getByRole('status')).toContainText(
+		'Compatibility is unverified',
+	);
+	await expect(page.getByLabel('Message')).toBeEmpty();
+	const states = await page.evaluate(() =>
+		(window as unknown as {recoveryEvents: ProjectEvent[]}).recoveryEvents
+			.filter(event => event.type === 'supervisor')
+			.map(event => event.state.status),
+	);
+	expect(states).toEqual(['ready']);
+	await expect(page.getByText('Turn ended: end_turn')).toHaveCount(0);
+});
+
+test('a detached folder picker cannot hold the latch or reopen its late selection', async () => {
+	const late = project('reload-picker-late');
+	await app.evaluate(({dialog}) => {
+		const state = globalThis as {
+			pickerEntered?: boolean;
+			releasePicker?: (value: {canceled: boolean; filePaths: string[]}) => void;
+		};
+		state.pickerEntered = false;
+		dialog.showOpenDialog = (() => {
+			state.pickerEntered = true;
+			return new Promise(resolve => {
+				state.releasePicker = resolve;
+			});
+		}) as typeof dialog.showOpenDialog;
+	});
+	await page.getByRole('button', {name: 'Open a project folder'}).click();
+	await expect
+		.poll(() =>
+			app.evaluate(
+				() => (globalThis as {pickerEntered?: boolean}).pickerEntered,
+			),
+		)
+		.toBe(true);
+	await page.reload();
+	const replacement = project('reload-picker-replacement');
+	await openFolder(replacement);
+	await app.evaluate((_electron, root) => {
+		(
+			globalThis as {
+				releasePicker?: (value: {
+					canceled: boolean;
+					filePaths: string[];
+				}) => void;
+			}
+		).releasePicker?.({canceled: false, filePaths: [root]});
+	}, late);
+	await expect(
+		page.getByRole('region', {name: 'Connected agent'}),
+	).toContainText(replacement);
+	await sendMessage();
+	await expect(cards()).toBeVisible();
+	await cards().getByRole('button', {name: 'Deny'}).click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+});
+
+test('a detached trust dialog cannot hold the latch or grant its late confirmation', async () => {
+	const late = project('reload-trust-late', 'untrusted');
+	await app.evaluate(({dialog}, root) => {
+		const state = globalThis as {
+			trustEntered?: boolean;
+			releaseTrust?: (value: {
+				response: number;
+				checkboxChecked: boolean;
+			}) => void;
+		};
+		state.trustEntered = false;
+		dialog.showOpenDialog = (async () => ({
+			canceled: false,
+			filePaths: [root],
+		})) as typeof dialog.showOpenDialog;
+		dialog.showMessageBox = (() => {
+			state.trustEntered = true;
+			return new Promise(resolve => {
+				state.releaseTrust = resolve;
+			});
+		}) as typeof dialog.showMessageBox;
+	}, late);
+	await page.getByRole('button', {name: 'Open a project folder'}).click();
+	await expect
+		.poll(() =>
+			app.evaluate(() => (globalThis as {trustEntered?: boolean}).trustEntered),
+		)
+		.toBe(true);
+	await page.reload();
+	const replacement = project('reload-trust-replacement');
+	await openFolder(replacement);
+	await app.evaluate(() => {
+		(
+			globalThis as {
+				releaseTrust?: (value: {
+					response: number;
+					checkboxChecked: boolean;
+				}) => void;
+			}
+		).releaseTrust?.({response: 0, checkboxChecked: false});
+	});
+	await expect(
+		page.getByRole('region', {name: 'Connected agent'}),
+	).toContainText(replacement);
+	await sendMessage();
+	await expect(cards()).toBeVisible();
+	await cards().getByRole('button', {name: 'Deny'}).click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	expect(existsSync(path.join(late, '.fake-trusted'))).toBe(false);
+});
+
+test('a second reload cancels an open still queued behind bounded process cleanup', async () => {
+	await recordRecoveryProjects();
+	const root = project('reload-queued-cleanup', 'ignore-shutdown');
+	await openFolder(root);
+	const projectId = await recoveryProjectId(root);
+	await sendMessage();
+	await expect(cards()).toBeVisible();
+	const late = project('reload-queued-late');
+	await app.evaluate(({dialog}, root) => {
+		const state = globalThis as {queuedPickerCalls?: number};
+		state.queuedPickerCalls = 0;
+		dialog.showOpenDialog = (async () => {
+			state.queuedPickerCalls = (state.queuedPickerCalls ?? 0) + 1;
+			return {canceled: false, filePaths: [root]};
+		}) as typeof dialog.showOpenDialog;
+	}, late);
+	await page.reload();
+	const state = await page.evaluate(projectId => {
+		const {desktop} = window as unknown as {desktop: DesktopApi};
+		void desktop.connectNanocoder();
+		return desktop.getSupervisorState({projectId});
+	}, projectId);
+	expect(state.ok && state.value.status).toBe('stopping');
+	await page.reload();
+	await expect
+		.poll(
+			async () => {
+				const state = await page.evaluate(
+					projectId =>
+						(
+							window as unknown as {desktop: DesktopApi}
+						).desktop.getSupervisorState({projectId}),
+					projectId,
+				);
+				return state.ok && state.value.status;
+			},
+			{timeout: 15_000},
+		)
+		.toBe('stopped');
+	expect(
+		await app.evaluate(
+			() => (globalThis as {queuedPickerCalls?: number}).queuedPickerCalls,
+		),
+	).toBe(0);
+	const replacement = project('reload-queued-replacement');
+	await openFolder(replacement);
+	await expect(
+		page.getByRole('region', {name: 'Connected agent'}),
+	).toContainText(replacement);
+	await sendMessage();
+	await expect(cards()).toBeVisible();
+	await cards().getByRole('button', {name: 'Deny'}).click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+});

@@ -15,14 +15,12 @@ import {registerHandler} from '@/main/ipc/register';
 import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
 import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {disposeDesktop} from '@/main/lifecycle';
+import {untilAborted} from '@/main/nanocoder/abort';
 import {NanocoderFailure} from '@/main/nanocoder/acp-client';
 import {resolveNanocoder} from '@/main/nanocoder/runtime';
 import {createLookup} from '@/main/nanocoder/runtime-lookup';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
-import {
-	prepareSession,
-	stopDetachedTurns,
-} from '@/main/nanocoder/technical-sessions';
+import {TechnicalSessions} from '@/main/nanocoder/technical-sessions';
 import type {TrustReason, TrustRefusal} from '@/main/nanocoder/trust';
 import {canonicalPath} from '@/main/paths';
 import {isAllowedOrigin} from '@/main/security';
@@ -56,10 +54,11 @@ const lookupRuntime = createLookup(() =>
 let supervisor: ProjectSupervisor | undefined;
 let activeProjectId: string | undefined;
 let session: SessionInfo | undefined;
-let connecting = false;
+let rendererAttachment = new AbortController();
+let connecting: Promise<void> | undefined;
 let rendererCleanup: Promise<void> = Promise.resolve();
 const technicalProjects = new Map<string, ProjectInfo>();
-const technicalSessions = new Map<string, SessionInfo>();
+let technicalSessions: TechnicalSessions | undefined;
 let appOrigins: readonly string[] = [];
 let workspaceServices: WorkspaceServices = {};
 let unsubscribeProjectEvents: (() => void) | undefined;
@@ -118,7 +117,12 @@ async function confirmTrust(refusal: TrustRefusal): Promise<boolean> {
 }
 
 async function connect(): Promise<ConnectResult> {
-	if (runtimeDiscovery.signal.aborted || !supervisor) {
+	const {signal} = rendererAttachment;
+	await untilAborted(rendererCleanup, signal);
+	signal.throwIfAborted();
+	const currentSupervisor = supervisor;
+	const sessions = technicalSessions;
+	if (runtimeDiscovery.signal.aborted || !currentSupervisor || !sessions) {
 		throw new IpcFailure(
 			'AGENT_UNAVAILABLE',
 			'The desktop cannot start a project now',
@@ -127,11 +131,15 @@ async function connect(): Promise<ConnectResult> {
 	if (connecting) {
 		throw new IpcFailure('BUSY', 'Already connecting to Nanocoder', true);
 	}
-	connecting = true;
+	let settle!: () => void;
+	const attempt = new Promise<void>(resolve => {
+		settle = resolve;
+	});
+	connecting = attempt;
 	try {
-		const root = await chooseProjectRoot();
+		const root = await untilAborted(chooseProjectRoot(), signal);
 		if (!root) return {status: 'cancelled'};
-		await rendererCleanup;
+		signal.throwIfAborted();
 		if (runtimeDiscovery.signal.aborted)
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'The desktop is shutting down');
 		activeProjectId = undefined;
@@ -153,8 +161,10 @@ async function connect(): Promise<ConnectResult> {
 			technicalProjects.set(root, project);
 		}
 		activeProjectId = project.id;
-		const wasReady = supervisor.getState(project.id).status === 'ready';
-		const state = await supervisor.probeProject(project);
+		const state = await untilAborted(
+			currentSupervisor.probeProject(project),
+			signal,
+		);
 		if (state.status === 'untrusted')
 			return {
 				status: 'untrusted',
@@ -166,20 +176,27 @@ async function connect(): Promise<ConnectResult> {
 				state.reason ?? 'Nanocoder could not start',
 			);
 		}
-		const connection = supervisor.getConnection(project.id);
-		session = await prepareSession(
-			supervisor,
-			project,
-			technicalSessions,
-			wasReady,
+		const connection = currentSupervisor.getConnection(project.id);
+		const prepared = await untilAborted(
+			sessions.prepare(project, signal),
+			signal,
 		);
+		signal.throwIfAborted();
+		if (currentSupervisor.getConnection(project.id) !== connection)
+			throw new IpcFailure(
+				'AGENT_UNAVAILABLE',
+				'The project process changed while connecting',
+			);
+		session = prepared;
+		currentSupervisor.replayState(project.id);
 		return {status: 'connected', agent: connection.agent, session};
 	} catch (error) {
 		if (error instanceof NanocoderFailure)
 			throw new IpcFailure(error.code, error.message);
 		throw error;
 	} finally {
-		connecting = false;
+		if (connecting === attempt) connecting = undefined;
+		settle();
 	}
 }
 
@@ -220,6 +237,9 @@ function answerPermission({
 
 export function closeNanocoder(): Promise<void> {
 	runtimeDiscovery.abort();
+	rendererAttachment.abort(
+		new IpcFailure('AGENT_UNAVAILABLE', 'The desktop is shutting down'),
+	);
 	return disposeDesktop({
 		unsubscribe: unsubscribeProjectEvents,
 		cancelPermissions: () => {},
@@ -231,23 +251,29 @@ export function closeNanocoder(): Promise<void> {
 function watchRenderer(contents: WebContents): void {
 	let attached = false;
 	const detach = () => {
-		if (!attached || !supervisor) return;
+		if (!attached || !technicalSessions) return;
+		const attempt = connecting;
+		rendererAttachment.abort(
+			new IpcFailure('AGENT_UNAVAILABLE', 'The app renderer detached'),
+		);
+		rendererAttachment = new AbortController();
 		activeProjectId = undefined;
 		session = undefined;
 		rendererCleanup = Promise.allSettled([
 			rendererCleanup,
-			stopDetachedTurns(supervisor, technicalProjects.values()),
+			technicalSessions.detach(technicalProjects.values()),
+			attempt,
 		]).then(() => {});
 	};
 	contents.on('did-finish-load', () => {
 		attached = isAllowedOrigin(contents.getURL(), appOrigins);
 	});
-	contents.on(
-		'did-start-navigation',
-		(_event, _url, isInPlace, isMainFrame) => {
-			if (isMainFrame && !isInPlace) detach();
-		},
-	);
+	contents.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
+		if (isMainFrame && !isInPlace) {
+			detach();
+			attached = isAllowedOrigin(url, appOrigins);
+		}
+	});
 	contents.on('render-process-gone', detach);
 	contents.once('destroyed', detach);
 }
@@ -279,6 +305,9 @@ export function registerIpcHandlers(
 		...services,
 		supervisor: services.supervisor ?? supervisor,
 	};
+	technicalSessions = supervisor
+		? new TechnicalSessions(supervisor)
+		: undefined;
 	app.on('web-contents-created', (_event, contents) => watchRenderer(contents));
 	for (const window of BrowserWindow.getAllWindows())
 		watchRenderer(window.webContents);

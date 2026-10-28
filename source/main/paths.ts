@@ -1,17 +1,11 @@
 import {realpath, realpathSync} from 'node:fs';
 import path from 'node:path';
+import {promisify} from 'node:util';
 
 export const canonicalPathSync = (file: string): string =>
 	realpathSync.native(file);
 
-export function canonicalPath(file: string): Promise<string> {
-	return new Promise((resolve, reject) => {
-		realpath.native(file, (error, resolved) => {
-			if (error) reject(error);
-			else resolve(resolved);
-		});
-	});
-}
+export const canonicalPath = promisify(realpath.native);
 
 // Filesystem callers use native realpath to resolve symlinks and case aliases.
 export function isInside(

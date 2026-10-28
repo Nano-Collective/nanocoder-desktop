@@ -79,6 +79,30 @@ function nextEvent(
 
 test.after.always(removeFakeProjects);
 
+test('state replay preserves process identity and gates with a new sequence', async t => {
+	const supervisor = make();
+	t.teardown(() => supervisor.close());
+	const chosen = project();
+	let lastSequence = 0;
+	supervisor.subscribe(event => {
+		lastSequence = event.sequence;
+	});
+	await supervisor.ensureProcess(chosen);
+	const connection = supervisor.getConnection(chosen.id);
+	const before = supervisor.getState(chosen.id);
+	const beforeSequence = lastSequence;
+	const replay = nextEvent(supervisor, event => event.type === 'supervisor');
+	supervisor.replayState(chosen.id);
+	const event = await replay;
+	t.is(event.type, 'supervisor');
+	t.is(event.projectId, chosen.id);
+	t.true(event.sequence > beforeSequence);
+	t.deepEqual(supervisor.getState(chosen.id).gates, before.gates);
+	t.truthy(before.gates?.versionPolicy.reason);
+	t.is(supervisor.getConnection(chosen.id), connection);
+	supervisor.replayState('unknown');
+});
+
 test('a reentrant starting subscriber shares ownership and all children exit on close', async t => {
 	const chosen = project();
 	let lookups = 0;

@@ -120,6 +120,11 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		);
 	}
 
+	replayState(projectId: string): void {
+		const entry = this.entries.get(projectId);
+		if (entry) this.publish(entry);
+	}
+
 	getConnection(projectId: string): NanocoderConnection {
 		const entry = this.entries.get(projectId);
 		if (!entry?.connection || entry.state.status !== 'ready') {

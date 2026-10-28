@@ -249,6 +249,13 @@ function serve() {
 				say('fake-session', 'mode waiting');
 				return;
 			}
+			if (
+				(method === 'session/new' && mode === 'slow-new') ||
+				(method === 'session/resume' && mode === 'slow-resume')
+			) {
+				say('fake-session', `${method} waiting`);
+				return;
+			}
 			if (method === 'session/prompt') {
 				void runTurn(id, params);
 				return;
