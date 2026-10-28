@@ -261,7 +261,7 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 **Results we want**
 
 - [ ] `PERF-02` startup time, idle memory and any failures recorded for both on all three platforms
-- [ ] The numbers posted on [#2](https://github.com/Nano-Collective/nanocoder-desktop/issues/2), and the runtime change from the whitepaper's default recorded upstream (`DEC-38`)
+- [ ] The numbers recorded in [`technical-gate.md`](technical-gate.md) and posted on the work list ([#17](https://github.com/Nano-Collective/nanocoder-desktop/issues/17)), and the runtime change from the whitepaper's default recorded upstream (`DEC-38`)
 
 ## Milestone 1: conversation workspace
 
