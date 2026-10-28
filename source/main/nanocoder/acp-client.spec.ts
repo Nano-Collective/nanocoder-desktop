@@ -147,7 +147,7 @@ test('opens a session at the project root and sets its mode before handing it ou
 	);
 	t.deepEqual(
 		requests.map(event => event.method),
-		['initialize', 'session/new', 'session/set_mode'],
+		['initialize', 'session/new', 'session/set_mode', 'session/close'],
 	);
 	t.like(requests[1].params, {cwd: root, mcpServers: []});
 	t.deepEqual(requests[2].params, {
@@ -304,7 +304,7 @@ test('resumes a session, rebuilds it from the replay and sets its mode', async t
 	const requests = fakeEvents(connection.stderr.lines()).filter(e => e.method);
 	t.deepEqual(
 		requests.map(e => e.method),
-		['initialize', 'session/resume', 'session/set_mode'],
+		['initialize', 'session/resume', 'session/set_mode', 'session/close'],
 	);
 	t.like(requests[1].params, {sessionId: 'fake-session', cwd: root});
 	t.deepEqual(requests[2].params, {
@@ -455,4 +455,88 @@ test("picks Nanocoder's own line out of other stderr output", t => {
 		'second',
 	);
 	t.is(nanocoderMessage(['plain output']), undefined);
+});
+
+test('blocks a prompt while session/set_mode is still waiting', async t => {
+	let modeWaiting!: () => void;
+	const waiting = new Promise<void>(resolve => {
+		modeWaiting = resolve;
+	});
+	const connection = await connect(fakeProject('slow-mode'), {
+		onUpdate: () => modeWaiting(),
+	});
+	const opening = connection.newSession('normal').catch(() => undefined);
+	await waiting;
+	await t.throwsAsync(connection.prompt('fake-session', 'Must not run'), {
+		message: /until its mode is set/,
+	});
+	await connection.close();
+	await opening;
+	t.false(
+		fakeEvents(connection.stderr.lines()).some(
+			e => e.method === 'session/prompt',
+		),
+	);
+});
+
+test('never restores yolo on resume', async t => {
+	const connection = await connect(fakeProject());
+	const {session} = await connection.resumeSession('fake-session', 'yolo');
+	await connection.close();
+	t.is(session.mode, 'normal');
+	t.like(
+		fakeEvents(connection.stderr.lines()).find(
+			e => e.method === 'session/set_mode',
+		)?.params,
+		{modeId: 'normal'},
+	);
+});
+
+test('probes extensions with no session ID or title and tries prefixed then bare names', async t => {
+	for (const mode of ['extensions', 'prefixed-extensions']) {
+		const connection = await connect(fakeProject(mode));
+		t.deepEqual(await connection.probeExtensions(), {
+			rename: true,
+			timeline: true,
+		});
+		await connection.close();
+		const probes = fakeEvents(connection.stderr.lines()).filter(
+			e => e.method !== 'initialize' && e.method,
+		);
+		t.true(probes.every(p => JSON.stringify(p.params) === '{}'));
+		t.true(probes.some(p => p.method === '_renameSession'));
+		t.is(
+			probes.some(p => p.method === 'renameSession'),
+			mode === 'extensions',
+		);
+		t.false(
+			probes.some(
+				p => p.method === 'timeline/revert' || p.method === 'retryTurn',
+			),
+		);
+	}
+});
+
+test('unknown extension methods fail closed', async t => {
+	const connection = await connect(fakeProject());
+	t.deepEqual(await connection.probeExtensions(), {
+		rename: false,
+		timeline: false,
+	});
+	await connection.close();
+});
+
+test('ambiguous, unexpectedly successful and silent probes never enable features', async t => {
+	for (const mode of [
+		'ambiguous-probes',
+		'successful-probes',
+		'silent-probes',
+	]) {
+		const connection = await connect(fakeProject(mode), {probeTimeoutMs: 20});
+		t.deepEqual(await connection.probeExtensions(), {
+			rename: false,
+			timeline: false,
+		});
+		await connection.close();
+	}
 });

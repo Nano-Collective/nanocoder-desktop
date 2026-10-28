@@ -250,7 +250,7 @@ test('uses NANOCODER_DESKTOP_CLI and an absolute NANOCODER_DESKTOP_NODE', async 
 	const result = await resolveNanocoder({
 		env: {NANOCODER_DESKTOP_CLI: cli, NANOCODER_DESKTOP_NODE: node},
 		platform: process.platform,
-		untrustedRoots: [dir],
+		untrustedRoots: [tempDir()],
 		readNodeVersion: v22,
 	});
 
@@ -280,6 +280,58 @@ test('rejects relative override paths', async t => {
 		if (!result.ok) t.is(result.code, 'DENIED');
 	}
 });
+
+test('explicit overrides never bypass project-local CLI or Node refusal', async t => {
+	for (const which of ['cli', 'node']) {
+		const root = tempDir();
+		let executed = false;
+		const result = await resolveNanocoder({
+			env: {
+				NANOCODER_DESKTOP_CLI: makePackage(which === 'cli' ? root : tempDir()),
+				NANOCODER_DESKTOP_NODE: makeFile(path.join(root, 'runtime', 'node')),
+			},
+			platform: process.platform,
+			untrustedRoots: [root],
+			readNodeVersion: async () => {
+				executed = true;
+				return 'v22.0.0';
+			},
+		});
+		t.false(result.ok);
+		if (!result.ok) t.is(result.code, 'DENIED');
+		t.false(executed);
+	}
+});
+
+symlinkTest(
+	'refuses outside override links whose CLI or Node target is inside the project',
+	async t => {
+		for (const which of ['cli', 'node']) {
+			const root = tempDir();
+			const outside = tempDir();
+			const cli = makePackage(which === 'cli' ? root : outside);
+			const node = makeFile(path.join(root, 'node'));
+			const link = path.join(tempDir(), which === 'cli' ? 'cli.js' : 'node');
+			symlinkSync(which === 'cli' ? cli : node, link);
+			let executed = false;
+			const result = await resolveNanocoder({
+				env: {
+					NANOCODER_DESKTOP_CLI: which === 'cli' ? link : cli,
+					NANOCODER_DESKTOP_NODE: which === 'node' ? link : process.execPath,
+				},
+				platform: process.platform,
+				untrustedRoots: [root],
+				readNodeVersion: async () => {
+					executed = true;
+					return 'v22.0.0';
+				},
+			});
+			t.false(result.ok);
+			if (!result.ok) t.is(result.code, 'DENIED');
+			t.false(executed);
+		}
+	},
+);
 
 test('rejects Node.js older than 22', async t => {
 	const dir = tempDir();
@@ -340,6 +392,43 @@ test('drops relative PATH entries', t => {
 		pathDirectories({PATH: ['relative', '', absolute].join(path.delimiter)}),
 		[absolute],
 	);
+});
+
+test('an aborted lookup never starts its runtime version probe', async t => {
+	const abort = new AbortController();
+	abort.abort(new Error('fake quit'));
+	let probed = false;
+	await t.throwsAsync(
+		resolveNanocoder({
+			env: {},
+			platform: process.platform,
+			untrustedRoots: [],
+			signal: abort.signal,
+			readNodeVersion: async () => {
+				probed = true;
+				return 'v22.0.0';
+			},
+		}),
+		{message: 'fake quit'},
+	);
+	t.false(probed);
+});
+
+test('the actual Node version subprocess is cancelled with its lookup', async t => {
+	const abort = new AbortController();
+	const pending = resolveNanocoder({
+		env: {
+			NANOCODER_DESKTOP_CLI: makePackage(tempDir()),
+			NANOCODER_DESKTOP_NODE: process.execPath,
+		},
+		platform: process.platform,
+		untrustedRoots: [],
+		signal: abort.signal,
+	});
+	abort.abort();
+	const result = await pending;
+	t.false(result.ok);
+	if (!result.ok) t.is(result.code, 'UNSUPPORTED');
 });
 
 test('compares paths case-insensitively only where the platform does', t => {

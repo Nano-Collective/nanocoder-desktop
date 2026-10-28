@@ -76,3 +76,27 @@ test('passes arguments literally, with no shell', async t => {
 		cwd: dir,
 	});
 });
+
+test('refuses relative runtime, entry-point and working-directory paths', t => {
+	for (const [nodePath, cliPath, cwd] of [
+		['node', '/tmp/cli.js', '/tmp'],
+		[process.execPath, 'cli.js', '/tmp'],
+		[process.execPath, '/tmp/cli.js', '.'],
+	]) {
+		t.throws(() => launchNanocoder({nodePath, cliPath}, [], cwd), {
+			message: /must be absolute/,
+		});
+	}
+});
+
+test('refuses the command-line trust bypass', t => {
+	t.throws(
+		() =>
+			launchNanocoder(
+				{nodePath: process.execPath, cliPath: process.execPath},
+				['--trust-directory'],
+				process.cwd(),
+			),
+		{message: /confirmed trust launch/},
+	);
+});

@@ -1,5 +1,7 @@
+import {randomUUID} from 'node:crypto';
 import {realpath} from 'node:fs/promises';
 import {homedir} from 'node:os';
+import path from 'node:path';
 import {
 	app,
 	BrowserWindow,
@@ -13,30 +15,23 @@ import {registerHandler} from '@/main/ipc/register';
 import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
 import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {disposeDesktop} from '@/main/lifecycle';
-import {
-	type NanocoderConnection,
-	NanocoderFailure,
-} from '@/main/nanocoder/acp-client';
-import {openProject} from '@/main/nanocoder/open-project';
-import {PermissionBroker} from '@/main/nanocoder/permissions';
+import {NanocoderFailure} from '@/main/nanocoder/acp-client';
 import {resolveNanocoder} from '@/main/nanocoder/runtime';
 import {createLookup} from '@/main/nanocoder/runtime-lookup';
+import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
 import type {TrustReason, TrustRefusal} from '@/main/nanocoder/trust';
-import {toTurnEvent} from '@/main/nanocoder/turn-events';
 import {isAllowedOrigin} from '@/main/security';
 import {APP_NAME} from '@/shared/app-info';
 import {
 	type AppInfo,
 	CHANNELS,
 	type ConnectResult,
-	type NanocoderMode,
 	type NanocoderRuntime,
+	type ProjectInfo,
 	type SessionInfo,
 	type TurnEvent,
 	type TurnResult,
 } from '@/shared/ipc';
-
-const DEFAULT_MODE: NanocoderMode = 'normal';
 
 const TRUST_TITLES: Record<TrustReason, string> = {
 	'not-trusted': 'Trust this folder?',
@@ -44,18 +39,22 @@ const TRUST_TITLES: Record<TrustReason, string> = {
 	'needs-re-approval': 'Approve this folder again?',
 };
 
+const runtimeDiscovery = new AbortController();
 const lookupRuntime = createLookup(() =>
 	resolveNanocoder({
 		env: process.env,
 		platform: process.platform,
-		untrustedRoots: [],
+		untrustedRoots: [...technicalProjects.keys()],
+		signal: runtimeDiscovery.signal,
 	}),
 );
-let connection: NanocoderConnection | undefined;
+let supervisor: ProjectSupervisor | undefined;
+let activeProjectId: string | undefined;
 let session: SessionInfo | undefined;
 let connecting = false;
-// The turn in flight, if any. A new connection drops it, so a stale turn cannot block the next one.
-let activeTurn: object | undefined;
+let shuttingDown = false;
+const technicalProjects = new Map<string, ProjectInfo>();
+const technicalSessions = new Map<string, SessionInfo>();
 let appOrigins: readonly string[] = [];
 let workspaceServices: WorkspaceServices = {};
 let unsubscribeProjectEvents: (() => void) | undefined;
@@ -67,16 +66,6 @@ function sendEvent(event: TurnEvent): void {
 			window.webContents.send(CHANNELS.nanocoderEvent, event);
 		}
 	}
-}
-
-const permissions = new PermissionBroker(sendEvent);
-
-function forget(next: NanocoderConnection): void {
-	if (connection !== next) return;
-	connection = undefined;
-	session = undefined;
-	activeTurn = undefined;
-	permissions.cancelAll();
 }
 
 async function nanocoderRuntime(): Promise<NanocoderRuntime> {
@@ -121,6 +110,12 @@ async function confirmTrust(refusal: TrustRefusal): Promise<boolean> {
 }
 
 async function connect(): Promise<ConnectResult> {
+	if (shuttingDown || !supervisor) {
+		throw new IpcFailure(
+			'AGENT_UNAVAILABLE',
+			'The desktop cannot start a project now',
+		);
+	}
 	if (connecting) {
 		throw new IpcFailure('BUSY', 'Already connecting to Nanocoder', true);
 	}
@@ -128,72 +123,77 @@ async function connect(): Promise<ConnectResult> {
 	try {
 		const root = await chooseProjectRoot();
 		if (!root) return {status: 'cancelled'};
-		const resolved = await nanocoderRuntime();
-		permissions.cancelAll();
-		await connection?.close();
-		connection = undefined;
+		if (shuttingDown)
+			throw new IpcFailure('AGENT_UNAVAILABLE', 'The desktop is shutting down');
+		activeProjectId = undefined;
 		session = undefined;
-		activeTurn = undefined;
-		const outcome = await openProject({
-			runtime: resolved,
-			root,
-			clientInfo: {
-				name: 'nanocoder-desktop',
-				title: APP_NAME,
-				version: app.getVersion(),
-			},
-			homeDir: homedir(),
-			mode: DEFAULT_MODE,
-			confirmTrust,
-			onUpdate: update => {
-				const event = toTurnEvent(update);
-				if (event) sendEvent(event);
-			},
-			onPermission: request => permissions.request(request),
-		}).catch((error: unknown) => {
-			if (error instanceof NanocoderFailure) {
-				throw new IpcFailure(
-					error.code,
-					error.message,
-					error.code === 'AGENT_UNAVAILABLE',
-				);
+		let project = technicalProjects.get(root);
+		if (!project) {
+			const now = new Date().toISOString();
+			project = {
+				id: randomUUID(),
+				canonicalRoot: root,
+				sessionCwd: root,
+				displayName: path.basename(root),
+				trusted: false,
+				defaultMode: 'normal',
+				createdAt: now,
+				lastOpenedAt: now,
+				availability: 'available',
+			};
+			technicalProjects.set(root, project);
+		}
+		activeProjectId = project.id;
+		const wasReady = supervisor.getState(project.id).status === 'ready';
+		const state = await supervisor.probeProject(project);
+		if (state.status === 'untrusted')
+			return {
+				status: 'untrusted',
+				message: state.reason ?? 'Trust this project before opening it',
+			};
+		if (state.status !== 'ready') {
+			throw new IpcFailure(
+				state.status === 'unsupported' ? 'UNSUPPORTED' : 'AGENT_UNAVAILABLE',
+				state.reason ?? 'Nanocoder could not start',
+			);
+		}
+		const connection = supervisor.getConnection(project.id);
+		session = technicalSessions.get(project.id);
+		if (!session) {
+			try {
+				session = await connection.newSession(project.defaultMode);
+				technicalSessions.set(project.id, session);
+			} catch (error) {
+				await supervisor.stop(project.id);
+				throw error;
 			}
-			throw error;
-		});
-		if (outcome.status === 'untrusted') return outcome;
-		const next = outcome.connection;
-		connection = next;
-		session = outcome.session;
-		void next.exited.then(() => forget(next));
-		return {status: 'connected', agent: next.agent, session: outcome.session};
+		} else if (!wasReady) {
+			session = (
+				await connection.resumeSession(session.id, project.defaultMode)
+			).session;
+		}
+		return {status: 'connected', agent: connection.agent, session};
+	} catch (error) {
+		if (error instanceof NanocoderFailure)
+			throw new IpcFailure(error.code, error.message);
+		throw error;
 	} finally {
 		connecting = false;
 	}
 }
 
 async function sendPrompt({text}: {text: string}): Promise<TurnResult> {
-	if (!connection || !session) {
+	if (!supervisor || !activeProjectId || !session) {
 		throw new IpcFailure('AGENT_UNAVAILABLE', 'No project is open');
 	}
-	if (activeTurn) {
-		throw new IpcFailure(
-			'BUSY',
-			'Nanocoder is already working on a turn',
-			true,
-		);
-	}
-	const turn = {};
-	activeTurn = turn;
-	try {
-		return await connection.prompt(session.id, text).catch((error: unknown) => {
+	return supervisor
+		.prompt(activeProjectId, session.id, text)
+		.catch((error: unknown) => {
 			if (error instanceof NanocoderFailure) {
 				throw new IpcFailure(error.code, error.message);
 			}
 			throw error;
 		});
-	} finally {
-		if (activeTurn === turn) activeTurn = undefined;
-	}
 }
 
 function answerPermission({
@@ -203,7 +203,12 @@ function answerPermission({
 	id: string;
 	optionId: string;
 }): null {
-	if (!permissions.answer(id, optionId)) {
+	if (
+		!supervisor ||
+		!activeProjectId ||
+		!session ||
+		!supervisor.answerPermission(activeProjectId, session.id, id, optionId)
+	) {
 		throw new IpcFailure(
 			'NOT_FOUND',
 			'That permission request is no longer waiting',
@@ -213,11 +218,12 @@ function answerPermission({
 }
 
 export function closeNanocoder(): Promise<void> {
+	shuttingDown = true;
+	runtimeDiscovery.abort();
 	return disposeDesktop({
 		unsubscribe: unsubscribeProjectEvents,
-		cancelPermissions: () => permissions.cancelAll(),
+		cancelPermissions: () => {},
 		supervisor: workspaceServices.supervisor,
-		connection,
 		store: workspaceServices.store,
 	});
 }
@@ -227,9 +233,37 @@ export function registerIpcHandlers(
 	services: WorkspaceServices = {},
 ): void {
 	appOrigins = allowedOrigins;
-	workspaceServices = services;
-	registerWorkspaceHandlers(registerHandler, allowedOrigins, services);
-	unsubscribeProjectEvents = services.supervisor?.subscribe(event => {
+	supervisor = services.supervisor
+		? undefined
+		: new ProjectSupervisor({
+				resolveRuntime: (root, signal) =>
+					resolveNanocoder({
+						env: process.env,
+						platform: process.platform,
+						untrustedRoots: [root],
+						signal,
+					}),
+				clientInfo: {
+					name: 'nanocoder-desktop',
+					title: APP_NAME,
+					version: app.getVersion(),
+				},
+				homeDir: homedir(),
+				confirmTrust,
+			});
+	workspaceServices = {
+		...services,
+		supervisor: services.supervisor ?? supervisor,
+	};
+	registerWorkspaceHandlers(registerHandler, allowedOrigins, workspaceServices);
+	unsubscribeProjectEvents = workspaceServices.supervisor?.subscribe(event => {
+		if (
+			event.type === 'turn' &&
+			event.projectId === activeProjectId &&
+			event.threadId === session?.id
+		) {
+			for (const turn of event.events) sendEvent(turn);
+		}
 		for (const window of BrowserWindow.getAllWindows()) {
 			if (isAllowedOrigin(window.webContents.getURL(), appOrigins)) {
 				window.webContents.send(CHANNELS.projectEvent, event);

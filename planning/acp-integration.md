@@ -3,7 +3,7 @@
 How the desktop drives `nanocoder --acp`: methods, capability negotiation, supported versions, known Nanocoder quirks, and the Nanocoder changes the plan depends on.
 
 - Status: Draft
-- Last updated: 2026-10-28
+- Last updated: 2026-10-29
 - Drafted by: @akramcodez
 
 ## Baseline
@@ -97,13 +97,15 @@ None of these is declared in `initialize`, so the desktop detects them by versio
    | Close on idle | `sessionCapabilities.close` advertised. Without it, idle shutdown just ends the process. |
    | Thread deletion | `sessionCapabilities.delete` advertised. |
    | Session discovery | `sessionCapabilities.list` advertised. |
-   | Rename | Version at or above the first version known to answer `renameSession`, or a probe that returns anything other than "unknown method". |
-   | Touched files from the timeline | Same rule for `timeline/list`. Otherwise fall back to tool call locations. |
+   | Rename | An accepted version and a safe probe confirming `renameSession`. |
+   | Touched files from the timeline | Same rule for `timeline/list`. Otherwise tool call locations remain available. |
    | Agent changes view | A snapshot-read method that does not exist yet (`DEC-14`). Off until it does. |
    | Agent browser control | Nanocoder honours `mcpServers` (a version gate once [#116][i116] lands) and the broker and browser view are ready. Off otherwise. |
    | Subagent run tree | A child-event projection that does not exist yet (`OQ-03`). Otherwise subagents show as tool cards. |
 
 5. **Report.** The thread list shows which features are on and why any are off (`CHAT-15`).
+
+Phase 1.4 implements these gates in [`capabilities.ts`](../source/main/nanocoder/capabilities.ts), with reasons shown in the existing technical-gate screen. The full thread list remains a later phase. The extension adapter sends an empty object, first to the `_`-prefixed method, then to the bare name only after method-not-found or Nanocoder's exact unknown-extension response. At the pinned source, both handlers reject missing arguments before any session or filesystem access. A parameter-validation error or the exact known validation detail confirms support. Other errors, unexpected success, a closed connection or the two-second probe deadline leave the feature off. No probe creates, renames, loads, deletes or reverts a session.
 
 Suggestion (not discussed): record the gate results per tested Nanocoder version in a small fixture file, so a contributor can see what changed when the bundled version moves.
 
@@ -119,6 +121,14 @@ Open:
 
 - **The minimum version.** No published Nanocoder has `session/close` yet. Version 1.31.0 was published to npm on 2026-09-26 ([npm][npm-nc]), before [nanocoder#1709][nc1709] merged on 2026-10-19, and at `8a5f4d4` the fix is still a pending changeset ([changeset][nc-cs-close]). The directory trust check, per-session `cwd` and the built-in `browser` tool are in the same position ([changesets][nc-cs-dir]). The minimum supported version is therefore the next Nanocoder release, and the technical gate runs against a build of Nanocoder `main` until that release exists.
 - **Runtime.** Nanocoder requires Node 22 or newer ([source][nc-engines]). Electron 45.1.0 embeds Node 24.22.1 ([Electron releases][el-releases]), so Electron's Node mode meets the requirement. Public builds are proposed to use a bundled Node sidecar instead, because that lets the `runAsNode` fuse be turned off (`DEC-38`, `OQ-22`).
+
+### Provisional prototype policy (phase 1.4)
+
+`MIN_NANOCODER_VERSION` in [`version-policy.ts`](../source/main/nanocoder/version-policy.ts) is **1.32.0**, the next minor after published 1.31.0. This is an implementation assumption, not an agreed release floor or proof that a 1.32.0 artefact contains the trust check. `OQ-02` remains open: verify the first published release containing the trust check and per-session cwd, then update the constant and conformance evidence before public release.
+
+The supervisor checks package metadata before any ACP or trust launch, then checks `agentInfo.version` from `initialize` again before opening a session or probing extensions. A missing, malformed or pre-release version is refused, as is any stable version below the floor. Every accepted version currently gets an untested warning: the real baseline measured by the technical gate is a development build still reporting 1.31.0 (`8a5f4d4`), not a tested published release above the new floor. Tests at 1.32.0 and 9.9.9 use the fake fixture and do not establish real-release compatibility.
+
+The policy function accepts an exact main-owned bundled version without a warning. No Nanocoder is bundled by this phase, so that exception is not enabled by runtime metadata, environment variables or renderer input. The low-level ACP conformance client remains usable against the pinned 1.31.0 development build; application starts enforce the policy through the supervisor.
 
 ## Known Nanocoder ACP quirks
 

@@ -16,6 +16,8 @@ import {
 	type Page,
 	test,
 } from '@playwright/test';
+import type {DesktopApi} from '@/shared/desktop-api';
+import type {ProjectEvent} from '@/shared/ipc';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-e2e-')));
 const fakeCli = path.join(work, 'nanocoder', 'dist', 'cli.js');
@@ -319,4 +321,121 @@ test('validates a prompt', async () => {
 	const wrongType = await bridge('sendPrompt', {text: 'x'});
 	expect(empty.error?.code).toBe('VALIDATION');
 	expect(wrongType.error?.code).toBe('VALIDATION');
+});
+
+test('two project processes keep simultaneous turns, events and approvals separate', async () => {
+	await page.evaluate(() => {
+		const state = window as unknown as {
+			desktop: DesktopApi;
+			scopedEvents: ProjectEvent[];
+		};
+		state.scopedEvents = [];
+		state.desktop.onProjectEvent(event => state.scopedEvents.push(event));
+	});
+	const first = project('concurrent-a');
+	const second = project('concurrent-b');
+	await openFolder(first);
+	await page.getByLabel('Message').fill('First project only');
+	await page.getByRole('button', {name: 'Send'}).click();
+	await expect(cards()).toBeVisible();
+	const firstPermission = (await permissionIds()).at(-1) ?? '';
+	await openFolder(second);
+	await page.getByLabel('Message').fill('Second project only');
+	await page.getByRole('button', {name: 'Send'}).click();
+	await expect(cards()).toBeVisible();
+	const secondPermission = (await permissionIds()).at(-1) ?? '';
+	expect(secondPermission).not.toBe(firstPermission);
+	expect(
+		(await bridge('answerPermission', firstPermission, 'allow')).error?.code,
+	).toBe('NOT_FOUND');
+	await expect(
+		page.getByRole('list', {name: 'Conversation'}),
+	).not.toContainText('First project only');
+	const states = await page.evaluate(async () => {
+		const state = window as unknown as {
+			desktop: DesktopApi;
+			scopedEvents: ProjectEvent[];
+		};
+		const ids = [...new Set(state.scopedEvents.map(e => e.projectId))];
+		return Promise.all(
+			ids.map(projectId => state.desktop.getSupervisorState({projectId})),
+		);
+	});
+	expect(states).toHaveLength(2);
+	for (const state of states) {
+		expect(state.ok).toBe(true);
+		if (state.ok) {
+			expect(state.value.status).toBe('ready');
+			expect(state.value.activeThreadId).toBe('fake-session');
+		}
+	}
+	await cards().getByRole('button', {name: 'Allow'}).click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await openFolder(first);
+	await expect(cards()).toBeVisible();
+	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
+		'First project only',
+	);
+	await expect(
+		page.getByRole('list', {name: 'Conversation'}),
+	).not.toContainText('Second project only');
+	await cards().getByRole('button', {name: 'Deny'}).click();
+	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
+		'Tool denied.',
+	);
+	await expect(
+		page.getByRole('list', {name: 'Conversation'}),
+	).not.toContainText('Tool ran.');
+	await openFolder(second);
+	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
+		'Tool ran.',
+	);
+	await expect(
+		page.getByRole('list', {name: 'Conversation'}),
+	).not.toContainText('Tool denied.');
+	const events = await page.evaluate(
+		() => (window as unknown as {scopedEvents: ProjectEvent[]}).scopedEvents,
+	);
+	for (const projectId of new Set(events.map(e => e.projectId))) {
+		const turns = events.filter(
+			e => e.type === 'turn' && e.projectId === projectId,
+		);
+		expect(turns.map(e => e.sequence)).toEqual(
+			turns.map((_, index) => index + 1),
+		);
+	}
+});
+
+test('a version below the minimum is refused with a clear upgrade message', async () => {
+	await openFolder(project('old-agent', 'old-version'));
+	await expect(page.getByRole('alert')).toContainText(
+		'Nanocoder 1.31.0 is below the minimum 1.32.0',
+	);
+	await expect(page.getByRole('alert')).toContainText('Upgrade Nanocoder');
+	await expect(page.getByLabel('Message')).toHaveCount(0);
+});
+
+test('an older accepted version shows a reason for every disabled feature', async () => {
+	await openFolder(project('minimum-agent', 'minimum-no-gates'));
+	const features = page.getByRole('region', {name: 'Nanocoder features'});
+	await expect(features.locator('dd')).toHaveCount(9);
+	for (const entry of await features.locator('dd').allTextContents()) {
+		expect(entry).toMatch(/^unavailable: .+/);
+	}
+	await expect(features).toContainText(
+		'Nanocoder did not advertise session/resume',
+	);
+	await expect(features).toContainText('safe probe');
+	await expect(features.getByRole('status')).toContainText(
+		'Compatibility is unverified',
+	);
+});
+
+test('the native-picked root is used to refuse a project-local runtime override', async () => {
+	await openFolder(work);
+	await expect(page.getByRole('alert')).toContainText(
+		'Refusing a Nanocoder inside the project folder',
+	);
+	await expect(page.getByLabel('Message')).toHaveCount(0);
 });

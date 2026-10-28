@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import {promisify} from 'node:util';
+import {childEnv} from '@/main/nanocoder/launch';
 import type {NanocoderRuntime} from '@/shared/ipc';
 
 const PACKAGE_NAME = '@nanocollective/nanocoder';
@@ -22,7 +23,8 @@ export interface ResolveOptions {
 	env: NodeJS.ProcessEnv;
 	platform: NodeJS.Platform;
 	untrustedRoots: readonly string[];
-	readNodeVersion?: (nodePath: string) => Promise<string>;
+	signal?: AbortSignal;
+	readNodeVersion?: (nodePath: string, signal?: AbortSignal) => Promise<string>;
 }
 
 function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
@@ -129,10 +131,17 @@ export function isInside(
 	});
 }
 
-async function defaultNodeVersion(nodePath: string): Promise<string> {
+async function defaultNodeVersion(
+	nodePath: string,
+	signal?: AbortSignal,
+): Promise<string> {
 	const {stdout} = await promisify(execFile)(nodePath, ['--version'], {
 		timeout: 10_000,
 		windowsHide: true,
+		env: childEnv(process.env),
+		signal,
+		killSignal: 'SIGKILL',
+		shell: false,
 	});
 	return stdout.trim();
 }
@@ -140,6 +149,7 @@ async function defaultNodeVersion(nodePath: string): Promise<string> {
 export async function resolveNanocoder(
 	options: ResolveOptions,
 ): Promise<Resolution> {
+	options.signal?.throwIfAborted();
 	const {env, platform, untrustedRoots} = options;
 	const dirs = pathDirectories(env);
 	const exe = (name: string) =>
@@ -169,7 +179,7 @@ export async function resolveNanocoder(
 			message: 'Nanocoder is not installed or not on PATH',
 		};
 	}
-	if (!cliOverride && isInside(cliPath, untrustedRoots, platform)) {
+	if (isInside(cliPath, untrustedRoots, platform)) {
 		return {
 			ok: false,
 			code: 'DENIED',
@@ -202,7 +212,7 @@ export async function resolveNanocoder(
 		};
 	}
 	const nodePath = realpathSync(nodeFound);
-	if (!nodeOverride && isInside(nodePath, untrustedRoots, platform)) {
+	if (isInside(nodePath, untrustedRoots, platform)) {
 		return {
 			ok: false,
 			code: 'DENIED',
@@ -214,6 +224,7 @@ export async function resolveNanocoder(
 	try {
 		nodeVersion = await (options.readNodeVersion ?? defaultNodeVersion)(
 			nodePath,
+			options.signal,
 		);
 	} catch {
 		return {

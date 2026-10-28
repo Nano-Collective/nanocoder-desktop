@@ -32,6 +32,9 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/ipc/workspace-services.ts` | Main-only project and thread service contracts |
 | `source/main/store/contracts.ts` | Metadata store, repositories and replaceable SQLite driver seam (`DEC-04`) |
 | `source/main/nanocoder/supervisor-contracts.ts` | Main-only per-project supervisor interface |
+| `source/main/nanocoder/supervisor.ts` | One canonical-root process per project, scoped events and permissions, abortable starts and awaited shutdown |
+| `source/main/nanocoder/version-policy.ts` | Provisional minimum version, fail-closed parsing and untested-version warnings (`ACP-04`, `OQ-02`) |
+| `source/main/nanocoder/abort.ts` | Cancels pending lookups and trust confirmations without allowing late launches |
 | `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path |
 | `source/main/nanocoder/launch.ts` | Starts Nanocoder with an argument array and no shell |
 | `source/main/nanocoder/acp-client.ts` | Starts `nanocoder --acp` in the project root, sends `initialize`, and opens or resumes sessions with their mode set |
@@ -42,11 +45,12 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/permissions.ts` | Holds each permission request until the user answers; only an option Nanocoder offered counts |
 | `source/main/nanocoder/turn-events.ts` | Turns ACP session updates into the few events the UI shows |
 | `source/renderer/transcript.ts` | Merges turn events into the conversation the UI shows |
-| `source/main/nanocoder/capabilities.ts` | Records the version and capabilities from `initialize` |
+| `source/main/nanocoder/capabilities.ts` | Records `initialize` capabilities and builds feature gates with reasons; extensions need safe probes |
 | `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp`, a scripted model provider and test helpers, including the setup shared by the `*.acp.ts` tests |
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
 | `source/preload/index.ts` | The `window.desktop` bridge |
 | `e2e/*.e2e.ts` | Playwright tests against the built app |
+| `e2e/supervisor.e2e.ts` | Built-main quit while a child is still initialising, including child-exit verification |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |
 | `scripts/node-sidecar.json` | The pinned Node sidecar: exact version and SHA-256 per platform (`DEC-38`) |
 | `scripts/fetch-node-sidecar.mjs`, `scripts/measure-runtime.mjs` | Download and verify the sidecar; measure both runtimes (phase G.6) |

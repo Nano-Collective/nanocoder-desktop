@@ -77,6 +77,10 @@ Connect `agent-browser connect 9333`. The Chromium debugging endpoint is bound t
 
 Workspace contract tests in `source/main/ipc/workspace.spec.ts` cover every added handler's malformed, unknown-field and wrong-sender refusals, unavailable services, and injected-service dispatch. They also refuse content in storage patches, renderer-selected paths, `yolo` defaults and untrusted start/restart intents. `e2e/app.e2e.ts` checks the real bridge, unavailable results, validation and data-only subscription teardown.
 
+Phase 1.3/1.4 adds `supervisor.spec.ts`: coalesced starts, independent project processes and approvals, cross-project request refusal, canonical-root swaps during lookup and trust confirmation, abortable starts and all-settled shutdown. Existing ACP, trust, permission, protocol and stderr tests continue to prove DEC-30/DEC-31 and the fail-closed boundaries. `capabilities.spec.ts` and `version-policy.spec.ts` cover every gate reason, malformed advertisements, the provisional minimum and newer-version warnings; `acp-client.spec.ts` checks safe extension probes and prompt refusal before mode setup.
+
+`e2e/connect.e2e.ts` runs two simultaneous fake project turns through the real bridge, switches between them and checks their conversation and approvals stay separate. It also proves the picked root reaches runtime containment, the visible minimum-version refusal, and all nine disabled-feature reasons. `e2e/supervisor.e2e.ts` quits while the fake child is still initialising and checks its PID no longer exists after quit. Tests use deferred promises, events and condition waits, not fixed sleeps. These tests establish prototype behaviour, not compatibility with an unpublished real Nanocoder release.
+
 ## Packaged restart-and-resume test
 
 Required before release ([whitepaper, Resume sequence][wp-resume]). Protocol, per platform, on a packaged build and a machine that has never run the app:
