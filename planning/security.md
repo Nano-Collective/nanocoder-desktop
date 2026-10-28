@@ -3,7 +3,7 @@
 The threat model, trust boundaries and security rules for Nanocoder Desktop, including the browser-to-agent boundary and signing.
 
 - Status: Draft
-- Last updated: 2026-10-27
+- Last updated: 2026-10-28
 - Drafted by: @akramcodez
 
 ## Why this matters here
@@ -94,7 +94,7 @@ flowchart LR
 | SEC-16 | `shell.openExternal` is called only for `http:` and `https:` URLs (and `mailto:` if needed), only after a user action, and never with a URL taken straight from page or model content without showing it first. | Suggestion (not discussed), from [Electron security guidance][el-security] item 15 |
 | SEC-17 | The desktop runs nothing project-defined (Nanocoder sessions, Git status, file watchers that follow config) until the user has trusted the project. Opening an untrusted folder shows its tree name only. One exception, until Nanocoder can report trust without starting ([nanocoder#1899](https://github.com/Nano-Collective/nanocoder/issues/1899)): a pre-trust probe starts `nanocoder --acp` in the folder, which loads its `.env` before refusing and then exits without running a tool, hook or MCP server. | Proposed (awaiting @will-lamerton) (`DEC-30`) |
 | SEC-18 | Dependencies pass `pnpm audit`, Semgrep and CodeQL in CI, the lockfile is frozen, Electron is pinned to an exact version, and GitHub Actions are pinned by commit SHA. | Decided (audit, Semgrep, CodeQL: [Project infrastructure][infra]); pinning is Suggestion (not discussed) |
-| SEC-19 | Electron fuses are reviewed and set at packaging time. Any fuse left on (for example `runAsNode`, if Nanocoder runs under Electron's Node mode) is documented with its reason. Playwright needs `nodeCliInspect` on, so end-to-end tests use a test build with that fuse on, and a test checks the shipped build's fuses ([#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3)). | Suggestion (not discussed), from [Electron security guidance][el-security] item 19 and [fuses][el-fuses] |
+| SEC-19 | Electron fuses are reviewed and set at packaging time. Any fuse left on is documented with its reason. With the bundled Node sidecar (`DEC-38`), the shipped build turns `runAsNode`, `nodeOptions` and `nodeCliInspect` off, and a packaged-build test fails if any is on. Playwright needs `nodeCliInspect` on, so end-to-end tests use a test build with that fuse on ([#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3), [#2](https://github.com/Nano-Collective/nanocoder-desktop/issues/2)). | Suggestion (not discussed), from [Electron security guidance][el-security] item 19 and [fuses][el-fuses] |
 | SEC-20 | ACP client callbacks get least privilege: root-checked text reads only, no writes, no terminal, and no reads of files the user excluded. | Decided ([whitepaper, Why ACP][wp-why]) |
 
 ## Browser-to-agent trust boundary
@@ -147,7 +147,7 @@ What that means in practice, Suggestion (not discussed):
 - **Resolve once, show always.** The prototype finds the installed Nanocoder package, resolves its `bin` entry (`dist/cli.js`, [source][nc-bin]) and a Node runtime to absolute paths, shows both with the version, and stores them. It does not search `PATH` again at launch.
 - **No shims on Windows.** The npm-installed `nanocoder` command on Windows is a `.cmd` wrapper, which Node can only run through a shell. The desktop launches `[node, absolute path to dist/cli.js, "--acp"]` instead.
 - **Never the project's own copy.** A `node_modules/.bin/nanocoder` inside the opened repository is not a trusted runtime. Nanocoder's VS Code extension had exactly this bug ([nanocoder#1730][nc1730]).
-- **A clean environment.** Pass the user's environment so providers keep working, but drop variables that change how the runtime loads code, such as `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE` (unless the desktop sets the latter deliberately, `OQ-22`). Also drop `NANOCODER_TRUST_DIRECTORY`, so Nanocoder's directory trust is never inherited from a shell (`DEC-30`). Done in phase G.2.
+- **A clean environment.** Pass the user's environment so providers keep working, but drop variables that change how the runtime loads code, such as `NODE_OPTIONS` and `ELECTRON_RUN_AS_NODE`. Electron's fuses do not protect a standalone Node, so a packaged test checks that an inherited `NODE_OPTIONS` runs nothing (`DEC-38`). Also drop `NANOCODER_TRUST_DIRECTORY`, so Nanocoder's directory trust is never inherited from a shell (`DEC-30`). Done in phase G.2.
 - **The same rules for every launch.** Git, the external editor and the PTY shell follow the same pattern.
 
 ## Secrets and diagnostics
@@ -186,7 +186,7 @@ This is Electron's own security guidance mapped onto the plan. It is guidance, n
 | 16 | Use a current version of Electron | `SEC-14`, `SEC-18`. |
 | 17 | Validate the `sender` of all IPC messages | `SEC-02`. |
 | 18 | Avoid the `file://` protocol, prefer custom protocols | `SEC-15`. |
-| 19 | Check which fuses you can change | `SEC-19`. Disabling `runAsNode` makes `child_process.fork` throw ([fuses][el-fuses]), which matters if Nanocoder runs under Electron's Node mode (`OQ-22`). Disabling `nodeCliInspect` stops Playwright driving the app, hence the separate test build. |
+| 19 | Check which fuses you can change | `SEC-19`. Disabling `runAsNode` makes `child_process.fork` throw ([fuses][el-fuses]), which is why Nanocoder runs under a bundled Node sidecar in public builds (`DEC-38`). Disabling `nodeCliInspect` stops Playwright driving the app, hence the separate test build. |
 | 20 | Do not expose Electron APIs to untrusted web content | Browser view has no preload (`SEC-12`). |
 
 ## Signing, notarisation and update keys

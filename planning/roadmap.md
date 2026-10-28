@@ -3,7 +3,7 @@
 Where Nanocoder Desktop is in the NC process, and the build broken into small phases with checklists, from scaffold to the first public release. No dates: no source gives one.
 
 - Status: Draft
-- Last updated: 2026-10-27
+- Last updated: 2026-10-28
 - Drafted by: @akramcodez
 
 ## How to use this roadmap
@@ -249,17 +249,19 @@ The two checks that need a real turn moved to G.4 and G.5: a protected tool call
 
 ### Phase G.6: measure the runtime
 
-Can run in parallel with G.4 and G.5.
+Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle a Node sidecar, so this phase confirms the numbers rather than choosing from scratch.
 
 **Build**
 
 - [ ] Run Nanocoder under Electron's Node mode on all three platforms (Electron 45 embeds Node 24.22.0)
-- [ ] Run it under a bundled Node 22 sidecar on all three platforms
+- [ ] Run it under a bundled Node 22 sidecar on all three platforms, with the checksum of the official download verified for each OS and architecture
+- [ ] Record the installer size the sidecar adds, and the macOS entitlements the bundled Node needs under the hardened runtime
+- [ ] Run a turn on a machine without Node installed, and note what MCP servers or hooks that call `node`, `npm` or `npx` need
 
 **Results we want**
 
 - [ ] `PERF-02` startup time, idle memory and any failures recorded for both on all three platforms
-- [ ] A proposed answer to `OQ-22` raised for review
+- [ ] The numbers posted on [#2](https://github.com/Nano-Collective/nanocoder-desktop/issues/2), and the runtime change from the whitepaper's default recorded upstream (`DEC-38`)
 
 ## Milestone 1: conversation workspace
 
@@ -723,7 +725,7 @@ Needs `OQ-13` answered.
 
 **Build**
 
-- [ ] Apply the `OQ-22` runtime decision (`REL-04`)
+- [ ] Bundle a pinned Node sidecar with its verified checksum, and apply the Node version rule (`REL-04`, `DEC-38`)
 - [ ] Bundle a pinned, tested Nanocoder with its checksum recorded (`REL-02`, `REL-11`)
 - [ ] Advanced override for another Nanocoder (`REL-03`)
 
@@ -737,7 +739,7 @@ Needs `OQ-13` answered.
 **Build**
 
 - [ ] Installers for macOS (`.dmg` and `.zip`), Windows and Linux (`REL-05`)
-- [ ] Fuses reviewed and set, with reasons for any left on (`SEC-19`)
+- [ ] Fuses reviewed and set: `runAsNode`, `nodeOptions` and `nodeCliInspect` off in the shipped build, with reasons for any left on (`SEC-19`)
 - [ ] Installers attached to GitHub Releases (`REL-12`)
 
 **Results we want**
@@ -745,6 +747,7 @@ Needs `OQ-13` answered.
 - [ ] Each installer installs, launches and uninstalls cleanly
 - [ ] `PERF-09` and `PERF-10` recorded for each installer
 - [ ] The shipped-build smoke test passes and confirms the fuses are set (`SEC-19`)
+- [ ] A packaged test shows an inherited `NODE_OPTIONS` runs no extra script, and a turn runs on a machine without Node (`SEC-05`, `DEC-38`)
 
 ### Phase 4.3: notices and licences
 

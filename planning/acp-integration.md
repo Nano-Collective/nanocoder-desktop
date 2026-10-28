@@ -3,7 +3,7 @@
 How the desktop drives `nanocoder --acp`: methods, capability negotiation, supported versions, known Nanocoder quirks, and the Nanocoder changes the plan depends on.
 
 - Status: Draft
-- Last updated: 2026-10-27
+- Last updated: 2026-10-28
 - Drafted by: @akramcodez
 
 ## Baseline
@@ -118,7 +118,7 @@ Proposed (awaiting @will-lamerton), from [#117][i117-c]:
 Open:
 
 - **The minimum version.** No published Nanocoder has `session/close` yet. Version 1.31.0 was published to npm on 2026-09-26 ([npm][npm-nc]), before [nanocoder#1709][nc1709] merged on 2026-10-19, and at `8a5f4d4` the fix is still a pending changeset ([changeset][nc-cs-close]). The directory trust check, per-session `cwd` and the built-in `browser` tool are in the same position ([changesets][nc-cs-dir]). The minimum supported version is therefore the next Nanocoder release, and the technical gate runs against a build of Nanocoder `main` until that release exists.
-- **Runtime.** Nanocoder requires Node 22 or newer ([source][nc-engines]). Electron 45.0.0 embeds Node 24.22.0 ([Electron releases][el-releases]), so Electron's Node mode meets the requirement. What remains of the runtime question is `OQ-22`.
+- **Runtime.** Nanocoder requires Node 22 or newer ([source][nc-engines]). Electron 45.0.0 embeds Node 24.22.0 ([Electron releases][el-releases]), so Electron's Node mode meets the requirement. Public builds are proposed to use a bundled Node sidecar instead, because that lets the `runAsNode` fuse be turned off (`DEC-38`, `OQ-22`).
 
 ## Known Nanocoder ACP quirks
 

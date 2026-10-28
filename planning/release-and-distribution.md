@@ -3,7 +3,7 @@
 Prototype versus public release, bundling Nanocoder, the runtime, packaging, notices, signing and the release flow.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-28
 - Drafted by: @akramcodez
 
 ## Requirements
@@ -13,7 +13,7 @@ Prototype versus public release, bundling Nanocoder, the runtime, packaging, not
 | REL-01 | Prototype: resolve the user's installed Nanocoder to a trusted absolute entry point, show its version and capabilities, keep the user's provider configuration. | Decided ([whitepaper, Prototype][wp-dist]) |
 | REL-02 | First public release: bundle a pinned, tested Nanocoder artefact and a compatible runtime. | Proposed (awaiting @will-lamerton) ([#117][i117]) |
 | REL-03 | Advanced override to use another Nanocoder, above a minimum version, with capability gating. | Proposed (awaiting @will-lamerton) ([#117][i117]) |
-| REL-04 | Choose Electron's Node mode or a bundled Node 22 sidecar by measurement on all three platforms. | Decided ([whitepaper][wp-dist]); choice Open (`OQ-22`) |
+| REL-04 | Public builds bundle a pinned Node sidecar; the prototype uses the user's Node. Phase G.6 measures Electron's Node mode and the sidecar on all three platforms before the choice is final. | Proposed (awaiting @will-lamerton) (`DEC-38`, [#2](https://github.com/Nano-Collective/nanocoder-desktop/issues/2)); the whitepaper's default was Node mode ([whitepaper][wp-dist]) |
 | REL-05 | Package for macOS, Windows and Linux. | Decided ([whitepaper, Engineering requirements][wp-scope]) |
 | REL-06 | Ship complete third-party notices, including Nanocoder's MIT copyright and licence. | Decided ([whitepaper][wp-dist]) |
 | REL-07 | Sign and notarise releases. | Required ([whitepaper][wp-threat]); how is Open (`OQ-10`) |
@@ -30,7 +30,7 @@ Proposed (awaiting @will-lamerton) on [#117][i117-c]: the prototype uses the ins
 | | Prototype | Public release |
 |---|---|---|
 | Nanocoder | The user's install, resolved once (`REL-01`) | Bundled and pinned (`REL-02`) |
-| Runtime | The user's Node, resolved once | Bundled (`REL-04`) |
+| Runtime | The user's Node, resolved once to an absolute path | A bundled Node sidecar (`REL-04`, `DEC-38`) |
 | Who it is for | Contributors and testers | Anyone |
 | Signing | Unsigned, and says so where it is downloaded | Signed and notarised (`REL-07`) |
 | Updates | Manual | Signed auto-update (`REL-08`) |
@@ -55,11 +55,22 @@ Nanocoder needs Node 22 or newer ([source][nc-engines]).
 
 | Option | For | Against | State |
 |---|---|---|---|
-| Electron's Node mode (`ELECTRON_RUN_AS_NODE`) | No second runtime. Electron 45.0.0 embeds Node 24.22.0 ([releases][el-releases]). | Keeps the `runAsNode` fuse on ([fuses][el-fuses], `SEC-19`). Nanocoder's Node version then moves with every Electron upgrade. | Viable |
+| Electron's Node mode (`ELECTRON_RUN_AS_NODE`) | No second runtime. Electron 45.0.0 embeds Node 24.22.0 ([releases][el-releases]). | Keeps the `runAsNode` fuse on ([fuses][el-fuses], `SEC-19`), which Electron's checklist warns can let external scripts run commands through the app. Nanocoder's Node version moves with every Electron upgrade, and 24 is not the line Nanocoder's CI tests. | Viable; measured in G.6 |
 | Utility process | Electron-supported child API. | Cannot write to the child's stdin ([utility process][el-utility]), so it cannot carry ACP over stdio. | Ruled out |
-| Bundled Node 22 sidecar | Runtime independent of Electron upgrades; the `runAsNode` fuse can be turned off. | Larger installer; one more binary to sign and update. | Viable; the whitepaper's fallback ([whitepaper][wp-dist]) |
+| Bundled Node sidecar | Runtime independent of Electron upgrades; the `runAsNode`, `nodeOptions` and `nodeCliInspect` fuses can be off. | Larger installer; one more binary to sign, notarise and update. | Proposed for public builds (`DEC-38`); the whitepaper's fallback ([whitepaper][wp-dist]) |
 
-Phase G.6 measures both viable options (`OQ-22`).
+Proposed (awaiting @will-lamerton) in [#2](https://github.com/Nano-Collective/nanocoder-desktop/issues/2): public builds bundle the sidecar, because it is the only way to turn the `runAsNode` fuse off. The prototype has nothing to bundle and uses the user's own Node, resolved once (`REL-01`). This reverses the whitepaper's default, so the change is recorded on the whitepaper page before `OQ-22` is marked answered. Phase G.6 still measures both options before the choice is final (`OQ-22`).
+
+### Runtime checklist
+
+What the sidecar decision adds, from the review in [#2](https://github.com/Nano-Collective/nanocoder-desktop/issues/2). Suggestion (not discussed) for the wording; the items themselves come from the issue.
+
+- **Which Node.** The newest LTS line that Nanocoder's CI tests, 22 today, pinned to an exact version. The version moves only when Nanocoder's CI and `engines` cover the next LTS line and the startup check in G.6 passes on all three platforms, and always before the current line reaches end of life (Node 22: 2027-04-30). Node and Electron are bumped in separate pull requests.
+- **Checksums.** Download Node only from the official release, and verify its published SHA-256 for each OS and architecture before packaging, so a changed or corrupted download fails the build (`REL-11`).
+- **Fuses.** Turn off `runAsNode`, `nodeOptions` and `nodeCliInspect` in the shipped build. The sidecar still honours `NODE_EXTRA_CA_CERTS` for provider calls. A packaged-build test fails if any of the three is on (`SEC-19`).
+- **A clean environment.** Electron's fuses do not protect a standalone Node, and `NODE_OPTIONS` can make it run an extra script before Nanocoder starts. A packaged test starts the sidecar with `NODE_OPTIONS` set in the environment and checks that the script does not run (`SEC-05`). The desktop already drops it at launch.
+- **A machine without Node.** Test the packaged app where Node, npm and npx are not installed. The sidecar runs Nanocoder, but MCP servers or hooks that call `node`, `npm` or `npx` may need extra setup. Document what works out of the box.
+- **Size and signing.** Record the installer size the sidecar adds on each platform, and the macOS entitlements the bundled Node needs under the hardened runtime.
 
 ## Packaging targets
 

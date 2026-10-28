@@ -3,7 +3,7 @@
 How each part of the plan is tested, the measurable targets results are judged against, and the cross-platform CI that runs them.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-28
 - Drafted by: @akramcodez
 
 ## Conventions
@@ -19,6 +19,7 @@ Decided ([Stack suggestions][stack]): AVA loaded through `tsx`, `.spec.ts` files
 | ACP integration | The ACP client against a real `nanocoder --acp` with a scripted provider | AVA, all three platforms | Every pull request |
 | End to end | The built app driven through its UI | Playwright, against a test build with the `nodeCliInspect` fuse on, all three platforms | Every pull request to `main` once Milestone 1 starts |
 | Shipped-build smoke | The shipped build starts, opens a project and exits, without an inspector; its fuses are set as `SEC-19` says | Script per platform | Every release candidate |
+| Packaged runtime | On a machine without Node installed the packaged app runs a turn; the sidecar's fuses are off; an inherited `NODE_OPTIONS` runs no extra script | Script per platform | Every release candidate |
 | Packaged | Installers on clean machines, real provider | Manual, then automated with a CI secret | Every release |
 
 ## Fixtures

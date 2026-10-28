@@ -3,7 +3,7 @@
 The whitepaper's open risks, expanded with likelihood, impact, mitigation, owner and trigger, plus the risks this plan found.
 
 - Status: Draft
-- Last updated: 2026-10-27
+- Last updated: 2026-10-28
 - Drafted by: @akramcodez
 
 Likelihood and impact are this plan's estimates: Suggestion (not discussed). "NC core team" means `@Nano-Collective/core-team`.
@@ -20,7 +20,7 @@ Source: [whitepaper, Open risks][wp-risks].
 | RISK-04 | Subagent events too thin for `SP-05` | High at `8a5f4d4` | Medium | Tool-card fallback (`SUB-07`); Nanocoder projection change | NC core team with Nanocoder maintainers | Milestone 1 reaches exit without child IDs |
 | RISK-05 | Session discovery misses sessions (subdirectories, symlinks, case, moved projects) | Medium | Low (join key is the session ID) | Client-side matching ([`acp-integration.md`](acp-integration.md#session-discovery-and-identity)) | NC core team | Import finds fewer sessions than the CLI lists |
 | RISK-06 | Process-global model state | Certain | Medium | One root turn per process (`CHAT-17`); project-level model control (`CHAT-10`) | NC core team | Any parallel-turn feature request |
-| RISK-07 | Runtime packaging (Node mode versus sidecar) | Medium | High (`SP-01`) | Measure in the technical gate (`OQ-22`) | NC core team | Node mode fails on any platform |
+| RISK-07 | Runtime packaging (Node mode versus sidecar) | Medium | High (`SP-01`) | Public builds bundle a pinned Node sidecar (`DEC-38`); measure both in the technical gate (`OQ-22`); packaged tests for the fuses, a clean environment and a machine without Node | NC core team | The sidecar fails on any platform, or adds an unreasonable installer size |
 | RISK-08 | Git cannot attribute overlapping edits without a baseline | Certain without `DEC-14` | Medium | Honest labelling (`GIT-05`); snapshot baseline (`GIT-09`) | NC core team | Users report confusing review of mixed edits |
 | RISK-09 | Agent-controlled public browsing widens the attack surface | Medium | High | Off by default (`BRW-03`); mode gate and approvals (`DEC-15`) | NC core team | Public browsing enabled by default, or approvals bypassed |
 | RISK-10 | PTY portability (shells, process trees, signals, encoding, ConPTY) | High | Medium | Per-platform CI (`DEC-37`); tree teardown tests (`TERM-07`) | NC core team | Orphaned processes on any platform |
