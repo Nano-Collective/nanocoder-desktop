@@ -76,6 +76,74 @@ test('a second instance exits and asks the profile owner to show and focus its w
 	}
 });
 
+test('a second instance reopens a windowless macOS owner with working storage IPC', async () => {
+	test.skip(
+		process.platform !== 'darwin',
+		'Closing the last window quits the owner on non-macOS platforms',
+	);
+	const app = await launch();
+	let second: ChildProcess | undefined;
+	try {
+		const first = await app.firstWindow();
+		expect(
+			await first.evaluate(() =>
+				(window as unknown as {desktop: DesktopApi}).desktop.updateSettings({
+					patch: {theme: 'light'},
+				}),
+			),
+		).toMatchObject({ok: true, value: {theme: 'light'}});
+		await app.evaluate(
+			({app: main, BrowserWindow}) =>
+				new Promise<void>(resolve => {
+					main.once('window-all-closed', resolve);
+					BrowserWindow.getAllWindows()[0].close();
+				}),
+		);
+		expect(
+			await app.evaluate(({app: main, BrowserWindow}) => ({
+				windows: BrowserWindow.getAllWindows().length,
+				ownsProfile: main.hasSingleInstanceLock(),
+			})),
+		).toEqual({windows: 0, ownsProfile: true});
+		const reopened = app.waitForEvent('window');
+		const executable = await app.evaluate(() => process.execPath);
+		const child = spawn(
+			executable,
+			[path.resolve(import.meta.dirname, '..'), `--user-data-dir=${profile}`],
+			{env: childEnv(process.env), shell: false, stdio: 'ignore'},
+		);
+		second = child;
+		const exit = await new Promise((resolve, reject) => {
+			child.once('error', reject);
+			child.once('exit', (code, signal) => resolve({code, signal}));
+		});
+		expect(exit).toEqual({code: 0, signal: null});
+		const page = await reopened;
+		await expect(page.getByRole('heading', {level: 1})).toHaveText(
+			'Nanocoder Desktop',
+		);
+		expect(
+			await page.evaluate(() =>
+				(window as unknown as {desktop: DesktopApi}).desktop.getSettings({}),
+			),
+		).toMatchObject({ok: true, value: {theme: 'light'}});
+		await app.evaluate(({BrowserWindow}) => {
+			const window = BrowserWindow.getAllWindows()[0];
+			if (window.isVisible()) return;
+			return new Promise<void>(resolve => window.once('show', resolve));
+		});
+		expect(
+			await app.evaluate(({BrowserWindow}) =>
+				BrowserWindow.getAllWindows().map(window => window.isVisible()),
+			),
+		).toEqual([true]);
+		expect(app.windows()).toHaveLength(1);
+	} finally {
+		if (second?.exitCode === null && second.signalCode === null) second.kill();
+		await app.close();
+	}
+});
+
 test('the built main process persists settings and UI state under userData', async () => {
 	let app = await launch();
 	try {

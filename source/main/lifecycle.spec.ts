@@ -1,5 +1,9 @@
 import test from 'ava';
-import {createQuitHandler, disposeDesktop} from '@/main/lifecycle';
+import {
+	createQuitHandler,
+	createWindowRequestHandler,
+	disposeDesktop,
+} from '@/main/lifecycle';
 
 function deferred() {
 	let resolve!: () => void;
@@ -8,6 +12,52 @@ function deferred() {
 	});
 	return {promise, resolve};
 }
+
+test('window requests wait for store and IPC readiness and coalesce during startup', t => {
+	const calls: string[] = [];
+	const windows = createWindowRequestHandler(() => calls.push('window'));
+	windows.request();
+	windows.request();
+	t.deepEqual(calls, []);
+	calls.push('store', 'ipc');
+	windows.ready();
+	t.deepEqual(calls, ['store', 'ipc', 'window']);
+	windows.ready();
+	t.deepEqual(calls, ['store', 'ipc', 'window']);
+});
+
+test('ready window requests handle every later activation', t => {
+	let requests = 0;
+	const windows = createWindowRequestHandler(() => requests++);
+	windows.ready();
+	t.is(requests, 0);
+	windows.request();
+	t.is(requests, 1);
+	windows.request();
+	t.is(requests, 2);
+});
+
+test('a reentrant window request cannot create another window', t => {
+	let requests = 0;
+	const windows = createWindowRequestHandler(() => {
+		requests++;
+		windows.request();
+	});
+	windows.ready();
+	windows.request();
+	t.is(requests, 1);
+});
+
+test('a failed window request does not block later activations', t => {
+	let requests = 0;
+	const windows = createWindowRequestHandler(() => {
+		if (++requests === 1) throw new Error('fixture window failure');
+	});
+	windows.ready();
+	t.throws(windows.request, {message: 'fixture window failure'});
+	windows.request();
+	t.is(requests, 2);
+});
 
 test('disposal keeps the store open until supervisor and connection cleanup finish', async t => {
 	const supervisor = deferred();

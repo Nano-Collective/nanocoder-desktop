@@ -3,7 +3,7 @@ import {pathToFileURL} from 'node:url';
 import {app, BrowserWindow, dialog, net, protocol, session} from 'electron';
 import {closeNanocoder, registerIpcHandlers} from '@/main/ipc';
 import {IpcFailure} from '@/main/ipc/handle-request';
-import {createQuitHandler} from '@/main/lifecycle';
+import {createQuitHandler, createWindowRequestHandler} from '@/main/lifecycle';
 import {
 	APP_ORIGIN,
 	APP_SCHEME,
@@ -34,13 +34,19 @@ protocol.registerSchemesAsPrivileged([
 app.enableSandbox();
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) app.quit();
-app.on('second-instance', () => {
+const windowRequests = createWindowRequestHandler(() => {
 	const window = BrowserWindow.getAllWindows()[0];
-	if (!window) return;
+	if (!window) {
+		createWindow();
+		return;
+	}
 	if (window.isMinimized()) window.restore();
 	window.show();
 	window.focus();
 });
+app.on('second-instance', windowRequests.request);
+app.on('activate', windowRequests.request);
+if (primaryInstance) windowRequests.request();
 
 function serveRenderer(): void {
 	protocol.handle(APP_SCHEME, async request => {
@@ -110,6 +116,7 @@ function createWindow(): void {
 			return;
 		}
 		window.show();
+		window.focus();
 	});
 	window.webContents.once('did-fail-load', () => {
 		if (smokeTest) {
@@ -130,12 +137,7 @@ void app
 		serveRenderer();
 		lockDownSession();
 		registerIpcHandlers(allowedOrigins, {store});
-		createWindow();
-		app.on('activate', () => {
-			if (BrowserWindow.getAllWindows().length === 0) {
-				createWindow();
-			}
-		});
+		windowRequests.ready();
 	})
 	.catch((error: unknown) => {
 		dialog.showErrorBox(

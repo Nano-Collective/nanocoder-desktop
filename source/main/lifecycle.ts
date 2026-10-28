@@ -2,6 +2,34 @@ interface Closeable {
 	close(): void | Promise<void>;
 }
 
+export function createWindowRequestHandler(openOrFocus: () => void) {
+	let isReady = false;
+	let pending = false;
+	let opening = false;
+	const request = () => {
+		if (!isReady) {
+			pending = true;
+			return;
+		}
+		if (opening) return;
+		opening = true;
+		try {
+			openOrFocus();
+		} finally {
+			opening = false;
+		}
+	};
+	return {
+		request,
+		ready: () => {
+			isReady = true;
+			if (!pending) return;
+			pending = false;
+			request();
+		},
+	};
+}
+
 export async function disposeDesktop(options: {
 	unsubscribe?: () => void;
 	cancelPermissions: () => void;
