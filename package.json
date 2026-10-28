@@ -70,6 +70,7 @@
 		],
 		"files": [
 			"source/**/*.spec.ts",
+			"e2e/qa/**/*.spec.ts",
 			"scripts/**/*.spec.mjs"
 		],
 		"workerThreads": false,

@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {IpcFailure} from '@/main/ipc/handle-request';
+import type {registerHandler as registerIpcHandler} from '@/main/ipc/register';
 import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {
 	CHANNELS,
@@ -11,8 +12,8 @@ import {
 const id = z.uuid();
 const project = {projectId: id};
 const thread = {...project, threadId: id};
-const defaultMode = z.enum(['normal', 'auto-accept', 'plan', 'architect']);
 const mode = z.enum(['normal', 'auto-accept', 'plan', 'architect', 'yolo']);
+const defaultMode = mode.exclude(['yolo']);
 const empty = z.strictObject({});
 const projectRequest = z.strictObject(project);
 const threadRequest = z.strictObject(thread);
@@ -98,15 +99,8 @@ function available<T>(service: T | undefined): T {
 	return service;
 }
 
-export type RegisterWorkspaceHandler = <Request, Value>(
-	channel: string,
-	schema: z.ZodType<Request>,
-	handler: (request: Request) => Value | Promise<Value>,
-	allowedOrigins: readonly string[],
-) => void;
-
 export function registerWorkspaceHandlers(
-	registerHandler: RegisterWorkspaceHandler,
+	registerHandler: typeof registerIpcHandler,
 	allowedOrigins: readonly string[],
 	services: WorkspaceServices = {},
 ): void {

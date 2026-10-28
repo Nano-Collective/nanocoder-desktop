@@ -2,6 +2,7 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {app, BrowserWindow, net, protocol, session} from 'electron';
 import {closeNanocoder, registerIpcHandlers} from '@/main/ipc';
+import {createQuitHandler} from '@/main/lifecycle';
 import {
 	APP_ORIGIN,
 	APP_SCHEME,
@@ -124,4 +125,7 @@ app.on('window-all-closed', () => {
 	}
 });
 
-app.on('will-quit', closeNanocoder);
+app.on(
+	'will-quit',
+	createQuitHandler(closeNanocoder, () => app.quit()),
+);

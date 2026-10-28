@@ -12,6 +12,7 @@ import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
 import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
 import type {WorkspaceServices} from '@/main/ipc/workspace-services';
+import {disposeDesktop} from '@/main/lifecycle';
 import {
 	type NanocoderConnection,
 	NanocoderFailure,
@@ -211,12 +212,14 @@ function answerPermission({
 	return null;
 }
 
-export function closeNanocoder(): void {
-	unsubscribeProjectEvents?.();
-	void workspaceServices.supervisor?.close();
-	workspaceServices.store?.close();
-	permissions.cancelAll();
-	void connection?.close();
+export function closeNanocoder(): Promise<void> {
+	return disposeDesktop({
+		unsubscribe: unsubscribeProjectEvents,
+		cancelPermissions: () => permissions.cancelAll(),
+		supervisor: workspaceServices.supervisor,
+		connection,
+		store: workspaceServices.store,
+	});
 }
 
 export function registerIpcHandlers(

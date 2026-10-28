@@ -8,6 +8,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import {_electron as electron} from '@playwright/test';
+import {qaEnvironment} from './environment';
 
 const root = path.resolve(import.meta.dirname, '../..');
 if (!existsSync(path.join(root, 'out/main/index.js'))) {
@@ -36,17 +37,6 @@ copyFileSync(
 	fakeCli,
 );
 
-const excludedEnvironment = new Set([
-	'NODE_OPTIONS',
-	'ELECTRON_RUN_AS_NODE',
-	'ELECTRON_RENDERER_URL',
-	'NANOCODER_TRUST_DIRECTORY',
-]);
-const env = Object.fromEntries(
-	Object.entries(process.env).filter(
-		([key]) => !excludedEnvironment.has(key.toUpperCase()),
-	),
-);
 const app = await electron.launch({
 	cwd: root,
 	args: [
@@ -55,11 +45,10 @@ const app = await electron.launch({
 		'--remote-debugging-port=9333',
 		`--user-data-dir=${path.join(work, 'profile')}`,
 	],
-	env: {
-		...env,
-		NANOCODER_DESKTOP_CLI: fakeCli,
-		NANOCODER_DESKTOP_NODE: process.execPath,
-	},
+	env: qaEnvironment(process.env, {
+		cliPath: fakeCli,
+		nodePath: process.execPath,
+	}),
 });
 const closed = app.waitForEvent('close', {timeout: 0});
 
