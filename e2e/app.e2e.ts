@@ -5,6 +5,8 @@ import {
 	type Page,
 	test,
 } from '@playwright/test';
+import type {DesktopApi} from '@/shared/desktop-api';
+import {CHANNELS, type ProjectEvent} from '@/shared/ipc';
 
 let app: ElectronApplication;
 let page: Page;
@@ -28,14 +30,112 @@ test('the preload bridge exposes typed methods only', async () => {
 	const keys = await page.evaluate(() =>
 		Object.keys((window as {desktop?: object}).desktop ?? {}),
 	);
-	expect(keys).toEqual([
-		'getAppInfo',
-		'getNanocoderRuntime',
-		'connectNanocoder',
-		'sendPrompt',
-		'answerPermission',
-		'onNanocoderEvent',
-	]);
+	expect(keys.sort()).toEqual(
+		[
+			...Object.keys(CHANNELS).filter(
+				key => !['nanocoderEvent', 'projectEvent'].includes(key),
+			),
+			'onNanocoderEvent',
+			'onProjectEvent',
+		].sort(),
+	);
+	expect(keys).not.toContain('ipcRenderer');
+});
+
+test('workspace methods return UNAVAILABLE until their services land', async () => {
+	const result = await page.evaluate(() =>
+		(window as unknown as {desktop: DesktopApi}).desktop.getSettings({}),
+	);
+	expect(result).toEqual({
+		ok: false,
+		error: {
+			code: 'UNAVAILABLE',
+			message: 'This feature is not available yet',
+			retryable: false,
+		},
+	});
+});
+
+test('workspace methods reject content and renderer-supplied paths', async () => {
+	const results = await page.evaluate(async () => {
+		const desktop = (window as unknown as {desktop: DesktopApi}).desktop;
+		return Promise.all([
+			desktop.updateUiState({patch: {messages: ['not stored']}} as never),
+			desktop.addProject({canonicalRoot: '/not-picked'} as never),
+		]);
+	});
+	for (const result of results) {
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error.code).toBe('VALIDATION');
+	}
+});
+
+test('project subscriptions expose data only and can stop listening', async () => {
+	const event: ProjectEvent = {
+		type: 'turn',
+		projectId: '11111111-1111-4111-8111-111111111111',
+		threadId: '22222222-2222-4222-8222-222222222222',
+		sequence: 1,
+		events: [{type: 'text', text: 'fixture only'}],
+	};
+	await page.evaluate(() => {
+		const state = window as unknown as {
+			desktop: DesktopApi;
+			projectEvents: unknown[];
+			stopProjectEvents: () => void;
+		};
+		state.projectEvents = [];
+		state.stopProjectEvents = state.desktop.onProjectEvent((...args) => {
+			state.projectEvents.push(args);
+		});
+	});
+	await app.evaluate(
+		({BrowserWindow}, {channel, value}) => {
+			BrowserWindow.getAllWindows()[0].webContents.send(channel, value);
+		},
+		{channel: CHANNELS.projectEvent, value: event},
+	);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() => (window as unknown as {projectEvents: unknown[]}).projectEvents,
+			),
+		)
+		.toEqual([[event]]);
+	await page.evaluate(() =>
+		(window as unknown as {stopProjectEvents: () => void}).stopProjectEvents(),
+	);
+	await app.evaluate(
+		({BrowserWindow}, {channel, value}) => {
+			BrowserWindow.getAllWindows()[0].webContents.send(channel, value);
+		},
+		{channel: CHANNELS.projectEvent, value: {...event, sequence: 2}},
+	);
+	// Invoke IPC after the pushed event, then inspect the same renderer queue.
+	await page.evaluate(() =>
+		(window as unknown as {desktop: DesktopApi}).desktop.getAppInfo(),
+	);
+	expect(
+		await page.evaluate(
+			() => (window as unknown as {projectEvents: unknown[]}).projectEvents,
+		),
+	).toEqual([[event]]);
+});
+
+test('the prototype bridge stays available', async () => {
+	const keys = await page.evaluate(() =>
+		Object.keys((window as {desktop?: object}).desktop ?? {}),
+	);
+	expect(keys).toEqual(
+		expect.arrayContaining([
+			'getAppInfo',
+			'getNanocoderRuntime',
+			'connectNanocoder',
+			'sendPrompt',
+			'answerPermission',
+			'onNanocoderEvent',
+		]),
+	);
 });
 
 test('the bridge returns the standard result shape', async () => {

@@ -3,7 +3,7 @@
 The processes, trust boundaries, IPC contract, process policy, thread state machine and key sequences of Nanocoder Desktop.
 
 - Status: Draft
-- Last updated: 2026-10-27
+- Last updated: 2026-10-29
 - Drafted by: @akramcodez
 
 ## Scope
@@ -93,6 +93,9 @@ The following detail is Suggestion (not discussed):
   | `OUTSIDE_ROOT` | The resolved path left the canonical project root. |
   | `LIMIT` | A size, entry or time limit was hit. The message says which. |
   | `UNSUPPORTED` | The connected Nanocoder does not offer the capability. |
+  | `UNAVAILABLE` | The desktop service has not been installed yet. |
+  | `STORE_CORRUPT` | The metadata store could not be recovered. |
+  | `STORE_TOO_NEW` | The database needs a newer desktop version. |
   | `AGENT_UNAVAILABLE` | The Nanocoder process is not running or not ready. |
   | `BUSY` | Another root turn is running in this project's process (`CHAT-17`). |
   | `DENIED` | The user or policy refused the action. |
@@ -102,6 +105,30 @@ The following detail is Suggestion (not discussed):
 - **Ordered streams.** Events pushed from main carry a per-thread sequence number. A renderer that sees a gap asks for a fresh snapshot instead of guessing.
 - **Bounded event rate.** High-rate ACP chunks are batched before they cross IPC, so a fast model cannot flood the renderer.
 - **Cancellable work.** Long requests (large diffs, deep listings) accept a cancellation ID.
+
+### Milestone 1 shared contracts
+
+Step 0 defines the workspace requests, values and events in [`source/shared/ipc.ts`](../source/shared/ipc.ts), beside the unchanged technical-gate bridge. [`workspace.ts`](../source/main/ipc/workspace.ts) registers every workspace request through `registerHandler`, with strict schemas and the usual sender check (`SEC-02`). A missing service returns `UNAVAILABLE`, not a privileged fallback.
+
+| Contract | Implemented by |
+|---|---|
+| `store:get-settings`, `store:update-settings`, `store:get-ui-state`, `store:update-ui-state`; `DesktopStore`, `DesktopStoreFactory`, `SqlDriver`, `SqlDatabase`, `SqlStatement` | Phase 1.1 (`DATA-01`, `DATA-09`, `DATA-10`, `DEC-04`) |
+| `projects:list`, `projects:add`, `projects:open`, `projects:locate`, `projects:remove`, `projects:set-default-mode`; `ProjectService` | Phase 1.2 (`CHAT-01`, `CHAT-02`, `DEC-30`, `DEC-31`), using phase 1.1 repositories |
+| `supervisor:get-state`, `supervisor:start`, `supervisor:stop`; `NanocoderSupervisor` | Phase 1.3, first build item |
+| `supervisor:get-capability-gates`; `CapabilityGate`, `CapabilityGates`, `VersionPolicyResult` | Phase 1.4 (`ACP-03`, `ACP-04`, `CHAT-15`) |
+| `supervisor:restart`, `supervisor:get-diagnostics`, `supervisor:export-diagnostics`; `DiagnosticsService`, exit and retry fields in `SupervisorState` | Phase 1.3 recovery and diagnostics follow-up (`ACP-17`, `SEC-08`), not step 0 or wave 1 |
+| `threads:*`; `ThreadService`, `ThreadInfo`, `ThreadSnapshot` | Phases 1.5 to 1.9, including discovery, resume, archive, removal, explicit history deletion, mode, prompt, cancel and permission intents |
+| `projects:event`; `ProjectEvent` | Supervisor and project/thread services as they land |
+
+`registerIpcHandlers` accepts `WorkspaceServices`; implementations supply the store, project service, supervisor and thread service without changing the bridge. Main-only interfaces live in `source/main/store/contracts.ts`, `source/main/nanocoder/supervisor-contracts.ts` and `source/main/ipc/workspace-services.ts`. No SQLite library types or process handles reach the renderer. The supervisor's connection accessor is main-only.
+
+Projects and threads use desktop UUIDs. A renderer supplies IDs, not roots, trust flags or a deletion-confirmed flag. Project selection, relocation, trust and history-deletion confirmation remain main-owned. Start and restart look up the stored project and refuse a missing or untrusted one. Implementations must still re-check canonical roots and Nanocoder's own trust, and preserve `DEC-30` and `DEC-31`.
+
+Settings and UI updates allow known fields only, with bounded lists and window coordinates. Runtime override paths can be stored by main but cannot be set through a renderer settings patch. Neither patch accepts secrets, transcripts, file contents or tool output (`DATA-04`, `SEC-07`). Thread snapshots and turn events are transient only.
+
+Every disabled feature has a reason in the gate result. Version results distinguish bundled, supported, untested and refused versions. `ProjectEvent` carries its project ID; turn batches also carry the thread ID. Project-state sequences and per-thread turn sequences are separate. On a gap, callers fetch supervisor state, capability gates, project/thread lists or a thread snapshot as appropriate. Subscriptions pass event data only and return an unsubscribe function.
+
+Diagnostics export requests identify a captured snapshot, never renderer-supplied lines or a destination path. The later main-only diagnostics service must review that exact snapshot with the user and ask for the destination before writing; an expired or unknown snapshot is refused (`SEC-08`). Step 0 exports nothing.
 
 ## ACP over stdio
 

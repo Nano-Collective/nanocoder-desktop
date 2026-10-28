@@ -1,0 +1,287 @@
+import test from 'ava';
+import {handleRequest, type Sender} from '@/main/ipc/handle-request';
+import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
+import type {WorkspaceServices} from '@/main/ipc/workspace-services';
+import {APP_ORIGIN} from '@/main/security';
+import {
+	CHANNELS,
+	type IpcResult,
+	type ProjectInfo,
+	type WorkspaceMethod,
+	type WorkspaceRequests,
+} from '@/shared/ipc';
+
+const projectId = '11111111-1111-4111-8111-111111111111';
+const threadId = '22222222-2222-4222-8222-222222222222';
+const project = {projectId};
+const thread = {...project, threadId};
+const sender: Sender = {url: `${APP_ORIGIN}/index.html`, isMainFrame: true};
+const payloads = {
+	getSettings: {},
+	updateSettings: {patch: {theme: 'light'}},
+	getUiState: {},
+	updateUiState: {patch: {activeProjectId: projectId}},
+	listProjects: {},
+	addProject: {},
+	openProject: project,
+	locateProject: project,
+	removeProject: project,
+	setProjectDefaultMode: {...project, mode: 'normal'},
+	getSupervisorState: project,
+	startProject: project,
+	stopProject: project,
+	restartProject: project,
+	getCapabilityGates: project,
+	getDiagnostics: project,
+	exportDiagnostics: {...project, snapshotId: threadId},
+	listThreads: {...project, archiveState: 'active'},
+	createThread: project,
+	openThread: thread,
+	getThreadSnapshot: thread,
+	renameThread: {...thread, title: 'A thread'},
+	archiveThread: {...thread, archived: true},
+	removeThread: thread,
+	deleteThreadHistory: thread,
+	promptThread: {...thread, text: 'Hello'},
+	cancelThread: thread,
+	setThreadMode: {...thread, mode: 'normal'},
+	answerThreadPermission: {
+		...thread,
+		requestId: 'request-1',
+		optionId: 'allow',
+	},
+	discoverSessions: project,
+	importSession: {...project, sessionId: 'session-1'},
+} satisfies WorkspaceRequests;
+const methods = Object.keys(payloads) as WorkspaceMethod[];
+
+function registered(services?: WorkspaceServices) {
+	const handlers = new Map<
+		string,
+		(payload: unknown, source?: Sender) => Promise<IpcResult<unknown>>
+	>();
+	registerWorkspaceHandlers(
+		(channel, schema, handler, allowedOrigins) => {
+			if (handlers.has(channel)) throw new Error('Duplicate channel');
+			handlers.set(channel, (payload, source = sender) =>
+				handleRequest({
+					sender: source,
+					payload,
+					schema,
+					handler,
+					allowedOrigins,
+				}),
+			);
+		},
+		[APP_ORIGIN],
+		services,
+	);
+	return (method: WorkspaceMethod, payload: unknown, source = sender) => {
+		const handler = handlers.get(CHANNELS[method]);
+		if (!handler) throw new Error(`Missing handler for ${method}`);
+		return handler(payload, source);
+	};
+}
+
+for (const method of methods) {
+	test(`${method}: returns UNAVAILABLE until the service lands`, async t => {
+		t.deepEqual(await registered()(method, payloads[method]), {
+			ok: false,
+			error: {
+				code: 'UNAVAILABLE',
+				message: 'This feature is not available yet',
+				retryable: false,
+			},
+		});
+	});
+
+	test(`${method}: refuses malformed and unknown-field requests`, async t => {
+		const request = registered();
+		for (const payload of [
+			null,
+			undefined,
+			[],
+			'payload',
+			{...payloads[method], extra: true},
+			{...payloads[method], projectId: 'x'.repeat(1000)},
+		]) {
+			const result = await request(method, payload);
+			t.false(result.ok);
+			if (!result.ok) t.is(result.error.code, 'VALIDATION');
+		}
+	});
+
+	test(`${method}: refuses non-app senders before reaching a service`, async t => {
+		const request = registered();
+		for (const source of [
+			{url: 'https://example.com/', isMainFrame: true},
+			{url: 'app://other/index.html', isMainFrame: true},
+			{...sender, isMainFrame: false},
+			{url: undefined, isMainFrame: true},
+		]) {
+			const result = await request(method, payloads[method], source);
+			t.false(result.ok);
+			if (!result.ok) t.is(result.error.code, 'DENIED');
+		}
+	});
+}
+
+test('settings refuse secrets, runtime paths and yolo defaults', async t => {
+	const request = registered();
+	for (const patch of [
+		{apiKey: 'not-a-real-key'},
+		{token: 'not-a-real-token'},
+		{nanocoderOverridePath: '/untrusted/cli.js'},
+		{defaultMode: 'yolo'},
+		{theme: 'x'.repeat(1000)},
+	]) {
+		const result = await request('updateSettings', {patch});
+		t.false(result.ok);
+		if (!result.ok) t.is(result.error.code, 'VALIDATION');
+	}
+	const result = await request('setProjectDefaultMode', {
+		...project,
+		mode: 'yolo',
+	});
+	t.false(result.ok);
+	if (!result.ok) t.is(result.error.code, 'VALIDATION');
+});
+
+test('UI state refuses content fields and unbounded lists or window sizes', async t => {
+	for (const patch of [
+		{messages: ['not persisted']},
+		{fileContents: 'not persisted'},
+		{toolOutput: 'not persisted'},
+		{openThreadIds: Array.from({length: 101}, () => threadId)},
+		{
+			window: {
+				width: 500,
+				height: 500,
+				x: 0,
+				y: 0,
+				maximised: false,
+				extra: true,
+			},
+		},
+		{window: {width: 20_000, height: 500, x: 0, y: 0, maximised: false}},
+	]) {
+		const result = await registered()('updateUiState', {patch});
+		t.false(result.ok);
+		if (!result.ok) t.is(result.error.code, 'VALIDATION');
+	}
+});
+
+test('thread inputs are bounded and cannot grant trust or confirm deletion', async t => {
+	const request = registered();
+	for (const [method, payload] of [
+		['promptThread', {...thread, text: 'x'.repeat(100_001)}],
+		['promptThread', {...thread, text: '   '}],
+		['renameThread', {...thread, title: 'x'.repeat(501)}],
+		['importSession', {...project, sessionId: 'x'.repeat(201)}],
+		[
+			'answerThreadPermission',
+			{...thread, requestId: 'a', optionId: 'x'.repeat(201)},
+		],
+		['addProject', {canonicalRoot: '/arbitrary', trusted: true}],
+		['deleteThreadHistory', {...thread, confirmed: true}],
+		[
+			'exportDiagnostics',
+			{...project, snapshotId: threadId, lines: ['unreviewed']},
+		],
+	] as const) {
+		const result = await request(method, payload);
+		t.false(result.ok);
+		if (!result.ok) t.is(result.error.code, 'VALIDATION');
+	}
+});
+
+const chosen: ProjectInfo = {
+	id: projectId,
+	canonicalRoot: '/chosen',
+	sessionCwd: '/chosen',
+	displayName: 'chosen',
+	trusted: true,
+	defaultMode: 'normal',
+	createdAt: '2026-10-29T00:00:00.000Z',
+	lastOpenedAt: '2026-10-29T00:00:00.000Z',
+	availability: 'available',
+};
+
+test('dispatches every valid intent to the injected service', async t => {
+	const calls: {scope: string; method: string; args: unknown[]}[] = [];
+	const service = (scope: string) =>
+		new Proxy(
+			{},
+			{
+				get:
+					(_target, method: string) =>
+					(...args: unknown[]) => {
+						calls.push({scope, method, args});
+						return null;
+					},
+			},
+		);
+	const services = {
+		store: {
+			...Object.fromEntries(
+				['getSettings', 'updateSettings', 'getUiState', 'updateUiState'].map(
+					method => [
+						method,
+						(...args: unknown[]) => calls.push({scope: 'store', method, args}),
+					],
+				),
+			),
+			projects: {
+				list: () => [],
+				get: () => chosen,
+			},
+		},
+		projects: service('projects'),
+		supervisor: service('supervisor'),
+		threads: service('threads'),
+		diagnostics: service('diagnostics'),
+	} as unknown as WorkspaceServices;
+	const request = registered(services);
+	for (const method of methods) {
+		const result = await request(method, payloads[method]);
+		t.true(result.ok, method);
+	}
+	t.is(calls.length, methods.length - 1);
+	t.deepEqual(calls.find(call => call.method === 'updateSettings')?.args, [
+		{theme: 'light'},
+	]);
+	t.deepEqual(calls.find(call => call.method === 'updateUiState')?.args, [
+		{activeProjectId: projectId},
+	]);
+	t.deepEqual(calls.find(call => call.method === 'ensureProcess')?.args, [
+		chosen,
+	]);
+	t.deepEqual(calls.find(call => call.method === 'restart')?.args, [chosen]);
+	t.deepEqual(calls.find(call => call.method === 'promptThread')?.args, [
+		payloads.promptThread,
+	]);
+});
+
+test('start and restart refuse missing or untrusted projects without launching anything', async t => {
+	let starts = 0;
+	for (const selected of [undefined, {...chosen, trusted: false}]) {
+		const request = registered({
+			store: {projects: {get: () => selected}},
+			supervisor: {
+				ensureProcess: () => {
+					starts++;
+				},
+				restart: () => {
+					starts++;
+				},
+			},
+		} as unknown as WorkspaceServices);
+		for (const method of ['startProject', 'restartProject'] as const) {
+			const result = await request(method, project);
+			t.false(result.ok);
+			if (!result.ok)
+				t.is(result.error.code, selected ? 'DENIED' : 'NOT_FOUND');
+		}
+	}
+	t.is(starts, 0);
+});

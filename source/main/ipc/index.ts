@@ -10,6 +10,8 @@ import {
 import {z} from 'zod';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
+import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
+import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {
 	type NanocoderConnection,
 	NanocoderFailure,
@@ -54,6 +56,8 @@ let connecting = false;
 // The turn in flight, if any. A new connection drops it, so a stale turn cannot block the next one.
 let activeTurn: object | undefined;
 let appOrigins: readonly string[] = [];
+let workspaceServices: WorkspaceServices = {};
+let unsubscribeProjectEvents: (() => void) | undefined;
 
 // Only windows showing the app get events; the renderer never sees the IPC event object.
 function sendEvent(event: TurnEvent): void {
@@ -208,12 +212,27 @@ function answerPermission({
 }
 
 export function closeNanocoder(): void {
+	unsubscribeProjectEvents?.();
+	void workspaceServices.supervisor?.close();
+	workspaceServices.store?.close();
 	permissions.cancelAll();
 	void connection?.close();
 }
 
-export function registerIpcHandlers(allowedOrigins: readonly string[]): void {
+export function registerIpcHandlers(
+	allowedOrigins: readonly string[],
+	services: WorkspaceServices = {},
+): void {
 	appOrigins = allowedOrigins;
+	workspaceServices = services;
+	registerWorkspaceHandlers(registerHandler, allowedOrigins, services);
+	unsubscribeProjectEvents = services.supervisor?.subscribe(event => {
+		for (const window of BrowserWindow.getAllWindows()) {
+			if (isAllowedOrigin(window.webContents.getURL(), appOrigins)) {
+				window.webContents.send(CHANNELS.projectEvent, event);
+			}
+		}
+	});
 	registerHandler(
 		CHANNELS.getAppInfo,
 		z.strictObject({}),

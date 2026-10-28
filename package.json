@@ -31,6 +31,7 @@
 		"dev": "electron-vite dev",
 		"build": "electron-vite build",
 		"start": "electron-vite preview",
+		"qa:launch": "tsx e2e/qa/launch.ts",
 		"package": "pnpm build && electron-builder",
 		"package:dir": "pnpm build && electron-builder --dir",
 		"format": "biome check --write .",

@@ -27,6 +27,10 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/security.ts` | Origin checks, renderer file resolution, Content Security Policy |
 | `source/main/ipc/handle-request.ts` | Sender check, schema validation and the result shape for every IPC call |
 | `source/main/ipc/index.ts` | Registers the IPC handlers |
+| `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |
+| `source/main/ipc/workspace-services.ts` | Main-only project and thread service contracts |
+| `source/main/store/contracts.ts` | Metadata store, repositories and replaceable SQLite driver seam (`DEC-04`) |
+| `source/main/nanocoder/supervisor-contracts.ts` | Main-only per-project supervisor interface |
 | `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path |
 | `source/main/nanocoder/launch.ts` | Starts Nanocoder with an argument array and no shell |
 | `source/main/nanocoder/acp-client.ts` | Starts `nanocoder --acp` in the project root, sends `initialize`, and opens or resumes sessions with their mode set |
@@ -42,6 +46,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
 | `source/preload/index.ts` | The `window.desktop` bridge |
 | `e2e/*.e2e.ts` | Playwright tests against the built app |
+| `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |
 | `scripts/node-sidecar.json` | The pinned Node sidecar: exact version and SHA-256 per platform (`DEC-38`) |
 | `scripts/fetch-node-sidecar.mjs`, `scripts/measure-runtime.mjs` | Download and verify the sidecar; measure both runtimes (phase G.6) |
 | `electron.vite.config.ts`, `electron-builder.yml` | Build and packaging |
@@ -52,6 +57,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 ```bash
 pnpm install
 pnpm dev               # run the app, rebuilding on change
+pnpm qa:launch         # launch the already-built app with fake Nanocoder and localhost CDP on 9333
 pnpm test:all          # the gate: format, types, lint, unit tests, Knip, audit
 pnpm test:ava          # unit tests
 pnpm test:e2e          # build, then Playwright (use xvfb-run on headless Linux)
@@ -95,6 +101,7 @@ These hold in every change:
 - Tests never sleep for a fixed time; they wait for an event.
 - End-to-end tests live in `e2e/`. ACP integration tests are `*.acp.ts`; they keep Nanocoder's config in a temporary folder, use a scripted model provider (no API key) and need a Nanocoder build with the ACP trust check.
 - Coverage stays at or above 80% of lines.
+- For visual QA, run `pnpm build`, then `pnpm qa:launch` and `agent-browser connect 9333`. The folder picker and trust dialog are stubbed only in the test launcher. Save fake-fixture screenshots and logs under `.qa/`, never real conversation content. Stop the printed launcher PID when finished. The launcher is type-checked by `tsconfig.e2e.json`, discovered by Knip through the package script and excluded from packaging.
 
 ## AI Coding Assistance Notes
 

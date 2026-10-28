@@ -12,6 +12,7 @@ coverage/
 .test-temp/
 test-results/
 playwright-report/
+.qa/
 
 # Logs
 *.log

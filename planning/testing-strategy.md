@@ -3,7 +3,7 @@
 How each part of the plan is tested, the measurable targets results are judged against, and the cross-platform CI that runs them.
 
 - Status: Draft
-- Last updated: 2026-10-28
+- Last updated: 2026-10-29
 - Drafted by: @akramcodez
 
 ## Conventions
@@ -66,6 +66,16 @@ They live outside `ava.files` (their own pattern and script), so `pnpm test:ava`
 ## Technical gate test
 
 The scripted version of the gate in [`roadmap.md`](roadmap.md#technical-gate), run in CI on all three platforms, plus the manual provider-backed run.
+
+## Interactive QA launcher
+
+Run `pnpm build`, then `pnpm qa:launch`. The test-only launcher at `e2e/qa/launch.ts` uses the built app, a copied fake Nanocoder fixture, a separate profile and project under git-ignored `.qa/`, and Playwright-only native dialog stubs. It does not build or add hooks to shipped main-process code. It uses the built renderer even when a development-server environment variable is inherited.
+
+Connect `agent-browser connect 9333`. The Chromium debugging endpoint is bound to `127.0.0.1`; confirm the listening address before use. Stop the printed launcher PID after QA. Keep screenshots and logs under `.qa/`, with fake-fixture data only, never real chat, tool output or stderr.
+
+`tsconfig.e2e.json` checks the launcher, Knip discovers it through `qa:launch`, and Playwright's `*.e2e.ts` match does not run it as a test. Packaging includes `out/` and package metadata only, with explicit exclusions for `e2e/` and `.qa/`.
+
+Workspace contract tests in `source/main/ipc/workspace.spec.ts` cover every added handler's malformed, unknown-field and wrong-sender refusals, unavailable services, and injected-service dispatch. They also refuse content in storage patches, renderer-selected paths, `yolo` defaults and untrusted start/restart intents. `e2e/app.e2e.ts` checks the real bridge, unavailable results, validation and data-only subscription teardown.
 
 ## Packaged restart-and-resume test
 
