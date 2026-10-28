@@ -44,6 +44,59 @@ test('opens a trusted folder without asking', async t => {
 	t.deepEqual(asked, []);
 });
 
+test('resumes the given session instead of starting a new one', async t => {
+	const outcome = await openProject({
+		runtime: fakeRuntime,
+		root: fakeProject(),
+		clientInfo: {name: 'nanocoder-desktop', version: '0.0.0-test'},
+		mode: 'normal',
+		resumeSessionId: 'fake-session',
+		confirmTrust: async () => false,
+	});
+	t.is(outcome.status, 'open');
+	if (outcome.status === 'open') {
+		await outcome.connection.close();
+		t.deepEqual(outcome.session, {id: 'fake-session', mode: 'normal'});
+		t.is(outcome.history.length, 3);
+		const methods = fakeEvents(outcome.connection.stderr.lines()).map(
+			e => e.method,
+		);
+		t.true(methods.includes('session/resume'));
+		t.false(methods.includes('session/new'));
+	}
+});
+
+test('a new session has no history', async t => {
+	const {outcome} = open(fakeProject(), false);
+	const opened = await outcome;
+	t.is(opened.status, 'open');
+	if (opened.status === 'open') {
+		await opened.connection.close();
+		t.deepEqual(opened.history, []);
+	}
+});
+
+test('reports a session that is gone, without asking about trust', async t => {
+	const asked: unknown[] = [];
+	const error = await openProject({
+		runtime: fakeRuntime,
+		root: fakeProject(),
+		clientInfo: {name: 'nanocoder-desktop', version: '0.0.0-test'},
+		mode: 'normal',
+		resumeSessionId: 'gone',
+		confirmTrust: async refusal => {
+			asked.push(refusal);
+			return true;
+		},
+	}).then(
+		() => undefined,
+		(error: unknown) => error,
+	);
+	t.true(error instanceof NanocoderFailure);
+	t.is((error as NanocoderFailure).code, 'NOT_FOUND');
+	t.deepEqual(asked, []);
+});
+
 test('asks once, trusts the folder through Nanocoder, then opens it', async t => {
 	const root = fakeProject('untrusted');
 	const {asked, outcome} = open(root, true, {

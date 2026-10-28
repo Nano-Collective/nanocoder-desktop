@@ -156,6 +156,9 @@ The six findings from [#122][pr122], checked at both commits, then the quirks th
 | 28 | `--mode` with `--acp` | Not checked | Parsed but not passed to the ACP server ([source][nc-cli-mode]) | Ask Nanocoder to pass it through, so a missed `set_mode` fails closed (`DEC-31`). |
 | 29 | `alwaysAllow` and modes | Not checked | Checked before the mode, so listed tools never ask, even in `normal` ([source][nc-approval]) | Say so in the UI (`DEC-31`). |
 | 30 | Permission options | Not checked | Always `Allow` (`allow_once`) and `Deny` (`reject_once`); there is no "always" option ([source][nc-permission]) | Show the options as sent (`ACP-10`). |
+| 32 | Resumed mode | Not checked | A resumed session starts in `auto-accept` again, and the resume response says so ([source][nc-register]) | Send the mode after every resume (`ACP-13`, `DEC-31`). |
+| 33 | Resume replay | Not checked | Replays user messages, agent text and finished tool calls as `session/update`, ending with an empty text chunk that carries only metadata | Collect it as history and drop the empty chunk (`ACP-07`). |
+| 34 | Missing session | Not checked | `session/resume` for a missing or deleted session is an internal error (`-32603`) with `data.details` of `Session not found on disk: <id>` and no distinct code | Read `data.details` (`ACP-19`). |
 | 31 | Answering a request | Not checked | A rejected tool is marked `failed` and the model is told "Tool call denied by user"; the turn goes on. A `cancelled` answer ends the turn with `cancelled` ([source][nc-permission]) | The desktop reports the stop reason as Nanocoder gives it (`G.4`). |
 
 ## Directory trust

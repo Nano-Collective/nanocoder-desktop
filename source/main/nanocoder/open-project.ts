@@ -5,15 +5,23 @@ import {
 	NanocoderFailure,
 } from '@/main/nanocoder/acp-client';
 import {type TrustRefusal, trustDirectory} from '@/main/nanocoder/trust';
-import type {NanocoderMode, SessionInfo} from '@/shared/ipc';
+import type {NanocoderMode, SessionInfo, TurnEvent} from '@/shared/ipc';
 
 export type OpenOutcome =
-	| {status: 'open'; connection: NanocoderConnection; session: SessionInfo}
+	| {
+			status: 'open';
+			connection: NanocoderConnection;
+			session: SessionInfo;
+			// What a resumed session replayed; empty for a new one.
+			history: TurnEvent[];
+	  }
 	| {status: 'untrusted'; message: string};
 
 export async function openProject(
 	options: ConnectOptions & {
 		mode: NanocoderMode;
+		// Resume this session instead of starting a new one.
+		resumeSessionId?: string;
 		confirmTrust: (refusal: TrustRefusal) => Promise<boolean>;
 	},
 ): Promise<OpenOutcome> {
@@ -31,8 +39,15 @@ export async function openProject(
 	}
 
 	try {
+		if (options.resumeSessionId) {
+			const {session, history} = await connection.resumeSession(
+				options.resumeSessionId,
+				options.mode,
+			);
+			return {status: 'open', connection, session, history};
+		}
 		const session = await connection.newSession(options.mode);
-		return {status: 'open', connection, session};
+		return {status: 'open', connection, session, history: []};
 	} catch (error) {
 		await connection.close();
 		throw error;

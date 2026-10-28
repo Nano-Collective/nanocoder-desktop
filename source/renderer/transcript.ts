@@ -26,6 +26,11 @@ export function applyEvent(
 ): Transcript {
 	const {items} = transcript;
 	switch (event.type) {
+		case 'user':
+			return {
+				...transcript,
+				items: [...items, {kind: 'user', text: event.text}],
+			};
 		case 'text': {
 			const last = items.at(-1);
 			return {

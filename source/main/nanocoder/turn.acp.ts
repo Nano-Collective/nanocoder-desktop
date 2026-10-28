@@ -1,70 +1,26 @@
-import {
-	existsSync,
-	mkdirSync,
-	mkdtempSync,
-	realpathSync,
-	rmSync,
-	writeFileSync,
-} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {existsSync, mkdirSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import type {RequestPermissionRequest} from '@agentclientprotocol/sdk';
 import test from 'ava';
 import {connectNanocoder} from '@/main/nanocoder/acp-client';
 import {
-	type Reply,
-	SCRIPTED_MODEL,
-	startScriptedProvider,
-} from '@/main/nanocoder/fixtures/scripted-provider';
+	clientInfo,
+	createWorkFolder,
+	requireCli,
+	runtime,
+	setupProject,
+} from '@/main/nanocoder/fixtures/real-nanocoder';
+import type {Reply} from '@/main/nanocoder/fixtures/scripted-provider';
 import {trustDirectory} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
-import type {TurnEvent} from '@/shared/ipc';
+import type {NanocoderMode, TurnEvent} from '@/shared/ipc';
 
-const cli = process.env.NANOCODER_CLI ?? '';
-const runtime = {nodePath: process.execPath, cliPath: cli};
-const clientInfo = {name: 'nanocoder-desktop', version: '0.0.0-test'};
-const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-turn-')));
+const folder = createWorkFolder('nd-turn-');
+const setup = (name: string, script: Reply[]) =>
+	setupProject(folder.work, name, script);
 
-test.before(() => {
-	if (!path.isAbsolute(cli)) {
-		throw new Error('Set NANOCODER_CLI to the absolute path of dist/cli.js');
-	}
-});
-
-test.after.always(() => {
-	rmSync(work, {recursive: true, force: true});
-});
-
-async function setup(name: string, script: Reply[]) {
-	const dir = path.join(work, name);
-	const root = path.join(dir, 'project');
-	mkdirSync(root, {recursive: true});
-	const provider = await startScriptedProvider(script);
-	const configDir = path.join(dir, 'config');
-	mkdirSync(configDir);
-	writeFileSync(
-		path.join(configDir, 'agents.config.json'),
-		JSON.stringify({
-			nanocoder: {
-				providers: [
-					{
-						name: 'Scripted',
-						baseUrl: provider.baseUrl,
-						models: [SCRIPTED_MODEL],
-					},
-				],
-			},
-		}),
-	);
-	const env = {
-		...process.env,
-		NANOCODER_CONFIG_DIR: configDir,
-		NANOCODER_DATA_DIR: path.join(dir, 'data'),
-		// AVA sets NODE_ENV=test, which makes Nanocoder skip its global config.
-		NODE_ENV: undefined,
-	};
-	return {root, provider, env};
-}
+test.before(requireCli);
+test.after.always(folder.remove);
 
 const markerCommand = {
 	toolCall: {name: 'execute_bash', arguments: {command: 'echo ran>marker.txt'}},
@@ -75,6 +31,7 @@ async function runTurn(
 	script: Reply[],
 	answer?: string,
 	prepare?: (root: string) => void,
+	mode: NanocoderMode = 'normal',
 ) {
 	const {root, provider, env} = await setup(name, script);
 	prepare?.(root);
@@ -98,7 +55,7 @@ async function runTurn(
 			: undefined,
 	});
 	try {
-		const session = await connection.newSession('normal');
+		const session = await connection.newSession(mode);
 		const result = await connection.prompt(
 			session.id,
 			'Run the marker command.',
@@ -108,6 +65,7 @@ async function runTurn(
 			asked,
 			events,
 			ran: existsSync(path.join(root, 'marker.txt')),
+			wrote: existsSync(path.join(root, 'notes.txt')),
 			root,
 			requests: provider.requests,
 		};
@@ -116,6 +74,43 @@ async function runTurn(
 		await provider.close();
 	}
 }
+
+// execute_bash asks in every mode, so only a file edit shows which mode a session is in.
+const editFile = {
+	toolCall: {
+		name: 'write_file',
+		arguments: {path: 'notes.txt', content: 'hello\n'},
+	},
+} as const;
+
+test('normal mode asks before editing a file', async t => {
+	t.timeout(120_000);
+	const outcome = await runTurn(
+		'edit-normal',
+		[editFile, {text: 'Done.'}],
+		'deny',
+		undefined,
+		'normal',
+	);
+
+	t.is(outcome.asked.length, 1);
+	t.regex(outcome.asked[0].toolCall.title ?? '', /write_file/);
+	t.false(outcome.wrote);
+});
+
+test('auto-accept edits a file without asking, which is why the mode is set', async t => {
+	t.timeout(120_000);
+	const outcome = await runTurn(
+		'edit-auto',
+		[editFile, {text: 'Done.'}],
+		'deny',
+		undefined,
+		'auto-accept',
+	);
+
+	t.deepEqual(outcome.asked, []);
+	t.true(outcome.wrote);
+});
 
 test('allow once: the tool runs and the turn ends', async t => {
 	t.timeout(120_000);

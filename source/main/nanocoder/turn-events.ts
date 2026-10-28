@@ -1,14 +1,27 @@
 import type {SessionNotification} from '@agentclientprotocol/sdk';
 import type {TurnEvent} from '@/shared/ipc';
 
+// Nanocoder ends a replay with an empty chunk that only carries metadata.
+const hasText = (content: {
+	type: string;
+	text?: string;
+}): content is {
+	type: 'text';
+	text: string;
+} => content.type === 'text' && !!content.text;
+
 // Anything the desktop does not show yet is dropped, never guessed at.
 export function toTurnEvent(
 	update: SessionNotification['update'],
 ): TurnEvent | undefined {
 	switch (update.sessionUpdate) {
 		case 'agent_message_chunk':
-			return update.content.type === 'text'
+			return hasText(update.content)
 				? {type: 'text', text: update.content.text}
+				: undefined;
+		case 'user_message_chunk':
+			return hasText(update.content)
+				? {type: 'user', text: update.content.text}
 				: undefined;
 		case 'tool_call':
 			return {

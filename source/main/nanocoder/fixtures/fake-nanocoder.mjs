@@ -28,7 +28,12 @@ const results = {
 		agentCapabilities: {
 			loadSession: true,
 			providers: {},
-			sessionCapabilities: {close: {}, list: {}, delete: {}, resume: {}},
+			sessionCapabilities: {
+				close: {},
+				list: {},
+				...(mode === 'no-delete' ? {} : {delete: {}}),
+				...(mode === 'no-resume' ? {} : {resume: {}}),
+			},
 		},
 		agentInfo: {name: 'nanocoder', title: 'Nanocoder', version: '9.9.9'},
 		authMethods: [],
@@ -38,16 +43,55 @@ const results = {
 			? undefined
 			: {
 					sessionId: 'fake-session',
-					modes: {
-						currentModeId: 'auto-accept',
-						availableModes: MODES.filter(
-							id => mode !== 'no-normal' || id !== 'normal',
-						).map(id => ({id, name: id})),
-					},
+					modes: modeState(),
 				},
 	'session/set_mode': () => (mode === 'mode-fails' ? undefined : {}),
 	'session/close': () => ({}),
+	'session/delete': () => (mode === 'delete-fails' ? undefined : {}),
 };
+
+const modeState = () => ({
+	currentModeId: 'auto-accept',
+	availableModes: MODES.filter(
+		id => mode !== 'no-normal' || id !== 'normal',
+	).map(id => ({id, name: id})),
+});
+
+// Replays an earlier exchange, as Nanocoder does, then answers with the mode state.
+function resume(id, {sessionId}) {
+	if (mode === 'die-in-resume') process.exit(3);
+	if (sessionId !== 'fake-session' || mode === 'missing-session') {
+		send({
+			id,
+			error: {
+				code: -32603,
+				message: 'Internal error',
+				data: {details: `Session not found on disk: ${sessionId}`},
+			},
+		});
+		return;
+	}
+	if (mode === 'resume-fails') {
+		send({id, error: {code: -32603, message: 'Internal error'}});
+		return;
+	}
+	const update = body => notify('session/update', {sessionId, update: body});
+	update({
+		sessionUpdate: 'user_message_chunk',
+		content: {type: 'text', text: 'Earlier question'},
+	});
+	update({
+		sessionUpdate: 'agent_message_chunk',
+		content: {type: 'text', text: 'Earlier answer'},
+	});
+	update({
+		sessionUpdate: 'tool_call',
+		toolCallId: 'old_call',
+		title: 'execute_bash: echo old',
+		status: 'completed',
+	});
+	send({id, result: {modes: modeState()}});
+}
 
 const waiting = new Map();
 let nextId = 1000;
@@ -153,6 +197,10 @@ function serve() {
 			log({method, params});
 			if (method === 'session/prompt') {
 				void runTurn(id, params);
+				return;
+			}
+			if (method === 'session/resume') {
+				resume(id, params);
 				return;
 			}
 			if (id === undefined || (method === 'initialize' && mode === 'silent')) {

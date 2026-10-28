@@ -92,6 +92,7 @@ export interface PermissionRequestInfo {
 }
 
 export type TurnEvent =
+	| {type: 'user'; text: string}
 	| {type: 'text'; text: string}
 	| {type: 'tool'; id: string; title?: string; status?: string}
 	| {type: 'permission'; request: PermissionRequestInfo}

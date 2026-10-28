@@ -11,6 +11,35 @@ test('maps agent text', t => {
 	);
 });
 
+test('maps a replayed user message', t => {
+	t.deepEqual(
+		toTurnEvent({
+			sessionUpdate: 'user_message_chunk',
+			content: {type: 'text', text: 'Earlier question'},
+		}),
+		{type: 'user', text: 'Earlier question'},
+	);
+	t.is(
+		toTurnEvent({
+			sessionUpdate: 'user_message_chunk',
+			content: {type: 'image', data: 'AA==', mimeType: 'image/png'},
+		}),
+		undefined,
+	);
+});
+
+test('drops an empty text chunk, which only carries metadata', t => {
+	for (const sessionUpdate of [
+		'agent_message_chunk',
+		'user_message_chunk',
+	] as const) {
+		t.is(
+			toTurnEvent({sessionUpdate, content: {type: 'text', text: ''}}),
+			undefined,
+		);
+	}
+});
+
 test('drops content that is not text', t => {
 	t.is(
 		toTurnEvent({
