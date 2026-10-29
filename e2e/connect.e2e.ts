@@ -577,7 +577,25 @@ test('closing and reopening the macOS window cancels hidden approval state', asy
 	const projectId = await recoveryProjectId(root);
 	await sendMessage();
 	await expect(cards()).toBeVisible();
-	await page.close();
+	// page.close() can resolve mid-destruction and crash Electron on activation.
+	await Promise.all([
+		page.waitForEvent('close'),
+		app.evaluate(
+			({app, BrowserWindow}) =>
+				new Promise<void>(resolve => {
+					app.once('window-all-closed', resolve);
+					BrowserWindow.getAllWindows()[0].close();
+				}),
+		),
+	]);
+	expect(page.isClosed()).toBe(true);
+	expect(
+		await app.evaluate(({app, BrowserWindow}) => ({
+			windows: BrowserWindow.getAllWindows().length,
+			ownsProfile: app.hasSingleInstanceLock(),
+			pid: process.pid,
+		})),
+	).toEqual({windows: 0, ownsProfile: true, pid: app.process().pid});
 	const opened = app.waitForEvent('window');
 	await app.evaluate(({app}) => {
 		app.emit('activate');
