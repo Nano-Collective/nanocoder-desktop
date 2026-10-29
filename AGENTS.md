@@ -55,9 +55,12 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/turn-events.ts` | Turns ACP session updates into the few events the UI shows |
 | `source/renderer/transcript.ts` | Merges turn events into the conversation the UI shows |
 | `source/renderer/recovery-tools.tsx` | Plain-props process recovery and captured diagnostics controls |
+| `source/renderer/app-shell.tsx`, `source/renderer/styles/app-shell.css` | U.2 grid and plain-child rail/tools slots; inspector hidden at 840px and below |
+| `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
 | `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |
 | `scripts/generate-design-tokens.mjs` | Generates committed CSS custom properties from `DESIGN.md`; the adjacent spec rejects drift |
 | `planning/ui-foundations.md` | Theme switching, keyboard-focus QA and the proposed Markdown renderer |
+| `planning/app-shell.md` | Shell composition, supervisor badge rules and locked multi-width QA |
 | `THIRD-PARTY-NOTICES.txt` | Bundled font copyright and full OFL 1.1 licence |
 | `source/main/nanocoder/capabilities.ts` | Records `initialize` capabilities and builds feature gates with reasons; extensions need safe probes |
 | `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp`, a scripted model provider and test helpers, including the setup shared by the `*.acp.ts` tests |

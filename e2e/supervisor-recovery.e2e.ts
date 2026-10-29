@@ -96,7 +96,9 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 		.getByRole('textbox', {name: 'message', exact: true})
 		.fill('synthetic failed request');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
-	const recovery = page.getByRole('region', {name: 'Nanocoder recovery'});
+	const recovery = page
+		.locator('[data-shell-slot="stream-tools"]')
+		.getByRole('region', {name: 'Nanocoder recovery'});
 	await expect(recovery).toContainText('exit code 3');
 	await expect(
 		page.getByRole('textbox', {name: 'message', exact: true}),
@@ -156,7 +158,9 @@ test('diagnostics export reviews the exact snapshot and cancellation never write
 		}) as typeof dialog.showSaveDialog;
 	}, target);
 	await page.getByRole('button', {name: 'diagnostics', exact: true}).click();
-	const diagnostics = page.getByRole('region', {name: 'redacted diagnostics'});
+	const diagnostics = page
+		.locator('[data-shell-slot="stream-tools"]')
+		.getByRole('region', {name: 'redacted diagnostics'});
 	await expect(diagnostics).toBeVisible();
 	const captured = await diagnostics.locator('pre').innerText();
 	await diagnostics
