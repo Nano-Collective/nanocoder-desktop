@@ -606,6 +606,80 @@ test('ordinary history open refuses a located root before launch or former-cwd r
 	t.is(supervisor.getState(project.id).status, 'stopped');
 });
 
+test('a restarted waiting thread is interrupted with no synthetic terminal, launch or surviving approval authority (CHAT-03, ACP-10)', async t => {
+	const {project, root, service, store, supervisor, target, requests, turn} =
+		await waitingThread(t);
+	const waiting = store.threads.get(project.id, target.threadId);
+	if (!waiting) throw new Error('Missing waiting fixture thread');
+	t.is(waiting.runState, 'waiting-approval');
+	await service.detach([project]);
+	await turn;
+	service.dispose();
+	store.threads.save(waiting);
+	store.close();
+	const reopened = await desktopStoreFactory.open({
+		databasePath: path.join(root, 'desktop.sqlite'),
+		driver: createNodeSqliteDriver(),
+	});
+	let launches = 0;
+	const fresh = new ProjectSupervisor({
+		resolveRuntime: async () => {
+			launches++;
+			throw new Error('Restart metadata must not launch');
+		},
+		clientInfo: {name: 'restart-fixture', version: '0.0.0'},
+		confirmTrust: async () => false,
+	});
+	const mapped: ProjectEvent[] = [];
+	const restarted = createThreadService({
+		store: reopened,
+		supervisor: fresh,
+		onEvent: event => mapped.push(event),
+	});
+	t.teardown(async () => {
+		restarted.dispose();
+		await fresh.close();
+		reopened.close();
+	});
+	t.is(
+		reopened.threads.get(project.id, target.threadId)?.runState,
+		'interrupted',
+	);
+	t.deepEqual(await restarted.getThreadSnapshot(target), {
+		thread: {...waiting, runState: 'interrupted'},
+		sequence: 0,
+		events: [],
+		replaying: false,
+	});
+	await t.throwsAsync(
+		restarted.answerThreadPermission({
+			...target,
+			requestId: requests[0].id,
+			optionId: 'allow',
+		}),
+		{instanceOf: IpcFailure, code: 'DENIED'},
+	);
+	t.false(
+		fresh.answerPermission(
+			project.id,
+			waiting.nanocoderSessionId ?? '',
+			requests[0].id,
+			'allow',
+		),
+	);
+	t.is(fresh.getState(project.id).activeThreadId, null);
+	t.is(launches, 0);
+	t.deepEqual(mapped, []);
+	t.false(
+		supervisor.answerPermission(
+			project.id,
+			waiting.nanocoderSessionId ?? '',
+			requests[0].id,
+			'allow',
+		),
+	);
+});
+
 test('new thread is metadata-only until the first prompt (CHAT-03, CHAT-04)', async t => {
 	const {project, service, store, calls} = await fixture(t);
 	const thread = await service.createThread({projectId: project.id});

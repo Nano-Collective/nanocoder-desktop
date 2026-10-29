@@ -84,6 +84,56 @@ function thread(
 	};
 }
 
+test('opening a store reconciles only orphaned running and waiting rows, preserving all other metadata and manual titles (CHAT-03, DATA-07)', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const owner = project(f.root);
+	store.projects.save(owner);
+	const rows = (
+		[
+			'new',
+			'ready',
+			'running',
+			'waiting-approval',
+			'interrupted',
+			'failed',
+			'view-only',
+		] as const
+	).flatMap((runState, index) =>
+		(['active', 'archived'] as const).map(archiveState => {
+			const row = thread(owner, {
+				runState,
+				archiveState,
+				nanocoderSessionId: runState === 'new' ? null : randomUUID(),
+				title: `${runState} fixture`,
+				viewOnlyReason:
+					runState === 'view-only' ? 'fixture history unavailable' : null,
+			});
+			store.threads.save(row);
+			store.threads.setTitle({
+				projectId: owner.id,
+				threadId: row.id,
+				title: row.title,
+				manuallySet: index % 2 === 0,
+			});
+			return {row, manuallySet: index % 2 === 0};
+		}),
+	);
+	for (const {row} of rows)
+		t.deepEqual(store.threads.get(owner.id, row.id), row);
+	store.close();
+	const reopened = await f.open();
+	for (const {row, manuallySet} of rows) {
+		t.deepEqual(reopened.threads.get(owner.id, row.id), {
+			...row,
+			runState: ['running', 'waiting-approval'].includes(row.runState)
+				? 'interrupted'
+				: row.runState,
+		});
+		t.is(reopened.threads.getTitleManuallySet(owner.id, row.id), manuallySet);
+	}
+});
+
 function legacyMetadata(f: ReturnType<typeof fixture>, version: 1 | 2) {
 	const database = f.driver.open(f.filename);
 	const owner = project(f.root);
@@ -250,7 +300,7 @@ test('title updates persist only scoped current metadata and a sticky boolean (C
 	t.true(reopened.threads.getTitleManuallySet(owner.id, saved.id));
 	t.deepEqual(reopened.threads.get(owner.id, saved.id), {
 		...renamed,
-		runState: 'running',
+		runState: 'interrupted',
 	});
 });
 
@@ -754,7 +804,7 @@ test('project and thread repositories round-trip metadata, sort, scope and remov
 	t.is(store.projects.get(one.id)?.displayName, 'renamed project');
 	store.close();
 	const reopened = await f.open();
-	t.is(reopened.threads.get(one.id, first.id)?.runState, 'running');
+	t.is(reopened.threads.get(one.id, first.id)?.runState, 'interrupted');
 	reopened.threads.remove(one.id, first.id);
 	t.is(reopened.threads.get(one.id, first.id), undefined);
 	const sessionFile = path.join(f.root, 'fixture-session.json');

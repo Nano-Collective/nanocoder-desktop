@@ -46,6 +46,17 @@ be restored safely. Full durable replay/discovery/import and the complete
 view-only notice/actions remain phase 1.8 (`CHAT-09`); mode controls remain 1.9.
 Passive subagent metadata modules remain uncomposed (`SUB-05`).
 
+## Bootstrap metadata
+
+Opening the metadata store changes orphaned `running` and `waiting-approval`
+rows to `interrupted`. This happens only at store bootstrap, not on live reads.
+IDs, titles, the manual-title flag and every other metadata field stay unchanged.
+No process launches, replay or terminal result is invented. A restarted broker
+has no old approval authority: the real previous request IDs are refused before
+any launch or answer. Store round-trip tests cover every state and both archive
+groups; a ThreadService restart test checks the fresh broker, empty snapshot,
+absent terminal and zero emitted events.
+
 ## Selected status glyph accessibility
 
 Design deviation, approved for accessibility and left for the designer:
