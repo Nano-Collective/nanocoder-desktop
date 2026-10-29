@@ -42,10 +42,12 @@ export function PaletteButton() {
 function Notifications({
 	active,
 	toast,
+	error,
 	pendingApprovalCount = 0,
 }: {
 	active: boolean;
 	toast: Toast | null;
+	error: string;
 	pendingApprovalCount?: number;
 }) {
 	return (
@@ -62,6 +64,7 @@ function Notifications({
 					? `approval required · ${pendingApprovalCount} waiting`
 					: ''}
 			</span>
+			{active && error && <p className="overlay-error">{error}</p>}
 			{active && toast && (
 				<div
 					key={toast.id}
@@ -246,11 +249,6 @@ export function OverlayProvider({
 	return (
 		<OverlayContext value={{open, shortcut}}>
 			{children}
-			{themeError && (
-				<p className="overlay-error" role="alert">
-					{themeError}
-				</p>
-			)}
 			<dialog
 				ref={dialog}
 				className="overlay-dialog"
@@ -421,10 +419,11 @@ export function OverlayProvider({
 				<Notifications
 					active={opened}
 					toast={toast}
+					error={themeError}
 					pendingApprovalCount={pendingApprovalCount}
 				/>
 			</dialog>
-			<Notifications active={!opened} toast={toast} />
+			<Notifications active={!opened} toast={toast} error={themeError} />
 		</OverlayContext>
 	);
 }

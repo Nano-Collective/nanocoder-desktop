@@ -38,6 +38,10 @@ queue. They add no IPC channels or preload capabilities.
   stays in the overlay. Closing it lets the pending approval recover focus.
   Browser tests prove region identity before and after the text change;
   VoiceOver delivery remains part of the manual accessibility checklist.
+- Theme-save failures use that same active polite region, without a separate
+  alert in the inert background. Deferred-save tests cover a closed overlay
+  and either reopened modal, with one message, the original region and no
+  focus change.
 
 The action set adds a project folder, opens a recent project, locates a moved
 project, opens the existing technical-session folder flow, switches to dark or

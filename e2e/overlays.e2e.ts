@@ -377,3 +377,102 @@ test('Ctrl+K opens the palette on non-Mac platforms', async () => {
 	).toBeVisible();
 	await page.keyboard.press('Escape');
 });
+
+for (const modal of ['closed', 'palette', 'shortcuts'] as const) {
+	test(`an async theme-save failure is announced once in the active layer with ${modal}`, async () => {
+		const page = await app.firstWindow();
+		await page.reload();
+		type FailureMain = {
+			themeSaveRequested?: boolean;
+			failThemeSave?: () => void;
+		};
+		try {
+			await app.evaluate(({ipcMain}) => {
+				const state = globalThis as FailureMain;
+				state.themeSaveRequested = false;
+				state.failThemeSave = undefined;
+				ipcMain.removeHandler('store:update-settings');
+				ipcMain.handle(
+					'store:update-settings',
+					() =>
+						new Promise(resolve => {
+							state.themeSaveRequested = true;
+							state.failThemeSave = () =>
+								resolve({
+									ok: false,
+									error: {
+										code: 'INTERNAL',
+										message: 'fixture save failure',
+										retryable: true,
+									},
+								});
+						}),
+				);
+			});
+			const trigger = page.getByRole('button', {name: 'command palette'});
+			const notifications = page.locator('.toast-region');
+			await expect(notifications).toHaveCount(2);
+			const previousRegion = await notifications
+				.nth(modal === 'closed' ? 1 : 0)
+				.elementHandle();
+			if (!previousRegion) throw new Error('Missing persistent notification');
+			await trigger.click();
+			await page.getByRole('combobox').fill('switch to light theme');
+			await page.keyboard.press('Enter');
+			await expect(page.locator('dialog[open]')).toHaveCount(0);
+			await expect
+				.poll(() =>
+					app.evaluate(() => (globalThis as FailureMain).themeSaveRequested),
+				)
+				.toBe(true);
+			if (modal !== 'closed') {
+				await trigger.click();
+				if (modal === 'shortcuts') {
+					await page.getByRole('combobox').fill('keyboard shortcuts');
+					await page.keyboard.press('Enter');
+				}
+			}
+			const focused =
+				modal === 'closed'
+					? trigger
+					: modal === 'palette'
+						? page.getByRole('combobox')
+						: page.getByRole('button', {name: 'close keyboard shortcuts'});
+			await expect(focused).toBeFocused();
+			await app.evaluate(() => (globalThis as FailureMain).failThemeSave?.());
+			const notification = page.getByRole('status', {name: 'notification'});
+			const message = 'theme could not be saved. try again.';
+			await expect(notification).toHaveText(message);
+			await expect(notification).toHaveAttribute('aria-live', 'polite');
+			await expect(page.getByText(message, {exact: true})).toHaveCount(1);
+			await expect(page.getByRole('alert')).toHaveCount(0);
+			await expect(
+				page.locator('[aria-label="notification"][aria-live="polite"]'),
+			).toHaveCount(1);
+			expect(
+				await notification.evaluate(
+					(region, previous) => region === previous,
+					previousRegion,
+				),
+			).toBe(true);
+			expect(
+				await notification.evaluate(
+					region => region.closest('[inert], [aria-hidden="true"]') === null,
+				),
+			).toBe(true);
+			if (modal !== 'closed') {
+				expect(
+					await notification.evaluate(region =>
+						region.closest('dialog:modal')?.getAttribute('aria-label'),
+					),
+				).toBe(modal === 'palette' ? 'command palette' : 'keyboard shortcuts');
+			}
+			await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+			await expect(focused).toBeFocused();
+			await previousRegion.dispose();
+		} finally {
+			await app.evaluate(() => (globalThis as FailureMain).failThemeSave?.());
+			await page.keyboard.press('Escape');
+		}
+	});
+}
