@@ -246,6 +246,7 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		page.getByRole('button', {name: 'diagnostics', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),
 		card.getByRole('button', {name: 'Deny', exact: true}),
+		page.getByRole('textbox', {name: 'message'}),
 		page.getByRole('button', {name: 'cancel turn', exact: true}),
 	];
 	await focusOrder[0].focus();
@@ -254,6 +255,12 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		await expect(control).toBeFocused();
 		await expect(control).toHaveCSS('outline-width', '2px');
 	}
+	await expect(
+		page.getByRole('button', {name: 'send', exact: true}),
+	).toBeDisabled();
+	await expect(
+		page.getByRole('textbox', {name: 'message'}),
+	).toHaveAccessibleDescription('waiting for Nanocoder to finish the turn');
 	await expect(
 		page.getByRole('status').filter({hasText: 'approval'}),
 	).toBeVisible();

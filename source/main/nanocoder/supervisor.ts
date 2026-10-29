@@ -6,6 +6,7 @@ import {
 	type ConnectOptions,
 	type NanocoderConnection,
 	NanocoderFailure,
+	type NanocoderTurnResult,
 	type ResumedSession,
 } from '@/main/nanocoder/acp-client';
 import {capabilityGates, describeAgent} from '@/main/nanocoder/capabilities';
@@ -32,7 +33,6 @@ import type {
 	SupervisorState,
 	ThreadInfo,
 	TurnEvent,
-	TurnResult,
 } from '@/shared/ipc';
 
 interface Entry {
@@ -626,7 +626,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		projectId: string,
 		sessionId: string,
 		text: string,
-	): Promise<TurnResult> {
+	): Promise<NanocoderTurnResult> {
 		const connection = this.getConnection(projectId);
 		const entry = this.entries.get(projectId);
 		if (!entry) throw new IpcFailure('AGENT_UNAVAILABLE', 'No project is open');

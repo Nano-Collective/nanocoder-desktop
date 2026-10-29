@@ -39,6 +39,18 @@ const failure = (root: string, options?: Partial<ConnectOptions>) =>
 
 test.after.always(removeFakeProjects);
 
+test('retains validated prompt-response tokens and vendor cost in main only (CHAT-19)', async t => {
+	const connection = await connect(fakeProject('reported-usage'));
+	t.teardown(() => connection.close());
+	const session = await connection.newSession('normal');
+	t.deepEqual(await connection.prompt(session.id, 'fixture'), {
+		stopReason: 'end_turn',
+		metadata: {
+			usage: {inputTokens: 12, outputTokens: 8, totalTokens: 20, cost: 0.01},
+		},
+	});
+});
+
 test('records the protocol version, agent version and capabilities', async t => {
 	const root = fakeProject();
 	const connection = await connect(root);

@@ -39,6 +39,7 @@ Visual design: see [`DESIGN.md`](../DESIGN.md).
 | 17 | [`proposed-issues.md`](proposed-issues.md) | Drafts of the issues this plan needs raised, ready to post. |
 | 18 | [`technical-gate.md`](technical-gate.md) | What the technical gate proved, what Nanocoder does that the plan did not know, and what the tests do not prove. |
 | 19 | [`ui-foundations.md`](ui-foundations.md) | Token generation, local font, theme and accessibility QA for U.0/U.1, plus the proposed Markdown renderer. |
+| 20 | [`streaming-conversation.md`](streaming-conversation.md) | Phase 1.6 and U.4 update mapping, batching, safe Markdown, reported usage and command suggestions. |
 
 Feature files:
 

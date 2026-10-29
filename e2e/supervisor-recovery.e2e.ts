@@ -120,7 +120,9 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 		'Earlier answer',
 	);
 	await expect(
-		page.getByText('you: synthetic failed request', {exact: true}),
+		page
+			.locator('.gate-message-user .stream-plain')
+			.getByText('synthetic failed request', {exact: true}),
 	).toHaveCount(0);
 	await expect(page.locator('.ui-badge--failed')).toHaveCount(0);
 	await expect(page.getByRole('alert')).toHaveCount(0);
@@ -333,7 +335,9 @@ test('failed resume preserves the visible failed turn and cannot accept another 
 		page.getByRole('textbox', {name: 'message', exact: true}),
 	).toBeDisabled();
 	await expect(
-		page.getByText('you: synthetic failed request', {exact: true}),
+		page
+			.locator('.gate-message-user .stream-plain')
+			.getByText('synthetic failed request', {exact: true}),
 	).toHaveCount(1);
 });
 

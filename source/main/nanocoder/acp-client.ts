@@ -26,11 +26,13 @@ import {
 import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
 import {type TrustRefusal, trustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
+import {parsePromptMetadata} from '@/main/nanocoder/turn-metadata';
 import type {
 	ConnectedAgent,
 	NanocoderMode,
 	NanocoderRuntime,
 	SessionInfo,
+	StreamMetadata,
 	TurnEvent,
 	TurnResult,
 } from '@/shared/ipc';
@@ -66,10 +68,14 @@ export interface NanocoderConnection {
 	): Promise<ResumedSession>;
 	deleteSession(sessionId: string): Promise<void>;
 	renameSession(sessionId: string, title: string): Promise<string>;
-	prompt(sessionId: string, text: string): Promise<TurnResult>;
+	prompt(sessionId: string, text: string): Promise<NanocoderTurnResult>;
 	cancel(sessionId: string): Promise<void>;
 	probeExtensions(): Promise<ExtensionProbes>;
 	close(): Promise<void>;
+}
+
+export interface NanocoderTurnResult extends TurnResult {
+	metadata?: StreamMetadata;
 }
 
 export interface ResumedSession {
@@ -383,7 +389,7 @@ export async function connectNanocoder(
 	const prompt = async (
 		sessionId: string,
 		text: string,
-	): Promise<TurnResult> => {
+	): Promise<NanocoderTurnResult> => {
 		if (!readySessions.has(sessionId) || closing) {
 			throw new NanocoderFailure(
 				'AGENT_UNAVAILABLE',
@@ -407,7 +413,11 @@ export async function connectNanocoder(
 		activePrompts.add(pending);
 		try {
 			const response = await pending;
-			return {stopReason: response.stopReason};
+			const metadata = parsePromptMetadata(response);
+			return {
+				stopReason: response.stopReason,
+				...(metadata ? {metadata} : {}),
+			};
 		} finally {
 			activePrompts.delete(pending);
 		}

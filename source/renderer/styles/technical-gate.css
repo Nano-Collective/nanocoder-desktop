@@ -91,7 +91,7 @@ dt,
 	display: none;
 }
 
-.gate-transcript li {
+.gate-transcript > li {
 	padding-left: var(--spacing-lg);
 	border-left: 1px solid var(--colors-stroke);
 }

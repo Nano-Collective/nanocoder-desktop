@@ -11,6 +11,7 @@ import {z} from 'zod';
 import {cancelPromptRequest} from '@/main/ipc/cancel-prompt';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
+import {completeTechnicalPrompt} from '@/main/ipc/technical-prompt';
 import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
 import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {disposeDesktop} from '@/main/lifecycle';
@@ -198,8 +199,20 @@ async function sendPrompt({text}: {text: string}): Promise<TurnResult> {
 	if (!supervisor || !activeProjectId || !session) {
 		throw new IpcFailure('AGENT_UNAVAILABLE', 'No project is open');
 	}
+	const requested = {projectId: activeProjectId, sessionId: session.id};
 	return supervisor
-		.prompt(activeProjectId, session.id, text)
+		.prompt(requested.projectId, requested.sessionId, text)
+		.then(result =>
+			completeTechnicalPrompt(
+				result,
+				requested,
+				{
+					projectId: activeProjectId ?? null,
+					sessionId: session?.id ?? null,
+				},
+				sendEvent,
+			),
+		)
 		.catch((error: unknown) => {
 			if (error instanceof NanocoderFailure) {
 				throw new IpcFailure(error.code, error.message);

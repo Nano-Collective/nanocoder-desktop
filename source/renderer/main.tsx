@@ -5,6 +5,7 @@ import '@/renderer/styles/foundations.css';
 import '@/renderer/styles/app-shell.css';
 import '@/renderer/styles/approvals.css';
 import '@/renderer/styles/technical-gate.css';
+import '@/renderer/styles/conversation-stream.css';
 import '@/renderer/styles/overlays.css';
 import '@/renderer/styles/projects.css';
 import '@/renderer/styles/threads.css';

@@ -1,0 +1,177 @@
+.conversation-stream {
+	display: grid;
+	gap: var(--spacing-xl);
+	min-width: 0;
+}
+
+.conversation-stream .gate-transcript {
+	gap: 9px;
+	white-space: normal;
+}
+
+.stream-author {
+	color: var(--components-message-author-text-color);
+	font-size: var(--components-message-author-font-size);
+	font-weight: var(--components-message-author-font-weight);
+	line-height: var(--components-message-author-line-height);
+	letter-spacing: var(--components-message-author-letter-spacing);
+	text-transform: uppercase;
+	font-style: normal;
+	margin-bottom: var(--spacing-xs);
+}
+
+.stream-author-agent {
+	color: var(--colors-primary);
+}
+
+.stream-plain,
+.stream-reasoning p {
+	white-space: pre-wrap;
+}
+
+.gate-transcript > .gate-message-thought {
+	border-left-style: dashed;
+}
+
+.stream-reasoning {
+	color: var(--components-reasoning-text-color);
+	font-size: var(--components-reasoning-font-size);
+	line-height: var(--components-reasoning-line-height);
+	font-style: italic;
+	font-synthesis: style;
+}
+
+.gate-message-tool,
+.gate-message-compaction,
+.gate-message-subagent,
+.gate-message-session-message,
+.stream-session {
+	color: var(--components-tool-row-text-color);
+	font-size: var(--components-tool-row-font-size);
+	line-height: var(--components-tool-row-line-height);
+}
+
+.stream-tool-name {
+	color: var(--colors-on-surface);
+	font-size: inherit;
+}
+
+.conversation-stream summary {
+	cursor: pointer;
+}
+
+.gate-message-tool summary {
+	list-style: none;
+}
+
+.gate-message-tool summary::-webkit-details-marker {
+	display: none;
+}
+
+.gate-message-tool[data-status="completed"] .stream-tool-status {
+	color: var(--colors-success);
+}
+
+.gate-message-tool[data-status="failed"] .stream-tool-status {
+	color: var(--colors-error);
+}
+
+.gate-message-tool[data-status="in_progress"] .stream-tool-status {
+	color: var(--colors-primary);
+}
+
+.stream-disclosure::before {
+	content: "▸ ";
+}
+
+details[open] > summary .stream-disclosure::before {
+	content: "▾ ";
+}
+
+.stream-tool-details {
+	padding: var(--spacing-md) 0 var(--spacing-md) var(--spacing-lg);
+	font-size: var(--typography-meta-font-size);
+}
+
+.stream-tool-details pre,
+.stream-markdown pre {
+	max-width: 100%;
+	overflow: auto;
+	white-space: pre;
+	padding: var(--spacing-md);
+	border: 1px solid var(--colors-stroke);
+	border-radius: var(--rounded-sm);
+	background: var(--colors-surface-panel);
+}
+
+.stream-reported {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--spacing-md);
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-caption-font-size);
+}
+
+.stream-token-chip {
+	border: 1px solid var(--colors-stroke);
+	border-radius: var(--rounded-full);
+	padding: 0 var(--spacing-xs);
+}
+
+.stream-markdown > * + * {
+	margin-top: var(--spacing-md);
+}
+
+.stream-markdown :is(h1, h2, h3, h4, h5, h6) {
+	color: var(--components-markdown-heading-text-color);
+	font-size: inherit;
+	font-weight: var(--typography-body-md-font-weight);
+}
+
+.stream-markdown strong {
+	font-weight: var(--typography-body-md-font-weight);
+}
+
+.stream-markdown em {
+	font-style: normal;
+}
+
+.stream-markdown blockquote {
+	margin-left: 0;
+	padding-left: var(--spacing-lg);
+	border-left: 1px solid var(--colors-stroke);
+	color: var(--colors-on-surface-muted);
+}
+
+.stream-resource,
+.stream-context {
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-caption-font-size);
+}
+
+.stream-context [role="progressbar"] {
+	height: var(--components-context-gauge-height);
+	background: var(--colors-stroke);
+}
+
+.stream-context [role="progressbar"] span {
+	display: block;
+	height: 100%;
+	background: var(--components-context-gauge-background-color);
+}
+
+.stream-commands {
+	display: grid;
+	gap: var(--spacing-xs);
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.stream-commands .ui-button {
+	width: 100%;
+	justify-content: flex-start;
+	text-align: left;
+	overflow-wrap: anywhere;
+}

@@ -1,9 +1,366 @@
 import test from 'ava';
+import {toTurnEvent} from '@/main/nanocoder/turn-events';
 import {
 	addUserMessage,
 	applyEvent,
+	applyEvents,
 	emptyTranscript,
 } from '@/renderer/transcript';
+
+test('title-only subagent-prefixed tool updates retain classification status content and opaque ID (CHAT-05)', t => {
+	const full = toTurnEvent({
+		sessionUpdate: 'tool_call',
+		toolCallId: 'subagent:fixture',
+		title: 'starting',
+		kind: 'execute',
+		status: 'in_progress',
+		content: [
+			{type: 'content', content: {type: 'text', text: 'retained content'}},
+		],
+		rawInput: {task: 'fixture'},
+	});
+	const titleOnly = toTurnEvent({
+		sessionUpdate: 'tool_call_update',
+		toolCallId: 'subagent:fixture',
+		title: 'still working',
+	});
+	t.truthy(full);
+	t.truthy(titleOnly);
+	if (!full || !titleOnly) return;
+	const transcript = applyEvent(applyEvent(emptyTranscript, full), titleOnly);
+	t.deepEqual(transcript.items, [
+		{
+			kind: 'tool',
+			id: 'subagent:fixture',
+			title: 'still working',
+			status: 'in_progress',
+			toolKind: 'execute',
+			details: {input: '{"task":"fixture"}', content: ['retained content']},
+		},
+	]);
+});
+
+test('keeps reasoning separate from the agent answer (CHAT-05)', t => {
+	t.deepEqual(
+		applyEvent(emptyTranscript, {type: 'thought', text: 'Checking'}),
+		{
+			items: [{kind: 'thought', text: 'Checking'}],
+			permissions: [],
+		},
+	);
+});
+
+test('attaches reported usage to the answer without inferring context use (CHAT-19)', t => {
+	const before = applyEvent(emptyTranscript, {type: 'text', text: 'answer'});
+	t.deepEqual(
+		applyEvent(before, {
+			type: 'metadata',
+			metadata: {
+				usage: {totalTokens: 20, cost: 0.01},
+				durationMs: 42,
+				outcome: 'completed',
+			},
+		}),
+		{
+			items: [
+				{
+					kind: 'agent',
+					text: 'answer',
+					metadata: {
+						usage: {totalTokens: 20, cost: 0.01},
+						durationMs: 42,
+						outcome: 'completed',
+					},
+				},
+			],
+			permissions: [],
+		},
+	);
+});
+
+for (const boundary of ['local', 'replayed'] as const) {
+	test(`assistant-less turn metadata cannot cross a ${boundary} user boundary (CHAT-19)`, t => {
+		const first = applyEvents(emptyTranscript, [
+			{type: 'user', text: 'first question'},
+			{type: 'text', text: 'settled answer'},
+			{
+				type: 'metadata',
+				metadata: {usage: {totalTokens: 17}, outcome: 'completed'},
+			},
+		]);
+		const before =
+			boundary === 'local'
+				? addUserMessage(first, 'next question')
+				: applyEvent(first, {type: 'user', text: 'next question'});
+		const after = applyEvents(before, [
+			{type: 'tool', id: 'next-tool', status: 'failed'},
+			{
+				type: 'metadata',
+				metadata: {usage: {totalTokens: 31}, outcome: 'failed'},
+			},
+		]);
+		t.deepEqual(after.items[1].metadata, {
+			usage: {totalTokens: 17},
+			outcome: 'completed',
+		});
+		t.is(after.items[1], first.items[1]);
+		t.deepEqual(after.items.at(-1), {
+			kind: 'turn-metadata',
+			metadata: {usage: {totalTokens: 31}, outcome: 'failed'},
+		});
+	});
+}
+
+test('assistant-less turns keep separate usage rows and merge only their own metadata (CHAT-19)', t => {
+	const first = applyEvents(emptyTranscript, [
+		{type: 'user', text: 'first question'},
+		{type: 'metadata', metadata: {usage: {totalTokens: 17, cost: 0.01}}},
+	]);
+	const after = applyEvents(first, [
+		{type: 'user', text: 'next question'},
+		{type: 'metadata', metadata: {usage: {totalTokens: 31}}},
+		{type: 'thought', text: 'checking'},
+		{type: 'text', text: 'later answer'},
+		{type: 'metadata', metadata: {durationMs: 8, outcome: 'failed'}},
+	]);
+	t.is(after.items[1], first.items[1]);
+	t.deepEqual(after.items[1], {
+		kind: 'turn-metadata',
+		metadata: {usage: {totalTokens: 17, cost: 0.01}},
+	});
+	t.deepEqual(after.items[3], {
+		kind: 'turn-metadata',
+		metadata: {usage: {totalTokens: 31}, durationMs: 8, outcome: 'failed'},
+	});
+	t.is(after.items[5].metadata, undefined);
+});
+
+test('different reported message IDs do not merge (CHAT-05)', t => {
+	let transcript = applyEvent(emptyTranscript, {
+		type: 'text',
+		text: 'one',
+		messageId: 'one',
+	});
+	transcript = applyEvent(transcript, {
+		type: 'text',
+		text: 'two',
+		messageId: 'two',
+	});
+	t.deepEqual(transcript.items, [
+		{kind: 'agent', text: 'one', messageId: 'one'},
+		{kind: 'agent', text: 'two', messageId: 'two'},
+	]);
+});
+
+test('plan snapshots replace in place and removal removes only that plan (ACP-12)', t => {
+	let transcript = applyEvent(emptyTranscript, {
+		type: 'plan',
+		id: 'p',
+		content: {kind: 'markdown', text: 'one'},
+	});
+	t.deepEqual(transcript, {
+		items: [{kind: 'plan', id: 'p', content: {kind: 'markdown', text: 'one'}}],
+		permissions: [],
+	});
+	transcript = applyEvent(transcript, {type: 'text', text: 'settled'});
+	const settled = transcript.items[1];
+	transcript = applyEvent(transcript, {
+		type: 'plan',
+		id: 'p',
+		content: {kind: 'markdown', text: 'two'},
+	});
+	t.deepEqual(transcript.items[0], {
+		kind: 'plan',
+		id: 'p',
+		content: {kind: 'markdown', text: 'two'},
+	});
+	t.is(transcript.items[1], settled);
+	transcript = applyEvent(transcript, {type: 'plan', id: 'p', content: null});
+	t.deepEqual(transcript.items, [settled]);
+});
+
+test('compaction patches preserve omissions, clear null and append chunks in order (ACP-12)', t => {
+	let transcript = applyEvent(emptyTranscript, {
+		type: 'compaction-chunk',
+		id: 'c',
+		text: 'one',
+	});
+	t.deepEqual(transcript, {
+		items: [
+			{kind: 'compaction', id: 'c', status: 'in_progress', summary: 'one'},
+		],
+		permissions: [],
+	});
+	transcript = applyEvent(transcript, {
+		type: 'compaction',
+		id: 'c',
+		status: 'completed',
+		error: 'fixture error',
+	});
+	transcript = applyEvent(transcript, {
+		type: 'compaction-chunk',
+		id: 'c',
+		text: 'two',
+	});
+	t.deepEqual(transcript.items[0], {
+		kind: 'compaction',
+		id: 'c',
+		status: 'completed',
+		summary: 'onetwo',
+		error: 'fixture error',
+	});
+	transcript = applyEvent(transcript, {
+		type: 'compaction',
+		id: 'c',
+		status: 'completed',
+		summary: null,
+		error: null,
+	});
+	t.deepEqual(transcript.items[0], {
+		kind: 'compaction',
+		id: 'c',
+		status: 'completed',
+		summary: null,
+		error: null,
+	});
+});
+
+test('subagent metadata patches never add child actions or guessed state (ACP-12)', t => {
+	let transcript = applyEvent(emptyTranscript, {
+		type: 'subagent',
+		id: 'child',
+		title: 'one',
+		description: 'detail',
+		state: 'running',
+	});
+	t.deepEqual(transcript, {
+		items: [
+			{
+				kind: 'subagent',
+				id: 'child',
+				title: 'one',
+				description: 'detail',
+				state: 'running',
+			},
+		],
+		permissions: [],
+	});
+	transcript = applyEvent(transcript, {
+		type: 'subagent',
+		id: 'child',
+		title: null,
+		state: null,
+	});
+	t.deepEqual(transcript.items[0], {
+		kind: 'subagent',
+		id: 'child',
+		title: null,
+		description: 'detail',
+		state: null,
+	});
+});
+
+test('inter-session content replaces, clears and appends while sender identity is retained (ACP-12)', t => {
+	let transcript = applyEvent(emptyTranscript, {
+		type: 'session-message',
+		id: 'm',
+		sender: 'child',
+		text: 'one',
+		append: false,
+	});
+	t.deepEqual(transcript, {
+		items: [{kind: 'session-message', id: 'm', sender: 'child', text: 'one'}],
+		permissions: [],
+	});
+	transcript = applyEvent(transcript, {
+		type: 'session-message',
+		id: 'm',
+		text: 'two',
+		append: true,
+	});
+	transcript = applyEvent(transcript, {
+		type: 'session-message',
+		id: 'm',
+		recipient: 'parent',
+		append: false,
+	});
+	t.deepEqual(transcript.items[0], {
+		kind: 'session-message',
+		id: 'm',
+		sender: 'child',
+		recipient: 'parent',
+		text: 'onetwo',
+	});
+	transcript = applyEvent(transcript, {
+		type: 'session-message',
+		id: 'm',
+		text: '',
+		append: false,
+	});
+	t.deepEqual(transcript.items[0], {
+		kind: 'session-message',
+		id: 'm',
+		sender: 'child',
+		recipient: 'parent',
+		text: '',
+	});
+});
+
+test('tool detail patches replace content without losing input or settled rows (CHAT-05)', t => {
+	let transcript = applyEvent(emptyTranscript, {
+		type: 'tool',
+		id: 'tool',
+		details: {content: ['one'], input: 'input'},
+	});
+	t.deepEqual(transcript.items[0], {
+		kind: 'tool',
+		id: 'tool',
+		title: 'tool',
+		status: 'pending',
+		details: {content: ['one'], input: 'input'},
+	});
+	transcript = applyEvent(transcript, {type: 'text', text: 'settled'});
+	const settled = transcript.items[1];
+	transcript = applyEvent(transcript, {
+		type: 'tool',
+		id: 'tool',
+		details: {content: []},
+	});
+	t.deepEqual(transcript.items[0], {
+		kind: 'tool',
+		id: 'tool',
+		title: 'tool',
+		status: 'pending',
+		details: {content: [], input: 'input'},
+	});
+	t.is(transcript.items[1], settled);
+});
+
+test('reported mode configuration context and notices remain display data (ACP-12)', t => {
+	t.deepEqual(applyEvent(emptyTranscript, {type: 'mode', id: 'plan'}), {
+		...emptyTranscript,
+		mode: 'plan',
+	});
+	t.deepEqual(applyEvent(emptyTranscript, {type: 'config', options: []}), {
+		...emptyTranscript,
+		config: [],
+	});
+	t.deepEqual(
+		applyEvent(emptyTranscript, {type: 'context', used: 12, size: 100}),
+		{...emptyTranscript, context: {used: 12, size: 100}},
+	);
+	t.deepEqual(
+		applyEvent(emptyTranscript, {
+			type: 'notice',
+			title: 'notice',
+			severity: 'warning',
+		}),
+		{
+			items: [{kind: 'notice', title: 'notice', severity: 'warning'}],
+			permissions: [],
+		},
+	);
+});
 
 test('rebuilds a resumed thread from its replayed events', t => {
 	let transcript = emptyTranscript;
