@@ -19,6 +19,10 @@ import {
 	ProtocolViolation,
 	protocolStream,
 } from '@/main/nanocoder/protocol-stream';
+import {
+	type SessionTitleChange,
+	sessionTitle,
+} from '@/main/nanocoder/session-title';
 import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
 import {type TrustRefusal, trustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
@@ -61,6 +65,7 @@ export interface NanocoderConnection {
 		mode: NanocoderMode,
 	): Promise<ResumedSession>;
 	deleteSession(sessionId: string): Promise<void>;
+	renameSession(sessionId: string, title: string): Promise<string>;
 	prompt(sessionId: string, text: string): Promise<TurnResult>;
 	cancel(sessionId: string): Promise<void>;
 	probeExtensions(): Promise<ExtensionProbes>;
@@ -85,6 +90,7 @@ export interface ConnectOptions {
 	signal?: AbortSignal;
 	onUpdate?: (update: SessionNotification['update']) => void;
 	onSessionUpdate?: (notification: SessionNotification) => void;
+	onTitleChanged?: (change: SessionTitleChange) => void;
 	// Without it, every permission request is answered as cancelled: nothing is allowed by default.
 	onPermission?: (
 		request: RequestPermissionRequest,
@@ -168,6 +174,13 @@ export async function connectNanocoder(
 				options.onSessionUpdate?.(params);
 			}
 		})
+		.onNotification(
+			'_nanocoder/sessionTitleChanged',
+			sessionTitle,
+			({params}) => {
+				if (params) options.onTitleChanged?.(params);
+			},
+		)
 		.connect(
 			protocolStream(child.stdout, child.stdin, line => {
 				violated = true;
@@ -399,26 +412,71 @@ export async function connectNanocoder(
 		}
 	};
 
+	let renameMethod: string | undefined;
+	const renameSession = async (
+		sessionId: string,
+		title: string,
+	): Promise<string> => {
+		if (!renameMethod)
+			throw new NanocoderFailure(
+				'UNSUPPORTED',
+				'Session rename is unavailable',
+			);
+		const change = sessionTitle({sessionId, title});
+		if (!change)
+			throw new NanocoderFailure(
+				'UNSUPPORTED',
+				'Choose a non-empty, bounded title',
+			);
+		try {
+			const response: unknown = await connection.agent.request(
+				renameMethod,
+				change,
+			);
+			const renamed = sessionTitle({
+				sessionId: change.sessionId,
+				title:
+					typeof response === 'object' &&
+					response !== null &&
+					'title' in response
+						? response.title
+						: undefined,
+			});
+			if (!renamed) throw new Error();
+			return renamed.title;
+		} catch (error) {
+			throw (
+				missingSession(error) ??
+				new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'Nanocoder could not rename the session',
+				)
+			);
+		}
+	};
 	const probeExtensions = async (): Promise<ExtensionProbes> => {
-		const probe = async (name: string, expected: string): Promise<boolean> => {
+		const probe = async (
+			name: string,
+			expected: string,
+		): Promise<string | undefined> => {
 			for (const method of [`_${name}`, name]) {
 				try {
 					// No session ID or title: the pinned implementation refuses before any I/O.
 					await connection.agent.request(method, {});
-					return false;
+					return undefined;
 				} catch (error) {
-					if (!(error instanceof RequestError)) return false;
+					if (!(error instanceof RequestError)) return undefined;
 					const details = (error.data as {details?: unknown} | undefined)
 						?.details;
-					if (error.code === -32602 || details === expected) return true;
+					if (error.code === -32602 || details === expected) return method;
 					if (
 						error.code !== -32601 &&
 						details !== `Unknown extension method: ${method}`
 					)
-						return false;
+						return undefined;
 				}
 			}
-			return false;
+			return undefined;
 		};
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const probes = Promise.all([
@@ -429,15 +487,17 @@ export async function connectNanocoder(
 			probe('timeline/list', 'timeline/list requires a string sessionId'),
 		]).then(([rename, timeline]) => ({rename, timeline}));
 		try {
-			return await Promise.race([
+			const result = await Promise.race([
 				probes,
-				new Promise<ExtensionProbes>(resolve => {
+				new Promise<undefined>(resolve => {
 					timer = setTimeout(
-						() => resolve({rename: false, timeline: false}),
+						() => resolve(undefined),
 						options.probeTimeoutMs ?? 2_000,
 					);
 				}),
 			]);
+			renameMethod = result?.rename;
+			return {rename: !!result?.rename, timeline: !!result?.timeline};
 		} finally {
 			clearTimeout(timer);
 		}
@@ -450,6 +510,7 @@ export async function connectNanocoder(
 		newSession,
 		resumeSession,
 		deleteSession,
+		renameSession,
 		prompt,
 		cancel: sessionId =>
 			connection.agent.notify(methods.agent.session.cancel, {sessionId}),
