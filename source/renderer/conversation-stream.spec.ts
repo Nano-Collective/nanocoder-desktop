@@ -38,6 +38,33 @@ test('user and agent author labels show only reported token and cost metadata (C
 	t.false(absent.includes('role="progressbar"'));
 });
 
+test('assistant-less turns show reported usage in their own turn row (CHAT-19)', t => {
+	const transcript = applyEvents(emptyTranscript, [
+		{type: 'user', text: 'first question'},
+		{type: 'text', text: 'settled answer'},
+		{
+			type: 'metadata',
+			metadata: {usage: {totalTokens: 17}, outcome: 'completed'},
+		},
+		{type: 'user', text: 'next question'},
+		{type: 'tool', id: 'next-tool', status: 'failed'},
+		{
+			type: 'metadata',
+			metadata: {usage: {totalTokens: 31}, outcome: 'failed'},
+		},
+	]);
+	const html = render(transcript.items);
+	t.regex(
+		html,
+		/<li class="gate-message-agent">(?:(?!<\/li>).)*\+17 tok(?:(?!<\/li>).)*completed(?:(?!<\/li>).)*settled answer(?:(?!<\/li>).)*<\/li>/,
+	);
+	t.regex(
+		html,
+		/<li class="gate-message-turn-metadata">(?:(?!<\/li>).)*turn details(?:(?!<\/li>).)*\+31 tok(?:(?!<\/li>).)*failed(?:(?!<\/li>).)*<\/li>/,
+	);
+	t.notRegex(html, /<li class="gate-message-agent">(?:(?!<\/li>).)*\+31 tok/);
+});
+
 test('a cursor belongs only to the currently streaming last agent message (CHAT-05)', t => {
 	const agent: TranscriptItem = {kind: 'agent', text: 'answer'};
 	t.true(render([agent], true).includes('stream-cursor'));

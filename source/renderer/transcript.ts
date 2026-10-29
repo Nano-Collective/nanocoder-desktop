@@ -10,6 +10,7 @@ import type {
 
 export type TranscriptItem = (
 	| {kind: 'user' | 'agent' | 'thought'; text: string; messageId?: string}
+	| {kind: 'turn-metadata'}
 	| {kind: 'failure'; text: string}
 	| {
 			kind: 'tool';
@@ -56,7 +57,6 @@ export interface Transcript {
 		size: number;
 		cost?: {amount: number; currency: string};
 	};
-	metadata?: StreamMetadata;
 }
 
 export const emptyTranscript: Transcript = {items: [], permissions: []};
@@ -276,10 +276,21 @@ export function applyEvent(
 ): Transcript {
 	const next = applyContent(transcript, event);
 	if (!event.metadata) return next;
-	let index = next.items.length - 1;
-	while (index >= 0 && next.items[index].kind !== 'agent') index--;
+	let index = -1;
+	for (let cursor = next.items.length - 1; cursor >= 0; cursor--) {
+		const {kind} = next.items[cursor];
+		if (kind === 'user') break;
+		if (kind === 'turn-metadata') {
+			index = cursor;
+			break;
+		}
+		if (kind === 'agent' && index < 0) index = cursor;
+	}
 	if (index < 0)
-		return {...next, metadata: mergeMetadata(next.metadata, event.metadata)};
+		return {
+			...next,
+			items: [...next.items, {kind: 'turn-metadata', metadata: event.metadata}],
+		};
 	const items = [...next.items];
 	const item = items[index];
 	items[index] = {

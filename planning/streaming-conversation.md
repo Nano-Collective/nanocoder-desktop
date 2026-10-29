@@ -16,6 +16,8 @@ Plans replace by ID and can be removed. Compaction summary chunks append in rece
 
 At `fc01e239`, live token counts are on the prompt response's `usage`, with cost under `nanocoder/usage`. The main-only `NanocoderTurnResult` retains validated metadata. Replay may put usage, duration and outcome on an empty assistant chunk, which becomes a metadata-only turn event. Token chips never invent totals; reported cost is shown without assuming an unreported currency. The context gauge appears only for actual `usage_update` context figures, never per-turn token totals.
 
+Usage stays within its turn's user-message boundary. It attaches to the latest answer in that turn, or to a separate turn-details row when no answer exists. Further metadata updates that turn-details row even if an answer arrives later. A later turn never changes an earlier turn's reported usage or outcome.
+
 The temporary technical gate publishes prompt metadata through its existing event channel, after checking the captured project and session still match. Its renderer listener accepts metadata only, preventing duplicate text/tool events. ThreadService must replace both pieces with its mapped per-thread event path when the technical gate retires.
 
 ## Ordered rendering

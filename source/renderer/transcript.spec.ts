@@ -3,6 +3,7 @@ import {toTurnEvent} from '@/main/nanocoder/turn-events';
 import {
 	addUserMessage,
 	applyEvent,
+	applyEvents,
 	emptyTranscript,
 } from '@/renderer/transcript';
 
@@ -75,6 +76,63 @@ test('attaches reported usage to the answer without inferring context use (CHAT-
 			permissions: [],
 		},
 	);
+});
+
+for (const boundary of ['local', 'replayed'] as const) {
+	test(`assistant-less turn metadata cannot cross a ${boundary} user boundary (CHAT-19)`, t => {
+		const first = applyEvents(emptyTranscript, [
+			{type: 'user', text: 'first question'},
+			{type: 'text', text: 'settled answer'},
+			{
+				type: 'metadata',
+				metadata: {usage: {totalTokens: 17}, outcome: 'completed'},
+			},
+		]);
+		const before =
+			boundary === 'local'
+				? addUserMessage(first, 'next question')
+				: applyEvent(first, {type: 'user', text: 'next question'});
+		const after = applyEvents(before, [
+			{type: 'tool', id: 'next-tool', status: 'failed'},
+			{
+				type: 'metadata',
+				metadata: {usage: {totalTokens: 31}, outcome: 'failed'},
+			},
+		]);
+		t.deepEqual(after.items[1].metadata, {
+			usage: {totalTokens: 17},
+			outcome: 'completed',
+		});
+		t.is(after.items[1], first.items[1]);
+		t.deepEqual(after.items.at(-1), {
+			kind: 'turn-metadata',
+			metadata: {usage: {totalTokens: 31}, outcome: 'failed'},
+		});
+	});
+}
+
+test('assistant-less turns keep separate usage rows and merge only their own metadata (CHAT-19)', t => {
+	const first = applyEvents(emptyTranscript, [
+		{type: 'user', text: 'first question'},
+		{type: 'metadata', metadata: {usage: {totalTokens: 17, cost: 0.01}}},
+	]);
+	const after = applyEvents(first, [
+		{type: 'user', text: 'next question'},
+		{type: 'metadata', metadata: {usage: {totalTokens: 31}}},
+		{type: 'thought', text: 'checking'},
+		{type: 'text', text: 'later answer'},
+		{type: 'metadata', metadata: {durationMs: 8, outcome: 'failed'}},
+	]);
+	t.is(after.items[1], first.items[1]);
+	t.deepEqual(after.items[1], {
+		kind: 'turn-metadata',
+		metadata: {usage: {totalTokens: 17, cost: 0.01}},
+	});
+	t.deepEqual(after.items[3], {
+		kind: 'turn-metadata',
+		metadata: {usage: {totalTokens: 31}, durationMs: 8, outcome: 'failed'},
+	});
+	t.is(after.items[5].metadata, undefined);
 });
 
 test('different reported message IDs do not merge (CHAT-05)', t => {

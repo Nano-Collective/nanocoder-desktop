@@ -119,6 +119,14 @@ const StreamRow = React.memo(function StreamRow({
 				</div>
 			);
 			break;
+		case 'turn-metadata':
+			content = (
+				<>
+					<div className="stream-author">turn details</div>
+					<ReportedMetadata metadata={item.metadata} />
+				</>
+			);
+			break;
 		case 'failure':
 			content = (
 				<>
@@ -276,7 +284,6 @@ export function ConversationStream({
 					/>
 				))}
 			</ol>
-			<ReportedMetadata metadata={transcript.metadata} />
 			{transcript.mode && (
 				<p className="stream-session">reported mode: {transcript.mode}</p>
 			)}
