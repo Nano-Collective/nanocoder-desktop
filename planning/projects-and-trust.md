@@ -76,7 +76,10 @@ reports `1.31.0` does not establish compatibility with a published accepted vers
 `RecentProjects` takes only projects, active ID, pending state and add/open/locate
 callbacks. `TrustFeedback` takes a feedback value. Both reuse U.1 parts and use
 `source/renderer/styles/projects.css`, without assuming an app-shell layout.
-`useProjects` handles the typed bridge calls. The small technical-gate mounts can
-move into the app shell's project rail and stream tools without changing either
-component. Default-mode controls and project removal remain unavailable here;
-their later phases retain the existing IPC contracts.
+`useProjects` handles the typed bridge calls. `RecentProjects` mounts in the app
+shell's project-rail slot and `TrustFeedback` in its stream-tools slot. A successful
+recent-project opening clears the former technical-gate composer, so it cannot
+appear to target the newly selected folder. The ACP badge still follows that
+project's live supervisor events, not a saved trust flag or opening result.
+Default-mode controls and project removal remain unavailable here; their later
+phases retain the existing IPC contracts.

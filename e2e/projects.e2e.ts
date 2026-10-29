@@ -355,6 +355,7 @@ test('opening a recent project hides the legacy composer for the previous projec
 		'project ready: second-project',
 	);
 	await expect(page.getByRole('textbox', {name: 'message'})).toHaveCount(0);
+	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
 	await expect(recent.locator('[aria-current="true"]')).toContainText(
 		'second-project',
 	);
