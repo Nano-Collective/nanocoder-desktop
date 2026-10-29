@@ -3,6 +3,7 @@ import {AppShell} from '@/renderer/app-shell';
 import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
 import {RecentProjects} from '@/renderer/recent-projects';
+import {RecoveryTools} from '@/renderer/recovery-tools';
 import {
 	acpBadge,
 	observeSupervisor,
@@ -56,7 +57,7 @@ function AgentDetails({
 	session,
 }: {
 	agent: ConnectedAgent;
-	session: SessionInfo;
+	session: SessionInfo | null;
 }) {
 	const {capabilities} = agent;
 	return (
@@ -66,9 +67,11 @@ function AgentDetails({
 				{agent.version ?? '(no version)'} over ACP protocol version{' '}
 				{agent.protocolVersion} in {agent.root}
 			</p>
-			<p>
-				session {session.id} in {session.mode} mode
-			</p>
+			{session && (
+				<p>
+					session {session.id} in {session.mode} mode
+				</p>
+			)}
 			<Divider soft />
 			<dl className="gate-capabilities">
 				<dt>resume sessions</dt>
@@ -122,6 +125,7 @@ function Conversation({transcript}: {transcript: Transcript}) {
 					key={item.kind === 'tool' ? item.id : `${item.kind}-${index}`}
 				>
 					{item.kind === 'user' && <>you: {item.text}</>}
+					{item.kind === 'failure' && <>failed turn: {item.text}</>}
 					{item.kind === 'agent' && (
 						<>
 							<span aria-hidden="true">✱ </span>Nanocoder: {item.text}
@@ -152,7 +156,14 @@ export function App() {
 	);
 	const [connecting, setConnecting] = useState(false);
 	const [opened, setOpened] = useState<IpcResult<ConnectResult> | null>(null);
-	const projectControls = useProjects(() => setOpened(null));
+	const [recoveredAgent, setRecoveredAgent] = useState<{
+		projectId: string;
+		agent: ConnectedAgent;
+	} | null>(null);
+	const projectControls = useProjects(() => {
+		setOpened(null);
+		setRecoveredAgent(null);
+	});
 	const [transcripts, setTranscripts] = useState<Record<string, Transcript>>(
 		{},
 	);
@@ -163,22 +174,106 @@ export function App() {
 	>({});
 	const [gates, setGates] = useState<Record<string, CapabilityGates>>({});
 	const [supervisors, setSupervisors] = useState<SupervisorIndex>({});
+	const supervisorIndex = useRef<SupervisorIndex>({});
+	const [attemptedProjectId, setAttemptedProjectId] = useState<string | null>(
+		null,
+	);
+	const selectedProject = useRef<string | null>(null);
 	const roots = useRef(new Map<string, string>());
-	const outcome = opened?.ok ? opened.value : null;
+	const recoveryReplay = useRef(
+		new Map<string, {transcript: Transcript; received: boolean}>(),
+	);
+	const processGenerations = useRef(new Map<string, number>());
+	const outcome =
+		recoveredAgent?.projectId === attemptedProjectId && recoveredAgent
+			? {
+					status: 'connected' as const,
+					agent: recoveredAgent.agent,
+					session: null,
+				}
+			: opened?.ok
+				? opened.value
+				: null;
 	const root = outcome?.status === 'connected' ? outcome.agent.root : '';
 	const transcript = transcripts[root] ?? emptyTranscript;
 	const sending = running[root] ?? false;
 	const turn = turns[root];
-	const selectedRoot = projectControls.projects.find(
-		project => project.id === projectControls.activeProjectId,
-	)?.canonicalRoot;
-	const processBadge = acpBadge(supervisors, root || selectedRoot || '');
+	const selected =
+		supervisors[attemptedProjectId ?? projectControls.activeProjectId ?? ''];
+	const processState = selected?.state ?? null;
+	const accepting =
+		processState?.status === 'ready' &&
+		processState.agent?.root === root &&
+		!connecting &&
+		!projectControls.pending;
+	const processBadge = acpBadge(supervisors, selected?.root ?? '');
 
 	useEffect(
 		() =>
 			window.desktop.onProjectEvent(event => {
-				if (event.type === 'supervisor' || event.type === 'project-removed') {
-					setSupervisors(current => observeSupervisor(current, event));
+				const next = observeSupervisor(supervisorIndex.current, event);
+				if (event.type !== 'turn' && next === supervisorIndex.current) return;
+				if (next !== supervisorIndex.current) {
+					supervisorIndex.current = next;
+					setSupervisors(next);
+				}
+				if (event.type === 'project') {
+					roots.current.set(event.projectId, event.project.canonicalRoot);
+					if (selectedProject.current !== event.projectId) {
+						setOpened(null);
+						setRecoveredAgent(null);
+					}
+					selectedProject.current = event.projectId;
+					setAttemptedProjectId(event.projectId);
+					return;
+				}
+				if (event.type === 'project-removed') {
+					roots.current.delete(event.projectId);
+					recoveryReplay.current.delete(event.projectId);
+					if (selectedProject.current === event.projectId) {
+						selectedProject.current = null;
+						setAttemptedProjectId(null);
+						setRecoveredAgent(null);
+						setOpened(null);
+					}
+					return;
+				}
+				if (event.type === 'supervisor') {
+					const processRoot =
+						event.state.agent?.root ?? roots.current.get(event.projectId);
+					if (event.state.status === 'starting') {
+						recoveryReplay.current.set(event.projectId, {
+							transcript: emptyTranscript,
+							received: false,
+						});
+						if (processRoot) {
+							processGenerations.current.set(
+								processRoot,
+								(processGenerations.current.get(processRoot) ?? 0) + 1,
+							);
+							setRunning(current => ({...current, [processRoot]: false}));
+						}
+					} else {
+						const replayed = recoveryReplay.current.get(event.projectId);
+						if (event.state.status === 'ready' && processRoot && replayed) {
+							if (replayed.received)
+								setTranscripts(current => ({
+									...current,
+									[processRoot]: {
+										...replayed.transcript,
+										items: [
+											...replayed.transcript.items,
+											...(current[processRoot]?.items.filter(
+												item => item.kind === 'failure',
+											) ?? []),
+										],
+									},
+								}));
+							setTurns(current => ({...current, [processRoot]: null}));
+							setRunning(current => ({...current, [processRoot]: false}));
+						}
+						recoveryReplay.current.delete(event.projectId);
+					}
 				}
 				if (
 					event.type === 'supervisor' &&
@@ -191,6 +286,14 @@ export function App() {
 					setGates(current => ({...current, [root]: next}));
 				}
 				if (event.type === 'turn') {
+					const replayed = recoveryReplay.current.get(event.projectId);
+					if (replayed) {
+						recoveryReplay.current.set(event.projectId, {
+							transcript: event.events.reduce(applyEvent, replayed.transcript),
+							received: true,
+						});
+						return;
+					}
 					const root = roots.current.get(event.projectId);
 					if (root)
 						setTranscripts(current => ({
@@ -224,6 +327,7 @@ export function App() {
 		void projectControls.refresh();
 		setConnecting(false);
 		if (!result.ok || result.value.status !== 'cancelled') {
+			setRecoveredAgent(null);
 			setOpened(result);
 		}
 	};
@@ -231,7 +335,8 @@ export function App() {
 	const send = async (event: FormEvent) => {
 		event.preventDefault();
 		const text = draft.trim();
-		if (!text || sending) return;
+		if (!text || sending || !accepting) return;
+		const generation = processGenerations.current.get(root) ?? 0;
 		setDraft('');
 		setRunning(current => ({...current, [root]: true}));
 		setTurns(current => ({...current, [root]: null}));
@@ -240,6 +345,21 @@ export function App() {
 			[root]: addUserMessage(current[root] ?? emptyTranscript, text),
 		}));
 		const result = await window.desktop.sendPrompt(text);
+		if (!result.ok)
+			setTranscripts(current => {
+				const previous = current[root] ?? emptyTranscript;
+				return {
+					...current,
+					[root]: {
+						...previous,
+						items: [
+							...previous.items,
+							{kind: 'failure', text: result.error.message},
+						],
+					},
+				};
+			});
+		if ((processGenerations.current.get(root) ?? 0) !== generation) return;
 		setTurns(current => ({...current, [root]: result}));
 		setRunning(current => ({...current, [root]: false}));
 	};
@@ -316,6 +436,26 @@ export function App() {
 					{outcome?.status === 'connected' && gates[outcome.agent.root] && (
 						<FeatureDetails gates={gates[outcome.agent.root]} />
 					)}
+					<RecoveryTools
+						state={processState}
+						onRetry={async projectId => {
+							const result = await window.desktop.restartProject({projectId});
+							if (
+								selectedProject.current === projectId &&
+								result.ok &&
+								result.value.status === 'ready' &&
+								result.value.agent
+							) {
+								setRecoveredAgent({projectId, agent: result.value.agent});
+								setOpened(null);
+								projectControls.clearFeedback();
+								void projectControls.refresh();
+							}
+							return result;
+						}}
+						onCapture={projectId => window.desktop.getDiagnostics({projectId})}
+						onExport={request => window.desktop.exportDiagnostics(request)}
+					/>
 				</>
 			}
 			composer={
@@ -326,21 +466,26 @@ export function App() {
 							<input
 								value={draft}
 								onChange={event => setDraft(event.target.value)}
-								disabled={sending}
+								disabled={sending || !accepting}
 								placeholder="ask anything…"
 								aria-describedby="composer-hint"
 							/>
 						</label>
 						<div className="gate-actions">
-							<Button type="submit" disabled={sending || draft.trim() === ''}>
+							<Button
+								type="submit"
+								disabled={sending || !accepting || draft.trim() === ''}
+							>
 								send
 							</Button>
 							<p id="composer-hint" className="gate-hint">
-								{sending
-									? 'waiting for Nanocoder to finish the turn'
-									: draft.trim() === ''
-										? 'enter a message to send'
-										: 'ready to send'}
+								{!accepting
+									? 'Nanocoder is not ready. retry before sending.'
+									: sending
+										? 'waiting for Nanocoder to finish the turn'
+										: draft.trim() === ''
+											? 'enter a message to send'
+											: 'ready to send'}
 							</p>
 						</div>
 					</form>

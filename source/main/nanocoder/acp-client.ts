@@ -79,6 +79,7 @@ export interface ConnectOptions {
 	clientInfo: Implementation;
 	env?: NodeJS.ProcessEnv;
 	homeDir?: string;
+	stderr?: StderrRing;
 	initializeTimeoutMs?: number;
 	shutdownGraceMs?: number;
 	probeTimeoutMs?: number;
@@ -140,7 +141,7 @@ export async function connectNanocoder(
 		options.env,
 	);
 	const exited = waitForExit(child);
-	const stderr = new StderrRing({homeDir: options.homeDir});
+	const stderr = options.stderr ?? new StderrRing({homeDir: options.homeDir});
 	let violated = false;
 
 	// EPIPE after Nanocoder exits is reported through the exit, not as a crash.

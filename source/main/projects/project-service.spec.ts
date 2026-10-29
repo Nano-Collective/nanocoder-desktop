@@ -29,6 +29,7 @@ async function fixture(t: ExecutionContext) {
 		rmSync(root, {recursive: true, force: true});
 	});
 	const calls: string[] = [];
+	const announcements: ProjectInfo[] = [];
 	let chosen: string | undefined;
 	let picker: (() => Promise<string | undefined>) | undefined;
 	let status: SupervisorState['status'] = 'untrusted';
@@ -39,6 +40,7 @@ async function fixture(t: ExecutionContext) {
 		store,
 		chooseRoot: () => picker?.() ?? Promise.resolve(chosen),
 		signal: () => abort.signal,
+		announceProject: project => announcements.push(project),
 		supervisor: {
 			probeProject: async project => {
 				calls.push('probe');
@@ -66,6 +68,7 @@ async function fixture(t: ExecutionContext) {
 		root,
 		store,
 		calls,
+		announcements,
 		service,
 		abort,
 		picker: (callback: () => Promise<string | undefined>) => {
@@ -109,6 +112,23 @@ test('opening an unknown project refuses before a probe (CHAT-01)', async t => {
 	);
 	t.is((error as IpcFailure).code, 'NOT_FOUND');
 	t.deepEqual(calls, []);
+});
+
+test('opening announces the real stored project before probing its process', async t => {
+	const {root, choose, service, store, beforeProbe, announcements} =
+		await fixture(t);
+	const folder = path.join(root, 'project');
+	mkdirSync(folder);
+	choose(folder);
+	const selected = await service.addProject({});
+	if (selected.status !== 'selected') return t.fail();
+	beforeProbe(async project => {
+		t.deepEqual(announcements, [store.projects.get(project.id)]);
+	});
+	await service.openProject({projectId: selected.project.id});
+	t.is(announcements[0]?.id, selected.project.id);
+	t.is(announcements[0]?.trusted, false);
+	t.is(announcements[0]?.availability, 'available');
 });
 
 for (const changed of [false, true]) {

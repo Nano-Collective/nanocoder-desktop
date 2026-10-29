@@ -85,6 +85,8 @@ Store regressions also cover simultaneous previous-version opens with an event b
 
 Phase 1.3/1.4 adds `supervisor.spec.ts`: coalesced starts, independent project processes and approvals, cross-project request refusal, canonical-root swaps during lookup and trust confirmation, abortable starts and all-settled shutdown. Existing ACP, trust, permission, protocol and stderr tests continue to prove DEC-30/DEC-31 and the fail-closed boundaries. `capabilities.spec.ts` and `version-policy.spec.ts` cover every gate reason, malformed advertisements, the provisional minimum and newer-version warnings; `acp-client.spec.ts` checks safe extension probes and prompt refusal before mode setup.
 
+Phase 1.3 validator regressions also cover startup stderr retention, detach cancelling queued idle reopens, and restore refusing a changed root/cwd. `diagnostics-security.spec.ts` sends synthetic multiline, escaped-key, provider-key and unfinished-URL inputs through the real ring, capture, native-review abstraction and in-memory export destination. Every export must exactly match review without retaining the private marker. Built-app recovery tests preserve an ordinary reopened conversation, keep historical failures while clearing current failure state, bind controls to the attempted stored project despite another project's ready event, and prepare a usable session after initial trust or launch refusal through both folder actions. The recovery suite uses `qaEnvironment`, including a run with an inherited development renderer URL.
+
 `e2e/connect.e2e.ts` runs two simultaneous fake project turns through the real bridge, switches between them and checks their conversation and approvals stay separate. It also proves the picked root reaches runtime containment, the visible minimum-version refusal, and all nine disabled-feature reasons. `e2e/supervisor.e2e.ts` quits while the fake child is still initialising and checks its PID no longer exists after quit. Tests use deferred promises, events and condition waits, not fixed sleeps. These tests establish prototype behaviour, not compatibility with an unpublished real Nanocoder release.
 
 ## Packaged restart-and-resume test
@@ -118,6 +120,8 @@ Suggestion (not discussed): starting budgets, to be confirmed after the first me
 | PERF-10 | Installer size per platform is recorded every release, as the whitepaper asks ("measured, not defended"). | Release artefact sizes. |
 
 ## Accessibility targets
+
+Phase 1.3 recovery checks live in `supervisor-recovery.spec.ts`, `diagnostics*.spec.ts`, `stderr-security.spec.ts` and `e2e/supervisor-recovery.e2e.ts`. A fake clock advances backoff and idle deadlines without sleeps. Refusal cases cover initialisation/trust/version failures, stale roots and handles, late approvals, resume/mode failures, cancelled timers, foreign or expired captures and renderer-supplied export lines or paths. Built-main tests use temporary profiles and fake projects only. Recovery QA covers keyboard retry and diagnostics focus at 1240px, 1020px and 840px in both themes. The existing failure-banner error-on-elevated contrast gap remains recorded in `DESIGN.md`; it is not a new token choice.
 
 Behaviour only. Visual design: see [`DESIGN.md`](../DESIGN.md). The criteria named are from WCAG 2.2; Suggestion (not discussed) to adopt them.
 

@@ -85,6 +85,9 @@ export function useProjects(onOpened?: () => void) {
 		pending,
 		feedback,
 		refresh,
+		clearFeedback: () => {
+			if (mounted.current) setFeedback(null);
+		},
 		onAdd: () => {
 			void run(async () => selected(await window.desktop.addProject({})));
 		},
