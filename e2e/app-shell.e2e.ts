@@ -221,7 +221,15 @@ test('unfinished shell regions are readable static placeholders, not live contro
 	await expect(page.getByRole('banner')).toContainText('palette not built yet');
 	await expect(
 		page.getByRole('complementary', {name: 'project rail'}),
-	).toContainText('project list not built yet');
+	).toContainText('thread list not built yet');
+	await expect(
+		page
+			.locator('[data-shell-slot="project-rail"]')
+			.getByRole('region', {name: 'recent projects'}),
+	).toBeVisible();
+	await expect(
+		page.getByText('project list not built yet', {exact: true}),
+	).toHaveCount(0);
 	const inspector = page.getByRole('complementary', {name: 'inspector'});
 	await expect(inspector).toContainText('files and review are not built yet');
 	await expect(inspector.getByRole('button')).toHaveCount(0);

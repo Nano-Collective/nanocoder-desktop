@@ -40,7 +40,7 @@ interface Entry {
 interface SupervisorOptions {
 	resolveRuntime(root: string, signal: AbortSignal): Promise<Resolution>;
 	clientInfo: ConnectOptions['clientInfo'];
-	confirmTrust(refusal: TrustRefusal): Promise<boolean>;
+	confirmTrust(refusal: TrustRefusal, canonicalRoot: string): Promise<boolean>;
 	env?: NodeJS.ProcessEnv;
 	homeDir?: string;
 	connect?: typeof connectProject;
@@ -264,7 +264,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				clientInfo: this.options.clientInfo,
 				env: this.options.env,
 				homeDir: this.options.homeDir,
-				confirmTrust: this.options.confirmTrust,
+				confirmTrust: refusal => this.options.confirmTrust(refusal, root),
 				beforeLaunch: async () => {
 					await validateRoot();
 					const paths = await untilAborted(

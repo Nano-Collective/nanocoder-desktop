@@ -1,5 +1,6 @@
 import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
+import {RecentProjects} from '@/renderer/recent-projects';
 import {
 	acpBadge,
 	observeSupervisor,
@@ -11,7 +12,9 @@ import {
 	emptyTranscript,
 	type Transcript,
 } from '@/renderer/transcript';
+import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, Divider, StatusBadge} from '@/renderer/ui';
+import {useProjects} from '@/renderer/use-projects';
 import type {
 	AppInfo,
 	CapabilityGates,
@@ -147,6 +150,7 @@ export function App() {
 	);
 	const [connecting, setConnecting] = useState(false);
 	const [opened, setOpened] = useState<IpcResult<ConnectResult> | null>(null);
+	const projectControls = useProjects(() => setOpened(null));
 	const [transcripts, setTranscripts] = useState<Record<string, Transcript>>(
 		{},
 	);
@@ -163,7 +167,10 @@ export function App() {
 	const transcript = transcripts[root] ?? emptyTranscript;
 	const sending = running[root] ?? false;
 	const turn = turns[root];
-	const processBadge = acpBadge(supervisors, root);
+	const selectedRoot = projectControls.projects.find(
+		project => project.id === projectControls.activeProjectId,
+	)?.canonicalRoot;
+	const processBadge = acpBadge(supervisors, root || selectedRoot || '');
 
 	useEffect(
 		() =>
@@ -212,6 +219,7 @@ export function App() {
 	const connect = async () => {
 		setConnecting(true);
 		const result = await window.desktop.connectNanocoder();
+		void projectControls.refresh();
 		setConnecting(false);
 		if (!result.ok || result.value.status !== 'cancelled') {
 			setOpened(result);
@@ -237,6 +245,12 @@ export function App() {
 	return (
 		<AppShell
 			title={info?.name}
+			projectRail={
+				<RecentProjects
+					{...projectControls}
+					pending={connecting || projectControls.pending}
+				/>
+			}
 			statusBadges={
 				<div className="gate-actions">
 					<StatusBadge
@@ -255,6 +269,7 @@ export function App() {
 			}
 			streamTools={
 				<>
+					<TrustFeedback feedback={projectControls.feedback} />
 					{info && (
 						<p className="gate-meta">
 							version {info.version}. pre-v0.1: an early build, with most
@@ -275,7 +290,10 @@ export function App() {
 							</>
 						)}
 						{runtime?.ok && (
-							<Button onClick={connect} disabled={connecting}>
+							<Button
+								onClick={connect}
+								disabled={connecting || projectControls.pending}
+							>
 								{connecting ? (
 									<>
 										<span className="spinner" aria-hidden="true">
