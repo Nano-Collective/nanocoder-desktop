@@ -1,9 +1,13 @@
 import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
+import {ConversationStream} from '@/renderer/conversation-stream';
+import {legacyMetadataEvent} from '@/renderer/legacy-stream';
 import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
 import {RecentProjects} from '@/renderer/recent-projects';
 import {RecoveryTools} from '@/renderer/recovery-tools';
+import {createStreamBatcher} from '@/renderer/stream-batcher';
+import {SlashSuggestions} from '@/renderer/stream-commands';
 import {
 	acpBadge,
 	observeSupervisor,
@@ -11,7 +15,7 @@ import {
 } from '@/renderer/supervisor-state';
 import {
 	addUserMessage,
-	applyEvent,
+	applyEvents,
 	emptyTranscript,
 	type Transcript,
 } from '@/renderer/transcript';
@@ -89,7 +93,13 @@ function AgentDetails({
 	);
 }
 
-function PermissionCard({request}: {request: PermissionRequestInfo}) {
+function PermissionCard({
+	request,
+	onAnswer,
+}: {
+	request: PermissionRequestInfo;
+	onAnswer(id: string, optionId: string): void;
+}) {
 	return (
 		<Card variant="approval" aria-label="permission request">
 			<h2>
@@ -102,7 +112,7 @@ function PermissionCard({request}: {request: PermissionRequestInfo}) {
 						key={option.id}
 						variant={option.kind.startsWith('allow') ? 'allow' : 'reject'}
 						onClick={() => {
-							void window.desktop.answerPermission(request.id, option.id);
+							onAnswer(request.id, option.id);
 						}}
 					>
 						<span aria-hidden="true">
@@ -113,39 +123,6 @@ function PermissionCard({request}: {request: PermissionRequestInfo}) {
 				))}
 			</div>
 		</Card>
-	);
-}
-
-function Conversation({transcript}: {transcript: Transcript}) {
-	return (
-		<ol className="gate-transcript" aria-label="conversation">
-			{transcript.items.map((item, index) => (
-				<li
-					className={`gate-message-${item.kind}`}
-					key={item.kind === 'tool' ? item.id : `${item.kind}-${index}`}
-				>
-					{item.kind === 'user' && <>you: {item.text}</>}
-					{item.kind === 'failure' && <>failed turn: {item.text}</>}
-					{item.kind === 'agent' && (
-						<>
-							<span aria-hidden="true">✱ </span>Nanocoder: {item.text}
-						</>
-					)}
-					{item.kind === 'tool' && (
-						<>
-							<span aria-hidden="true">
-								{item.status === 'completed'
-									? '✓'
-									: item.status === 'failed'
-										? '✕'
-										: '◐'}{' '}
-							</span>
-							tool <code>{item.title}</code>: {item.status}
-						</>
-					)}
-				</li>
-			))}
-		</ol>
 	);
 }
 
@@ -160,7 +137,11 @@ export function App() {
 		projectId: string;
 		agent: ConnectedAgent;
 	} | null>(null);
+	const streamBatcher = useRef<ReturnType<typeof createStreamBatcher> | null>(
+		null,
+	);
 	const projectControls = useProjects(() => {
+		streamBatcher.current?.flush();
 		setOpened(null);
 		setRecoveredAgent(null);
 	});
@@ -168,6 +149,7 @@ export function App() {
 		{},
 	);
 	const [draft, setDraft] = useState('');
+	const messageInput = useRef<HTMLInputElement>(null);
 	const [running, setRunning] = useState<Record<string, boolean>>({});
 	const [turns, setTurns] = useState<
 		Record<string, IpcResult<TurnResult> | null>
@@ -208,105 +190,129 @@ export function App() {
 		!projectControls.pending;
 	const processBadge = acpBadge(supervisors, selected?.root ?? '');
 
-	useEffect(
-		() =>
-			window.desktop.onProjectEvent(event => {
-				const next = observeSupervisor(supervisorIndex.current, event);
-				if (event.type !== 'turn' && next === supervisorIndex.current) return;
-				if (next !== supervisorIndex.current) {
-					supervisorIndex.current = next;
-					setSupervisors(next);
+	useEffect(() => {
+		const batcher = createStreamBatcher((root, events) =>
+			setTranscripts(current => ({
+				...current,
+				[root]: applyEvents(current[root] ?? emptyTranscript, events),
+			})),
+		);
+		streamBatcher.current = batcher;
+		const unsubscribe = window.desktop.onProjectEvent(event => {
+			const next = observeSupervisor(supervisorIndex.current, event);
+			if (event.type !== 'turn' && next === supervisorIndex.current) return;
+			if (next !== supervisorIndex.current) {
+				supervisorIndex.current = next;
+				setSupervisors(next);
+			}
+			if (event.type === 'project') {
+				batcher.flush();
+				roots.current.set(event.projectId, event.project.canonicalRoot);
+				if (selectedProject.current !== event.projectId) {
+					setOpened(null);
+					setRecoveredAgent(null);
 				}
-				if (event.type === 'project') {
-					roots.current.set(event.projectId, event.project.canonicalRoot);
-					if (selectedProject.current !== event.projectId) {
-						setOpened(null);
-						setRecoveredAgent(null);
+				selectedProject.current = event.projectId;
+				setAttemptedProjectId(event.projectId);
+				return;
+			}
+			if (event.type === 'project-removed') {
+				const removedRoot = roots.current.get(event.projectId);
+				if (removedRoot) batcher.remove(removedRoot);
+				roots.current.delete(event.projectId);
+				recoveryReplay.current.delete(event.projectId);
+				if (selectedProject.current === event.projectId) {
+					selectedProject.current = null;
+					setAttemptedProjectId(null);
+					setRecoveredAgent(null);
+					setOpened(null);
+				}
+				return;
+			}
+			if (event.type === 'supervisor') {
+				const processRoot =
+					event.state.agent?.root ?? roots.current.get(event.projectId);
+				if (processRoot) batcher.flush(processRoot);
+				if (event.state.status === 'starting') {
+					recoveryReplay.current.set(event.projectId, {
+						transcript: emptyTranscript,
+						received: false,
+					});
+					if (processRoot) {
+						processGenerations.current.set(
+							processRoot,
+							(processGenerations.current.get(processRoot) ?? 0) + 1,
+						);
+						setRunning(current => ({...current, [processRoot]: false}));
 					}
-					selectedProject.current = event.projectId;
-					setAttemptedProjectId(event.projectId);
-					return;
-				}
-				if (event.type === 'project-removed') {
-					roots.current.delete(event.projectId);
-					recoveryReplay.current.delete(event.projectId);
-					if (selectedProject.current === event.projectId) {
-						selectedProject.current = null;
-						setAttemptedProjectId(null);
-						setRecoveredAgent(null);
-						setOpened(null);
-					}
-					return;
-				}
-				if (event.type === 'supervisor') {
-					const processRoot =
-						event.state.agent?.root ?? roots.current.get(event.projectId);
-					if (event.state.status === 'starting') {
-						recoveryReplay.current.set(event.projectId, {
-							transcript: emptyTranscript,
-							received: false,
-						});
-						if (processRoot) {
-							processGenerations.current.set(
-								processRoot,
-								(processGenerations.current.get(processRoot) ?? 0) + 1,
-							);
-							setRunning(current => ({...current, [processRoot]: false}));
-						}
-					} else {
-						const replayed = recoveryReplay.current.get(event.projectId);
-						if (event.state.status === 'ready' && processRoot && replayed) {
-							if (replayed.received)
-								setTranscripts(current => ({
-									...current,
-									[processRoot]: {
-										...replayed.transcript,
-										items: [
-											...replayed.transcript.items,
-											...(current[processRoot]?.items.filter(
-												item => item.kind === 'failure',
-											) ?? []),
-										],
-									},
-								}));
-							setTurns(current => ({...current, [processRoot]: null}));
-							setRunning(current => ({...current, [processRoot]: false}));
-						}
-						recoveryReplay.current.delete(event.projectId);
-					}
-				}
-				if (
-					event.type === 'supervisor' &&
-					event.state.agent &&
-					event.state.gates
-				) {
-					const root = event.state.agent.root;
-					roots.current.set(event.projectId, root);
-					const next = event.state.gates;
-					setGates(current => ({...current, [root]: next}));
-				}
-				if (event.type === 'turn') {
+				} else {
 					const replayed = recoveryReplay.current.get(event.projectId);
-					if (replayed) {
-						recoveryReplay.current.set(event.projectId, {
-							transcript: event.events.reduce(applyEvent, replayed.transcript),
-							received: true,
-						});
-						return;
+					if (event.state.status === 'ready' && processRoot && replayed) {
+						if (replayed.received)
+							setTranscripts(current => ({
+								...current,
+								[processRoot]: {
+									...replayed.transcript,
+									items: [
+										...replayed.transcript.items,
+										...(current[processRoot]?.items.filter(
+											item => item.kind === 'failure',
+										) ?? []),
+									],
+								},
+							}));
+						setTurns(current => ({...current, [processRoot]: null}));
+						setRunning(current => ({...current, [processRoot]: false}));
 					}
-					const root = roots.current.get(event.projectId);
-					if (root)
-						setTranscripts(current => ({
-							...current,
-							[root]: event.events.reduce(
-								applyEvent,
-								current[root] ?? emptyTranscript,
-							),
-						}));
+					recoveryReplay.current.delete(event.projectId);
 				}
-			}),
-		[],
-	);
+			}
+			if (
+				event.type === 'supervisor' &&
+				event.state.agent &&
+				event.state.gates
+			) {
+				const root = event.state.agent.root;
+				roots.current.set(event.projectId, root);
+				const next = event.state.gates;
+				setGates(current => ({...current, [root]: next}));
+			}
+			if (event.type === 'turn') {
+				const replayed = recoveryReplay.current.get(event.projectId);
+				if (replayed) {
+					recoveryReplay.current.set(event.projectId, {
+						transcript: applyEvents(replayed.transcript, event.events),
+						received: true,
+					});
+					return;
+				}
+				const root = roots.current.get(event.projectId);
+				if (root) {
+					batcher.enqueue(root, event.events);
+					if (
+						event.events.some(
+							turn =>
+								turn.type === 'permission' || turn.type === 'permission-closed',
+						)
+					)
+						batcher.flush(root);
+				}
+			}
+		});
+		const unsubscribeLegacy = window.desktop.onNanocoderEvent(event => {
+			const metadata = legacyMetadataEvent(event);
+			const currentRoot = roots.current.get(selectedProject.current ?? '');
+			if (!metadata || !currentRoot) return;
+			batcher.enqueue(currentRoot, [metadata]);
+			batcher.flush(currentRoot);
+		});
+		return () => {
+			unsubscribe();
+			unsubscribeLegacy();
+			batcher.dispose();
+			if (streamBatcher.current === batcher) streamBatcher.current = null;
+		};
+	}, []);
 
 	const checkRuntime = useCallback(() => {
 		void window.desktop.getNanocoderRuntime().then(setRuntime);
@@ -322,6 +328,7 @@ export function App() {
 	}, [checkRuntime]);
 
 	const connect = async () => {
+		streamBatcher.current?.flush();
 		setConnecting(true);
 		const result = await window.desktop.connectNanocoder();
 		void projectControls.refresh();
@@ -336,6 +343,7 @@ export function App() {
 		event.preventDefault();
 		const text = draft.trim();
 		if (!text || sending || !accepting) return;
+		streamBatcher.current?.flush(root);
 		const generation = processGenerations.current.get(root) ?? 0;
 		setDraft('');
 		setRunning(current => ({...current, [root]: true}));
@@ -345,6 +353,7 @@ export function App() {
 			[root]: addUserMessage(current[root] ?? emptyTranscript, text),
 		}));
 		const result = await window.desktop.sendPrompt(text);
+		streamBatcher.current?.flush(root);
 		if (!result.ok)
 			setTranscripts(current => {
 				const previous = current[root] ?? emptyTranscript;
@@ -464,13 +473,23 @@ export function App() {
 						<label>
 							message
 							<input
+								ref={messageInput}
 								value={draft}
 								onChange={event => setDraft(event.target.value)}
-								disabled={sending || !accepting}
+								disabled={!accepting}
 								placeholder="ask anything…"
 								aria-describedby="composer-hint"
 							/>
 						</label>
+						<SlashSuggestions
+							commands={transcript.commands ?? []}
+							draft={draft}
+							disabled={!accepting}
+							onInsert={value => {
+								setDraft(value);
+								messageInput.current?.focus();
+							}}
+						/>
 						<div className="gate-actions">
 							<Button
 								type="submit"
@@ -493,11 +512,19 @@ export function App() {
 			}
 		>
 			{outcome?.status === 'connected' && (
-				<Conversation transcript={transcript} />
+				<ConversationStream transcript={transcript} running={sending}>
+					{transcript.permissions.map(request => (
+						<PermissionCard
+							key={request.id}
+							request={request}
+							onAnswer={(id, optionId) => {
+								streamBatcher.current?.flush(root);
+								void window.desktop.answerPermission(id, optionId);
+							}}
+						/>
+					))}
+				</ConversationStream>
 			)}
-			{transcript.permissions.map(request => (
-				<PermissionCard key={request.id} request={request} />
-			))}
 			{turn?.ok && <p role="status">turn ended: {turn.value.stopReason}</p>}
 			{turn && !turn.ok && (
 				<Card variant="failure" role="alert">

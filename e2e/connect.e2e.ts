@@ -235,8 +235,15 @@ test('allow once: the tool runs and the turn ends', async () => {
 		.click();
 
 	const conversation = page.getByRole('list', {name: 'Conversation'});
-	await expect(conversation).toContainText('you: Run the command');
-	await expect(conversation).toContainText('Nanocoder: Working on it.');
+	await expect(conversation.locator('.gate-message-user')).toContainText(
+		'Run the command',
+	);
+	await expect(
+		conversation.locator('.gate-message-agent').first(),
+	).toContainText('Working on it.');
+	await expect(conversation.locator('.stream-author').first()).toHaveText(
+		'you',
+	);
 	await expect(conversation).toContainText(
 		'tool execute_bash: echo hi: completed',
 	);

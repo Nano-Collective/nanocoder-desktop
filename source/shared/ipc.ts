@@ -126,12 +126,103 @@ export interface PermissionRequestInfo {
 	options: PermissionOptionInfo[];
 }
 
-export type TurnEvent =
-	| {type: 'user'; text: string}
-	| {type: 'text'; text: string}
-	| {type: 'tool'; id: string; title?: string; status?: string}
+export interface StreamCommand {
+	name: string;
+	description: string;
+	inputHint?: string;
+}
+
+export interface StreamUsage {
+	inputTokens?: number;
+	outputTokens?: number;
+	totalTokens?: number;
+	thoughtTokens?: number;
+	cachedReadTokens?: number;
+	cachedWriteTokens?: number;
+	cost?: number;
+}
+
+export interface StreamMetadata {
+	usage?: StreamUsage;
+	durationMs?: number;
+	outcome?: 'completed' | 'cancelled' | 'failed';
+	artifacts?: {
+		kind: 'implementation_plan' | 'task' | 'walkthrough';
+		path: string;
+	}[];
+}
+
+export interface StreamToolDetails {
+	content?: string[];
+	locations?: {path: string; line?: number}[];
+	input?: string;
+	output?: string;
+}
+
+export type StreamPlan =
+	| {
+			kind: 'items';
+			entries: {content: string; priority: string; status: string}[];
+	  }
+	| {kind: 'markdown'; text: string}
+	| {kind: 'file'; uri: string};
+
+export interface StreamConfigOption {
+	id: string;
+	name: string;
+	value: string | boolean;
+}
+
+export type TurnEvent = (
+	| {type: 'user'; text: string; messageId?: string}
+	| {type: 'text'; text: string; messageId?: string}
+	| {type: 'thought'; text: string; messageId?: string}
+	| {type: 'commands'; commands: StreamCommand[]}
+	| {type: 'metadata'; metadata: StreamMetadata}
+	| {type: 'plan'; id: string | null; content: StreamPlan | null}
+	| {type: 'mode'; id: string}
+	| {type: 'config'; options: StreamConfigOption[]}
+	| {
+			type: 'context';
+			used: number;
+			size: number;
+			cost?: {amount: number; currency: string};
+	  }
+	| {type: 'notice'; severity: string; title: string; description?: string}
+	| {
+			type: 'compaction';
+			id: string;
+			status: string;
+			summary?: string | null;
+			error?: string | null;
+	  }
+	| {type: 'compaction-chunk'; id: string; text: string}
+	| {
+			type: 'subagent';
+			id: string;
+			title?: string | null;
+			description?: string | null;
+			state?: string | null;
+	  }
+	| {
+			type: 'session-message';
+			id: string;
+			sender?: string;
+			recipient?: string;
+			text?: string;
+			append: boolean;
+	  }
+	| {
+			type: 'tool';
+			id: string;
+			title?: string;
+			status?: string;
+			toolKind?: string;
+			details?: StreamToolDetails;
+	  }
 	| {type: 'permission'; request: PermissionRequestInfo}
-	| {type: 'permission-closed'; id: string};
+	| {type: 'permission-closed'; id: string}
+) & {metadata?: StreamMetadata};
 
 export type StopReason =
 	| 'end_turn'
