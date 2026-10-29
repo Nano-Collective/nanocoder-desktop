@@ -76,7 +76,7 @@ test('no waiting request renders no approval controls', t => {
 	);
 });
 
-test('A11Y-02 queued approval landmarks have unique payload-free positions', t => {
+test('A11Y-03 queued approval landmarks have unique payload-free positions', t => {
 	const markup = renderToStaticMarkup(
 		createElement(ApprovalRequests, {
 			requests: [

@@ -185,6 +185,8 @@ test('SUB-07 replay and SDK child rows are fallback cards without live controls'
 		}),
 	);
 	t.is((html.match(/class="subagent-run-card"/g) ?? []).length, 2);
+	t.true(html.includes('aria-label="subagent run 1 of 2: subagent"'));
+	t.true(html.includes('aria-label="subagent run 2 of 2: subagent"'));
 	t.true(html.includes('historical outcome not reported'));
 	t.true(html.includes('child details not available'));
 	t.false(html.includes('<button'));
