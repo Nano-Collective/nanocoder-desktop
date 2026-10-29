@@ -82,8 +82,16 @@ function ToolDetails({details}: {details: StreamToolDetails}) {
 	);
 }
 
+function isSubagentRun(item: TranscriptItem) {
+	return (
+		item.kind === 'subagent' || (item.kind === 'tool' && !!item.delegation)
+	);
+}
+
 const StreamRow = React.memo(function StreamRow({
 	item,
+	runPosition,
+	runCount,
 	streaming,
 	active,
 	stopping,
@@ -91,6 +99,8 @@ const StreamRow = React.memo(function StreamRow({
 	outcome,
 }: {
 	item: TranscriptItem;
+	runPosition: number;
+	runCount: number;
 	streaming: boolean;
 	active: boolean;
 	stopping: boolean;
@@ -151,6 +161,8 @@ const StreamRow = React.memo(function StreamRow({
 			if (item.delegation) {
 				content = (
 					<SubagentRunCard
+						position={runPosition}
+						total={runCount}
 						title={item.title}
 						role={item.delegation.role}
 						task={item.delegation.task}
@@ -251,6 +263,8 @@ const StreamRow = React.memo(function StreamRow({
 		case 'subagent':
 			content = (
 				<SubagentRunCard
+					position={runPosition}
+					total={runCount}
 					title={item.title}
 					task={item.description}
 					status={item.state}
@@ -319,6 +333,8 @@ export function ConversationStream({
 	}, []);
 	const turnStart = currentTurnStart(transcript.items);
 	const keyOccurrences = new Map<string, number>();
+	const runCount = transcript.items.filter(isSubagentRun).length;
+	let runPosition = 0;
 	const context = transcript.context;
 	const percentage = context
 		? Math.min(
@@ -330,6 +346,7 @@ export function ConversationStream({
 		<section className="conversation-stream">
 			<ol className="gate-transcript" aria-label="conversation">
 				{transcript.items.map((item, index) => {
+					if (isSubagentRun(item)) runPosition++;
 					const base =
 						'id' in item
 							? `${item.kind}:${item.id}`
@@ -342,6 +359,8 @@ export function ConversationStream({
 						<StreamRow
 							key={`${base}:${occurrence}`}
 							item={item}
+							runPosition={runPosition}
+							runCount={runCount}
 							active={running && index > turnStart}
 							outcome={index > turnStart ? outcome : undefined}
 							stopping={stopping || localStopping}

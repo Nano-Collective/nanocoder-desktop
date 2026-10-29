@@ -6,6 +6,8 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 	title,
 	role,
 	task,
+	position,
+	total,
 	status,
 	history = false,
 	running = false,
@@ -16,6 +18,8 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 	title?: string | null;
 	role?: string;
 	task?: string | null;
+	position: number;
+	total: number;
 	status?: string | null;
 	history?: boolean;
 	running?: boolean;
@@ -42,7 +46,10 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 	const name = subagentLabel(role, 160) ?? 'subagent';
 	const progress = subagentLabel(title);
 	return (
-		<section className="subagent-run-card" aria-label={`subagent run: ${name}`}>
+		<section
+			className="subagent-run-card"
+			aria-label={`subagent run ${position} of ${total}: ${name}`}
+		>
 			<header>
 				<span className="subagent-task">
 					<span aria-hidden="true">⌗ </span>

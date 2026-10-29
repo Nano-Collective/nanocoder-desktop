@@ -149,6 +149,26 @@ test.describe('fc01-shaped delegation cards', () => {
 		await prompt('fixture two approvals');
 		await expect(stop()).toHaveCount(2);
 		await expect(page.getByRole('alertdialog')).toHaveCount(2);
+		const names = await cards().evaluateAll(elements =>
+			elements.map(element => element.getAttribute('aria-label')),
+		);
+		expect(new Set(names).size).toBe(names.length);
+		expect(names.slice(-2)).toEqual([
+			`subagent run ${names.length - 1} of ${names.length}: explore`,
+			`subagent run ${names.length} of ${names.length}: explore`,
+		]);
+		await expect(
+			page.getByRole('region', {
+				name: 'permission request 1 of 2',
+				exact: true,
+			}),
+		).toHaveCount(1);
+		await expect(
+			page.getByRole('region', {
+				name: 'permission request 2 of 2',
+				exact: true,
+			}),
+		).toHaveCount(1);
 		for (const dialog of await page.getByRole('alertdialog').all())
 			await expect(dialog).toContainText('parent run not reported');
 		await expect(

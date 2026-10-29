@@ -87,6 +87,8 @@ function useApprovalFocus(
 
 function PermissionCard({
 	request,
+	position,
+	total,
 	mode,
 	dialogRef,
 	answering,
@@ -94,6 +96,8 @@ function PermissionCard({
 	choose,
 }: {
 	request: PermissionRequestInfo;
+	position: number;
+	total: number;
 	mode: NanocoderMode;
 	dialogRef: React.Ref<HTMLDivElement>;
 	answering: boolean;
@@ -102,7 +106,10 @@ function PermissionCard({
 }) {
 	const id = React.useId();
 	return (
-		<Card variant="approval" aria-label="permission request">
+		<Card
+			variant="approval"
+			aria-label={`permission request ${position} of ${total}`}
+		>
 			<div
 				ref={dialogRef}
 				className="approval-dialog"
@@ -218,10 +225,12 @@ export function ApprovalRequests({
 	};
 	return requests.length ? (
 		<div className="approval-requests" ref={container}>
-			{requests.map(request => (
+			{requests.map((request, index) => (
 				<PermissionCard
 					key={request.id}
 					request={request}
+					position={index + 1}
+					total={requests.length}
 					mode={mode}
 					dialogRef={node => {
 						if (node) dialogs.current.set(request.id, node);
