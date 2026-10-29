@@ -39,6 +39,7 @@ async function fixture(
 	const projectRoot = path.join(root, 'project');
 	mkdirSync(projectRoot);
 	let update: ConnectOptions['onSessionUpdate'];
+	let titleUpdate: ConnectOptions['onTitleChanged'];
 	let confirm: NonNullable<
 		Parameters<typeof createThreadService>[0]['confirmDeleteHistory']
 	> = async () => false;
@@ -61,6 +62,7 @@ async function fixture(
 		confirmTrust: async () => false,
 		connect: options => {
 			update = options.onSessionUpdate;
+			titleUpdate = options.onTitleChanged;
 			return connectProject(options);
 		},
 	});
@@ -101,6 +103,10 @@ async function fixture(
 		service,
 		confirmDeletion: (callback: typeof confirm) => {
 			confirm = callback;
+		},
+		notifyTitle: (sessionId: string, title: string) => {
+			if (!titleUpdate) throw new Error('No fixture connection is ready');
+			titleUpdate({sessionId, title});
 		},
 		notify: (sessionId: string, text: string) => {
 			if (!update) throw new Error('No fixture connection is ready');
@@ -957,4 +963,45 @@ test('an unable-to-resume thread refuses prompts without showing new content (CH
 	t.is((error as IpcFailure).code, 'UNAVAILABLE');
 	t.deepEqual(events, []);
 	t.deepEqual(calls, []);
+});
+
+test('generated titles map only saved IDs in their live owning project (CHAT-12)', async t => {
+	const {project, service, store, supervisor, notifyTitle, root} =
+		await fixture(t, true);
+	const thread = seed(project, {nanocoderSessionId: 'fixture-session'});
+	store.threads.save(thread);
+	const otherRoot = path.join(root, 'other');
+	mkdirSync(otherRoot);
+	const other = {
+		...project,
+		id: randomUUID(),
+		canonicalRoot: otherRoot,
+		sessionCwd: otherRoot,
+	};
+	store.projects.save(other);
+	const otherThread = seed(other, {
+		nanocoderSessionId: 'other-fixture-session',
+	});
+	store.threads.save(otherThread);
+	await supervisor.ensureProcess(project);
+	notifyTitle('other-fixture-session', 'wrong project title');
+	notifyTitle('unknown-fixture-session', 'unknown session title');
+	t.deepEqual(store.threads.get(other.id, otherThread.id), otherThread);
+	t.deepEqual(store.threads.get(project.id, thread.id), thread);
+	notifyTitle('fixture-session', 'fixture generated title');
+	t.is(
+		store.threads.get(project.id, thread.id)?.title,
+		'fixture generated title',
+	);
+	await supervisor.stop(project.id);
+	notifyTitle('fixture-session', 'stale process title');
+	t.is(
+		(
+			await service.getThreadSnapshot({
+				projectId: project.id,
+				threadId: thread.id,
+			})
+		).thread.title,
+		'fixture generated title',
+	);
 });

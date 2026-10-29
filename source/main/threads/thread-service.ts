@@ -28,6 +28,7 @@ interface ThreadOptions {
 		| 'cancel'
 		| 'answerPermission'
 		| 'subscribe'
+		| 'subscribeTitles'
 		| 'stop'
 	>;
 	now?(): Date;
@@ -101,6 +102,13 @@ export function createThreadService(
 			...options.store.threads.list(event.projectId, 'archived'),
 		].find(thread => thread.nanocoderSessionId === event.threadId);
 		if (thread) append(thread, event.events);
+	});
+	const unsubscribeTitles = options.supervisor.subscribeTitles(change => {
+		const thread = [
+			...options.store.threads.list(change.projectId, 'active'),
+			...options.store.threads.list(change.projectId, 'archived'),
+		].find(thread => thread.nanocoderSessionId === change.sessionId);
+		if (thread) options.store.threads.save({...thread, title: change.title});
 	});
 	const validateProject = async (thread: ThreadInfo) => {
 		const project = getProject(thread.projectId);
@@ -199,7 +207,10 @@ export function createThreadService(
 		});
 	};
 	return {
-		dispose: unsubscribe,
+		dispose: () => {
+			unsubscribe();
+			unsubscribeTitles();
+		},
 		listThreads: async ({projectId, archiveState}) => {
 			getProject(projectId);
 			return options.store.threads.list(projectId, archiveState);

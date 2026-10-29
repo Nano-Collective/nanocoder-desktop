@@ -11,6 +11,7 @@ import {capabilityGates, describeAgent} from '@/main/nanocoder/capabilities';
 import {connectProject} from '@/main/nanocoder/open-project';
 import {PermissionBroker} from '@/main/nanocoder/permissions';
 import type {Resolution} from '@/main/nanocoder/runtime';
+import type {SessionTitleChange} from '@/main/nanocoder/session-title';
 import type {NanocoderSupervisor} from '@/main/nanocoder/supervisor-contracts';
 import type {TrustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
@@ -61,6 +62,9 @@ const stopped = (projectId: string): SupervisorState => ({
 export class ProjectSupervisor implements NanocoderSupervisor {
 	private readonly entries = new Map<string, Entry>();
 	private readonly listeners = new Set<(event: ProjectEvent) => void>();
+	private readonly titleListeners = new Set<
+		(change: SessionTitleChange & {projectId: string}) => void
+	>();
 	private readonly sequences = new Map<string, number>();
 	private readonly turnSequences = new Map<string, Map<string, number>>();
 	private closed = false;
@@ -73,6 +77,15 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		this.listeners.add(listener);
 		return () => {
 			this.listeners.delete(listener);
+		};
+	}
+
+	subscribeTitles(
+		listener: (change: SessionTitleChange & {projectId: string}) => void,
+	): () => void {
+		this.titleListeners.add(listener);
+		return () => {
+			this.titleListeners.delete(listener);
 		};
 	}
 
@@ -289,6 +302,11 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 					if (signal.aborted) return;
 					const event = toTurnEvent(notification.update);
 					if (event) this.turn(entry, notification.sessionId, event);
+				},
+				onTitleChanged: change => {
+					if (signal.aborted) return;
+					for (const listener of this.titleListeners)
+						listener(structuredClone({...change, projectId: project.id}));
 				},
 				onPermission: request => {
 					if (
