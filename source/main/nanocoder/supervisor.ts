@@ -30,6 +30,7 @@ import type {
 	ProjectEvent,
 	ProjectInfo,
 	SupervisorState,
+	ThreadInfo,
 	TurnEvent,
 	TurnResult,
 } from '@/shared/ipc';
@@ -228,6 +229,24 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			projectId: project.id,
 			sequence: this.sequence(project.id),
 			project,
+		});
+	}
+
+	publishThread(thread: ThreadInfo): void {
+		this.emit({
+			type: 'thread',
+			projectId: thread.projectId,
+			sequence: this.sequence(thread.projectId),
+			thread,
+		});
+	}
+
+	publishThreadRemoved(projectId: string, threadId: string): void {
+		this.emit({
+			type: 'thread-removed',
+			projectId,
+			threadId,
+			sequence: this.sequence(projectId),
 		});
 	}
 

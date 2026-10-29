@@ -1242,3 +1242,47 @@ test('an invalid stored-history title is refused before any process starts (CHAT
 	t.deepEqual(calls, []);
 	t.deepEqual(store.threads.get(project.id, thread.id), thread);
 });
+
+test('project thread and supervisor metadata share one scoped sequence and cloned payloads (CHAT-03)', async t => {
+	const {project, supervisor} = await fixture(t, true);
+	const thread = seed(project);
+	const changed = {...thread, title: 'fixture changed title'};
+	const events: ProjectEvent[] = [];
+	supervisor.subscribe(event => {
+		if (event.type === 'thread') event.thread.title = 'listener mutation';
+	});
+	supervisor.subscribe(event => events.push(event));
+	supervisor.announceProject(project);
+	supervisor.publishThread(thread);
+	await supervisor.ensureProcess(project);
+	supervisor.publishThread(changed);
+	supervisor.publishThreadRemoved(project.id, thread.id);
+	supervisor.replayState(project.id);
+	t.deepEqual(
+		events.flatMap(event => (event.type === 'thread' ? [event.thread] : [])),
+		[thread, changed],
+	);
+	t.true(events.some(event => event.type === 'project'));
+	t.true(events.some(event => event.type === 'supervisor'));
+	t.deepEqual(
+		events.flatMap(event =>
+			event.type === 'thread-removed' ? [event.threadId] : [],
+		),
+		[thread.id],
+	);
+	t.deepEqual(
+		events.map(event => event.sequence),
+		Array.from({length: events.length}, (_, index) => index + 1),
+	);
+	const other = {...project, id: randomUUID()};
+	const otherId = randomUUID();
+	supervisor.announceProject(other);
+	supervisor.publishThreadRemoved(other.id, otherId);
+	t.deepEqual(
+		events
+			.filter(event => event.projectId === other.id)
+			.map(event => event.sequence),
+		[1, 2],
+	);
+	t.is(thread.title, 'fixture thread');
+});
