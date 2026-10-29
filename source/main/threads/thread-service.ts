@@ -65,12 +65,22 @@ type ThreadRuntimeService = AsyncThreadService & {
 	detach(projects: Iterable<ProjectInfo>): Promise<void>;
 };
 
+class PreparationCancelled extends IpcFailure {
+	constructor() {
+		super('AGENT_UNAVAILABLE', 'The thread preparation was cancelled');
+	}
+}
+
 export function createThreadService(
 	options: ThreadOptions,
 ): ThreadRuntimeService {
 	const snapshots = new Map<string, {sequence: number; events: TurnEvent[]}>();
 	const prepared = new Map<string, NanocoderConnection>();
 	const pending = new Map<string, string>();
+	const preparationAborts = new Map<
+		string,
+		{threadId: string; abort: AbortController; turnStarted: boolean}
+	>();
 	const mutations = new Set<string>();
 	const permissionIds = new Map<string, Set<string>>();
 	const attached = new Set<string>();
@@ -83,6 +93,20 @@ export function createThreadService(
 	const operations = new Map<string, Set<Promise<unknown>>>();
 	let attachment = new AbortController();
 	let disposed = false;
+	const finishPreparation = (
+		thread: ThreadInfo,
+		abort: AbortController,
+		scope: AbortSignal,
+	) => {
+		if (
+			!scope.aborted &&
+			preparationAborts.get(thread.projectId)?.abort === abort
+		) {
+			preparationAborts.delete(thread.projectId);
+			pending.delete(thread.projectId);
+			permissionIds.delete(thread.id);
+		}
+	};
 	const operation = <T>(
 		projectId: string,
 		work: (signal: AbortSignal) => Promise<T>,
@@ -178,6 +202,14 @@ export function createThreadService(
 			...options.store.threads.list(event.projectId, 'archived'),
 		].find(thread => thread.nanocoderSessionId === event.threadId);
 		if (!thread) return;
+		if (
+			(pending.get(event.projectId) === thread.id &&
+				options.supervisor.getState(event.projectId).activeThreadId !==
+					thread.nanocoderSessionId) ||
+			(restoring.has(event.projectId) &&
+				currentSessions.get(event.projectId)?.thread.id === thread.id)
+		)
+			return;
 		const ids = permissionIds.get(thread.id) ?? new Set<string>();
 		let changed = false;
 		for (const item of event.events) {
@@ -433,6 +465,7 @@ export function createThreadService(
 			}
 			attached.clear();
 			pending.clear();
+			preparationAborts.clear();
 			mutations.clear();
 			restoring.clear();
 			permissionIds.clear();
@@ -473,12 +506,13 @@ export function createThreadService(
 			return thread;
 		},
 		openThread: request =>
-			operation(request.projectId, async signal => {
+			operation(request.projectId, async scope => {
+				const abort = new AbortController();
+				const signal = AbortSignal.any([scope, abort.signal]);
 				const thread = getThread(request);
 				select(request);
 				if (!thread.nanocoderSessionId)
 					return structuredClone(snapshot(request));
-				let preparing = false;
 				try {
 					const project = await validateProject(thread);
 					signal.throwIfAborted();
@@ -492,7 +526,11 @@ export function createThreadService(
 					if (pending.has(project.id) || state.activeThreadId !== null)
 						return structuredClone(snapshot(request));
 					pending.set(project.id, thread.id);
-					preparing = true;
+					preparationAborts.set(project.id, {
+						threadId: thread.id,
+						abort,
+						turnStarted: false,
+					});
 					await options.supervisor.ensureProcess(project);
 					signal.throwIfAborted();
 					await validateProject(getThread(request));
@@ -512,7 +550,7 @@ export function createThreadService(
 						return failure(error);
 					viewOnly(request, error);
 				} finally {
-					if (preparing && !signal.aborted) pending.delete(thread.projectId);
+					finishPreparation(thread, abort, scope);
 				}
 				return structuredClone(snapshot(request));
 			}),
@@ -652,7 +690,9 @@ export function createThreadService(
 				}
 			}),
 		promptThread: request =>
-			operation(request.projectId, async signal => {
+			operation(request.projectId, async scope => {
+				const abort = new AbortController();
+				const signal = AbortSignal.any([scope, abort.signal]);
 				let thread = getThread(request);
 				assertMutable(thread);
 				if (thread.runState === 'view-only')
@@ -675,6 +715,11 @@ export function createThreadService(
 						true,
 					);
 				pending.set(thread.projectId, thread.id);
+				preparationAborts.set(thread.projectId, {
+					threadId: thread.id,
+					abort,
+					turnStarted: false,
+				});
 				let started = false;
 				try {
 					const project = await validateProject(thread);
@@ -734,6 +779,9 @@ export function createThreadService(
 					};
 					saveThread(thread);
 					remember(thread, connection);
+					signal.throwIfAborted();
+					const preparation = preparationAborts.get(thread.projectId);
+					if (preparation?.abort === abort) preparation.turnStarted = true;
 					started = true;
 					append(thread, [{type: 'user', text: request.text}]);
 					const result = await options.supervisor.prompt(
@@ -749,6 +797,18 @@ export function createThreadService(
 					});
 					return result;
 				} catch (error) {
+					if (
+						!started &&
+						!scope.aborted &&
+						signal.reason instanceof PreparationCancelled
+					) {
+						saveThread({
+							...getThread(request),
+							runState: 'interrupted',
+							lastActivityAt: now(),
+						});
+						return {stopReason: 'cancelled' as const};
+					}
 					if (started && !disposed) {
 						const current = options.store.threads.get(
 							thread.projectId,
@@ -763,25 +823,30 @@ export function createThreadService(
 					}
 					return failure(error);
 				} finally {
-					if (!signal.aborted) {
-						pending.delete(thread.projectId);
-						permissionIds.delete(thread.id);
-					}
+					finishPreparation(thread, abort, scope);
 				}
 			}),
 		cancelThread: async request => {
 			const thread = getThread(request);
 			const sessionId = thread.nanocoderSessionId;
-			if (
-				sessionId &&
-				options.supervisor.getState(thread.projectId).activeThreadId ===
-					sessionId
-			) {
-				try {
+			const active = options.supervisor.getState(
+				thread.projectId,
+			).activeThreadId;
+			try {
+				if (sessionId && active === sessionId) {
 					await options.supervisor.cancel(thread.projectId, sessionId);
-				} catch (error) {
-					return failure(error);
+				} else if (
+					active === null &&
+					pending.get(thread.projectId) === thread.id
+				) {
+					const preparation = preparationAborts.get(thread.projectId);
+					if (preparation?.threadId === thread.id && !preparation.turnStarted) {
+						preparation.abort.abort(new PreparationCancelled());
+						await options.supervisor.stop(thread.projectId);
+					}
 				}
+			} catch (error) {
+				return failure(error);
 			}
 			return null;
 		},

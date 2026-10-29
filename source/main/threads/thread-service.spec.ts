@@ -417,6 +417,149 @@ for (const [mode, resume] of [
 	});
 }
 
+for (const [mode, resume] of [
+	['slow-new', false],
+	['slow-mode', false],
+	['slow-resume', true],
+	['slow-mode', true],
+] as const) {
+	test(`thread cancel stops ${mode} ${resume ? 'resume' : 'new'} preparation before any prompt (CHAT-06, ACP-10)`, async t => {
+		const {service, supervisor, store, project} = await fixture(t, true);
+		writeFileSync(path.join(project.canonicalRoot, '.fake-nanocoder'), mode);
+		const thread = resume
+			? seed(project, {nanocoderSessionId: 'fake-session'})
+			: await service.createThread({projectId: project.id});
+		if (resume) store.threads.save(thread);
+		await supervisor.ensureProcess(project);
+		const connection = supervisor.getConnection(project.id);
+		const waiting = deferred<void>();
+		const off = supervisor.subscribe(event => {
+			if (
+				event.type === 'turn' &&
+				event.events.some(
+					item => item.type === 'text' && item.text.includes('waiting'),
+				)
+			)
+				waiting.resolve();
+		});
+		if (mode === 'slow-resume') {
+			const original = connection.resumeSession;
+			connection.resumeSession = (...args) => {
+				const pending = original(...args);
+				waiting.resolve();
+				return pending;
+			};
+		}
+		const request = {projectId: project.id, threadId: thread.id};
+		const turn = service.promptThread({...request, text: 'never sent'});
+		void turn.catch(() => undefined);
+		await waiting.promise;
+		const peer = await service.createThread({projectId: project.id});
+		t.is(
+			await service.cancelThread({projectId: project.id, threadId: peer.id}),
+			null,
+		);
+		t.is(supervisor.getState(project.id).status, 'ready');
+		t.true(service.activity(project.id).preparing);
+		t.is(await service.cancelThread(request), null);
+		t.is(supervisor.getState(project.id).status, 'stopped');
+		t.deepEqual(await turn, {stopReason: 'cancelled'});
+		off();
+		const snapshot = await service.getThreadSnapshot(request);
+		t.is(snapshot.thread.runState, 'interrupted');
+		t.deepEqual(snapshot.events, []);
+		if (!resume) t.is(snapshot.thread.nanocoderSessionId, null);
+		t.false(
+			fakeEvents(connection.stderr.lines()).some(
+				event => event.method === 'session/prompt',
+			),
+		);
+	});
+}
+
+test('cancelling an already-settled turn cannot mistake pending cleanup for session preparation (CHAT-06)', async t => {
+	const {service, supervisor, project} = await fixture(t, true);
+	const thread = await service.createThread({projectId: project.id});
+	const request = {projectId: project.id, threadId: thread.id};
+	await supervisor.ensureProcess(project);
+	supervisor.getConnection(project.id).prompt = async () => ({
+		stopReason: 'end_turn',
+	});
+	let working = false;
+	let cancelled: Promise<null> | undefined;
+	const off = supervisor.subscribe(event => {
+		if (event.type !== 'supervisor' || event.state.status !== 'ready') return;
+		if (event.state.activeThreadId) working = true;
+		else if (working && !cancelled) cancelled = service.cancelThread(request);
+	});
+	t.deepEqual(await service.promptThread({...request, text: 'finished'}), {
+		stopReason: 'end_turn',
+	});
+	t.truthy(cancelled);
+	await cancelled;
+	off();
+	t.is(supervisor.getState(project.id).status, 'ready');
+	t.is((await service.getThreadSnapshot(request)).thread.runState, 'ready');
+});
+
+for (const action of ['cancel', 'detach'] as const) {
+	for (const resume of [false, true]) {
+		test(`a late ${resume ? 'resumed' : 'new'} mode result after ${action} cannot commit session preparation or user content (ACP-10, ACP-13)`, async t => {
+			const {service, store, supervisor, project} = await fixture(t, true);
+			const thread = resume
+				? seed(project, {nanocoderSessionId: 'fake-session'})
+				: await service.createThread({projectId: project.id});
+			if (resume) store.threads.save(thread);
+			await supervisor.ensureProcess(project);
+			const connection = supervisor.getConnection(project.id);
+			const entered = deferred<void>();
+			const release = deferred<void>();
+			t.teardown(() => release.resolve());
+			if (resume) {
+				const original = connection.resumeSession;
+				connection.resumeSession = async (...args) => {
+					const value = await original(...args);
+					entered.resolve();
+					await release.promise;
+					return value;
+				};
+			} else {
+				const original = connection.newSession;
+				connection.newSession = async (...args) => {
+					const value = await original(...args);
+					entered.resolve();
+					await release.promise;
+					return value;
+				};
+			}
+			const request = {projectId: project.id, threadId: thread.id};
+			const turn = service.promptThread({...request, text: 'never published'});
+			void turn.catch(() => undefined);
+			const rejected =
+				action === 'detach'
+					? t.throwsAsync(turn, {code: 'AGENT_UNAVAILABLE'})
+					: undefined;
+			await entered.promise;
+			const stopped =
+				action === 'detach'
+					? service.detach([])
+					: service.cancelThread(request);
+			release.resolve();
+			await stopped;
+			if (rejected) await rejected;
+			else t.deepEqual(await turn, {stopReason: 'cancelled'});
+			const snapshot = await service.getThreadSnapshot(request);
+			t.is(snapshot.thread.nanocoderSessionId, resume ? 'fake-session' : null);
+			t.deepEqual(snapshot.events, []);
+			t.false(
+				fakeEvents(connection.stderr.lines()).some(
+					event => event.method === 'session/prompt',
+				),
+			);
+		});
+	}
+}
+
 test('removed desktop metadata also forgets the remembered recovery session without resuming it (CHAT-14, ACP-13)', async t => {
 	const {service, supervisor, store, project} = await fixture(t, true);
 	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
