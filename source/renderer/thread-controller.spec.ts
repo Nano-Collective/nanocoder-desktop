@@ -1,6 +1,11 @@
 import test from 'ava';
 import {createThreadController} from '@/renderer/thread-controller';
-import type {IpcResult, ProjectEvent, ThreadInfo} from '@/shared/ipc';
+import type {
+	IpcResult,
+	ProjectEvent,
+	ThreadInfo,
+	ThreadRequest,
+} from '@/shared/ipc';
 
 const ok = <T>(value: T): IpcResult<T> => ({ok: true, value});
 const row = (id: string, projectId = 'project-a'): ThreadInfo => ({
@@ -37,6 +42,32 @@ function fixture() {
 		createThread: async (request: {projectId: string}) => {
 			calls.push(['create', request]);
 			return ok(row('created', request.projectId));
+		},
+		renameThread: async (request: ThreadRequest & {title: string}) => {
+			calls.push(['rename', request]);
+			return ok({
+				...row(request.threadId, request.projectId),
+				title: request.title,
+			});
+		},
+		archiveThread: async (request: ThreadRequest & {archived: boolean}) => {
+			calls.push(['archive', request]);
+			return ok({
+				...row(request.threadId, request.projectId),
+				archiveState: request.archived
+					? ('archived' as const)
+					: ('active' as const),
+			});
+		},
+		removeThread: async (request: ThreadRequest) => {
+			calls.push(['remove', request]);
+			return ok(null);
+		},
+		deleteThreadHistory: async (
+			request: ThreadRequest,
+		): Promise<IpcResult<{status: 'deleted' | 'cancelled'}>> => {
+			calls.push(['delete-history', request]);
+			return ok({status: 'cancelled'});
 		},
 		onProjectEvent: (callback: (event: ProjectEvent) => void) => {
 			listener = callback;
@@ -160,4 +191,87 @@ test('controller refuses duplicate create work and action calls after disposal (
 	t.false(await first);
 	t.false(await controller.create());
 	t.is(creates, 1);
+});
+
+test('metadata actions use their selected project and keep remove distinct from cancelled history deletion (CHAT-12, CHAT-13, CHAT-14)', async t => {
+	const {controller, calls} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	calls.length = 0;
+	t.true(await controller.rename('created', 'fixture renamed'));
+	t.true(await controller.archive('created', true));
+	t.is(controller.getState().threads[0]?.archiveState, 'archived');
+	t.false(await controller.deleteHistory('created'));
+	t.is(controller.getState().threads.length, 1);
+	t.true(await controller.remove('created'));
+	t.deepEqual(controller.getState().threads, []);
+	t.is(controller.getState().activeThreadId, null);
+	t.deepEqual(calls, [
+		[
+			'rename',
+			{projectId: 'project-a', threadId: 'created', title: 'fixture renamed'},
+		],
+		['archive', {projectId: 'project-a', threadId: 'created', archived: true}],
+		['delete-history', {projectId: 'project-a', threadId: 'created'}],
+		['remove', {projectId: 'project-a', threadId: 'created'}],
+	]);
+});
+
+test('late action responses cannot roll back newer metadata or resurrect a removed thread (CHAT-12, CHAT-14)', async t => {
+	const {bridge, controller, emit} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	const rename = deferred<IpcResult<ThreadInfo>>();
+	bridge.renameThread = () => rename.promise;
+	const pending = controller.rename('created', 'stale title');
+	emit({
+		type: 'thread',
+		projectId: 'project-a',
+		sequence: 4,
+		thread: {...row('created'), title: 'newer title'},
+	});
+	rename.resolve(ok({...row('created'), title: 'stale title'}));
+	t.true(await pending);
+	t.is(controller.getState().threads[0]?.title, 'newer title');
+	const archive = deferred<IpcResult<ThreadInfo>>();
+	bridge.archiveThread = () => archive.promise;
+	const removing = controller.archive('created', true);
+	emit({
+		type: 'thread-removed',
+		projectId: 'project-a',
+		sequence: 5,
+		threadId: 'created',
+	});
+	archive.resolve(ok({...row('created'), archiveState: 'archived'}));
+	t.false(await removing);
+	t.deepEqual(controller.getState().threads, []);
+});
+
+test('unknown pending and disposed metadata actions refuse without extra bridge calls and preserve failed mutations (CHAT-12, CHAT-14)', async t => {
+	const {bridge, controller, calls} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	calls.length = 0;
+	t.false(await controller.remove('unknown'));
+	const result = deferred<IpcResult<ThreadInfo>>();
+	bridge.renameThread = request => {
+		calls.push(['rename', request]);
+		return result.promise;
+	};
+	const renaming = controller.rename('created', 'not saved');
+	t.false(await controller.remove('created'));
+	result.resolve({
+		ok: false,
+		error: {
+			code: 'UNSUPPORTED',
+			message: 'fixture rename unavailable',
+			retryable: false,
+		},
+	});
+	t.false(await renaming);
+	t.is(controller.getState().error, 'fixture rename unavailable');
+	t.is(controller.getState().threads[0]?.title, 'created');
+	controller.dispose();
+	t.false(await controller.archive('created', true));
+	t.is(calls.length, 1);
 });

@@ -1,9 +1,15 @@
 import type {DesktopApi} from '@/shared/desktop-api';
-import type {ProjectEvent, ThreadInfo} from '@/shared/ipc';
+import type {IpcResult, ProjectEvent, ThreadInfo} from '@/shared/ipc';
 
 type ThreadBridge = Pick<
 	DesktopApi,
-	'listThreads' | 'createThread' | 'onProjectEvent'
+	| 'listThreads'
+	| 'createThread'
+	| 'onProjectEvent'
+	| 'renameThread'
+	| 'archiveThread'
+	| 'removeThread'
+	| 'deleteThreadHistory'
 >;
 
 export interface ThreadControllerState {
@@ -50,6 +56,58 @@ export function createThreadController(options: {
 				structuredClone(thread),
 			],
 		});
+	};
+	const forget = (threadId: string) => {
+		changes.set(threadId, {revision: ++revision, thread: null});
+		update({
+			threads: state.threads.filter(row => row.id !== threadId),
+			activeThreadId:
+				state.activeThreadId === threadId ? null : state.activeThreadId,
+		});
+	};
+	const accept = (thread: ThreadInfo, started: number, expectedId?: string) => {
+		if (
+			thread.projectId !== state.projectId ||
+			(expectedId && thread.id !== expectedId)
+		)
+			throw new Error();
+		const change = changes.get(thread.id);
+		if (!change || change.revision <= started) put(thread);
+		else if (!change.thread) return false;
+		return true;
+	};
+	const run = async <T>(
+		threadId: string | null,
+		work: (projectId: string) => Promise<IpcResult<T>>,
+		finish: (value: T, started: number) => boolean,
+	) => {
+		const projectId = state.projectId;
+		if (
+			disposed ||
+			!projectId ||
+			state.pending ||
+			state.loading ||
+			(threadId !== null && !state.threads.some(row => row.id === threadId))
+		)
+			return false;
+		const current = generation;
+		const started = revision;
+		update({pending: true, error: null});
+		try {
+			const result = await work(projectId);
+			if (current !== generation) return false;
+			if (!result.ok) {
+				update({error: result.error.message});
+				return false;
+			}
+			return finish(result.value, started);
+		} catch {
+			if (current === generation)
+				update({error: 'the thread request could not finish'});
+			return false;
+		} finally {
+			if (current === generation) update({pending: false});
+		}
 	};
 	const selectProject = async (projectId: string | null) => {
 		if (disposed) return;
@@ -106,12 +164,7 @@ export function createThreadController(options: {
 		if (event.type === 'thread' && event.thread.projectId === event.projectId)
 			put(event.thread);
 		else if (event.type === 'thread-removed') {
-			changes.set(event.threadId, {revision: ++revision, thread: null});
-			update({
-				threads: state.threads.filter(row => row.id !== event.threadId),
-				activeThreadId:
-					state.activeThreadId === event.threadId ? null : state.activeThreadId,
-			});
+			forget(event.threadId);
 		} else if (event.type === 'project-removed') {
 			void selectProject(null);
 		}
@@ -120,34 +173,48 @@ export function createThreadController(options: {
 	return {
 		getState: () => structuredClone(state),
 		selectProject,
-		create: async () => {
-			const projectId = state.projectId;
-			if (disposed || !projectId || state.pending || state.loading)
-				return false;
-			const current = generation;
-			const started = revision;
-			update({pending: true, error: null});
-			try {
-				const result = await options.bridge.createThread({projectId});
-				if (current !== generation) return false;
-				if (!result.ok) {
-					update({error: result.error.message});
-					return false;
-				}
-				if (result.value.projectId !== projectId) throw new Error();
-				const change = changes.get(result.value.id);
-				if (!change || change.revision <= started) put(result.value);
-				else if (!change.thread) return false;
-				update({activeThreadId: result.value.id});
-				return true;
-			} catch {
-				if (current === generation)
-					update({error: 'the thread request could not finish'});
-				return false;
-			} finally {
-				if (current === generation) update({pending: false});
-			}
-		},
+		rename: (threadId: string, title: string) =>
+			run(
+				threadId,
+				projectId => options.bridge.renameThread({projectId, threadId, title}),
+				(thread, started) => accept(thread, started, threadId),
+			),
+		archive: (threadId: string, archived: boolean) =>
+			run(
+				threadId,
+				projectId =>
+					options.bridge.archiveThread({projectId, threadId, archived}),
+				(thread, started) => accept(thread, started, threadId),
+			),
+		remove: (threadId: string) =>
+			run(
+				threadId,
+				projectId => options.bridge.removeThread({projectId, threadId}),
+				() => {
+					forget(threadId);
+					return true;
+				},
+			),
+		deleteHistory: (threadId: string) =>
+			run(
+				threadId,
+				projectId => options.bridge.deleteThreadHistory({projectId, threadId}),
+				value => {
+					if (value.status !== 'deleted') return false;
+					forget(threadId);
+					return true;
+				},
+			),
+		create: () =>
+			run(
+				null,
+				projectId => options.bridge.createThread({projectId}),
+				(thread, started) => {
+					if (!accept(thread, started)) return false;
+					update({activeThreadId: thread.id});
+					return true;
+				},
+			),
 		dispose: () => {
 			if (disposed) return;
 			disposed = true;
