@@ -3,6 +3,12 @@ import {IpcFailure} from '@/main/ipc/handle-request';
 import type {registerHandler as registerIpcHandler} from '@/main/ipc/register';
 import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {
+	defaultMode,
+	mode,
+	settingsPatch,
+	uiPatch,
+} from '@/main/store/validation';
+import {
 	CHANNELS,
 	type WorkspaceMethod,
 	type WorkspaceRequests,
@@ -12,33 +18,9 @@ import {
 const id = z.uuid();
 const project = {projectId: id};
 const thread = {...project, threadId: id};
-const mode = z.enum(['normal', 'auto-accept', 'plan', 'architect', 'yolo']);
-const defaultMode = mode.exclude(['yolo']);
 const empty = z.strictObject({});
 const projectRequest = z.strictObject(project);
 const threadRequest = z.strictObject(thread);
-const settingsPatch = z.strictObject({
-	publicBrowsingEnabled: z.boolean().optional(),
-	defaultMode: defaultMode.optional(),
-	editor: z.enum(['system', 'code', 'cursor', 'zed']).optional(),
-	theme: z.enum(['dark', 'light', 'system']).optional(),
-});
-const uiPatch = z.strictObject({
-	window: z
-		.strictObject({
-			width: z.number().int().min(400).max(16_384),
-			height: z.number().int().min(300).max(16_384),
-			x: z.number().int().min(-65_536).max(65_536).nullable(),
-			y: z.number().int().min(-65_536).max(65_536).nullable(),
-			maximised: z.boolean(),
-		})
-		.optional(),
-	activeProjectId: id.nullable().optional(),
-	activeThreadId: id.nullable().optional(),
-	openThreadIds: z.array(id).max(100).optional(),
-	inspector: z.enum(['files', 'review']).nullable().optional(),
-	bottomPanel: z.enum(['terminal', 'browser']).nullable().optional(),
-});
 
 const workspaceSchemas: {
 	[K in WorkspaceMethod]: z.ZodType<WorkspaceRequests[K]>;
