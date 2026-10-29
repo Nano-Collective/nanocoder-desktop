@@ -47,18 +47,33 @@ test('the preload bridge exposes typed methods only', async () => {
 	expect(keys).not.toContain('ipcRenderer');
 });
 
-test('project actions return UNAVAILABLE until their services land', async () => {
+test('project selection uses main and cancellation saves no project', async () => {
+	await app.evaluate(({dialog}) => {
+		const state = globalThis as {appProjectPickerCalls?: number};
+		state.appProjectPickerCalls = 0;
+		dialog.showOpenDialog = (async () => {
+			state.appProjectPickerCalls = (state.appProjectPickerCalls ?? 0) + 1;
+			return {canceled: true, filePaths: []};
+		}) as typeof dialog.showOpenDialog;
+	});
 	const result = await page.evaluate(() =>
 		(window as unknown as {desktop: DesktopApi}).desktop.addProject({}),
 	);
 	expect(result).toEqual({
-		ok: false,
-		error: {
-			code: 'UNAVAILABLE',
-			message: 'This feature is not available yet',
-			retryable: false,
-		},
+		ok: true,
+		value: {status: 'cancelled'},
 	});
+	expect(
+		await app.evaluate(
+			() =>
+				(globalThis as {appProjectPickerCalls?: number}).appProjectPickerCalls,
+		),
+	).toBe(1);
+	expect(
+		await page.evaluate(() =>
+			(window as unknown as {desktop: DesktopApi}).desktop.listProjects({}),
+		),
+	).toEqual({ok: true, value: []});
 });
 
 test('workspace methods reject content and renderer-supplied paths', async () => {

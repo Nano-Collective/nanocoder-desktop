@@ -31,6 +31,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/ipc/index.ts` | Registers the IPC handlers |
 | `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |
 | `source/main/ipc/workspace-services.ts` | Main-only project and thread service contracts |
+| `source/main/projects/` | Canonical project selection and relocation, bounded read-only trust summaries, and snapshot-checked native consent |
 | `source/main/store/contracts.ts` | Metadata store, repositories and replaceable SQLite driver seam (`DEC-04`) |
 | `source/main/store/index.ts` | Opens `userData/desktop.sqlite`, checks integrity, quarantines corruption and stores validated settings/UI state |
 | `source/main/store/node-sqlite.ts` | `node:sqlite` adapter and online backup; library errors never expose SQL inputs |
@@ -55,8 +56,10 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/app-shell.tsx`, `source/renderer/styles/app-shell.css` | U.2 grid and plain-child rail/tools slots; inspector hidden at 840px and below |
 | `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
 | `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |
+| `source/renderer/recent-projects.tsx`, `source/renderer/trust-feedback.tsx` | Standalone, plain-prop project controls and trust feedback; `use-projects.ts` owns bridge calls |
 | `scripts/generate-design-tokens.mjs` | Generates committed CSS custom properties from `DESIGN.md`; the adjacent spec rejects drift |
 | `planning/ui-foundations.md` | Theme switching, keyboard-focus QA and the proposed Markdown renderer |
+| `planning/projects-and-trust.md` | Project opening, safe summary limits, the pre-trust probe exception and remaining Nanocoder trust gaps |
 | `planning/app-shell.md` | Shell composition, supervisor badge rules and locked multi-width QA |
 | `source/renderer/overlays.tsx`, `source/renderer/overlay-model.ts` | U.12 renderer-only command palette, shortcuts, focus return and clock-injected toast queue |
 | `planning/ui-overlays.md` | Overlay commands, keyboard rules and notification verification |
@@ -67,6 +70,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/preload/index.ts` | The `window.desktop` bridge |
 | `e2e/*.e2e.ts` | Playwright tests against the built app |
 | `e2e/store.e2e.ts` | Built-main persistence, migration backup, corruption recovery and storage refusal tests |
+| `e2e/projects.e2e.ts` | Isolated-profile project persistence, native trust, recents, relocation and trust-revocation tests |
 | `e2e/supervisor.e2e.ts` | Built-main quit while a child is still initialising, including child-exit verification |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |
 | `e2e/qa/ui-contrast.ts` | Token-pair and rendered-text contrast checks, with a co-located AVA spec |

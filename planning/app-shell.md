@@ -11,7 +11,7 @@ Visual decisions remain in [`DESIGN.md`](../DESIGN.md). The shell contains the e
 
 `source/renderer/app-shell.tsx` owns the title bar, project rail, stream scroll region, pinned composer and inspector. `projectRail`, `streamTools`, `composer`, `statusBadges` and `children` accept ordinary React children. Project/trust and diagnostics components can move into the first two slots without changing their props or styles. The slots are also identified by `data-shell-slot` attributes.
 
-Session tabs, project/thread lists, files/review and the palette shortcut are static placeholders. They say “not built yet” and expose no pretend action or tab-selection state. Functional thread tabs/rail, inspector tools, the palette and the bottom panel remain with their later phases.
+Session tabs, the default project list, thread lists, files/review and the palette shortcut are static placeholders. They say “not built yet” and expose no pretend action or tab-selection state. Phase 1.2 supplies real recent-project controls in the project-rail slot and trust feedback in stream-tools. Functional thread tabs/rail, inspector tools, the palette and the bottom panel remain with their later phases.
 
 The transcript, permission cards and turn results stay in the stream's scroll region. Runtime discovery, the native folder/trust flow, connection details and capability reasons stay in `streamTools`. The existing composer stays outside the scroll region, pinned to its bottom. Long runtime paths and content wrap inside the flexible stream rather than expanding the desktop.
 
