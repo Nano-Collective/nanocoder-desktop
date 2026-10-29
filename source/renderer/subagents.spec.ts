@@ -76,6 +76,30 @@ test('SUB-01 tool IDs are scoped to their turn and late running updates do not r
 	t.is(state.items[0], settled);
 });
 
+test('SUB-01 reused tool IDs retain independent rows and details across turns', t => {
+	const first = applyEvent(emptyTranscript, {
+		type: 'tool',
+		id: 'reused-call',
+		title: 'first fixture tool',
+		status: 'completed',
+		details: {content: ['first fixture detail']},
+	});
+	const previous = first.items[0];
+	const next = applyEvent(addUserMessage(first, 'next fixture turn'), {
+		type: 'tool',
+		id: 'reused-call',
+		title: 'second fixture tool',
+		status: 'completed',
+		details: {content: ['second fixture detail']},
+	});
+	t.is(next.items.length, 3);
+	t.is(next.items[0], previous);
+	t.deepEqual(
+		next.items.filter(item => item.kind === 'tool').map(item => item.details),
+		[{content: ['first fixture detail']}, {content: ['second fixture detail']}],
+	);
+});
+
 test('SUB-07 recognises thin agent replay but never upgrades arbitrary think tools', t => {
 	const historical = toTurnEvent(
 		{

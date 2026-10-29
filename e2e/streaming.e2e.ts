@@ -327,7 +327,11 @@ test('stream semantics keyboard disclosure reduced motion and both themes at thr
 		page.getByText('turn ended: end_turn', {exact: true}),
 	).toBeVisible();
 	await expect(page.locator('.stream-cursor')).toHaveCount(0);
-	const disclosure = page.locator('.gate-message-tool summary').first();
+	const toolDetails = page.locator('.gate-message-tool details');
+	await expect(toolDetails).toHaveCount(2);
+	await expect(toolDetails.first()).toContainText('fixture tool detail');
+	const currentToolDetails = toolDetails.last();
+	const disclosure = currentToolDetails.locator('summary');
 	await disclosure.focus();
 	await page.keyboard.press('Tab');
 	await page.keyboard.press('Shift+Tab');
@@ -335,8 +339,11 @@ test('stream semantics keyboard disclosure reduced motion and both themes at thr
 	await expect(disclosure).toHaveCSS('outline-width', '2px');
 	await disclosure.press('Enter');
 	await expect(
-		page.getByText('fixture tool detail', {exact: true}),
+		currentToolDetails.getByText('fixture tool detail', {exact: true}),
 	).toBeVisible();
+	await expect(
+		toolDetails.first().getByText('fixture tool detail', {exact: true}),
+	).toBeHidden();
 	for (const theme of ['dark', 'light']) {
 		for (const width of [1240, 1020, 840]) {
 			expect(page.url()).toMatch(/^app:\/\/renderer\//);
