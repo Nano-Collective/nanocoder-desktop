@@ -14,6 +14,7 @@ import {IpcFailure} from '@/main/ipc/handle-request';
 import {
 	type ConnectOptions,
 	NanocoderFailure,
+	type NanocoderTurnResult,
 } from '@/main/nanocoder/acp-client';
 import {FakeClock} from '@/main/nanocoder/fixtures/fake-clock';
 import {fakeEvents, fakeRuntime} from '@/main/nanocoder/fixtures/fake-project';
@@ -27,6 +28,7 @@ import type {
 	ProjectEvent,
 	ProjectInfo,
 	ThreadInfo,
+	TurnEvent,
 } from '@/shared/ipc';
 
 async function fixture(
@@ -559,6 +561,182 @@ for (const action of ['cancel', 'detach'] as const) {
 		});
 	}
 }
+
+test('resolved turn metadata uses only its owning desktop sequence and never the IPC result or metadata store (CHAT-19, DATA-07)', async t => {
+	const events: ProjectEvent[] = [];
+	const {service, supervisor, project, store} = await fixture(t, true, event =>
+		events.push(event),
+	);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const response = deferred<NanocoderTurnResult>();
+	const entered = deferred<void>();
+	supervisor.getConnection(project.id).prompt = async () => {
+		entered.resolve();
+		return response.promise;
+	};
+	const request = {projectId: project.id, threadId: thread.id};
+	const turn = service.promptThread({...request, text: 'first'});
+	await entered.promise;
+	const peer = await service.createThread({projectId: project.id});
+	const metadata = {
+		usage: {totalTokens: 20},
+		artifacts: [{kind: 'task' as const, path: 'transient-metadata-only.txt'}],
+	};
+	response.resolve({stopReason: 'end_turn', metadata});
+	t.deepEqual(await turn, {stopReason: 'end_turn'});
+	const mapped = events.filter(event => event.type === 'turn');
+	t.deepEqual(
+		mapped.map(event => ({
+			threadId: event.threadId,
+			sequence: event.sequence,
+			events: event.events,
+		})),
+		[
+			{
+				threadId: thread.id,
+				sequence: 1,
+				events: [{type: 'user', text: 'first'}],
+			},
+			{
+				threadId: thread.id,
+				sequence: 2,
+				events: [{type: 'metadata', metadata}],
+			},
+		],
+	);
+	t.deepEqual(
+		(
+			await service.getThreadSnapshot({
+				projectId: project.id,
+				threadId: peer.id,
+			})
+		).events,
+		[],
+	);
+	t.false(
+		JSON.stringify(store.threads.list(project.id, 'active')).includes(
+			'transient-metadata-only.txt',
+		),
+	);
+	metadata.usage.totalTokens = 999;
+	t.is(
+		(await service.getThreadSnapshot(request)).events.at(-1)?.metadata?.usage
+			?.totalTokens,
+		20,
+	);
+});
+
+for (const changed of ['session', 'root', 'cwd']) {
+	test(`resolved metadata cannot enter a replacement ${changed} owner or overwrite its state (CHAT-19, ACP-13)`, async t => {
+		const events: ProjectEvent[] = [];
+		const {service, supervisor, store, project} = await fixture(
+			t,
+			true,
+			event => events.push(event),
+		);
+		const thread = await service.createThread({projectId: project.id});
+		await supervisor.ensureProcess(project);
+		const entered = deferred<void>();
+		const response = deferred<NanocoderTurnResult>();
+		supervisor.getConnection(project.id).prompt = async () => {
+			entered.resolve();
+			return response.promise;
+		};
+		const request = {projectId: project.id, threadId: thread.id};
+		const turn = service.promptThread({...request, text: 'old owner'});
+		const refused = t.throwsAsync(turn, {code: 'AGENT_UNAVAILABLE'});
+		await entered.promise;
+		const current = {
+			...(await service.getThreadSnapshot(request)).thread,
+			runState: 'ready' as const,
+			lastActivityAt: '2020-01-01T00:00:00.000Z',
+		};
+		const replacement = path.join(project.canonicalRoot, 'replacement');
+		mkdirSync(replacement);
+		if (changed === 'session')
+			current.nanocoderSessionId = 'replacement-session';
+		else if (changed === 'cwd') current.sessionCwd = replacement;
+		else
+			store.projects.save({
+				...project,
+				canonicalRoot: replacement,
+				sessionCwd: replacement,
+			});
+		store.threads.save(current);
+		response.resolve({
+			stopReason: 'end_turn',
+			metadata: {usage: {totalTokens: 20}},
+		});
+		await refused;
+		t.deepEqual(store.threads.get(project.id, thread.id), current);
+		t.false(
+			events.some(
+				event =>
+					event.type === 'turn' &&
+					event.events.some(item => item.type === 'metadata'),
+			),
+		);
+	});
+}
+
+test('detached turn response metadata cannot publish into a later renderer attachment (CHAT-19, ACP-13)', async t => {
+	const events: ProjectEvent[] = [];
+	const {service, supervisor, project} = await fixture(t, true, event =>
+		events.push(event),
+	);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const entered = deferred<void>();
+	const response = deferred<NanocoderTurnResult>();
+	supervisor.getConnection(project.id).prompt = async () => {
+		entered.resolve();
+		return response.promise;
+	};
+	const request = {projectId: project.id, threadId: thread.id};
+	const turn = service.promptThread({...request, text: 'old attachment'});
+	await entered.promise;
+	const detached = service.detach([]);
+	response.resolve({
+		stopReason: 'end_turn',
+		metadata: {usage: {totalTokens: 20}},
+	});
+	await detached;
+	t.deepEqual(await turn, {stopReason: 'end_turn'});
+	t.false(
+		events.some(
+			event =>
+				event.type === 'turn' &&
+				event.events.some(item => item.type === 'metadata'),
+		),
+	);
+	t.deepEqual((await service.getThreadSnapshot(request)).events, [
+		{type: 'user', text: 'old attachment'},
+	]);
+});
+
+test('resumed metadata remains part of the owned in-memory snapshot prefix (CHAT-19, CHAT-04)', async t => {
+	const {service, supervisor, store, project} = await fixture(t, true);
+	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+	store.threads.save(thread);
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	const original = connection.resumeSession;
+	const metadata: TurnEvent = {
+		type: 'metadata',
+		metadata: {usage: {totalTokens: 30}},
+	};
+	connection.resumeSession = async (...args) => {
+		const resumed = await original(...args);
+		return {...resumed, history: [...resumed.history, metadata]};
+	};
+	const snapshot = await service.openThread({
+		projectId: project.id,
+		threadId: thread.id,
+	});
+	t.deepEqual(snapshot.events.at(-1), metadata);
+	t.is(snapshot.sequence, 1);
+});
 
 test('removed desktop metadata also forgets the remembered recovery session without resuming it (CHAT-14, ACP-13)', async t => {
 	const {service, supervisor, store, project} = await fixture(t, true);

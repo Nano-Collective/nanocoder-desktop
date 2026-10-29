@@ -721,6 +721,17 @@ export function createThreadService(
 					turnStarted: false,
 				});
 				let started = false;
+				const owns = (
+					current: ThreadInfo | undefined,
+				): current is ThreadInfo => {
+					const owner = options.store.projects.get(thread.projectId);
+					return (
+						current?.nanocoderSessionId === thread.nanocoderSessionId &&
+						current?.sessionCwd === thread.sessionCwd &&
+						owner?.canonicalRoot === thread.sessionCwd &&
+						owner.sessionCwd === thread.sessionCwd
+					);
+				};
 				try {
 					const project = await validateProject(thread);
 					signal.throwIfAborted();
@@ -789,13 +800,21 @@ export function createThreadService(
 						sessionId,
 						request.text,
 					);
+					const current = getThread(request);
+					if (!owns(current))
+						throw new IpcFailure(
+							'AGENT_UNAVAILABLE',
+							'The thread session changed before the turn finished',
+						);
+					if (result.metadata && !signal.aborted)
+						append(current, [{type: 'metadata', metadata: result.metadata}]);
 					saveThread({
-						...getThread(request),
+						...current,
 						runState:
 							result.stopReason === 'cancelled' ? 'interrupted' : 'ready',
 						lastActivityAt: now(),
 					});
-					return result;
+					return {stopReason: result.stopReason};
 				} catch (error) {
 					if (
 						!started &&
@@ -814,7 +833,7 @@ export function createThreadService(
 							thread.projectId,
 							thread.id,
 						);
-						if (current?.nanocoderSessionId === thread.nanocoderSessionId)
+						if (owns(current))
 							saveThread({
 								...current,
 								runState: 'failed',
