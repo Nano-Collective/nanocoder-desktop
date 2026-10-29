@@ -21,7 +21,12 @@ import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
 import {desktopStoreFactory} from '@/main/store';
 import {createNodeSqliteDriver} from '@/main/store/node-sqlite';
 import {createThreadService} from '@/main/threads/thread-service';
-import type {ProjectEvent, ProjectInfo, ThreadInfo} from '@/shared/ipc';
+import type {
+	PermissionRequestInfo,
+	ProjectEvent,
+	ProjectInfo,
+	ThreadInfo,
+} from '@/shared/ipc';
 
 async function fixture(
 	t: ExecutionContext,
@@ -145,6 +150,52 @@ function seed(
 		mode: 'normal',
 		viewOnlyReason: null,
 		...overrides,
+	};
+}
+
+async function waitingThread(t: ExecutionContext, two = false) {
+	const waiting = deferred<PermissionRequestInfo[]>();
+	const requests: PermissionRequestInfo[] = [];
+	const context = await fixture(t, true, event => {
+		if (event.type !== 'turn') return;
+		for (const item of event.events) {
+			if (item.type !== 'permission') continue;
+			requests.push(item.request);
+			if (requests.length === (two ? 2 : 1)) waiting.resolve(requests);
+		}
+	});
+	if (two)
+		writeFileSync(
+			path.join(context.project.canonicalRoot, '.fake-nanocoder'),
+			'two-tools',
+		);
+	const metadata: ThreadInfo[] = [];
+	context.supervisor.subscribe(event => {
+		if (event.type === 'thread') metadata.push(event.thread);
+	});
+	const thread = await context.service.createThread({
+		projectId: context.project.id,
+	});
+	const target = {projectId: context.project.id, threadId: thread.id};
+	const turn = context.service.promptThread({
+		...target,
+		text: 'fixture request',
+	});
+	void turn.catch(() => undefined);
+	t.teardown(async () => {
+		await context.supervisor
+			.cancel(context.project.id, 'fake-session')
+			.catch(() => undefined);
+		await turn.catch(() => undefined);
+	});
+	return {
+		...context,
+		thread,
+		target,
+		turn,
+		requests: await waiting.promise,
+		connection: context.supervisor.getConnection(context.project.id),
+		metadata,
 	};
 }
 
@@ -1383,4 +1434,221 @@ test('missing-history view-only state is published without changing thread ident
 	);
 	t.is(snapshot.thread.nanocoderSessionId, thread.nanocoderSessionId);
 	t.is(snapshot.thread.runState, 'view-only');
+});
+
+test('waiting metadata remains until every concurrent permission closes (CHAT-06, U.3)', async t => {
+	const {project, store, supervisor, target, turn, requests, metadata} =
+		await waitingThread(t, true);
+	t.is(
+		store.threads.get(project.id, target.threadId)?.runState,
+		'waiting-approval',
+	);
+	t.true(
+		supervisor.answerPermission(
+			project.id,
+			'fake-session',
+			requests[0].id,
+			'allow',
+		),
+	);
+	t.is(
+		store.threads.get(project.id, target.threadId)?.runState,
+		'waiting-approval',
+	);
+	t.true(
+		supervisor.answerPermission(
+			project.id,
+			'fake-session',
+			requests[1].id,
+			'deny',
+		),
+	);
+	t.is(store.threads.get(project.id, target.threadId)?.runState, 'running');
+	t.deepEqual(await turn, {stopReason: 'end_turn'});
+	t.deepEqual(
+		metadata.map(row => row.runState),
+		['new', 'new', 'running', 'waiting-approval', 'running', 'ready'],
+	);
+});
+
+test('thread approval answers refuse unknown unoffered wrong-thread and closed requests (ACP-10, CHAT-06)', async t => {
+	const {
+		project,
+		store,
+		service,
+		supervisor,
+		connection,
+		target,
+		turn,
+		requests,
+	} = await waitingThread(t);
+	const other = seed(project);
+	store.threads.save(other);
+	const answer = {...target, requestId: requests[0].id, optionId: 'allow'};
+	for (const [request, code] of [
+		[{...answer, threadId: randomUUID()}, 'NOT_FOUND'],
+		[{...answer, projectId: randomUUID()}, 'NOT_FOUND'],
+		[{...answer, threadId: other.id}, 'DENIED'],
+		[{...answer, requestId: 'unknown-request'}, 'DENIED'],
+		[{...answer, optionId: 'not-offered'}, 'DENIED'],
+	] as const)
+		await t.throwsAsync(service.answerThreadPermission(request), {
+			instanceOf: IpcFailure,
+			code,
+		});
+	t.is(
+		store.threads.get(project.id, target.threadId)?.runState,
+		'waiting-approval',
+	);
+	t.is(await service.answerThreadPermission(answer), null);
+	t.deepEqual(await turn, {stopReason: 'end_turn'});
+	await t.throwsAsync(service.answerThreadPermission(answer), {
+		instanceOf: IpcFailure,
+		code: 'DENIED',
+	});
+	await supervisor.close();
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines())
+			.filter(event => 'answer' in event)
+			.map(event => event.answer),
+		[{outcome: 'selected', optionId: 'allow'}],
+	);
+});
+
+test('thread cancellation scopes the active session and cancels every approval without allowing it (ACP-10, CHAT-06)', async t => {
+	const {
+		project,
+		store,
+		service,
+		supervisor,
+		connection,
+		target,
+		turn,
+		requests,
+	} = await waitingThread(t, true);
+	const other = seed(project);
+	store.threads.save(other);
+	t.is(await service.cancelThread({...target, threadId: other.id}), null);
+	t.is(supervisor.getState(project.id).activeThreadId, 'fake-session');
+	t.is(await service.cancelThread(target), null);
+	t.deepEqual(await turn, {stopReason: 'cancelled'});
+	t.is(store.threads.get(project.id, target.threadId)?.runState, 'interrupted');
+	for (const request of requests)
+		await t.throwsAsync(
+			service.answerThreadPermission({
+				...target,
+				requestId: request.id,
+				optionId: 'allow',
+			}),
+			{instanceOf: IpcFailure, code: 'DENIED'},
+		);
+	await supervisor.close();
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines())
+			.filter(event => 'answer' in event)
+			.map(event => event.answer),
+		[{outcome: 'cancelled'}],
+	);
+});
+
+test('cancelling a sessionless thread is local and unknown targets are refused (ACP-10)', async t => {
+	const {project, service, calls} = await fixture(t);
+	const thread = await service.createThread({projectId: project.id});
+	const target = {projectId: project.id, threadId: thread.id};
+	t.is(await service.cancelThread(target), null);
+	await t.throwsAsync(
+		service.cancelThread({...target, threadId: randomUUID()}),
+		{instanceOf: IpcFailure, code: 'NOT_FOUND'},
+	);
+	t.deepEqual(calls, []);
+});
+
+test('revoked trust refuses a live approval but still permits cancelling the turn (ACP-10, SEC-17)', async t => {
+	const {
+		project,
+		store,
+		service,
+		supervisor,
+		connection,
+		target,
+		turn,
+		requests,
+	} = await waitingThread(t);
+	store.projects.save({...project, trusted: false});
+	await t.throwsAsync(
+		service.answerThreadPermission({
+			...target,
+			requestId: requests[0].id,
+			optionId: 'allow',
+		}),
+		{instanceOf: IpcFailure, code: 'DENIED'},
+	);
+	t.is(await service.cancelThread(target), null);
+	t.deepEqual(await turn, {stopReason: 'cancelled'});
+	await supervisor.close();
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines())
+			.filter(event => 'answer' in event)
+			.map(event => event.answer),
+		[{outcome: 'cancelled'}],
+	);
+});
+
+for (const mode of ['prompt-error', 'die-in-turn']) {
+	test(`${mode} publishes failed instead of leaving the thread running (CHAT-15, DEC-33)`, async t => {
+		const {project, store, service, supervisor} = await fixture(t, true);
+		writeFileSync(path.join(project.canonicalRoot, '.fake-nanocoder'), mode);
+		const metadata: ThreadInfo[] = [];
+		supervisor.subscribe(event => {
+			if (event.type === 'thread') metadata.push(event.thread);
+		});
+		const thread = await service.createThread({projectId: project.id});
+		await t.throwsAsync(
+			service.promptThread({
+				projectId: project.id,
+				threadId: thread.id,
+				text: 'fixture prompt',
+			}),
+			{instanceOf: IpcFailure, code: 'AGENT_UNAVAILABLE'},
+		);
+		const stored = store.threads.get(project.id, thread.id);
+		t.is(stored?.runState, 'failed');
+		t.is(stored?.nanocoderSessionId, 'fake-session');
+		t.is(stored?.title, 'fixture prompt');
+		t.is(metadata.at(-1)?.runState, 'failed');
+	});
+}
+
+test('another running thread remains readable without persisted view-only state or session switching (CHAT-17)', async t => {
+	const {project, store, service, supervisor, connection, target, turn} =
+		await waitingThread(t);
+	const other = seed(project);
+	store.threads.save(other);
+	connection.resumeSession = async () => {
+		throw new Error('A running turn must not switch sessions');
+	};
+	const otherTarget = {projectId: project.id, threadId: other.id};
+	const snapshot = await service.openThread(otherTarget);
+	t.deepEqual(snapshot.thread, other);
+	t.deepEqual(snapshot.events, []);
+	t.is(supervisor.getState(project.id).activeThreadId, 'fake-session');
+	await t.throwsAsync(
+		service.promptThread({...otherTarget, text: 'fixture overlap'}),
+		{instanceOf: IpcFailure, code: 'BUSY'},
+	);
+	await service.cancelThread(target);
+	await turn;
+	t.deepEqual(store.threads.get(project.id, other.id), other);
+});
+
+test('opening untrusted history refuses without persisting a permanent view-only state (CHAT-15, SEC-17)', async t => {
+	const {project, store, service, calls} = await fixture(t);
+	const thread = seed(project);
+	store.threads.save(thread);
+	await t.throwsAsync(
+		service.openThread({projectId: project.id, threadId: thread.id}),
+		{instanceOf: IpcFailure, code: 'DENIED'},
+	);
+	t.deepEqual(store.threads.get(project.id, thread.id), thread);
+	t.deepEqual(calls, []);
 });

@@ -55,6 +55,7 @@ export function createThreadService(
 	const prepared = new Map<string, NanocoderConnection>();
 	const pending = new Map<string, string>();
 	const mutations = new Set<string>();
+	const permissionIds = new Map<string, Set<string>>();
 	const now = () => (options.now?.() ?? new Date()).toISOString();
 	const publishThread = (thread: ThreadInfo) => {
 		options.supervisor.publishThread(thread);
@@ -112,7 +113,25 @@ export function createThreadService(
 			...options.store.threads.list(event.projectId, 'active'),
 			...options.store.threads.list(event.projectId, 'archived'),
 		].find(thread => thread.nanocoderSessionId === event.threadId);
-		if (thread) append(thread, event.events);
+		if (!thread) return;
+		const ids = permissionIds.get(thread.id) ?? new Set<string>();
+		let changed = false;
+		for (const item of event.events) {
+			if (item.type === 'permission' && !ids.has(item.request.id)) {
+				ids.add(item.request.id);
+				changed = true;
+			} else if (item.type === 'permission-closed' && ids.delete(item.id)) {
+				changed = true;
+			}
+		}
+		if (changed) {
+			if (ids.size) permissionIds.set(thread.id, ids);
+			else permissionIds.delete(thread.id);
+			const runState = ids.size ? 'waiting-approval' : 'running';
+			if (thread.runState !== runState)
+				saveThread({...thread, runState, lastActivityAt: now()});
+		}
+		append(thread, event.events);
 	});
 	const unsubscribeTitles = options.supervisor.subscribeTitles(change => {
 		const thread = [
@@ -161,6 +180,7 @@ export function createThreadService(
 		options.store.threads.remove(request.projectId, request.threadId);
 		snapshots.delete(request.threadId);
 		prepared.delete(request.threadId);
+		permissionIds.delete(request.threadId);
 		const ui = options.store.getUiState();
 		options.store.updateUiState({
 			activeThreadId:
@@ -238,6 +258,7 @@ export function createThreadService(
 		dispose: () => {
 			unsubscribe();
 			unsubscribeTitles();
+			permissionIds.clear();
 		},
 		listThreads: async ({projectId, archiveState}) => {
 			getProject(projectId);
@@ -276,11 +297,7 @@ export function createThreadService(
 				)
 					return structuredClone(snapshot(request));
 				if (pending.has(project.id) || state.activeThreadId !== null)
-					throw new IpcFailure(
-						'BUSY',
-						'Finish the running turn before resuming this thread',
-						true,
-					);
+					return structuredClone(snapshot(request));
 				pending.set(project.id, thread.id);
 				preparing = true;
 				await options.supervisor.ensureProcess(project);
@@ -291,6 +308,11 @@ export function createThreadService(
 					project,
 				);
 			} catch (error) {
+				if (
+					error instanceof IpcFailure &&
+					['DENIED', 'BUSY'].includes(error.code)
+				)
+					return failure(error);
 				viewOnly(request, error);
 			} finally {
 				if (preparing) pending.delete(thread.projectId);
@@ -429,6 +451,7 @@ export function createThreadService(
 					true,
 				);
 			pending.set(thread.projectId, thread.id);
+			let started = false;
 			try {
 				const project = await validateProject(thread);
 				await options.supervisor.ensureProcess(project);
@@ -479,6 +502,7 @@ export function createThreadService(
 					lastActivityAt: now(),
 				};
 				saveThread(thread);
+				started = true;
 				append(thread, [{type: 'user', text: request.text}]);
 				const result = await options.supervisor.prompt(
 					project.id,
@@ -487,19 +511,77 @@ export function createThreadService(
 				);
 				saveThread({
 					...getThread(request),
-					runState: 'ready',
+					runState: result.stopReason === 'cancelled' ? 'interrupted' : 'ready',
 					lastActivityAt: now(),
 				});
 				return result;
 			} catch (error) {
+				if (started) {
+					const current = options.store.threads.get(
+						thread.projectId,
+						thread.id,
+					);
+					if (current?.nanocoderSessionId === thread.nanocoderSessionId)
+						saveThread({...current, runState: 'failed', lastActivityAt: now()});
+				}
 				return failure(error);
 			} finally {
 				pending.delete(thread.projectId);
+				permissionIds.delete(thread.id);
 			}
 		},
-		cancelThread: unavailable,
+		cancelThread: async request => {
+			const thread = getThread(request);
+			const sessionId = thread.nanocoderSessionId;
+			if (
+				sessionId &&
+				options.supervisor.getState(thread.projectId).activeThreadId ===
+					sessionId
+			) {
+				try {
+					await options.supervisor.cancel(thread.projectId, sessionId);
+				} catch (error) {
+					return failure(error);
+				}
+			}
+			return null;
+		},
 		setThreadMode: unavailable,
-		answerThreadPermission: unavailable,
+		answerThreadPermission: async request => {
+			const thread = getThread(request);
+			const sessionId = thread.nanocoderSessionId;
+			const denied = () =>
+				new IpcFailure(
+					'DENIED',
+					'This permission request is not waiting for this thread',
+				);
+			if (
+				!sessionId ||
+				options.supervisor.getState(thread.projectId).activeThreadId !==
+					sessionId
+			)
+				throw denied();
+			const owner = await validateProject(thread);
+			const current = getThread(request);
+			const project = getProject(thread.projectId);
+			if (
+				!project.trusted ||
+				current.nanocoderSessionId !== sessionId ||
+				current.sessionCwd !== thread.sessionCwd ||
+				project.canonicalRoot !== owner.canonicalRoot ||
+				project.sessionCwd !== owner.sessionCwd ||
+				options.supervisor.getState(thread.projectId).activeThreadId !==
+					sessionId ||
+				!options.supervisor.answerPermission(
+					thread.projectId,
+					sessionId,
+					request.requestId,
+					request.optionId,
+				)
+			)
+				throw denied();
+			return null;
+		},
 		discoverSessions: unavailable,
 		importSession: unavailable,
 	};
