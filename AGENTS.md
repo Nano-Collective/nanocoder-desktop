@@ -52,6 +52,10 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/permissions.ts` | Holds each permission request until the user answers; only an option Nanocoder offered counts |
 | `source/main/nanocoder/turn-events.ts` | Turns ACP session updates into the few events the UI shows |
 | `source/renderer/transcript.ts` | Merges turn events into the conversation the UI shows |
+| `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |
+| `scripts/generate-design-tokens.mjs` | Generates committed CSS custom properties from `DESIGN.md`; the adjacent spec rejects drift |
+| `planning/ui-foundations.md` | Theme switching, keyboard-focus QA and the proposed Markdown renderer |
+| `THIRD-PARTY-NOTICES.txt` | Bundled font copyright and full OFL 1.1 licence |
 | `source/main/nanocoder/capabilities.ts` | Records `initialize` capabilities and builds feature gates with reasons; extensions need safe probes |
 | `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp`, a scripted model provider and test helpers, including the setup shared by the `*.acp.ts` tests |
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
@@ -60,6 +64,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `e2e/store.e2e.ts` | Built-main persistence, migration backup, corruption recovery and storage refusal tests |
 | `e2e/supervisor.e2e.ts` | Built-main quit while a child is still initialising, including child-exit verification |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |
+| `e2e/qa/ui-contrast.ts` | Token-pair and rendered-text contrast checks, with a co-located AVA spec |
 | `scripts/node-sidecar.json` | The pinned Node sidecar: exact version and SHA-256 per platform (`DEC-38`) |
 | `scripts/fetch-node-sidecar.mjs`, `scripts/measure-runtime.mjs` | Download and verify the sidecar; measure both runtimes (phase G.6) |
 | `electron.vite.config.ts`, `electron-builder.yml` | Build and packaging |
@@ -79,6 +84,7 @@ pnpm package:dir       # unpacked app for this platform in release/
 pnpm fetch:node        # download the pinned Node sidecar into .cache/, checked against its pinned SHA-256
 pnpm measure:runtime   # Phase G.6: startup and memory under Electron's Node mode and the sidecar (needs NANOCODER_CLI)
 pnpm format            # apply Biome formatting
+pnpm tokens:generate   # regenerate committed CSS variables from DESIGN.md
 pnpm changeset         # add a changeset for a user-facing change
 ```
 
@@ -114,6 +120,7 @@ These hold in every change:
 - Tests never sleep for a fixed time; they wait for an event.
 - End-to-end tests live in `e2e/`. ACP integration tests are `*.acp.ts`; they keep Nanocoder's config in a temporary folder, use a scripted model provider (no API key) and need a Nanocoder build with the ACP trust check.
 - Coverage stays at or above 80% of lines.
+- UI tokens are generated, not edited by hand. The root `data-theme="light"` switches to light; dark is the default. See `planning/ui-foundations.md` for theme, focus, reduced-motion and contrast QA.
 - For visual QA, run `pnpm build`, then `pnpm qa:launch` and `agent-browser connect 9333`. The folder picker and trust dialog are stubbed only in the test launcher. Save fake-fixture screenshots and logs under `.qa/`, never real conversation content. Stop the printed launcher PID when finished. The launcher is type-checked by `tsconfig.e2e.json`, discovered by Knip through the package script and excluded from packaging.
 
 ## AI Coding Assistance Notes

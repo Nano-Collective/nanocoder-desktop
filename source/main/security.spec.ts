@@ -122,3 +122,18 @@ test('the development policy allows only the dev server websocket', t => {
 	t.true(policy.includes("connect-src 'self' ws://localhost:5173"));
 	t.true(policy.includes("script-src 'self'"));
 });
+
+test('both policies refuse remote, data and wildcard font sources', t => {
+	for (const policy of [
+		contentSecurityPolicy(),
+		contentSecurityPolicy('http://localhost:5173'),
+	]) {
+		const fontRule = policy
+			.split('; ')
+			.find(rule => rule.startsWith('font-src'));
+		t.is(fontRule, "font-src 'self'");
+		for (const source of ['https:', 'http:', 'data:', '*', "'unsafe-inline'"]) {
+			t.false(fontRule?.includes(source));
+		}
+	}
+});

@@ -1,0 +1,403 @@
+/* Generated from DESIGN.md by pnpm tokens:generate. Do not edit. */
+:root {
+	--colors-primary: #459bf7;
+	--colors-primary-soft: #232f3e;
+	--colors-surface: #161618;
+	--colors-surface-panel: #1d1d20;
+	--colors-surface-elevated: #242429;
+	--colors-on-surface: #e6e6ea;
+	--colors-on-surface-muted: #9797a5;
+	--colors-stroke: #e6e6ea14;
+	--colors-stroke-soft: #e6e6ea0d;
+	--colors-success: #5eba7d;
+	--colors-error: #e25a68;
+	--colors-warning: #dda73c;
+	--colors-skill: #e8c547;
+	--colors-mention: #38bdf8;
+	--colors-heading: #f9a8c9;
+	--colors-diff-add: #202d26;
+	--colors-diff-del: #332023;
+	--colors-primary-light: #0000ee;
+	--colors-primary-soft-light: #dadaf2;
+	--colors-surface-light: #f6f6f9;
+	--colors-surface-panel-light: #ededf2;
+	--colors-surface-elevated-light: #e5e5eb;
+	--colors-on-surface-light: #1b2132;
+	--colors-on-surface-muted-light: #5c6170;
+	--colors-stroke-light: #1b21321a;
+	--colors-stroke-soft-light: #1b21320f;
+	--colors-success-light: #1a7f37;
+	--colors-error-light: #cf222e;
+	--colors-warning-light: #9a6700;
+	--colors-skill-light: #a07c10;
+	--colors-mention-light: #0284c7;
+	--colors-heading-light: #be185d;
+	--colors-diff-add-light: #dce8e2;
+	--colors-diff-del-light: #f1dde1;
+	--typography-body-md-font-family: "Fira Code", Consolas, Menlo, monospace;
+	--typography-body-md-font-size: 12px;
+	--typography-body-md-font-weight: 400;
+	--typography-body-md-line-height: 1.55;
+	--typography-body-sm-font-family: "Fira Code", Consolas, Menlo, monospace;
+	--typography-body-sm-font-size: 11.5px;
+	--typography-body-sm-font-weight: 400;
+	--typography-body-sm-line-height: 1.55;
+	--typography-tab-font-family: "Fira Code", Consolas, Menlo, monospace;
+	--typography-tab-font-size: 11px;
+	--typography-tab-font-weight: 400;
+	--typography-tab-line-height: 1.55;
+	--typography-code-sm-font-family: "Fira Code", Consolas, Menlo, monospace;
+	--typography-code-sm-font-size: 11px;
+	--typography-code-sm-font-weight: 400;
+	--typography-code-sm-line-height: 1.5;
+	--typography-meta-font-family: "Fira Code", Consolas, Menlo, monospace;
+	--typography-meta-font-size: 10.5px;
+	--typography-meta-font-weight: 400;
+	--typography-meta-line-height: 1.5;
+	--typography-caption-font-family: "Fira Code", Consolas, Menlo, monospace;
+	--typography-caption-font-size: 10px;
+	--typography-caption-font-weight: 400;
+	--typography-caption-line-height: 1.5;
+	--typography-label-section-font-family:
+		"Fira Code", Consolas, Menlo, monospace;
+	--typography-label-section-font-size: 9.5px;
+	--typography-label-section-font-weight: 400;
+	--typography-label-section-line-height: 1.5;
+	--typography-label-section-letter-spacing: 0.12em;
+	--typography-label-inline-font-family:
+		"Fira Code", Consolas, Menlo, monospace;
+	--typography-label-inline-font-size: 9.5px;
+	--typography-label-inline-font-weight: 400;
+	--typography-label-inline-line-height: 1.5;
+	--typography-label-inline-letter-spacing: 0.1em;
+	--rounded-none: 0px;
+	--rounded-sm: 4px;
+	--rounded-md: 6px;
+	--rounded-lg: 8px;
+	--rounded-xl: 10px;
+	--rounded-full: 9999px;
+	--spacing-xxs: 2px;
+	--spacing-xs: 4px;
+	--spacing-sm: 6px;
+	--spacing-md: 8px;
+	--spacing-lg: 10px;
+	--spacing-xl: 14px;
+	--spacing-xxl: 18px;
+	--spacing-rail-width: 190px;
+	--spacing-inspector-width: 240px;
+	--spacing-bottom-panel-height: 164px;
+	--spacing-stream-padding: 18px;
+	--spacing-width-wide: 1240px;
+	--spacing-width-mid: 1020px;
+	--spacing-width-narrow: 840px;
+	--components-window-background-color: var(--colors-surface);
+	--components-window-text-color: var(--colors-on-surface);
+	--components-window-font-family: var(--typography-body-md-font-family);
+	--components-window-font-size: var(--typography-body-md-font-size);
+	--components-window-font-weight: var(--typography-body-md-font-weight);
+	--components-window-line-height: var(--typography-body-md-line-height);
+	--components-window-rounded: var(--rounded-xl);
+	--components-title-bar-background-color: var(--colors-surface-panel);
+	--components-title-bar-text-color: var(--colors-on-surface-muted);
+	--components-title-bar-font-family: var(--typography-tab-font-family);
+	--components-title-bar-font-size: var(--typography-tab-font-size);
+	--components-title-bar-font-weight: var(--typography-tab-font-weight);
+	--components-title-bar-line-height: var(--typography-tab-line-height);
+	--components-session-tab-text-color: var(--colors-on-surface-muted);
+	--components-session-tab-font-family: var(--typography-tab-font-family);
+	--components-session-tab-font-size: var(--typography-tab-font-size);
+	--components-session-tab-font-weight: var(--typography-tab-font-weight);
+	--components-session-tab-line-height: var(--typography-tab-line-height);
+	--components-session-tab-rounded: var(--rounded-md);
+	--components-session-tab-active-background-color: var(
+		--colors-surface-elevated
+	);
+	--components-session-tab-active-text-color: var(--colors-on-surface);
+	--components-status-badge-text-color: var(--colors-on-surface-muted);
+	--components-status-badge-font-family: var(--typography-caption-font-family);
+	--components-status-badge-font-size: var(--typography-caption-font-size);
+	--components-status-badge-font-weight: var(--typography-caption-font-weight);
+	--components-status-badge-line-height: var(--typography-caption-line-height);
+	--components-status-badge-rounded: var(--rounded-full);
+	--components-status-badge-running-text-color: var(--colors-success);
+	--components-status-badge-approval-text-color: var(--colors-warning);
+	--components-status-badge-failed-text-color: var(--colors-error);
+	--components-project-rail-background-color: var(--colors-surface-panel);
+	--components-project-rail-text-color: var(--colors-on-surface-muted);
+	--components-project-rail-width: var(--spacing-rail-width);
+	--components-rail-heading-text-color: var(--colors-on-surface-muted);
+	--components-rail-heading-font-family: var(
+		--typography-label-section-font-family
+	);
+	--components-rail-heading-font-size: var(
+		--typography-label-section-font-size
+	);
+	--components-rail-heading-font-weight: var(
+		--typography-label-section-font-weight
+	);
+	--components-rail-heading-line-height: var(
+		--typography-label-section-line-height
+	);
+	--components-rail-heading-letter-spacing: var(
+		--typography-label-section-letter-spacing
+	);
+	--components-rail-item-active-background-color: var(--colors-primary-soft);
+	--components-rail-item-active-text-color: var(--colors-on-surface);
+	--components-message-user-text-color: var(--colors-on-surface);
+	--components-message-user-font-family: var(--typography-body-md-font-family);
+	--components-message-user-font-size: var(--typography-body-md-font-size);
+	--components-message-user-font-weight: var(--typography-body-md-font-weight);
+	--components-message-user-line-height: var(--typography-body-md-line-height);
+	--components-message-agent-text-color: var(--colors-on-surface);
+	--components-message-agent-font-family: var(--typography-body-md-font-family);
+	--components-message-agent-font-size: var(--typography-body-md-font-size);
+	--components-message-agent-font-weight: var(--typography-body-md-font-weight);
+	--components-message-agent-line-height: var(--typography-body-md-line-height);
+	--components-message-author-text-color: var(--colors-on-surface-muted);
+	--components-message-author-font-family: var(
+		--typography-label-inline-font-family
+	);
+	--components-message-author-font-size: var(
+		--typography-label-inline-font-size
+	);
+	--components-message-author-font-weight: var(
+		--typography-label-inline-font-weight
+	);
+	--components-message-author-line-height: var(
+		--typography-label-inline-line-height
+	);
+	--components-message-author-letter-spacing: var(
+		--typography-label-inline-letter-spacing
+	);
+	--components-reasoning-text-color: var(--colors-on-surface-muted);
+	--components-reasoning-font-family: var(--typography-body-sm-font-family);
+	--components-reasoning-font-size: var(--typography-body-sm-font-size);
+	--components-reasoning-font-weight: var(--typography-body-sm-font-weight);
+	--components-reasoning-line-height: var(--typography-body-sm-line-height);
+	--components-tool-row-text-color: var(--colors-on-surface-muted);
+	--components-tool-row-font-family: var(--typography-body-sm-font-family);
+	--components-tool-row-font-size: var(--typography-body-sm-font-size);
+	--components-tool-row-font-weight: var(--typography-body-sm-font-weight);
+	--components-tool-row-line-height: var(--typography-body-sm-line-height);
+	--components-subagent-card-background-color: var(--colors-surface-panel);
+	--components-subagent-card-text-color: var(--colors-on-surface-muted);
+	--components-subagent-card-font-family: var(--typography-body-sm-font-family);
+	--components-subagent-card-font-size: var(--typography-body-sm-font-size);
+	--components-subagent-card-font-weight: var(--typography-body-sm-font-weight);
+	--components-subagent-card-line-height: var(--typography-body-sm-line-height);
+	--components-subagent-card-rounded: var(--rounded-lg);
+	--components-approval-card-background-color: var(--colors-surface-elevated);
+	--components-approval-card-text-color: var(--colors-on-surface);
+	--components-approval-card-rounded: var(--rounded-lg);
+	--components-approval-card-title-text-color: var(--colors-warning);
+	--components-approval-card-title-font-family: var(
+		--typography-label-inline-font-family
+	);
+	--components-approval-card-title-font-size: var(
+		--typography-label-inline-font-size
+	);
+	--components-approval-card-title-font-weight: var(
+		--typography-label-inline-font-weight
+	);
+	--components-approval-card-title-line-height: var(
+		--typography-label-inline-line-height
+	);
+	--components-approval-card-title-letter-spacing: var(
+		--typography-label-inline-letter-spacing
+	);
+	--components-failure-banner-text-color: var(--colors-error);
+	--components-failure-banner-font-family: var(
+		--typography-body-sm-font-family
+	);
+	--components-failure-banner-font-size: var(--typography-body-sm-font-size);
+	--components-failure-banner-font-weight: var(
+		--typography-body-sm-font-weight
+	);
+	--components-failure-banner-line-height: var(
+		--typography-body-sm-line-height
+	);
+	--components-failure-banner-rounded: var(--rounded-lg);
+	--components-view-only-notice-text-color: var(--colors-on-surface-muted);
+	--components-view-only-notice-font-family: var(
+		--typography-body-sm-font-family
+	);
+	--components-view-only-notice-font-size: var(--typography-body-sm-font-size);
+	--components-view-only-notice-font-weight: var(
+		--typography-body-sm-font-weight
+	);
+	--components-view-only-notice-line-height: var(
+		--typography-body-sm-line-height
+	);
+	--components-view-only-notice-rounded: var(--rounded-lg);
+	--components-composer-background-color: var(--colors-surface-panel);
+	--components-composer-text-color: var(--colors-on-surface);
+	--components-composer-rounded: var(--rounded-xl);
+	--components-composer-padding: 10px;
+	--components-composer-pill-text-color: var(--colors-on-surface-muted);
+	--components-composer-pill-font-family: var(--typography-caption-font-family);
+	--components-composer-pill-font-size: var(--typography-caption-font-size);
+	--components-composer-pill-font-weight: var(--typography-caption-font-weight);
+	--components-composer-pill-line-height: var(--typography-caption-line-height);
+	--components-composer-pill-rounded: var(--rounded-full);
+	--components-composer-pill-mode-text-color: var(--colors-primary);
+	--components-context-gauge-background-color: var(--colors-primary);
+	--components-context-gauge-height: 2px;
+	--components-button-background-color: var(--colors-surface-panel);
+	--components-button-text-color: var(--colors-on-surface);
+	--components-button-font-family: var(--typography-meta-font-family);
+	--components-button-font-size: var(--typography-meta-font-size);
+	--components-button-font-weight: var(--typography-meta-font-weight);
+	--components-button-line-height: var(--typography-meta-line-height);
+	--components-button-rounded: var(--rounded-md);
+	--components-button-allow-text-color: var(--colors-success);
+	--components-button-reject-text-color: var(--colors-error);
+	--components-inspector-background-color: var(--colors-surface-panel);
+	--components-inspector-width: var(--spacing-inspector-width);
+	--components-inspector-tab-text-color: var(--colors-on-surface-muted);
+	--components-inspector-tab-font-family: var(
+		--typography-label-inline-font-family
+	);
+	--components-inspector-tab-font-size: var(
+		--typography-label-inline-font-size
+	);
+	--components-inspector-tab-font-weight: var(
+		--typography-label-inline-font-weight
+	);
+	--components-inspector-tab-line-height: var(
+		--typography-label-inline-line-height
+	);
+	--components-inspector-tab-letter-spacing: var(
+		--typography-label-inline-letter-spacing
+	);
+	--components-inspector-tab-rounded: var(--rounded-md);
+	--components-inspector-tab-active-background-color: var(
+		--colors-surface-elevated
+	);
+	--components-inspector-tab-active-text-color: var(--colors-on-surface);
+	--components-touched-chip-text-color: var(--colors-primary);
+	--components-touched-chip-rounded: var(--rounded-sm);
+	--components-diff-font-family: var(--typography-code-sm-font-family);
+	--components-diff-font-size: var(--typography-code-sm-font-size);
+	--components-diff-font-weight: var(--typography-code-sm-font-weight);
+	--components-diff-line-height: var(--typography-code-sm-line-height);
+	--components-diff-rounded: var(--rounded-lg);
+	--components-diff-line-add-background-color: var(--colors-diff-add);
+	--components-diff-line-add-text-color: var(--colors-success);
+	--components-diff-line-del-background-color: var(--colors-diff-del);
+	--components-diff-line-del-text-color: var(--colors-error);
+	--components-diff-hunk-background-color: var(--colors-surface-panel);
+	--components-diff-hunk-text-color: var(--colors-mention);
+	--components-bottom-panel-background-color: var(--colors-surface-elevated);
+	--components-bottom-panel-height: var(--spacing-bottom-panel-height);
+	--components-terminal-text-color: var(--colors-on-surface);
+	--components-terminal-font-family: var(--typography-body-sm-font-family);
+	--components-terminal-font-size: var(--typography-body-sm-font-size);
+	--components-terminal-font-weight: var(--typography-body-sm-font-weight);
+	--components-terminal-line-height: var(--typography-body-sm-line-height);
+	--components-browser-address-background-color: var(--colors-surface);
+	--components-browser-address-text-color: var(--colors-on-surface);
+	--components-browser-address-rounded: var(--rounded-md);
+	--components-browser-viewport-background-color: var(--colors-surface);
+	--components-browser-viewport-rounded: var(--rounded-lg);
+	--components-command-palette-background-color: var(--colors-surface-elevated);
+	--components-command-palette-text-color: var(--colors-on-surface);
+	--components-command-palette-rounded: var(--rounded-xl);
+	--components-command-palette-width: 520px;
+	--components-palette-row-selected-background-color: var(
+		--colors-primary-soft
+	);
+	--components-palette-row-selected-text-color: var(--colors-on-surface);
+	--components-toast-background-color: var(--colors-surface-elevated);
+	--components-toast-text-color: var(--colors-on-surface);
+	--components-toast-font-family: var(--typography-tab-font-family);
+	--components-toast-font-size: var(--typography-tab-font-size);
+	--components-toast-font-weight: var(--typography-tab-font-weight);
+	--components-toast-line-height: var(--typography-tab-line-height);
+	--components-toast-rounded: var(--rounded-lg);
+	--components-divider-background-color: var(--colors-stroke);
+	--components-divider-height: 1px;
+	--components-divider-soft-background-color: var(--colors-stroke-soft);
+	--components-divider-soft-height: 1px;
+	--components-skill-name-background-color: var(--colors-surface);
+	--components-skill-name-text-color: var(--colors-skill);
+	--components-markdown-heading-background-color: var(--colors-surface);
+	--components-markdown-heading-text-color: var(--colors-heading);
+	--components-window-light-background-color: var(--colors-surface-light);
+	--components-window-light-text-color: var(--colors-on-surface-light);
+	--components-panel-light-background-color: var(--colors-surface-panel-light);
+	--components-panel-light-text-color: var(--colors-on-surface-muted-light);
+	--components-elevated-light-background-color: var(
+		--colors-surface-elevated-light
+	);
+	--components-elevated-light-text-color: var(--colors-on-surface-muted-light);
+	--components-divider-light-background-color: var(--colors-stroke-light);
+	--components-divider-light-height: 1px;
+	--components-divider-soft-light-background-color: var(
+		--colors-stroke-soft-light
+	);
+	--components-divider-soft-light-height: 1px;
+	--components-rail-item-active-light-background-color: var(
+		--colors-primary-soft-light
+	);
+	--components-rail-item-active-light-text-color: var(
+		--colors-on-surface-light
+	);
+	--components-composer-pill-mode-light-background-color: var(
+		--colors-surface-panel-light
+	);
+	--components-composer-pill-mode-light-text-color: var(--colors-primary-light);
+	--components-status-badge-running-light-background-color: var(
+		--colors-surface-panel-light
+	);
+	--components-status-badge-running-light-text-color: var(
+		--colors-success-light
+	);
+	--components-status-badge-failed-light-background-color: var(
+		--colors-surface-panel-light
+	);
+	--components-status-badge-failed-light-text-color: var(--colors-error-light);
+	--components-approval-card-title-light-background-color: var(
+		--colors-surface-elevated-light
+	);
+	--components-approval-card-title-light-text-color: var(
+		--colors-warning-light
+	);
+	--components-skill-name-light-background-color: var(--colors-surface-light);
+	--components-skill-name-light-text-color: var(--colors-skill-light);
+	--components-mention-light-background-color: var(
+		--colors-surface-panel-light
+	);
+	--components-mention-light-text-color: var(--colors-mention-light);
+	--components-markdown-heading-light-background-color: var(
+		--colors-surface-light
+	);
+	--components-markdown-heading-light-text-color: var(--colors-heading-light);
+	--components-diff-line-add-light-background-color: var(
+		--colors-diff-add-light
+	);
+	--components-diff-line-add-light-text-color: var(--colors-success-light);
+	--components-diff-line-del-light-background-color: var(
+		--colors-diff-del-light
+	);
+	--components-diff-line-del-light-text-color: var(--colors-error-light);
+}
+
+:root[data-theme="light"] {
+	--colors-primary: #0000ee;
+	--colors-primary-soft: #dadaf2;
+	--colors-surface: #f6f6f9;
+	--colors-surface-panel: #ededf2;
+	--colors-surface-elevated: #e5e5eb;
+	--colors-on-surface: #1b2132;
+	--colors-on-surface-muted: #5c6170;
+	--colors-stroke: #1b21321a;
+	--colors-stroke-soft: #1b21320f;
+	--colors-success: #1a7f37;
+	--colors-error: #cf222e;
+	--colors-warning: #9a6700;
+	--colors-skill: #a07c10;
+	--colors-mention: #0284c7;
+	--colors-heading: #be185d;
+	--colors-diff-add: #dce8e2;
+	--colors-diff-del: #f1dde1;
+}

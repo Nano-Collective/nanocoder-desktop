@@ -3,7 +3,7 @@
 The map of the Nanocoder Desktop planning documents, the order to read them in, and how to keep them current.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-29
 - Drafted by: @akramcodez
 
 ## What this folder is
@@ -38,6 +38,7 @@ Visual design: see [`DESIGN.md`](../DESIGN.md).
 | 16 | [`sources.md`](sources.md) | Everything read to write this set, with commits and dates. |
 | 17 | [`proposed-issues.md`](proposed-issues.md) | Drafts of the issues this plan needs raised, ready to post. |
 | 18 | [`technical-gate.md`](technical-gate.md) | What the technical gate proved, what Nanocoder does that the plan did not know, and what the tests do not prove. |
+| 19 | [`ui-foundations.md`](ui-foundations.md) | Token generation, local font, theme and accessibility QA for U.0/U.1, plus the proposed Markdown renderer. |
 
 Feature files:
 
