@@ -24,9 +24,6 @@ export const CHANNELS = {
 	getAppInfo: 'app:get-info',
 	getNanocoderRuntime: 'nanocoder:get-runtime',
 	connectNanocoder: 'nanocoder:connect',
-	sendPrompt: 'nanocoder:send-prompt',
-	cancelPrompt: 'nanocoder:cancel-prompt',
-	answerPermission: 'nanocoder:answer-permission',
 	getSettings: 'store:get-settings',
 	updateSettings: 'store:update-settings',
 	getUiState: 'store:get-ui-state',
@@ -59,7 +56,6 @@ export const CHANNELS = {
 	discoverSessions: 'threads:discover',
 	importSession: 'threads:import',
 	// Pushed from main to the renderer.
-	nanocoderEvent: 'nanocoder:event',
 	projectEvent: 'projects:event',
 } as const;
 
@@ -104,7 +100,7 @@ export interface SessionInfo {
 }
 
 export type ConnectResult =
-	| {status: 'connected'; agent: ConnectedAgent; session: SessionInfo}
+	| {status: 'connected'; agent: ConnectedAgent}
 	| {status: 'untrusted'; message: string}
 	| {status: 'cancelled'};
 
@@ -372,6 +368,7 @@ export interface ThreadSnapshot {
 	sequence: number;
 	replaying: boolean;
 	events: TurnEvent[];
+	result?: IpcResult<TurnResult>;
 }
 
 export interface DiscoveredSession {
@@ -493,4 +490,5 @@ export type ProjectEvent =
 			threadId: string;
 			sequence: number;
 			events: TurnEvent[];
+			result?: IpcResult<TurnResult>;
 	  };

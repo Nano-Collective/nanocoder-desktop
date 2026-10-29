@@ -822,6 +822,25 @@ test('repositories refuse content fields, unsafe defaults, cross-project moves a
 	);
 });
 
+test('repositories refuse a saved ACP session identity already owned by another project', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const first = project(f.root);
+	const secondRoot = path.join(f.root, 'another-project');
+	mkdirSync(secondRoot);
+	const second = project(secondRoot);
+	store.projects.save(first);
+	store.projects.save(second);
+	const original = thread(first);
+	store.threads.save(original);
+	const duplicate = thread(second, {
+		nanocoderSessionId: original.nanocoderSessionId,
+	});
+	t.throws(() => store.threads.save(duplicate), {code: 'INTERNAL'});
+	t.deepEqual(store.threads.get(first.id, original.id), original);
+	t.deepEqual(store.threads.list(second.id, 'active'), []);
+});
+
 test('repositories mark missing and replaced roots without following them', async t => {
 	const f = fixture(t);
 	const store = await f.open();

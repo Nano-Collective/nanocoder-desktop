@@ -8,35 +8,30 @@ import {
 	type WebContents,
 } from 'electron';
 import {z} from 'zod';
-import {cancelPromptRequest} from '@/main/ipc/cancel-prompt';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
-import {completeTechnicalPrompt} from '@/main/ipc/technical-prompt';
 import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
 import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {disposeDesktop} from '@/main/lifecycle';
 import {untilAborted} from '@/main/nanocoder/abort';
 import {NanocoderFailure} from '@/main/nanocoder/acp-client';
-import {cancelTechnicalTurn} from '@/main/nanocoder/cancel-technical-turn';
 import {DiagnosticsExporter} from '@/main/nanocoder/diagnostics';
 import {resolveNanocoder} from '@/main/nanocoder/runtime';
 import {createLookup} from '@/main/nanocoder/runtime-lookup';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
-import {TechnicalSessions} from '@/main/nanocoder/technical-sessions';
 import type {TrustRefusal} from '@/main/nanocoder/trust';
 import {confirmProjectTrust} from '@/main/projects/project-consent';
 import {createProjectService} from '@/main/projects/project-service';
 import {isAllowedOrigin} from '@/main/security';
+import {createThreadService} from '@/main/threads/thread-service';
 import {APP_NAME} from '@/shared/app-info';
 import {
 	type AppInfo,
 	CHANNELS,
 	type ConnectResult,
 	type NanocoderRuntime,
+	type ProjectEvent,
 	type ProjectInfo,
-	type SessionInfo,
-	type TurnEvent,
-	type TurnResult,
 } from '@/shared/ipc';
 
 const runtimeDiscovery = new AbortController();
@@ -53,23 +48,22 @@ const lookupRuntime = createLookup(() =>
 );
 let supervisor: ProjectSupervisor | undefined;
 let activeProjectId: string | undefined;
-let session: SessionInfo | undefined;
 let rendererAttachment = new AbortController();
 let connecting: Promise<void> | undefined;
 let rendererCleanup: Promise<void> = Promise.resolve();
-let technicalSessions: TechnicalSessions | undefined;
+let threads: ReturnType<typeof createThreadService> | undefined;
 let appOrigins: readonly string[] = [];
 let workspaceServices: WorkspaceServices = {};
 let unsubscribeProjectEvents: (() => void) | undefined;
 
 // Only windows showing the app get events; the renderer never sees the IPC event object.
-function sendEvent(event: TurnEvent): void {
+function sendProjectEvent(event: ProjectEvent): void {
 	for (const window of BrowserWindow.getAllWindows()) {
 		if (
 			!window.webContents.isDestroyed() &&
 			isAllowedOrigin(window.webContents.getURL(), appOrigins)
 		) {
-			window.webContents.send(CHANNELS.nanocoderEvent, event);
+			window.webContents.send(CHANNELS.projectEvent, event);
 		}
 	}
 }
@@ -119,12 +113,11 @@ async function connect(): Promise<ConnectResult> {
 	await untilAborted(rendererCleanup, signal);
 	signal.throwIfAborted();
 	const currentSupervisor = supervisor;
-	const sessions = technicalSessions;
 	const projects = workspaceServices.projects;
 	if (
 		runtimeDiscovery.signal.aborted ||
 		!currentSupervisor ||
-		!sessions ||
+		!threads ||
 		!projects
 	) {
 		throw new IpcFailure(
@@ -150,14 +143,13 @@ async function connect(): Promise<ConnectResult> {
 		if (runtimeDiscovery.signal.aborted)
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'The desktop is shutting down');
 		activeProjectId = undefined;
-		session = undefined;
 		activeProjectId = selected.project.id;
 		const opened = await untilAborted(
 			Promise.resolve(projects.openProject({projectId: selected.project.id})),
 			signal,
 		);
 		if (opened.status !== 'opened') return opened;
-		return await prepareProject(opened.project, signal);
+		return connectedProject(opened.project, signal);
 	} catch (error) {
 		if (error instanceof NanocoderFailure)
 			throw new IpcFailure(error.code, error.message);
@@ -168,19 +160,14 @@ async function connect(): Promise<ConnectResult> {
 	}
 }
 
-async function prepareProject(
+function connectedProject(
 	project: ProjectInfo,
 	signal: AbortSignal,
-): Promise<ConnectResult> {
+): ConnectResult {
 	const currentSupervisor = supervisor;
-	const sessions = technicalSessions;
-	if (!currentSupervisor || !sessions)
+	if (!currentSupervisor || !threads)
 		throw new IpcFailure('AGENT_UNAVAILABLE', 'The desktop cannot connect now');
 	const connection = currentSupervisor.getConnection(project.id);
-	const prepared = await untilAborted(
-		sessions.prepare(project, signal),
-		signal,
-	);
 	signal.throwIfAborted();
 	if (
 		activeProjectId !== project.id ||
@@ -190,56 +177,9 @@ async function prepareProject(
 			'AGENT_UNAVAILABLE',
 			'The project process changed while connecting',
 		);
-	session = prepared;
+	threads.attachProject(project.id);
 	currentSupervisor.replayState(project.id);
-	return {status: 'connected', agent: connection.agent, session};
-}
-
-async function sendPrompt({text}: {text: string}): Promise<TurnResult> {
-	if (!supervisor || !activeProjectId || !session) {
-		throw new IpcFailure('AGENT_UNAVAILABLE', 'No project is open');
-	}
-	const requested = {projectId: activeProjectId, sessionId: session.id};
-	return supervisor
-		.prompt(requested.projectId, requested.sessionId, text)
-		.then(result =>
-			completeTechnicalPrompt(
-				result,
-				requested,
-				{
-					projectId: activeProjectId ?? null,
-					sessionId: session?.id ?? null,
-				},
-				sendEvent,
-			),
-		)
-		.catch((error: unknown) => {
-			if (error instanceof NanocoderFailure) {
-				throw new IpcFailure(error.code, error.message);
-			}
-			throw error;
-		});
-}
-
-function answerPermission({
-	id,
-	optionId,
-}: {
-	id: string;
-	optionId: string;
-}): null {
-	if (
-		!supervisor ||
-		!activeProjectId ||
-		!session ||
-		!supervisor.answerPermission(activeProjectId, session.id, id, optionId)
-	) {
-		throw new IpcFailure(
-			'NOT_FOUND',
-			'That permission request is no longer waiting',
-		);
-	}
-	return null;
+	return {status: 'connected', agent: connection.agent};
 }
 
 export function closeNanocoder(): Promise<void> {
@@ -249,7 +189,17 @@ export function closeNanocoder(): Promise<void> {
 	);
 	return disposeDesktop({
 		unsubscribe: unsubscribeProjectEvents,
-		cancelPermissions: () => {},
+		cancelPermissions: async () => {
+			try {
+				await Promise.all([
+					rendererCleanup,
+					connecting,
+					threads?.detach(workspaceServices.store?.projects.list() ?? []),
+				]);
+			} finally {
+				threads?.dispose();
+			}
+		},
 		supervisor: workspaceServices.supervisor,
 		store: workspaceServices.store,
 	});
@@ -258,17 +208,16 @@ export function closeNanocoder(): Promise<void> {
 function watchRenderer(contents: WebContents): void {
 	let attached = false;
 	const detach = () => {
-		if (!attached || !technicalSessions) return;
+		if (!attached) return;
 		const attempt = connecting;
 		rendererAttachment.abort(
 			new IpcFailure('AGENT_UNAVAILABLE', 'The app renderer detached'),
 		);
 		rendererAttachment = new AbortController();
 		activeProjectId = undefined;
-		session = undefined;
 		rendererCleanup = Promise.allSettled([
 			rendererCleanup,
-			technicalSessions.detach(
+			threads?.detach(
 				runtimeDiscovery.signal.aborted
 					? []
 					: (workspaceServices.store?.projects.list() ?? []),
@@ -312,14 +261,14 @@ export function registerIpcHandlers(
 				homeDir: homedir(),
 				confirmTrust,
 				activity: projectId =>
-					technicalSessions?.activity(projectId) ?? {
+					threads?.activity(projectId) ?? {
 						runningTurn: false,
 						openSessions: 0,
 						preparing: false,
 						lastActivityAt: 0,
 					},
 				recover: async (project, connection, signal) => {
-					return technicalSessions?.restore(project, connection, signal);
+					await threads?.restore(project, connection, signal);
 				},
 			});
 	workspaceServices = {
@@ -346,7 +295,6 @@ export function registerIpcHandlers(
 						if (
 							state.status === 'ready' &&
 							activeProjectId === projectId &&
-							!session &&
 							workspaceServices.projects
 						) {
 							const opened = await untilAborted(
@@ -357,7 +305,7 @@ export function registerIpcHandlers(
 							);
 							if (opened.status === 'opened') {
 								try {
-									await prepareProject(opened.project, signal);
+									connectedProject(opened.project, signal);
 								} catch (error) {
 									if (error instanceof NanocoderFailure)
 										throw new IpcFailure(error.code, error.message);
@@ -412,18 +360,39 @@ export function registerIpcHandlers(
 						supervisor,
 						signal: () => rendererAttachment.signal,
 						announceProject: project => {
-							if (activeProjectId !== project.id) {
-								activeProjectId = project.id;
-								session = undefined;
-							}
+							activeProjectId = project.id;
+							threads?.attachProject(project.id);
 							supervisor?.announceProject(project);
 						},
 					})
 				: undefined),
 	};
-	technicalSessions = supervisor
-		? new TechnicalSessions(supervisor)
-		: undefined;
+	threads =
+		!services.threads && services.store && supervisor
+			? createThreadService({
+					store: services.store,
+					supervisor,
+					onEvent: sendProjectEvent,
+					confirmDeleteHistory: async ({project, thread}) => {
+						const options = {
+							type: 'warning' as const,
+							title: 'Delete chat history?',
+							message: 'Delete this chat history from Nanocoder?',
+							detail: `${thread.title}\n${project.canonicalRoot}\nThis deletes Nanocoder's saved history. Removing a thread from the desktop does not do this.`,
+							buttons: ['Delete chat history', 'Cancel'],
+							defaultId: 1,
+							cancelId: 1,
+							noLink: true,
+						};
+						const window = BrowserWindow.getFocusedWindow();
+						const {response} = window
+							? await dialog.showMessageBox(window, options)
+							: await dialog.showMessageBox(options);
+						return response === 0;
+					},
+				})
+			: undefined;
+	workspaceServices.threads = services.threads ?? threads;
 	app.on('web-contents-created', (_event, contents) => watchRenderer(contents));
 	for (const window of BrowserWindow.getAllWindows())
 		watchRenderer(window.webContents);
@@ -434,21 +403,7 @@ export function registerIpcHandlers(
 			const project = store?.projects.get(event.projectId);
 			if (project?.trusted) store?.projects.save({...project, trusted: false});
 		}
-		if (
-			event.type === 'turn' &&
-			event.projectId === activeProjectId &&
-			event.threadId === session?.id
-		) {
-			for (const turn of event.events) sendEvent(turn);
-		}
-		for (const window of BrowserWindow.getAllWindows()) {
-			if (
-				!window.webContents.isDestroyed() &&
-				isAllowedOrigin(window.webContents.getURL(), appOrigins)
-			) {
-				window.webContents.send(CHANNELS.projectEvent, event);
-			}
-		}
+		if (event.type !== 'turn') sendProjectEvent(event);
 	});
 	registerHandler(
 		CHANNELS.getAppInfo,
@@ -466,24 +421,6 @@ export function registerIpcHandlers(
 		CHANNELS.connectNanocoder,
 		z.strictObject({}),
 		connect,
-		allowedOrigins,
-	);
-	registerHandler(
-		CHANNELS.sendPrompt,
-		z.strictObject({text: z.string().trim().min(1).max(100_000)}),
-		sendPrompt,
-		allowedOrigins,
-	);
-	registerHandler(
-		CHANNELS.answerPermission,
-		z.strictObject({id: z.string().max(64), optionId: z.string().max(200)}),
-		answerPermission,
-		allowedOrigins,
-	);
-	registerHandler(
-		CHANNELS.cancelPrompt,
-		cancelPromptRequest,
-		() => cancelTechnicalTurn(supervisor, activeProjectId, session),
 		allowedOrigins,
 	);
 }

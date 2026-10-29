@@ -17,7 +17,7 @@ import {
 } from '@playwright/test';
 import {build} from 'vite';
 import type {DesktopApi} from '@/shared/desktop-api';
-import type {IpcResult, PermissionRequestInfo} from '@/shared/ipc';
+import type {PermissionRequestInfo} from '@/shared/ipc';
 import type {approvalHarness} from './qa/approval-harness';
 import {qaEnvironment} from './qa/environment';
 
@@ -81,24 +81,22 @@ async function prompt() {
 }
 
 const cancel = () =>
-	page.evaluate(() => {
-		const api = (window as unknown as {desktop: DesktopApi})
-			.desktop as DesktopApi & {cancelPrompt?: () => Promise<IpcResult<null>>};
-		return typeof api.cancelPrompt === 'function'
-			? api.cancelPrompt()
-			: {
-					ok: false as const,
-					error: {
-						code: 'UNAVAILABLE' as const,
-						message: 'Cancellation is not wired',
-						retryable: false,
-					},
-				};
+	page.evaluate(async () => {
+		const {desktop} = window as unknown as {desktop: DesktopApi};
+		const ui = await desktop.getUiState({});
+		return desktop.cancelThread({
+			projectId:
+				(ui.ok && ui.value.activeProjectId) ||
+				'11111111-1111-4111-8111-111111111111',
+			threadId:
+				(ui.ok && ui.value.activeThreadId) ||
+				'22222222-2222-4222-8222-222222222222',
+		});
 	});
 
-test('cancellation refuses no open session and is a clean no-op with no active turn', async () => {
+test('cancellation refuses an unknown thread and is a clean no-op with no active turn', async () => {
 	const unopened = await cancel();
-	expect(!unopened.ok && unopened.error.code).toBe('AGENT_UNAVAILABLE');
+	expect(!unopened.ok && unopened.error.code).toBe('NOT_FOUND');
 	await open();
 	expect(await cancel()).toEqual({ok: true, value: null});
 	await expect(cards()).toHaveCount(0);

@@ -346,6 +346,65 @@ test('switch remove and disposal flush or discard only owned queues and refuse e
 });
 
 for (const outcome of ['completed', 'failed', 'cancelled'] as const) {
+	for (const delivery of ['live', 'snapshot'] as const) {
+		test(`an authoritative ${delivery} ${outcome} result survives a project round trip and settles only its owning fallback card (CHAT-03, SUB-04)`, t => {
+			const {conversations, timers} = fixture();
+			conversations.setDraft('sent');
+			const stale = conversations.beginTurn('a');
+			if (!stale) return t.fail('expected a turn ticket');
+			conversations.selectProject('project-b');
+			conversations.selectThread('a');
+			conversations.setDraft('unrelated project draft');
+			conversations.selectProject('project-a');
+			conversations.selectThread('a');
+			conversations.setDraft('next draft');
+			const events: TurnEvent[] = [
+				{type: 'user', text: 'sent'},
+				{
+					type: 'tool',
+					id: 'opaque fallback',
+					status: 'in_progress',
+					delegation: {history: false},
+				},
+			];
+			const result: IpcResult<TurnResult> =
+				outcome === 'failed'
+					? {
+							ok: false,
+							error: {
+								code: 'AGENT_UNAVAILABLE',
+								message: 'safe turn failure',
+								retryable: false,
+							},
+						}
+					: {
+							ok: true,
+							value: {
+								stopReason: outcome === 'cancelled' ? 'cancelled' : 'end_turn',
+							},
+						};
+			if (delivery === 'snapshot') {
+				const prefix = {...snapshot('a', events), result};
+				conversations.snapshot(prefix);
+			} else {
+				conversations.receive(turn(events));
+				const terminal = {...turn([]), result};
+				conversations.receive(terminal);
+				t.true(timers[0].cancelled);
+			}
+			t.deepEqual(conversations.getState().turn, result);
+			const tool = conversations.getState().transcript.items[1];
+			t.is(tool.kind, 'tool');
+			if (tool.kind === 'tool') t.is(tool.turnOutcome, outcome);
+			t.is(conversations.getState().draft, 'next draft');
+			t.false(conversations.finishTurn(stale, null));
+			t.deepEqual(conversations.getState().turn, result);
+			conversations.selectProject('project-b');
+			conversations.selectThread('a');
+			t.is(conversations.getState().turn, null);
+			t.is(conversations.getState().draft, 'unrelated project draft');
+		});
+	}
 	test(`a mapped ${outcome} terminal settles only its flushed current subagent cards and cannot revert on the next turn (SUB-04, CHAT-05)`, t => {
 		const {conversations, timers} = fixture();
 		conversations.snapshot(
@@ -530,4 +589,78 @@ test('terminal settlement rechecks the owning ticket after a flush callback chan
 	const tool = conversations.getState().transcript.items[1];
 	t.is(tool.kind, 'tool');
 	if (tool.kind === 'tool') t.is(tool.turnOutcome, undefined);
+});
+
+for (const delivery of ['live', 'snapshot'] as const) {
+	test(`a stale ${delivery} terminal cannot settle a replacement generation even after returning to the same project and thread (CHAT-03, SUB-04)`, t => {
+		let replace = false;
+		const {conversations} = fixture(() => {
+			if (!replace) return;
+			replace = false;
+			conversations.selectProject('project-b');
+			conversations.selectProject('project-a');
+			conversations.selectThread('a');
+			conversations.snapshot(
+				snapshot('a', [
+					{type: 'user', text: 'replacement user'},
+					{
+						type: 'tool',
+						id: 'replacement fallback',
+						status: 'in_progress',
+						delegation: {history: false},
+					},
+				]),
+			);
+			conversations.setDraft('replacement draft');
+		});
+		conversations.receive(turn([{type: 'user', text: 'old user'}]));
+		replace = true;
+		const result: IpcResult<TurnResult> = {
+			ok: true,
+			value: {stopReason: 'cancelled'},
+		};
+		if (delivery === 'snapshot')
+			conversations.snapshot({...snapshot('a'), result});
+		else conversations.receive({...turn([]), result});
+		t.is(conversations.getState().turn, null);
+		t.is(conversations.getState().draft, 'replacement draft');
+		const tool = conversations.getState().transcript.items[1];
+		t.is(tool?.kind, 'tool');
+		if (tool?.kind === 'tool') {
+			t.is(tool.id, 'replacement fallback');
+			t.is(tool.turnOutcome, undefined);
+		}
+	});
+}
+
+test('replay without a terminal clears the old result but keeps its failure notice and never duplicates a native failure in the old command reply (CHAT-04)', t => {
+	const {conversations} = fixture();
+	conversations.setDraft('sent');
+	const ticket = conversations.beginTurn('a');
+	if (!ticket) return t.fail('expected a turn ticket');
+	conversations.receive(turn([{type: 'user', text: 'sent'}]));
+	const result: IpcResult<TurnResult> = {
+		ok: false,
+		error: {
+			code: 'AGENT_UNAVAILABLE',
+			message: 'safe failure',
+			retryable: false,
+		},
+	};
+	conversations.receive({...turn([]), result});
+	conversations.finishTurn(ticket, result);
+	t.is(
+		conversations
+			.getState()
+			.transcript.items.filter(item => item.kind === 'failure').length,
+		1,
+	);
+	conversations.snapshot(snapshot('a', [{type: 'user', text: 'restored'}]));
+	t.is(conversations.getState().turn, null);
+	t.is(
+		conversations
+			.getState()
+			.transcript.items.filter(item => item.kind === 'failure').length,
+		1,
+	);
 });

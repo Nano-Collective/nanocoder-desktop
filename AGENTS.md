@@ -29,7 +29,6 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/paths.ts` | Shared native realpath canonicalisation (symlinks and volume case aliases) and component containment |
 | `source/main/ipc/handle-request.ts` | Sender check, schema validation and the result shape for every IPC call |
 | `source/main/ipc/index.ts` | Registers the IPC handlers |
-| `source/main/ipc/cancel-prompt.ts` | Pure strict schema for temporary technical-turn cancellation, with co-located refusal tests |
 | `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |
 | `source/main/ipc/workspace-services.ts` | Main-only project and thread service contracts |
 | `source/main/projects/` | Canonical project selection and relocation, bounded read-only trust summaries, and snapshot-checked native consent |
@@ -42,7 +41,6 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/store/validation.ts` | Allowlisted metadata schemas, including the settings/UI patches shared with IPC |
 | `source/main/nanocoder/supervisor-contracts.ts` | Main-only per-project supervisor interface |
 | `source/main/nanocoder/supervisor.ts` | Canonical-root process ownership, bounded recovery, injected idle activity and awaited shutdown |
-| `source/main/nanocoder/technical-sessions.ts` | Technical session cache, safe-mode recovery, activity and renderer-detach cleanup |
 | `source/main/nanocoder/clock.ts`, `source/main/nanocoder/fixtures/fake-clock.ts` | Cancellable supervisor timers and deterministic recovery/idle tests |
 | `source/main/nanocoder/diagnostics.ts` | Payload-filtered immutable captures, expiry and exact main-owned review/export |
 | `source/main/nanocoder/version-policy.ts` | Provisional minimum version, fail-closed parsing and untested-version warnings (`ACP-04`, `OQ-02`) |
@@ -57,7 +55,6 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/protocol-stream.ts` | Reads stdout as ACP only; anything else ends the connection |
 | `source/main/nanocoder/stderr-ring.ts` | Bounded, redacted, in-memory ring for Nanocoder's stderr |
 | `source/main/nanocoder/permissions.ts` | Holds each permission request until the user answers; only an option Nanocoder offered counts |
-| `source/main/nanocoder/cancel-technical-turn.ts` | Main-owned technical-turn cancellation and awaited supervisor settlement |
 | `source/main/nanocoder/turn-events.ts`, `source/main/nanocoder/turn-metadata.ts` | Normalises SDK stream updates and allowlisted vendor metadata without adding capabilities |
 | `source/main/nanocoder/subagent-display.ts`, `source/shared/subagents.ts` | Bounded display-only delegation and permission source hints, never routing or answer authority |
 | `source/main/store/agent-runs.ts`, `source/main/nanocoder/subagent-runs.ts` | Passive metadata-only repository and lifecycle consumer; application composition awaits phase 1.8 identity/replay |
@@ -72,6 +69,8 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/thread-palette.ts` | New, rename and archive palette commands sharing the rail's callbacks and refusal policy |
 | `source/renderer/thread-controller.ts` | Scoped thread metadata, snapshot/open bridge calls, isolated project/chat sequences and stale async/disposal guards |
 | `source/renderer/thread-stream.ts` | Per-thread transient sequence guards, snapshot-prefix replacement and buffered live delivery; separate from project metadata sequencing |
+| `source/renderer/thread-workspace.ts`, `source/renderer/use-threads.ts`, `source/renderer/thread-conversations.ts` | Live scoped workspace composition, memory-only drafts and authoritative transient terminal prefixes |
+| `planning/threads.md` | Phase 1.5 ownership, legacy protection twins, selected-glyph accessibility deviation and deferred resume work |
 | `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
 | `source/renderer/approval-requests.tsx` | U.6 plain-prop approval cards, request-scoped shortcuts and queued focus return |
 | `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |

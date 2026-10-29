@@ -13,6 +13,14 @@ import {qaEnvironment} from './environment';
 
 const runtime = {cliPath: '/fake/dist/cli.js', nodePath: '/chosen/node'};
 
+test('QA opts into unique root-scoped synthetic ACP identities without changing inherited input', t => {
+	const inherited = {nanocoder_test_scoped_sessions: 'disabled'};
+	const env = qaEnvironment(inherited, runtime);
+	t.is(env.NANOCODER_TEST_SCOPED_SESSIONS, '1');
+	t.false('nanocoder_test_scoped_sessions' in env);
+	t.deepEqual(inherited, {nanocoder_test_scoped_sessions: 'disabled'});
+});
+
 test('QA reuses child environment safety and removes development renderer variants', t => {
 	const inherited = {
 		PATH: '/kept',
@@ -27,6 +35,7 @@ test('QA reuses child environment safety and removes development renderer varian
 		PATH: '/kept',
 		NANOCODER_DESKTOP_CLI: runtime.cliPath,
 		NANOCODER_DESKTOP_NODE: runtime.nodePath,
+		NANOCODER_TEST_SCOPED_SESSIONS: '1',
 	});
 	t.deepEqual(inherited, before);
 });
@@ -62,6 +71,7 @@ for (const [cliKey, nodeKey] of [
 		t.deepEqual(Object.keys(env), [
 			'NANOCODER_DESKTOP_CLI',
 			'NANOCODER_DESKTOP_NODE',
+			'NANOCODER_TEST_SCOPED_SESSIONS',
 		]);
 		const resolved = await resolveNanocoder({
 			env,

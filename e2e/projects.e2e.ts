@@ -25,6 +25,7 @@ import type {
 	WorkspaceRequests,
 	WorkspaceValues,
 } from '@/shared/ipc';
+import {qaEnvironment} from './qa/environment';
 
 let work: string;
 let app: ElectronApplication;
@@ -33,11 +34,10 @@ let page: Page;
 async function launch() {
 	app = await electron.launch({
 		args: ['.', `--user-data-dir=${path.join(work, 'profile')}`],
-		env: {
-			...process.env,
-			NANOCODER_DESKTOP_CLI: path.join(work, 'nanocoder/dist/cli.js'),
-			NANOCODER_DESKTOP_NODE: process.execPath,
-		},
+		env: qaEnvironment(process.env, {
+			cliPath: path.join(work, 'nanocoder/dist/cli.js'),
+			nodePath: process.execPath,
+		}),
 	});
 	page = await app.firstWindow();
 }
@@ -335,7 +335,7 @@ test('a direct supervisor trust refusal revokes the previously recorded desktop 
 	});
 });
 
-test('opening a recent project hides the legacy composer for the previous project (CHAT-02)', async () => {
+test('opening a recent project exposes only its own thread and restores each project draft on return (CHAT-02, CHAT-03)', async () => {
 	const first = path.join(work, 'first-project');
 	const second = path.join(work, 'second-project');
 	mkdirSync(first);
@@ -347,6 +347,12 @@ test('opening a recent project hides the legacy composer for the previous projec
 		.getByRole('button', {name: 'open a project folder', exact: true})
 		.click();
 	await expect(page.getByRole('textbox', {name: 'message'})).toBeVisible();
+	const input = page.getByRole('textbox', {name: 'message'});
+	await input.fill('first project private draft');
+	const selected = page.locator('.thread-row[data-selected="true"]');
+	const firstThreadId = await selected.getAttribute('data-thread-id');
+	expect(firstThreadId).not.toBeNull();
+	if (!firstThreadId) throw new Error('Expected the first selected thread');
 	const recent = page.getByRole('region', {name: 'recent projects'});
 	await recent
 		.getByRole('button', {name: 'open second-project', exact: true})
@@ -354,7 +360,26 @@ test('opening a recent project hides the legacy composer for the previous projec
 	await expect(page.getByLabel('project trust feedback')).toContainText(
 		'project ready: second-project',
 	);
-	await expect(page.getByRole('textbox', {name: 'message'})).toHaveCount(0);
+	await expect(input).toBeEnabled();
+	await expect(input).toHaveValue('');
+	await expect(selected).not.toHaveAttribute('data-thread-id', firstThreadId);
+	await expect(
+		page.getByRole('region', {name: 'connected agent'}),
+	).toContainText(second);
+	await input.fill('second project private draft');
+	await recent
+		.getByRole('button', {name: 'open first-project', exact: true})
+		.click();
+	await expect(input).toHaveValue('first project private draft');
+	await expect(selected).toHaveAttribute('data-thread-id', firstThreadId);
+	await expect(
+		page.getByRole('region', {name: 'connected agent'}),
+	).toContainText(first);
+	await recent
+		.getByRole('button', {name: 'open second-project', exact: true})
+		.click();
+	await expect(input).toHaveValue('second project private draft');
+	await expect(selected).not.toHaveAttribute('data-thread-id', firstThreadId);
 	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
 	await expect(recent.locator('[aria-current="true"]')).toContainText(
 		'second-project',

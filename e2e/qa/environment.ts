@@ -5,6 +5,7 @@ const QA_OVERRIDES = new Set([
 	'ELECTRON_RENDERER_URL',
 	'NANOCODER_DESKTOP_CLI',
 	'NANOCODER_DESKTOP_NODE',
+	'NANOCODER_TEST_SCOPED_SESSIONS',
 ]);
 
 export function qaEnvironment(
@@ -21,5 +22,6 @@ export function qaEnvironment(
 		...clean,
 		NANOCODER_DESKTOP_CLI: runtime.cliPath,
 		NANOCODER_DESKTOP_NODE: runtime.nodePath,
+		NANOCODER_TEST_SCOPED_SESSIONS: '1',
 	};
 }

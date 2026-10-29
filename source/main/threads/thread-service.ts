@@ -15,11 +15,14 @@ import {canonicalPath} from '@/main/paths';
 import type {DesktopStore} from '@/main/store/contracts';
 import {threadTitlePatch, validate} from '@/main/store/validation';
 import type {
+	IpcResult,
 	ProjectEvent,
 	ProjectInfo,
 	ThreadInfo,
 	ThreadRequest,
+	ThreadSnapshot,
 	TurnEvent,
+	TurnResult,
 } from '@/shared/ipc';
 
 interface ThreadOptions {
@@ -74,7 +77,10 @@ class PreparationCancelled extends IpcFailure {
 export function createThreadService(
 	options: ThreadOptions,
 ): ThreadRuntimeService {
-	const snapshots = new Map<string, {sequence: number; events: TurnEvent[]}>();
+	const snapshots = new Map<
+		string,
+		Pick<ThreadSnapshot, 'sequence' | 'events' | 'result'>
+	>();
 	const prepared = new Map<string, NanocoderConnection>();
 	const pending = new Map<string, string>();
 	const preparationAborts = new Map<
@@ -182,8 +188,15 @@ export function createThreadService(
 		...(snapshots.get(request.threadId) ?? {sequence: 0, events: []}),
 		replaying: false,
 	});
-	const append = (thread: ThreadInfo, events: TurnEvent[]) => {
-		const state = snapshots.get(thread.id) ?? {sequence: 0, events: []};
+	const append = (
+		thread: ThreadInfo,
+		events: TurnEvent[],
+		result?: IpcResult<TurnResult>,
+	) => {
+		const state: Pick<ThreadSnapshot, 'sequence' | 'events' | 'result'> =
+			snapshots.get(thread.id) ?? {sequence: 0, events: []};
+		if (events.some(event => event.type === 'user')) delete state.result;
+		if (result) state.result = structuredClone(result);
 		state.events.push(...structuredClone(events));
 		state.sequence++;
 		snapshots.set(thread.id, state);
@@ -193,6 +206,7 @@ export function createThreadService(
 			threadId: thread.id,
 			sequence: state.sequence,
 			events: structuredClone(events),
+			...(result && {result: structuredClone(result)}),
 		});
 	};
 	const unsubscribe = options.supervisor.subscribe(event => {
@@ -290,14 +304,17 @@ export function createThreadService(
 			request.threadId,
 		);
 	};
-	const failure = (error: unknown): never => {
-		if (error instanceof IpcFailure) throw error;
+	const requestFailure = (error: unknown): IpcFailure => {
+		if (error instanceof IpcFailure) return error;
 		if (error instanceof NanocoderFailure)
-			throw new IpcFailure(error.code, error.message);
-		throw new IpcFailure(
+			return new IpcFailure(error.code, error.message);
+		return new IpcFailure(
 			'AGENT_UNAVAILABLE',
 			'The thread request could not finish',
 		);
+	};
+	const failure = (error: unknown): never => {
+		throw requestFailure(error);
 	};
 	const select = (request: ThreadRequest) => {
 		attachProject(request.projectId);
@@ -808,6 +825,11 @@ export function createThreadService(
 						);
 					if (result.metadata && !signal.aborted)
 						append(current, [{type: 'metadata', metadata: result.metadata}]);
+					if (!signal.aborted)
+						append(current, [], {
+							ok: true,
+							value: {stopReason: result.stopReason},
+						});
 					saveThread({
 						...current,
 						runState:
@@ -833,12 +855,24 @@ export function createThreadService(
 							thread.projectId,
 							thread.id,
 						);
-						if (owns(current))
+						if (owns(current)) {
+							if (!signal.aborted) {
+								const safe = requestFailure(error);
+								append(current, [], {
+									ok: false,
+									error: {
+										code: safe.code,
+										message: safe.message,
+										retryable: safe.retryable,
+									},
+								});
+							}
 							saveThread({
 								...current,
 								runState: 'failed',
 								lastActivityAt: now(),
 							});
+						}
 					}
 					return failure(error);
 				} finally {

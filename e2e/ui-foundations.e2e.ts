@@ -17,7 +17,7 @@ import {
 } from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {qaEnvironment} from './qa/environment';
-import {visibleTextContrast} from './qa/ui-contrast';
+import {contrast, visibleTextContrast} from './qa/ui-contrast';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-ui-')));
 const cli = path.join(work, 'nanocoder/dist/cli.js');
@@ -191,42 +191,43 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 		name: 'command palette',
 		exact: true,
 	});
-	await palette.focus();
-	await expect(palette).toBeFocused();
-	await expect(palette).toHaveCSS('outline-width', '2px');
-	for (const name of ['add project folder', 'open project', 'locate project']) {
-		const button = recent.getByRole('button', {name, exact: true});
-		await page.keyboard.press('Tab');
-		await expect(button).toBeFocused();
-		await expect(button).toHaveCSS('outline-width', '2px');
-	}
-	await page.keyboard.press('Tab');
-	await expect(open).toBeFocused();
-	await expect(open).toHaveCSS('outline-width', '2px');
-	await page.keyboard.press('Tab');
+	const rail = page.getByRole('region', {name: 'project threads'});
 	const diagnostics = page.getByRole('button', {
 		name: 'diagnostics',
 		exact: true,
 	});
-	await expect(diagnostics).toBeFocused();
-	await expect(diagnostics).toHaveCSS('outline-width', '2px');
-	await page.keyboard.press('Tab');
 	const input = page.getByRole('textbox', {name: 'message'});
-	await expect(input).toBeFocused();
-	await expect(input).toHaveCSS('outline-width', '2px');
+	const send = page.getByRole('button', {name: 'send', exact: true});
+	const focusOrder = [
+		palette,
+		...['add project folder', 'open project', 'locate project'].map(name =>
+			recent.getByRole('button', {name, exact: true}),
+		),
+		rail.getByRole('button', {name: 'new thread', exact: true}),
+		rail.locator('.thread-open'),
+		rail.locator('.thread-actions > summary'),
+		open,
+		diagnostics,
+		input,
+		send,
+	];
 	await expect(
 		page.getByRole('button', {name: 'send', exact: true}),
 	).toBeDisabled();
-	await expect(input).toHaveAccessibleDescription('enter a message to send');
-	await input.fill('synthetic UI check');
-	await expect(input).toHaveAccessibleDescription('ready to send');
-	await expect(
-		page.getByRole('button', {name: 'send', exact: true}),
-	).toBeEnabled();
-	await page.keyboard.press('Tab');
-	await expect(
-		page.getByRole('button', {name: 'send', exact: true}),
-	).toBeFocused();
+	await focusOrder[0].focus();
+	for (const [index, control] of focusOrder.entries()) {
+		if (index > 0) await page.keyboard.press('Tab');
+		await expect(control).toBeFocused();
+		await expect(control).toHaveCSS('outline-width', '2px');
+		if (control === input) {
+			await expect(input).toHaveAccessibleDescription(
+				'enter a message to send',
+			);
+			await input.fill('synthetic UI check');
+			await expect(input).toHaveAccessibleDescription('ready to send');
+			await expect(send).toBeEnabled();
+		}
+	}
 });
 
 test('approval parts have named actions and no new contrast gaps in either theme', async () => {
@@ -237,11 +238,15 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	await expect(dialog).toBeFocused();
 	await expect(dialog).toHaveCSS('outline-width', '2px');
 	const recent = page.getByRole('region', {name: 'recent projects'});
+	const rail = page.getByRole('region', {name: 'project threads'});
 	const focusOrder = [
 		page.getByRole('button', {name: 'command palette', exact: true}),
 		recent.getByRole('button', {name: 'add project folder', exact: true}),
 		recent.getByRole('button', {name: 'open project', exact: true}),
 		recent.getByRole('button', {name: 'locate project', exact: true}),
+		rail.getByRole('button', {name: 'new thread', exact: true}),
+		rail.locator('.thread-open'),
+		rail.locator('.thread-actions > summary'),
 		page.getByRole('button', {name: 'open a project folder', exact: true}),
 		page.getByRole('button', {name: 'diagnostics', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),
@@ -452,6 +457,44 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 			page.getByRole('button', {name: 'retry Nanocoder', exact: true}),
 		).toBeEnabled();
 		await expect(page.locator('.ui-badge--success')).toHaveCount(0);
+		const selected = page.locator('.thread-row[data-selected="true"]');
+		const glyph = selected.locator('.thread-status--error');
+		await expect(glyph).toBeVisible();
+		await expect(glyph).toHaveCSS(
+			'color',
+			theme === 'dark' ? 'rgb(226, 90, 104)' : 'rgb(207, 34, 46)',
+		);
+		await expect(selected).toHaveCSS(
+			'background-color',
+			theme === 'dark' ? 'rgb(35, 47, 62)' : 'rgb(218, 218, 242)',
+		);
+		await expect(selected).toHaveCSS(
+			'border-left-color',
+			theme === 'dark' ? 'rgb(69, 155, 247)' : 'rgb(0, 0, 238)',
+		);
+		const rendered = await glyph.evaluate(element => {
+			const style = getComputedStyle(element);
+			const rgb = (value: string) =>
+				value
+					.match(/[\d.]+/g)
+					?.slice(0, 3)
+					.map(Number) as [number, number, number];
+			const owner = element.closest('.thread-row');
+			if (!owner) throw new Error('Expected the selected thread row');
+			const row = getComputedStyle(owner);
+			return {
+				foreground: rgb(style.color),
+				background: rgb(
+					style.backgroundColor === 'rgba(0, 0, 0, 0)'
+						? row.backgroundColor
+						: style.backgroundColor,
+				),
+			};
+		});
+		expect(
+			contrast(rendered.foreground, rendered.background),
+		).toBeGreaterThanOrEqual(4.5);
+		await expect(selected).toHaveCSS('border-left-width', '2px');
 		expect(await visibleTextContrast(page, theme)).toEqual([]);
 	}
 });

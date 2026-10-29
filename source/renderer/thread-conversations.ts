@@ -49,6 +49,7 @@ export function createThreadConversations(options: {
 	let projectId: string | null = null;
 	let activeThreadId: string | null = null;
 	let disposed = false;
+	let generation = 0;
 	const key = (threadId: string) => JSON.stringify([projectId, threadId]);
 	const view = (threadId: string | null) =>
 		threadId ? (views.get(key(threadId)) ?? empty) : empty;
@@ -66,10 +67,39 @@ export function createThreadConversations(options: {
 		views.set(key(threadId), {...view(threadId), ...patch});
 		emit();
 	};
+	const terminal = (
+		transcript: Transcript,
+		result: IpcResult<TurnResult>,
+	): Pick<View, 'turn' | 'transcript'> => {
+		const settled = settleSubagentTurn(
+			transcript,
+			result.ok
+				? result.value.stopReason === 'cancelled'
+					? 'cancelled'
+					: 'completed'
+				: 'failed',
+		);
+		const last = settled.items.at(-1);
+		return {
+			turn: result,
+			transcript:
+				!result.ok &&
+				!(last?.kind === 'failure' && last.text === result.error.message)
+					? {
+							...settled,
+							items: [
+								...settled.items,
+								{kind: 'failure', text: result.error.message},
+							],
+						}
+					: settled,
+		};
+	};
 	const batcher = createStreamBatcher((threadId, events) => {
 		if (allowed(threadId))
 			put(threadId, {
 				transcript: applyEvents(view(threadId).transcript, events),
+				...(events.some(event => event.type === 'user') && {turn: null}),
 			});
 	}, options.clock);
 	return {
@@ -78,6 +108,7 @@ export function createThreadConversations(options: {
 			if (disposed || selected === projectId) return;
 			batcher.flush();
 			tickets.clear();
+			generation++;
 			projectId = selected;
 			activeThreadId = null;
 			emit();
@@ -100,31 +131,56 @@ export function createThreadConversations(options: {
 		},
 		receive(event: Extract<ProjectEvent, {type: 'turn'}>) {
 			if (event.projectId !== projectId || !allowed(event.threadId)) return;
+			const current = generation;
 			batcher.enqueue(event.threadId, event.events);
 			if (
 				event.events.some(
 					item =>
 						item.type === 'permission' || item.type === 'permission-closed',
 				)
-			)
+			) {
 				batcher.flush(event.threadId);
+			}
+			if (event.result) {
+				batcher.flush(event.threadId);
+				if (
+					current === generation &&
+					event.projectId === projectId &&
+					allowed(event.threadId)
+				)
+					put(
+						event.threadId,
+						terminal(view(event.threadId).transcript, event.result),
+					);
+			}
 		},
 		snapshot(snapshot: ThreadSnapshot) {
 			const threadId = snapshot.thread.id;
 			if (snapshot.thread.projectId !== projectId || !allowed(threadId))
 				return false;
+			const current = generation;
 			batcher.flush(threadId);
+			if (
+				current !== generation ||
+				snapshot.thread.projectId !== projectId ||
+				!allowed(threadId)
+			)
+				return false;
 			const previous = view(threadId).transcript;
 			const transcript = applyEvents(emptyTranscript, snapshot.events);
-			put(threadId, {
-				transcript: {
-					...transcript,
-					items: [
-						...transcript.items,
-						...previous.items.filter(item => item.kind === 'failure'),
-					],
-				},
-			});
+			const prefix = {
+				...transcript,
+				items: [
+					...transcript.items,
+					...previous.items.filter(item => item.kind === 'failure'),
+				],
+			};
+			put(
+				threadId,
+				snapshot.result
+					? terminal(prefix, snapshot.result)
+					: {transcript: prefix, turn: null},
+			);
 			return true;
 		},
 		beginTurn(threadId: string): TurnTicket | null {
@@ -161,6 +217,7 @@ export function createThreadConversations(options: {
 			if (!isCurrent()) return false;
 			tickets.delete(key(ticket.threadId));
 			const current = view(ticket.threadId);
+			if (current.turn) return result !== null;
 			const interrupted =
 				!result || !result.ok || result.value.stopReason === 'cancelled';
 			const displayed = current.transcript.items

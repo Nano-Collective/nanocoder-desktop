@@ -13,6 +13,7 @@ import test, {type ExecutionContext} from 'ava';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {
 	type ConnectOptions,
+	type NanocoderConnection,
 	NanocoderFailure,
 	type NanocoderTurnResult,
 } from '@/main/nanocoder/acp-client';
@@ -45,6 +46,7 @@ async function fixture(
 		driver: createNodeSqliteDriver(),
 	});
 	const calls: string[] = [];
+	const connections: NanocoderConnection[] = [];
 	const clock = new FakeClock();
 	let service!: ReturnType<typeof createThreadService>;
 	const projectRoot = path.join(root, 'project');
@@ -77,10 +79,12 @@ async function fixture(
 		},
 		clientInfo: {name: 'thread-fixture', version: '0.0.0'},
 		confirmTrust: async () => false,
-		connect: options => {
+		connect: async options => {
 			update = options.onSessionUpdate;
 			titleUpdate = options.onTitleChanged;
-			return connectProject(options);
+			const connection = await connectProject(options);
+			if (!('status' in connection)) connections.push(connection);
+			return connection;
 		},
 	});
 	t.teardown(async () => {
@@ -116,6 +120,7 @@ async function fixture(
 		root,
 		store,
 		calls,
+		connections,
 		project,
 		supervisor,
 		service,
@@ -146,6 +151,17 @@ function deferred<T>() {
 		resolve = done;
 	});
 	return {promise, resolve};
+}
+
+function nextFailure(supervisor: ProjectSupervisor) {
+	const failed = deferred<void>();
+	const off = supervisor.subscribe(event => {
+		if (event.type === 'supervisor' && event.state.status === 'failed') {
+			off();
+			failed.resolve();
+		}
+	});
+	return failed.promise;
 }
 
 function seed(
@@ -212,6 +228,383 @@ async function waitingThread(t: ExecutionContext, two = false) {
 		metadata,
 	};
 }
+
+for (const mode of [
+	'resume-fails',
+	'mode-fails',
+	'no-normal',
+	'missing-session',
+	'no-resume',
+]) {
+	test(`cached ${mode} keeps its thread identity and refuses prompts until explicit same-history retry, never a fresh session (CHAT-04, ACP-13)`, async t => {
+		const {project, store, service, supervisor} = await fixture(t, true);
+		const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+		const other = seed(project, {nanocoderSessionId: null});
+		store.threads.save(thread);
+		store.threads.save(other);
+		const request = {projectId: project.id, threadId: thread.id};
+		const before = await service.openThread(request);
+		await supervisor.stop(project.id);
+		writeFileSync(path.join(project.canonicalRoot, '.fake-nanocoder'), mode);
+		const unavailable = await service.openThread(request);
+		t.is(unavailable.thread.runState, 'view-only');
+		t.truthy(unavailable.thread.viewOnlyReason);
+		if (mode === 'resume-fails')
+			t.is(
+				unavailable.thread.viewOnlyReason,
+				'Nanocoder could not resume the session',
+			);
+		if (mode === 'mode-fails')
+			t.is(
+				unavailable.thread.viewOnlyReason,
+				'Nanocoder did not set the normal mode',
+			);
+		if (mode === 'no-normal')
+			t.is(
+				unavailable.thread.viewOnlyReason,
+				'Nanocoder does not offer the normal mode',
+			);
+		if (mode === 'no-resume')
+			t.is(
+				unavailable.thread.viewOnlyReason,
+				'This version of Nanocoder cannot resume sessions',
+			);
+		t.is(unavailable.thread.id, thread.id);
+		t.is(unavailable.thread.nanocoderSessionId, thread.nanocoderSessionId);
+		t.deepEqual(unavailable.events, before.events);
+		t.deepEqual(store.threads.get(project.id, other.id), other);
+		t.is(supervisor.getState(project.id).status, 'ready');
+		const connection = supervisor.getConnection(project.id);
+		await t.throwsAsync(service.promptThread({...request, text: 'refused'}), {
+			instanceOf: IpcFailure,
+		});
+		const methods = fakeEvents(connection.stderr.lines()).map(
+			event => event.method,
+		);
+		t.false(methods.includes('session/new'));
+		t.false(methods.includes('session/prompt'));
+		t.is(methods.includes('session/resume'), mode !== 'no-resume');
+		if (mode !== 'missing-session')
+			t.notRegex(unavailable.thread.viewOnlyReason ?? '', /no saved history/);
+		await supervisor.stop(project.id);
+		writeFileSync(path.join(project.canonicalRoot, '.fake-nanocoder'), 'ok');
+		const reopened = await service.openThread(request);
+		t.is(reopened.thread.runState, 'ready');
+		t.is(reopened.thread.viewOnlyReason, null);
+		t.is(reopened.thread.nanocoderSessionId, thread.nanocoderSessionId);
+		const fresh = supervisor.getConnection(project.id);
+		t.not(fresh, connection);
+		t.deepEqual(
+			fakeEvents(fresh.stderr.lines())
+				.map(event => event.method)
+				.filter(
+					method => typeof method === 'string' && method.startsWith('session/'),
+				),
+			['session/resume', 'session/set_mode'],
+		);
+		const permission = deferred<PermissionRequestInfo>();
+		const off = supervisor.subscribe(event => {
+			if (event.type === 'turn')
+				for (const item of event.events)
+					if (item.type === 'permission') permission.resolve(item.request);
+		});
+		const turn = service.promptThread({...request, text: 'explicit retry'});
+		const offered = await permission.promise;
+		await service.answerThreadPermission({
+			...request,
+			requestId: offered.id,
+			optionId: 'deny',
+		});
+		t.deepEqual(await turn, {stopReason: 'end_turn'});
+		off();
+		t.is(
+			store.threads.get(project.id, thread.id)?.nanocoderSessionId,
+			thread.nanocoderSessionId,
+		);
+		t.false(
+			fakeEvents(fresh.stderr.lines()).some(
+				event => event.method === 'session/new',
+			),
+		);
+	});
+}
+
+for (const mode of [
+	'no-resume',
+	'missing-session',
+	'resume-fails',
+	'mode-fails',
+	'no-normal',
+]) {
+	test(`${mode} automatic thread recovery stays unavailable without replacement history or re-prompt (ACP-13, CHAT-04)`, async t => {
+		const {project, service, store, supervisor, clock, connections} =
+			await fixture(t, true, undefined, true);
+		const thread = await service.createThread({projectId: project.id});
+		store.threads.save({...thread, mode: 'normal'});
+		const failed = nextFailure(supervisor);
+		writeFileSync(
+			path.join(project.canonicalRoot, '.fake-nanocoder'),
+			'die-in-turn',
+		);
+		await t.throwsAsync(
+			service.promptThread({
+				projectId: project.id,
+				threadId: thread.id,
+				text: 'synthetic failure',
+			}),
+		);
+		await failed;
+		writeFileSync(path.join(project.canonicalRoot, '.fake-nanocoder'), mode);
+		const unavailable = deferred<void>();
+		const off = supervisor.subscribe(event => {
+			if (
+				event.type === 'supervisor' &&
+				['failed', 'unsupported'].includes(event.state.status) &&
+				event.state.restart.nextAttemptAt === null
+			)
+				unavailable.resolve();
+		});
+		clock.advance(1000);
+		await unavailable.promise;
+		off();
+		t.throws(() => supervisor.getConnection(project.id));
+		t.is(clock.pending, 0);
+		const connection = connections.at(-1);
+		if (!connection) throw new Error('Missing recovered connection');
+		const methods = fakeEvents(connection.stderr.lines()).map(
+			event => event.method,
+		);
+		t.false(methods.includes('session/new'));
+		t.false(methods.includes('session/prompt'));
+		t.is(methods.includes('session/resume'), mode !== 'no-resume');
+		t.is(
+			store.threads.get(project.id, thread.id)?.nanocoderSessionId,
+			'fake-session',
+		);
+	});
+}
+
+test('detaching a failed thread cancels its pending recovery without a later launch (ACP-13)', async t => {
+	const {project, service, supervisor, clock, calls} = await fixture(
+		t,
+		true,
+		undefined,
+		true,
+	);
+	const thread = await service.createThread({projectId: project.id});
+	const failed = nextFailure(supervisor);
+	writeFileSync(
+		path.join(project.canonicalRoot, '.fake-nanocoder'),
+		'die-in-turn',
+	);
+	await t.throwsAsync(
+		service.promptThread({
+			projectId: project.id,
+			threadId: thread.id,
+			text: 'synthetic failure',
+		}),
+	);
+	await failed;
+	t.not(supervisor.getState(project.id).restart.nextAttemptAt, null);
+	await service.detach([project]);
+	t.is(clock.pending, 0);
+	clock.advance(60_000);
+	t.is(supervisor.getState(project.id).status, 'stopped');
+	t.is(calls.filter(call => call === 'launch').length, 1);
+});
+
+test('thread recovery remains starting through slow mode confirmation and detach settles the child without replaying content (ACP-13)', async t => {
+	const mapped: ProjectEvent[] = [];
+	const {project, service, supervisor, clock, connections} = await fixture(
+		t,
+		true,
+		event => mapped.push(event),
+		true,
+	);
+	const thread = await service.createThread({projectId: project.id});
+	const failed = nextFailure(supervisor);
+	writeFileSync(
+		path.join(project.canonicalRoot, '.fake-nanocoder'),
+		'die-in-turn',
+	);
+	await t.throwsAsync(
+		service.promptThread({
+			projectId: project.id,
+			threadId: thread.id,
+			text: 'synthetic failure',
+		}),
+	);
+	await failed;
+	const before = mapped.length;
+	writeFileSync(
+		path.join(project.canonicalRoot, '.fake-nanocoder'),
+		'slow-mode',
+	);
+	const waiting = deferred<void>();
+	const off = supervisor.subscribe(event => {
+		if (
+			event.type === 'turn' &&
+			event.events.some(
+				item => item.type === 'text' && item.text === 'mode waiting',
+			)
+		)
+			waiting.resolve();
+	});
+	clock.advance(1000);
+	await waiting.promise;
+	off();
+	t.is(supervisor.getState(project.id).status, 'starting');
+	t.throws(() => supervisor.getConnection(project.id));
+	t.true(service.activity(project.id).preparing);
+	await service.detach([project]);
+	t.is(supervisor.getState(project.id).status, 'stopped');
+	t.is(clock.pending, 0);
+	const connection = connections.at(-1);
+	if (!connection) throw new Error('Missing recovered connection');
+	await connection.exited;
+	t.false(
+		fakeEvents(connection.stderr.lines()).some(
+			event =>
+				event.method === 'session/new' || event.method === 'session/prompt',
+		),
+	);
+	t.deepEqual(
+		mapped.slice(before).filter(event => event.type === 'turn'),
+		[],
+	);
+	t.false(service.activity(project.id).preparing);
+});
+
+test('a mode result from a replaced connection cannot commit readiness or content, and explicit reopen resumes its saved identity (ACP-13, CHAT-04)', async t => {
+	const {project, service, supervisor} = await fixture(t, true);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	const original = connection.newSession;
+	const entered = deferred<void>();
+	const release = deferred<void>();
+	t.teardown(() => release.resolve());
+	connection.newSession = async mode => {
+		const result = await original(mode);
+		entered.resolve();
+		await release.promise;
+		return result;
+	};
+	const request = {projectId: project.id, threadId: thread.id};
+	const turn = service.promptThread({...request, text: 'never published'});
+	const rejected = t.throwsAsync(turn, {code: 'AGENT_UNAVAILABLE'});
+	await entered.promise;
+	await supervisor.stop(project.id);
+	await supervisor.ensureProcess(project);
+	release.resolve();
+	await rejected;
+	const snapshot = await service.getThreadSnapshot(request);
+	t.is(snapshot.thread.runState, 'new');
+	t.is(snapshot.thread.nanocoderSessionId, 'fake-session');
+	t.deepEqual(snapshot.events, []);
+	t.false(service.activity(project.id).preparing);
+	t.false(
+		fakeEvents(connection.stderr.lines()).some(
+			event => event.method === 'session/prompt',
+		),
+	);
+	const reopened = await service.openThread(request);
+	t.is(reopened.thread.runState, 'ready');
+	t.is(reopened.thread.nanocoderSessionId, 'fake-session');
+	t.deepEqual(
+		fakeEvents(supervisor.getConnection(project.id).stderr.lines())
+			.map(event => event.method)
+			.filter(
+				method => typeof method === 'string' && method.startsWith('session/'),
+			),
+		['session/resume', 'session/set_mode'],
+	);
+});
+
+test('thread cancellation waits for the exact owning supervisor settlement before replying (ACP-10)', async t => {
+	const {service, supervisor, target, turn} = await waitingThread(t);
+	const original = supervisor.cancel.bind(supervisor);
+	const entered = deferred<void>();
+	const release = deferred<void>();
+	t.teardown(() => {
+		release.resolve();
+		supervisor.cancel = original;
+	});
+	supervisor.cancel = async (...args) => {
+		await original(...args);
+		entered.resolve();
+		await release.promise;
+	};
+	let settled = false;
+	const cancellation = service.cancelThread(target).then(result => {
+		settled = true;
+		return result;
+	});
+	await entered.promise;
+	t.false(settled);
+	release.resolve();
+	t.is(await cancellation, null);
+	t.deepEqual(await turn, {stopReason: 'cancelled'});
+});
+
+test('signal exit settles the thread activity and revokes its pending approval (ACP-13, ACP-10)', async t => {
+	const {project, service, supervisor, connection, target, requests, turn} =
+		await waitingThread(t);
+	t.true(service.activity(project.id).runningTurn);
+	const started = fakeEvents(connection.stderr.lines()).find(
+		event => event.started,
+	);
+	if (typeof started?.pid !== 'number') throw new Error('Missing fake child');
+	const failed = deferred<void>();
+	const off = supervisor.subscribe(event => {
+		if (event.type === 'supervisor' && event.state.status === 'failed')
+			failed.resolve();
+	});
+	const rejected = t.throwsAsync(turn);
+	process.kill(started.pid, 'SIGTERM');
+	await failed.promise;
+	await rejected;
+	off();
+	t.deepEqual(supervisor.getState(project.id).exit, {
+		code: null,
+		signal: 'SIGTERM',
+	});
+	t.false(service.activity(project.id).runningTurn);
+	await t.throwsAsync(
+		service.answerThreadPermission({
+			...target,
+			requestId: requests[0].id,
+			optionId: 'allow',
+		}),
+	);
+});
+
+test('ordinary history open refuses a located root before launch or former-cwd resume and keeps its saved identity (CHAT-01, CHAT-04)', async t => {
+	const {project, service, store, supervisor, root, calls} = await fixture(
+		t,
+		true,
+	);
+	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+	store.threads.save(thread);
+	const request = {projectId: project.id, threadId: thread.id};
+	const before = await service.openThread(request);
+	await supervisor.stop(project.id);
+	const located = path.join(root, 'located');
+	mkdirSync(located);
+	store.projects.save({
+		...project,
+		canonicalRoot: located,
+		sessionCwd: located,
+		trusted: true,
+	});
+	await t.throwsAsync(service.openThread(request), {
+		instanceOf: IpcFailure,
+		code: 'DENIED',
+	});
+	t.deepEqual(await service.getThreadSnapshot(request), before);
+	t.is(calls.filter(call => call === 'launch').length, 1);
+	t.is(supervisor.getState(project.id).status, 'stopped');
+});
 
 test('new thread is metadata-only until the first prompt (CHAT-03, CHAT-04)', async t => {
 	const {project, service, store, calls} = await fixture(t);
@@ -288,6 +681,7 @@ test('thread recovery uses the supplied starting connection and replaces its map
 		projectId: project.id,
 		threadId: thread.id,
 	});
+	t.false(before.result?.ok);
 	const raw: ProjectEvent[] = [];
 	let ready!: () => void;
 	const recovered = new Promise<void>(resolve => {
@@ -305,6 +699,7 @@ test('thread recovery uses the supplied starting connection and replaces its map
 		threadId: thread.id,
 	});
 	t.is(snapshot.thread.runState, 'ready');
+	t.is(snapshot.result, undefined);
 	t.is(snapshot.thread.mode, 'normal');
 	t.is(snapshot.thread.nanocoderSessionId, 'fake-session');
 	t.is(snapshot.sequence, before.sequence + 1);
@@ -562,6 +957,125 @@ for (const action of ['cancel', 'detach'] as const) {
 	}
 }
 
+for (const outcome of ['completed', 'cancelled', 'failed'] as const) {
+	test(`a ${outcome} result is sequenced in the owning transient snapshot only and clears before the next accepted user turn (CHAT-03, DATA-07)`, async t => {
+		const mapped: ProjectEvent[] = [];
+		const {service, supervisor, project, store} = await fixture(
+			t,
+			true,
+			event => mapped.push(event),
+		);
+		const thread = await service.createThread({projectId: project.id});
+		const request = {projectId: project.id, threadId: thread.id};
+		await supervisor.ensureProcess(project);
+		const connection = supervisor.getConnection(project.id);
+		connection.prompt = async () => {
+			if (outcome === 'failed')
+				throw new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'safe terminal failure',
+				);
+			return {stopReason: outcome === 'cancelled' ? 'cancelled' : 'end_turn'};
+		};
+		const prompting = service.promptThread({
+			...request,
+			text: 'synthetic turn',
+		});
+		if (outcome === 'failed')
+			await t.throwsAsync(prompting, {
+				code: 'AGENT_UNAVAILABLE',
+				message: 'safe terminal failure',
+			});
+		else await prompting;
+		const result =
+			outcome === 'failed'
+				? {
+						ok: false,
+						error: {
+							code: 'AGENT_UNAVAILABLE',
+							message: 'safe terminal failure',
+							retryable: false,
+						},
+					}
+				: {
+						ok: true,
+						value: {
+							stopReason: outcome === 'cancelled' ? 'cancelled' : 'end_turn',
+						},
+					};
+		const snapshot = await service.getThreadSnapshot(request);
+		t.deepEqual(snapshot.result, result);
+		const terminal = mapped.filter(event => event.type === 'turn').at(-1);
+		t.deepEqual(terminal?.result, result);
+		t.is(terminal?.sequence, snapshot.sequence);
+		t.false(
+			JSON.stringify(store.threads.get(project.id, thread.id)).includes(
+				'stopReason',
+			),
+		);
+		t.false(
+			JSON.stringify(store.threads.get(project.id, thread.id)).includes(
+				'safe terminal failure',
+			),
+		);
+		const entered = deferred<void>();
+		const response = deferred<NanocoderTurnResult>();
+		connection.prompt = async () => {
+			entered.resolve();
+			return response.promise;
+		};
+		const next = service.promptThread({...request, text: 'next accepted turn'});
+		await entered.promise;
+		t.is((await service.getThreadSnapshot(request)).result, undefined);
+		response.resolve({stopReason: 'end_turn'});
+		await next;
+	});
+}
+
+test('terminal failures use the same safe IPC failure without raw details and every returned result is cloned (DATA-07, ACP-13)', async t => {
+	const mapped: ProjectEvent[] = [];
+	const {service, supervisor, project, store} = await fixture(t, true, event =>
+		mapped.push(event),
+	);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	supervisor.getConnection(project.id).prompt = async () => {
+		throw new Error('synthetic-raw-acp-body-not-for-renderer');
+	};
+	const request = {projectId: project.id, threadId: thread.id};
+	const failure = await t.throwsAsync(
+		service.promptThread({...request, text: 'synthetic accepted prompt'}),
+		{
+			instanceOf: IpcFailure,
+			code: 'AGENT_UNAVAILABLE',
+			message: 'The thread request could not finish',
+		},
+	);
+	const expected = {
+		ok: false,
+		error: {
+			code: failure?.code,
+			message: failure?.message,
+			retryable: false,
+		},
+	};
+	const snapshot = await service.getThreadSnapshot(request);
+	const terminal = mapped.filter(event => event.type === 'turn').at(-1);
+	t.deepEqual(snapshot.result, expected);
+	t.deepEqual(terminal?.result, expected);
+	t.false(JSON.stringify(snapshot).includes('synthetic-raw-acp-body'));
+	t.false(
+		JSON.stringify(store.threads.get(project.id, thread.id)).includes(
+			'stopReason',
+		),
+	);
+	if (snapshot.result && !snapshot.result.ok)
+		snapshot.result.error.message = 'changed snapshot';
+	if (terminal?.result && !terminal.result.ok)
+		terminal.result.error.message = 'changed event';
+	t.deepEqual((await service.getThreadSnapshot(request)).result, expected);
+});
+
 test('resolved turn metadata uses only its owning desktop sequence and never the IPC result or metadata store (CHAT-19, DATA-07)', async t => {
 	const events: ProjectEvent[] = [];
 	const {service, supervisor, project, store} = await fixture(t, true, event =>
@@ -603,6 +1117,7 @@ test('resolved turn metadata uses only its owning desktop sequence and never the
 				sequence: 2,
 				events: [{type: 'metadata', metadata}],
 			},
+			{threadId: thread.id, sequence: 3, events: []},
 		],
 	);
 	t.deepEqual(
@@ -713,6 +1228,8 @@ test('detached turn response metadata cannot publish into a later renderer attac
 	t.deepEqual((await service.getThreadSnapshot(request)).events, [
 		{type: 'user', text: 'old attachment'},
 	]);
+	t.is((await service.getThreadSnapshot(request)).result, undefined);
+	t.false(events.some(event => event.type === 'turn' && event.result));
 });
 
 test('resumed metadata remains part of the owned in-memory snapshot prefix (CHAT-19, CHAT-04)', async t => {
@@ -1019,6 +1536,14 @@ test('first prompt saves the mode-ready session ID before content is published (
 			sequence: 1,
 			events: [{type: 'user', text: 'fixture first prompt'}],
 		},
+		{
+			type: 'turn',
+			projectId: project.id,
+			threadId: thread.id,
+			sequence: 2,
+			events: [],
+			result: {ok: true, value: {stopReason: 'end_turn'}},
+		},
 	]);
 	await supervisor.close();
 	const requests = fakeEvents(connection.stderr.lines()).filter(
@@ -1270,10 +1795,10 @@ test('live updates map only the saved session to its desktop thread (CHAT-04)', 
 		{type: 'user', text: 'fixture prompt'},
 		{type: 'text', text: 'fixture response'},
 	]);
-	t.is(snapshot.sequence, 2);
+	t.is(snapshot.sequence, 3);
 	t.deepEqual(
 		events.map(event => event.sequence),
-		[1, 2],
+		[1, 2, 3],
 	);
 	t.true(
 		events.every(

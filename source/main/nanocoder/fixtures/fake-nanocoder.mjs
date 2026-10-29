@@ -1,4 +1,5 @@
 // Stands in for `nanocoder --acp` in tests. A .fake-nanocoder file in the working directory picks the behaviour.
+import {createHash, randomUUID} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import {createInterface} from 'node:readline';
 
@@ -11,6 +12,8 @@ const TRUST_REASONS = {
 	changed: 'changed since you trusted it',
 };
 let nextSession = 0;
+const scopedSessions = process.env.NANOCODER_TEST_SCOPED_SESSIONS === '1';
+const sessionPrefix = `fake-session-${createHash('sha256').update(process.cwd()).digest('hex').slice(0, 12)}`;
 
 const log = event => process.stderr.write(`${JSON.stringify(event)}\n`);
 const send = message =>
@@ -55,8 +58,9 @@ const results = {
 		mode === 'no-session'
 			? undefined
 			: {
-					sessionId:
-						mode === 'multiple-sessions'
+					sessionId: scopedSessions
+						? `${sessionPrefix}-${randomUUID()}`
+						: mode === 'multiple-sessions'
 							? `fake-session-${++nextSession}`
 							: 'fake-session',
 					modes: modeState(),
@@ -76,7 +80,14 @@ const modeState = () => ({
 // Replays an earlier exchange, as Nanocoder does, then answers with the mode state.
 function resume(id, {sessionId}) {
 	if (mode === 'die-in-resume') process.exit(3);
-	if (sessionId !== 'fake-session' || mode === 'missing-session') {
+	const knownSession = scopedSessions
+		? typeof sessionId === 'string' &&
+			sessionId.startsWith(`${sessionPrefix}-`) &&
+			/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+				sessionId.slice(sessionPrefix.length + 1),
+			)
+		: sessionId === 'fake-session';
+	if (!knownSession || mode === 'missing-session') {
 		send({
 			id,
 			error: {
@@ -464,7 +475,7 @@ function serve() {
 				return;
 			}
 			if (method === 'session/set_mode' && mode === 'slow-mode') {
-				say('fake-session', 'mode waiting');
+				say(params.sessionId, 'mode waiting');
 				return;
 			}
 			if (

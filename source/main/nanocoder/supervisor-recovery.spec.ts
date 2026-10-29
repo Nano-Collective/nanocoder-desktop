@@ -1,11 +1,6 @@
 import {randomUUID} from 'node:crypto';
-import {writeFileSync} from 'node:fs';
-import path from 'node:path';
 import test from 'ava';
-import type {
-	ConnectOptions,
-	NanocoderConnection,
-} from '@/main/nanocoder/acp-client';
+import type {ConnectOptions} from '@/main/nanocoder/acp-client';
 import {FakeClock} from '@/main/nanocoder/fixtures/fake-clock';
 import {
 	fakeEvents,
@@ -16,7 +11,6 @@ import {
 import {connectProject} from '@/main/nanocoder/open-project';
 import {StderrRing} from '@/main/nanocoder/stderr-ring';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
-import {TechnicalSessions} from '@/main/nanocoder/technical-sessions';
 import type {ProjectEvent, ProjectInfo} from '@/shared/ipc';
 
 const project = (mode?: string): ProjectInfo => {
@@ -73,55 +67,6 @@ test('startup failure retains the child stderr ring in captured diagnostics', as
 			.getDiagnostics(chosen.id)
 			.lines.some(line => line.includes('"started":true')),
 	);
-});
-
-test('detach cancels a reopen queued behind an idle stop before another child starts', async t => {
-	const clock = new FakeClock();
-	let sessions: TechnicalSessions;
-	let release!: () => void;
-	const blocked = new Promise<void>(resolve => {
-		release = resolve;
-	});
-	let launches = 0;
-	const supervisor = new ProjectSupervisor({
-		clock,
-		idleTimeoutMs: 1000,
-		activity: id => sessions.activity(id),
-		resolveRuntime: async () => ({ok: true, runtime}),
-		clientInfo: {name: 'test', version: '0'},
-		confirmTrust: async () => false,
-		connect: async options => {
-			launches++;
-			const connection = await connectProject(options);
-			if ('status' in connection) return connection;
-			return {
-				...connection,
-				close: async () => {
-					await blocked;
-					await connection.close();
-				},
-			};
-		},
-	});
-	sessions = new TechnicalSessions(supervisor, clock);
-	t.teardown(async () => {
-		release();
-		await supervisor.close();
-	});
-	const chosen = project();
-	await supervisor.ensureProcess(chosen);
-	await sessions.prepare(chosen);
-	await sessions.detach([chosen]);
-	clock.advance(1000);
-	t.is(supervisor.getState(chosen.id).status, 'stopping');
-	const reopened = supervisor.ensureProcess(chosen).catch(error => error);
-	const detached = sessions.detach([chosen]);
-	release();
-	await detached;
-	await reopened;
-	t.is(sessions.activity(chosen.id).openSessions, 0);
-	t.is(launches, 1);
-	t.is(supervisor.getState(chosen.id).status, 'stopped');
 });
 
 test('records exit and schedules a bounded retry without replaying the failed prompt', async t => {
@@ -216,98 +161,6 @@ test('crash-loop budget survives ready starts and explicit retry resets it', asy
 	t.is(launches, 5);
 });
 
-test('recovery restores the selected session in its safe mode before publishing ready', async t => {
-	const clock = new FakeClock();
-	let sessions: TechnicalSessions;
-	let restored = 0;
-	const supervisor = new ProjectSupervisor({
-		clock,
-		resolveRuntime: async () => ({ok: true, runtime}),
-		clientInfo: {name: 'test', version: '0'},
-		confirmTrust: async () => false,
-		recover: async (chosen, connection, signal) => {
-			if (sessions) {
-				await sessions.restore(chosen, connection, signal);
-				restored++;
-			}
-		},
-	});
-	sessions = new TechnicalSessions(supervisor);
-	t.teardown(() => supervisor.close());
-	const chosen = project('die-in-turn');
-	await supervisor.ensureProcess(chosen);
-	const original = await sessions.prepare(chosen);
-	const failed = next(
-		supervisor,
-		event => event.type === 'supervisor' && event.state.status === 'failed',
-	);
-	await t.throwsAsync(supervisor.prompt(chosen.id, original.id, 'synthetic'));
-	await failed;
-	const ready = next(
-		supervisor,
-		event => event.type === 'supervisor' && event.state.status === 'ready',
-	);
-	clock.advance(1000);
-	await ready;
-	t.is(restored, 1);
-	const resumed = await sessions.prepare(chosen);
-	t.deepEqual(resumed, original);
-	t.is(resumed.mode, 'normal');
-});
-
-test('detaching a failed selected session cancels its pending recovery', async t => {
-	const clock = new FakeClock();
-	const supervisor = new ProjectSupervisor({
-		clock,
-		resolveRuntime: async () => ({ok: true, runtime}),
-		clientInfo: {name: 'test', version: '0'},
-		confirmTrust: async () => false,
-	});
-	const sessions = new TechnicalSessions(supervisor);
-	t.teardown(() => supervisor.close());
-	const chosen = project('die-in-turn');
-	await supervisor.ensureProcess(chosen);
-	const original = await sessions.prepare(chosen);
-	const failed = next(
-		supervisor,
-		event => event.type === 'supervisor' && event.state.status === 'failed',
-	);
-	await t.throwsAsync(supervisor.prompt(chosen.id, original.id, 'synthetic'));
-	await failed;
-	await sessions.detach([chosen]);
-	t.is(clock.pending, 0);
-	clock.advance(60_000);
-	t.is(supervisor.getState(chosen.id).status, 'stopped');
-});
-
-test('ordinary reopen lets failed cached preparation stop and clear its session before a fresh open', async t => {
-	let sessions: TechnicalSessions;
-	const supervisor = new ProjectSupervisor({
-		resolveRuntime: async () => ({ok: true, runtime}),
-		clientInfo: {name: 'test', version: '0'},
-		confirmTrust: async () => false,
-		recover: (chosen, connection, signal) =>
-			sessions.restore(chosen, connection, signal),
-	});
-	sessions = new TechnicalSessions(supervisor);
-	t.teardown(() => supervisor.close());
-	const chosen = project();
-	await supervisor.ensureProcess(chosen);
-	await sessions.prepare(chosen);
-	await supervisor.stop(chosen.id);
-	writeFileSync(
-		path.join(chosen.canonicalRoot, '.fake-nanocoder'),
-		'missing-session',
-	);
-	t.is((await supervisor.ensureProcess(chosen)).status, 'ready');
-	await t.throwsAsync(sessions.prepare(chosen), {
-		code: 'NOT_FOUND',
-	});
-	t.is(supervisor.getState(chosen.id).status, 'stopped');
-	t.is((await supervisor.ensureProcess(chosen)).status, 'ready');
-	t.is((await sessions.prepare(chosen)).mode, 'normal');
-});
-
 test('idle shutdown waits for turns, open sessions, preparation and recent activity, then closes loaded sessions', async t => {
 	const clock = new FakeClock();
 	const activity = {
@@ -365,46 +218,6 @@ test('idle shutdown waits for turns, open sessions, preparation and recent activ
 	]);
 	t.true(restarted.every(state => state.status === 'ready'));
 	t.not(supervisor.getConnection(chosen.id), connection);
-});
-
-test('technical activity tracks attached sessions and preparation without owning thread metadata', async t => {
-	const clock = new FakeClock();
-	const supervisor = new ProjectSupervisor({
-		clock,
-		resolveRuntime: async () => ({ok: true, runtime}),
-		clientInfo: {name: 'test', version: '0'},
-		confirmTrust: async () => false,
-	});
-	const sessions = new TechnicalSessions(supervisor, clock);
-	t.teardown(() => supervisor.close());
-	const chosen = project();
-	await supervisor.ensureProcess(chosen);
-	t.deepEqual(sessions.activity(chosen.id), {
-		runningTurn: false,
-		openSessions: 0,
-		preparing: false,
-		lastActivityAt: 0,
-	});
-	const preparing = sessions.prepare(chosen);
-	t.deepEqual(sessions.activity(chosen.id), {
-		runningTurn: false,
-		openSessions: 1,
-		preparing: true,
-		lastActivityAt: clock.now(),
-	});
-	await preparing;
-	t.false(sessions.activity(chosen.id).preparing);
-	clock.advance(500);
-	await sessions.detach([chosen]);
-	t.deepEqual(sessions.activity(chosen.id), {
-		runningTurn: false,
-		openSessions: 0,
-		preparing: false,
-		lastActivityAt: clock.now(),
-	});
-	t.is(supervisor.getState(chosen.id).status, 'ready');
-	await sessions.prepare(chosen);
-	t.is(sessions.activity(chosen.id).openSessions, 1);
 });
 
 test('diagnostics captures an immutable redacted project snapshot that survives restart without conversation payloads', async t => {
@@ -669,106 +482,6 @@ test('stop and quit cancel scheduled restarts and refuse changed recovery roots'
 	}
 });
 
-test('missing resume or safe mode leaves recovery unavailable without a new session or prompt', async t => {
-	for (const mode of [
-		'no-resume',
-		'missing-session',
-		'mode-fails',
-		'no-normal',
-	]) {
-		const clock = new FakeClock();
-		let sessions: TechnicalSessions;
-		let latest: NanocoderConnection | undefined;
-		const supervisor = new ProjectSupervisor({
-			clock,
-			resolveRuntime: async () => ({ok: true, runtime}),
-			clientInfo: {name: 'test', version: '0'},
-			confirmTrust: async () => false,
-			recover: (chosen, connection, signal) =>
-				sessions.restore(chosen, connection, signal),
-			connect: async options => {
-				const result = await connectProject(options);
-				if (!('status' in result)) latest = result;
-				return result;
-			},
-		});
-		sessions = new TechnicalSessions(supervisor, clock);
-		t.teardown(() => supervisor.close());
-		const chosen = project('die-in-turn');
-		await supervisor.ensureProcess(chosen);
-		const session = await sessions.prepare(chosen);
-		const failed = next(
-			supervisor,
-			event => event.type === 'supervisor' && event.state.status === 'failed',
-		);
-		await t.throwsAsync(supervisor.prompt(chosen.id, session.id, 'synthetic'));
-		await failed;
-		writeFileSync(path.join(chosen.canonicalRoot, '.fake-nanocoder'), mode);
-		const unavailable = next(
-			supervisor,
-			event =>
-				event.type === 'supervisor' &&
-				['failed', 'unsupported'].includes(event.state.status) &&
-				event.state.restart.nextAttemptAt === null,
-		);
-		clock.advance(1000);
-		await unavailable;
-		t.throws(() => supervisor.getConnection(chosen.id));
-		t.is(clock.pending, 0);
-		if (!latest) throw new Error('Missing recovered connection');
-		const methods = fakeEvents(latest.stderr.lines()).map(
-			event => event.method,
-		);
-		t.false(methods.includes('session/new'));
-		t.false(methods.includes('session/prompt'));
-		t.is(methods.includes('session/resume'), mode !== 'no-resume');
-	}
-});
-
-test('recovery remains starting until mode confirmation and detach aborts that preparation', async t => {
-	const clock = new FakeClock();
-	let sessions: TechnicalSessions;
-	const supervisor = new ProjectSupervisor({
-		clock,
-		resolveRuntime: async () => ({ok: true, runtime}),
-		clientInfo: {name: 'test', version: '0'},
-		confirmTrust: async () => false,
-		recover: (chosen, connection, signal) =>
-			sessions.restore(chosen, connection, signal),
-	});
-	sessions = new TechnicalSessions(supervisor, clock);
-	t.teardown(() => supervisor.close());
-	const chosen = project('die-in-turn');
-	await supervisor.ensureProcess(chosen);
-	const session = await sessions.prepare(chosen);
-	const failed = next(
-		supervisor,
-		event => event.type === 'supervisor' && event.state.status === 'failed',
-	);
-	await t.throwsAsync(supervisor.prompt(chosen.id, session.id, 'synthetic'));
-	await failed;
-	writeFileSync(
-		path.join(chosen.canonicalRoot, '.fake-nanocoder'),
-		'slow-mode',
-	);
-	const waiting = next(
-		supervisor,
-		event =>
-			event.type === 'turn' &&
-			event.events.some(
-				event => event.type === 'text' && event.text === 'mode waiting',
-			),
-	);
-	clock.advance(1000);
-	await waiting;
-	t.is(supervisor.getState(chosen.id).status, 'starting');
-	t.throws(() => supervisor.getConnection(chosen.id));
-	t.true(sessions.activity(chosen.id).preparing);
-	await sessions.detach([chosen]);
-	t.is(supervisor.getState(chosen.id).status, 'stopped');
-	t.is(clock.pending, 0);
-});
-
 test('signal exit records the signal, fails the active turn and cancels its pending approval', async t => {
 	const clock = new FakeClock();
 	const supervisor = new ProjectSupervisor({
@@ -777,11 +490,12 @@ test('signal exit records the signal, fails the active turn and cancels its pend
 		clientInfo: {name: 'test', version: '0'},
 		confirmTrust: async () => false,
 	});
-	const sessions = new TechnicalSessions(supervisor, clock);
 	t.teardown(() => supervisor.close());
 	const chosen = project();
 	await supervisor.ensureProcess(chosen);
-	const session = await sessions.prepare(chosen);
+	const session = await supervisor
+		.getConnection(chosen.id)
+		.newSession('normal');
 	const waiting = next(
 		supervisor,
 		event => event.type === 'turn' && event.events[0].type === 'permission',
@@ -790,7 +504,7 @@ test('signal exit records the signal, fails the active turn and cancels its pend
 		supervisor.prompt(chosen.id, session.id, 'synthetic'),
 	);
 	const approval = await waiting;
-	t.true(sessions.activity(chosen.id).runningTurn);
+	t.is(supervisor.getState(chosen.id).activeThreadId, session.id);
 	const started = fakeEvents(
 		supervisor.getConnection(chosen.id).stderr.lines(),
 	).find(event => event.started);
@@ -806,7 +520,7 @@ test('signal exit records the signal, fails the active turn and cancels its pend
 		code: null,
 		signal: 'SIGTERM',
 	});
-	t.false(sessions.activity(chosen.id).runningTurn);
+	t.is(supervisor.getState(chosen.id).activeThreadId, null);
 	if (approval.type !== 'turn' || approval.events[0].type !== 'permission')
 		throw new Error('Missing approval');
 	t.false(

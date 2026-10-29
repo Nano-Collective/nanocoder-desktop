@@ -28,11 +28,20 @@ export const approvalHarness = {
 				requests,
 				mode: 'normal',
 				busy: false,
-				onAnswer: (id, optionId) =>
-					(window as unknown as {desktop: DesktopApi}).desktop.answerPermission(
-						id,
+				onAnswer: async (id, optionId) => {
+					const {desktop} = window as unknown as {desktop: DesktopApi};
+					const ui = await desktop.getUiState({});
+					return desktop.answerThreadPermission({
+						projectId:
+							(ui.ok && ui.value.activeProjectId) ||
+							'11111111-1111-4111-8111-111111111111',
+						threadId:
+							(ui.ok && ui.value.activeThreadId) ||
+							'22222222-2222-4222-8222-222222222222',
+						requestId: id,
 						optionId,
-					),
+					});
+				},
 			}),
 		);
 	},

@@ -1,7 +1,10 @@
 import * as React from 'react';
 import {Button, Card} from '@/renderer/ui';
-import type {DesktopApi} from '@/shared/desktop-api';
-import type {NanocoderMode, PermissionRequestInfo} from '@/shared/ipc';
+import type {
+	IpcResult,
+	NanocoderMode,
+	PermissionRequestInfo,
+} from '@/shared/ipc';
 
 function canFocus(
 	target: HTMLElement | null | undefined,
@@ -184,7 +187,7 @@ export function ApprovalRequests({
 	mode: NanocoderMode;
 	busy: boolean;
 	fallbackFocus?: React.RefObject<HTMLElement | null>;
-	onAnswer: DesktopApi['answerPermission'];
+	onAnswer(id: string, optionId: string): Promise<IpcResult<null>>;
 }) {
 	const pending = React.useRef(false);
 	const [answering, setAnswering] = React.useState(false);

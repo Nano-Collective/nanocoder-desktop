@@ -88,6 +88,33 @@ function registered(services?: WorkspaceServices) {
 	};
 }
 
+test('cancelThread refuses renderer session identities and malformed scopes before invoking the thread service (ACP-10)', async t => {
+	let calls = 0;
+	const request = registered({
+		threads: {
+			cancelThread: async () => {
+				calls++;
+				return null;
+			},
+		},
+	} as unknown as WorkspaceServices);
+	for (const payload of [
+		{projectId},
+		{sessionId: 'renderer-selected-session'},
+		{...thread, sessionId: 'renderer-selected-session'},
+		{...thread, extra: true},
+		null,
+		[],
+	]) {
+		const result = await request('cancelThread', payload);
+		t.false(result.ok);
+		if (!result.ok) t.is(result.error.code, 'VALIDATION');
+	}
+	t.is(calls, 0);
+	t.deepEqual(await request('cancelThread', thread), {ok: true, value: null});
+	t.is(calls, 1);
+});
+
 for (const method of methods) {
 	test(`${method}: returns UNAVAILABLE until the service lands`, async t => {
 		t.deepEqual(await registered()(method, payloads[method]), {

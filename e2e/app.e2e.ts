@@ -37,10 +37,7 @@ test('the preload bridge exposes typed methods only', async () => {
 	);
 	expect(keys.sort()).toEqual(
 		[
-			...Object.keys(CHANNELS).filter(
-				key => !['nanocoderEvent', 'projectEvent'].includes(key),
-			),
-			'onNanocoderEvent',
+			...Object.keys(CHANNELS).filter(key => key !== 'projectEvent'),
 			'onProjectEvent',
 		].sort(),
 	);
@@ -142,7 +139,7 @@ test('project subscriptions expose data only and can stop listening', async () =
 	).toEqual([[event]]);
 });
 
-test('the prototype bridge stays available', async () => {
+test('thread-scoped methods replace every prototype turn capability', async () => {
 	const keys = await page.evaluate(() =>
 		Object.keys((window as {desktop?: object}).desktop ?? {}),
 	);
@@ -151,11 +148,19 @@ test('the prototype bridge stays available', async () => {
 			'getAppInfo',
 			'getNanocoderRuntime',
 			'connectNanocoder',
-			'sendPrompt',
-			'answerPermission',
-			'onNanocoderEvent',
+			'promptThread',
+			'cancelThread',
+			'answerThreadPermission',
+			'onProjectEvent',
 		]),
 	);
+	for (const retired of [
+		'sendPrompt',
+		'answerPermission',
+		'cancelPrompt',
+		'onNanocoderEvent',
+	])
+		expect(keys).not.toContain(retired);
 });
 
 test('the bridge returns the standard result shape', async () => {

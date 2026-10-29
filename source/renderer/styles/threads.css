@@ -78,6 +78,11 @@
 	color: var(--colors-error);
 }
 
+.thread-row[data-selected="true"] .thread-status--error,
+.thread-row[data-selected="true"] .thread-status--warning {
+	background: var(--colors-surface);
+}
+
 .thread-actions {
 	position: absolute;
 	top: 0;

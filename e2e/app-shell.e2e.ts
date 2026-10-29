@@ -213,7 +213,7 @@ test('shell geometry and pinned composer follow all three widths and the exact i
 	}
 });
 
-test('unfinished shell regions are readable static placeholders, not live controls', async () => {
+test('unfinished shell regions remain static while the real thread rail exposes its named controls', async () => {
 	await page.setViewportSize({width: 1240, height: 900});
 	await expect(page.getByRole('banner')).toContainText(
 		'session tabs · not built yet',
@@ -221,9 +221,16 @@ test('unfinished shell regions are readable static placeholders, not live contro
 	await expect(
 		page.getByRole('banner').getByRole('button', {name: 'command palette'}),
 	).toBeVisible();
+	const threads = page.getByRole('region', {name: 'project threads'});
 	await expect(
-		page.getByRole('complementary', {name: 'project rail'}),
-	).toContainText('thread list not built yet');
+		threads.getByRole('button', {name: 'new thread', exact: true}),
+	).toBeEnabled();
+	await expect(
+		threads.locator('.thread-open[aria-current="true"]'),
+	).toHaveCount(1);
+	await expect(
+		page.getByText('thread list not built yet', {exact: true}),
+	).toHaveCount(0);
 	await expect(
 		page
 			.locator('[data-shell-slot="project-rail"]')
@@ -265,47 +272,49 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			await expect(palette).toBeFocused();
 			await expect(palette).toHaveCSS('outline-width', '2px');
 			const recent = page.getByRole('region', {name: 'recent projects'});
-			await page.keyboard.press('Tab');
 			const add = recent.getByRole('button', {
 				name: 'add project folder',
 				exact: true,
 			});
-			await expect(add).toBeFocused();
-			await expect(add).toHaveCSS('outline-width', '2px');
 			const projects = recent.getByRole('listitem');
 			expect(await projects.count()).toBeGreaterThan(0);
-			for (const project of await projects.all()) {
-				for (const name of ['open', 'locate']) {
-					await page.keyboard.press('Tab');
-					const button = project.getByRole('button', {
-						name: new RegExp(`^${name} `),
-					});
-					await expect(button).toBeFocused();
-					await expect(button).toHaveCSS('outline-width', '2px');
-				}
-			}
-			await page.keyboard.press('Tab');
-			await expect(open).toBeFocused();
-			await expect(open).toHaveCSS('outline-width', '2px');
-			await page.keyboard.press('Tab');
+			const rail = page.getByRole('region', {name: 'project threads'});
 			const diagnostics = page.getByRole('button', {
 				name: 'diagnostics',
 				exact: true,
 			});
-			await expect(diagnostics).toBeFocused();
-			await expect(diagnostics).toHaveCSS('outline-width', '2px');
-			await page.keyboard.press('Tab');
-			await expect(input).toBeFocused();
-			await expect(input).toHaveCSS('outline-width', '2px');
-			await expect(page.locator('.gate-composer')).toHaveCSS(
-				'border-color',
-				theme === 'dark' ? 'rgb(69, 155, 247)' : 'rgb(0, 0, 238)',
-			);
-			await input.fill('fixture keyboard check');
-			await page.keyboard.press('Tab');
 			const send = page.getByRole('button', {name: 'send', exact: true});
-			await expect(send).toBeFocused();
-			await expect(send).toHaveCSS('outline-width', '2px');
+			const focusOrder = [
+				palette,
+				add,
+				...(await projects.all()).flatMap(project =>
+					['open', 'locate'].map(name =>
+						project.getByRole('button', {name: new RegExp(`^${name} `)}),
+					),
+				),
+				rail.getByRole('button', {name: 'new thread', exact: true}),
+				...(await rail.locator('.thread-row').all()).flatMap(thread => [
+					thread.locator('.thread-open'),
+					thread.locator('.thread-actions > summary'),
+				]),
+				open,
+				diagnostics,
+				input,
+				send,
+			];
+			await focusOrder[0].focus();
+			for (const [index, control] of focusOrder.entries()) {
+				if (index > 0) await page.keyboard.press('Tab');
+				await expect(control).toBeFocused();
+				await expect(control).toHaveCSS('outline-width', '2px');
+				if (control === input) {
+					await expect(page.locator('.gate-composer')).toHaveCSS(
+						'border-color',
+						theme === 'dark' ? 'rgb(69, 155, 247)' : 'rgb(0, 0, 238)',
+					);
+					await input.fill('fixture keyboard check');
+				}
+			}
 			await page.keyboard.press('Enter');
 			const permission = page.getByRole('region', {name: 'permission request'});
 			const allow = permission.getByRole('button', {
