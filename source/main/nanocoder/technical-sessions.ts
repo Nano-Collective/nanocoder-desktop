@@ -13,7 +13,7 @@ import type {ProjectInfo, SessionInfo} from '@/shared/ipc';
 export class TechnicalSessions {
 	private readonly sessions = new Map<
 		string,
-		{connection: NanocoderConnection; session: SessionInfo}
+		{connection: NanocoderConnection; session: SessionInfo; sessionCwd: string}
 	>();
 	private readonly preparing = new Map<string, Promise<SessionInfo>>();
 	private readonly attached = new Set<string>();
@@ -42,6 +42,18 @@ export class TechnicalSessions {
 		signal.throwIfAborted();
 		const cached = this.sessions.get(project.id);
 		if (!cached || !this.attached.has(project.id)) return;
+		if (
+			cached.sessionCwd !== project.sessionCwd ||
+			cached.connection.agent.root !== project.canonicalRoot ||
+			connection.agent.root !== project.canonicalRoot ||
+			project.sessionCwd !== project.canonicalRoot
+		) {
+			this.sessions.delete(project.id);
+			throw new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				'The project folder changed; open it again before resuming',
+			);
+		}
 		this.restoring.add(project.id);
 		try {
 			const restored = await connection.resumeSession(
@@ -49,7 +61,11 @@ export class TechnicalSessions {
 				project.defaultMode,
 			);
 			signal.throwIfAborted();
-			this.sessions.set(project.id, {connection, session: restored.session});
+			this.sessions.set(project.id, {
+				connection,
+				session: restored.session,
+				sessionCwd: project.sessionCwd,
+			});
 			return restored;
 		} finally {
 			this.restoring.delete(project.id);
@@ -63,7 +79,11 @@ export class TechnicalSessions {
 		const connection = this.supervisor.getConnection(project.id);
 		this.attached.add(project.id);
 		this.lastActivity.set(project.id, this.clock.now());
-		const cached = this.sessions.get(project.id);
+		let cached = this.sessions.get(project.id);
+		if (cached && cached.sessionCwd !== project.sessionCwd) {
+			this.sessions.delete(project.id);
+			cached = undefined;
+		}
 		if (cached?.connection === connection)
 			return Promise.resolve(cached.session);
 		const preparation = Promise.resolve()
@@ -83,7 +103,11 @@ export class TechnicalSessions {
 						'AGENT_UNAVAILABLE',
 						'The project process changed during session preparation',
 					);
-				this.sessions.set(project.id, {connection, session});
+				this.sessions.set(project.id, {
+					connection,
+					session,
+					sessionCwd: project.sessionCwd,
+				});
 				return session;
 			})
 			.catch(async error => {

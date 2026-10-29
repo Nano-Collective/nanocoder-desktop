@@ -183,6 +183,20 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	await expect(
 		page.getByRole('region', {name: 'connected agent'}),
 	).toBeVisible();
+	const recent = page.getByRole('region', {name: 'recent projects'});
+	await expect(
+		recent.getByRole('button', {name: 'open project', exact: true}),
+	).toBeEnabled();
+	for (const name of ['add project folder', 'open project', 'locate project']) {
+		const button = recent.getByRole('button', {name, exact: true});
+		if (name === 'add project folder') await button.focus();
+		else await page.keyboard.press('Tab');
+		await expect(button).toBeFocused();
+		await expect(button).toHaveCSS('outline-width', '2px');
+	}
+	await page.keyboard.press('Tab');
+	await expect(open).toBeFocused();
+	await expect(open).toHaveCSS('outline-width', '2px');
 	await page.keyboard.press('Tab');
 	const diagnostics = page.getByRole('button', {
 		name: 'diagnostics',

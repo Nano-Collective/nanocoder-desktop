@@ -1,12 +1,9 @@
-import {randomUUID} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
-import path from 'node:path';
 import {
 	app,
 	BrowserWindow,
 	dialog,
-	type MessageBoxOptions,
 	type OpenDialogOptions,
 	type WebContents,
 } from 'electron';
@@ -23,8 +20,9 @@ import {resolveNanocoder} from '@/main/nanocoder/runtime';
 import {createLookup} from '@/main/nanocoder/runtime-lookup';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
 import {TechnicalSessions} from '@/main/nanocoder/technical-sessions';
-import type {TrustReason, TrustRefusal} from '@/main/nanocoder/trust';
-import {canonicalPath} from '@/main/paths';
+import type {TrustRefusal} from '@/main/nanocoder/trust';
+import {confirmProjectTrust} from '@/main/projects/project-consent';
+import {createProjectService} from '@/main/projects/project-service';
 import {isAllowedOrigin} from '@/main/security';
 import {APP_NAME} from '@/shared/app-info';
 import {
@@ -32,24 +30,20 @@ import {
 	CHANNELS,
 	type ConnectResult,
 	type NanocoderRuntime,
-	type ProjectInfo,
 	type SessionInfo,
 	type TurnEvent,
 	type TurnResult,
 } from '@/shared/ipc';
-
-const TRUST_TITLES: Record<TrustReason, string> = {
-	'not-trusted': 'Trust this folder?',
-	changed: 'Trust this changed folder?',
-	'needs-re-approval': 'Approve this folder again?',
-};
 
 const runtimeDiscovery = new AbortController();
 const lookupRuntime = createLookup(() =>
 	resolveNanocoder({
 		env: process.env,
 		platform: process.platform,
-		untrustedRoots: [...technicalProjects.keys()],
+		untrustedRoots:
+			workspaceServices.store?.projects
+				.list()
+				.map(project => project.canonicalRoot) ?? [],
 		signal: runtimeDiscovery.signal,
 	}),
 );
@@ -59,7 +53,6 @@ let session: SessionInfo | undefined;
 let rendererAttachment = new AbortController();
 let connecting: Promise<void> | undefined;
 let rendererCleanup: Promise<void> = Promise.resolve();
-const technicalProjects = new Map<string, ProjectInfo>();
 let technicalSessions: TechnicalSessions | undefined;
 let appOrigins: readonly string[] = [];
 let workspaceServices: WorkspaceServices = {};
@@ -95,27 +88,26 @@ async function chooseProjectRoot(): Promise<string | undefined> {
 		? await dialog.showOpenDialog(window, options)
 		: await dialog.showOpenDialog(options);
 	const [folder] = picked.filePaths;
-	return picked.canceled || !folder ? undefined : canonicalPath(folder);
+	return picked.canceled || !folder ? undefined : folder;
 }
 
 // A native dialog in main, so the renderer can never grant trust on the user's behalf.
-async function confirmTrust(refusal: TrustRefusal): Promise<boolean> {
-	const options: MessageBoxOptions = {
-		type: 'question',
-		title: TRUST_TITLES[refusal.reason],
-		message: refusal.summary,
-		detail:
-			"Trusting it lets Nanocoder load this folder's own configuration, hooks, MCP servers and plugins, which can run code on this computer.",
-		buttons: ['Trust folder', 'Cancel'],
-		defaultId: 1,
-		cancelId: 1,
-		noLink: true,
-	};
-	const window = BrowserWindow.getFocusedWindow();
-	const {response} = window
-		? await dialog.showMessageBox(window, options)
-		: await dialog.showMessageBox(options);
-	return response === 0;
+async function confirmTrust(
+	refusal: TrustRefusal,
+	root: string,
+): Promise<boolean> {
+	return confirmProjectTrust({
+		root,
+		refusal,
+		signal: rendererAttachment.signal,
+		ask: async options => {
+			const window = BrowserWindow.getFocusedWindow();
+			const {response} = window
+				? await dialog.showMessageBox(window, options)
+				: await dialog.showMessageBox(options);
+			return response;
+		},
+	});
 }
 
 async function connect(): Promise<ConnectResult> {
@@ -124,7 +116,13 @@ async function connect(): Promise<ConnectResult> {
 	signal.throwIfAborted();
 	const currentSupervisor = supervisor;
 	const sessions = technicalSessions;
-	if (runtimeDiscovery.signal.aborted || !currentSupervisor || !sessions) {
+	const projects = workspaceServices.projects;
+	if (
+		runtimeDiscovery.signal.aborted ||
+		!currentSupervisor ||
+		!sessions ||
+		!projects
+	) {
 		throw new IpcFailure(
 			'AGENT_UNAVAILABLE',
 			'The desktop cannot start a project now',
@@ -139,45 +137,23 @@ async function connect(): Promise<ConnectResult> {
 	});
 	connecting = attempt;
 	try {
-		const root = await untilAborted(chooseProjectRoot(), signal);
-		if (!root) return {status: 'cancelled'};
+		const selected = await untilAborted(
+			Promise.resolve(projects.addProject({})),
+			signal,
+		);
+		if (selected.status === 'cancelled') return selected;
 		signal.throwIfAborted();
 		if (runtimeDiscovery.signal.aborted)
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'The desktop is shutting down');
 		activeProjectId = undefined;
 		session = undefined;
-		let project = technicalProjects.get(root);
-		if (!project) {
-			const now = new Date().toISOString();
-			project = {
-				id: randomUUID(),
-				canonicalRoot: root,
-				sessionCwd: root,
-				displayName: path.basename(root),
-				trusted: false,
-				defaultMode: 'normal',
-				createdAt: now,
-				lastOpenedAt: now,
-				availability: 'available',
-			};
-			technicalProjects.set(root, project);
-		}
-		activeProjectId = project.id;
-		const state = await untilAborted(
-			currentSupervisor.probeProject(project),
+		activeProjectId = selected.project.id;
+		const opened = await untilAborted(
+			Promise.resolve(projects.openProject({projectId: selected.project.id})),
 			signal,
 		);
-		if (state.status === 'untrusted')
-			return {
-				status: 'untrusted',
-				message: state.reason ?? 'Trust this project before opening it',
-			};
-		if (state.status !== 'ready') {
-			throw new IpcFailure(
-				state.status === 'unsupported' ? 'UNSUPPORTED' : 'AGENT_UNAVAILABLE',
-				state.reason ?? 'Nanocoder could not start',
-			);
-		}
+		if (opened.status !== 'opened') return opened;
+		const project = opened.project;
 		const connection = currentSupervisor.getConnection(project.id);
 		const prepared = await untilAborted(
 			sessions.prepare(project, signal),
@@ -263,7 +239,11 @@ function watchRenderer(contents: WebContents): void {
 		session = undefined;
 		rendererCleanup = Promise.allSettled([
 			rendererCleanup,
-			technicalSessions.detach(technicalProjects.values()),
+			technicalSessions.detach(
+				runtimeDiscovery.signal.aborted
+					? []
+					: (workspaceServices.store?.projects.list() ?? []),
+			),
 			attempt,
 		]).then(() => {});
 	};
@@ -320,9 +300,7 @@ export function registerIpcHandlers(
 			services.restartProject ??
 			(supervisor
 				? async projectId => {
-						const chosen = [...technicalProjects.values()].find(
-							project => project.id === projectId,
-						);
+						const chosen = workspaceServices.store?.projects.get(projectId);
 						if (!chosen || !supervisor)
 							throw new IpcFailure('NOT_FOUND', 'Project not found');
 						return supervisor.restart(chosen);
@@ -363,6 +341,16 @@ export function registerIpcHandlers(
 							writeFile(destination, contents, {mode: 0o600, flag: 'wx'}),
 					})
 				: undefined),
+		projects:
+			services.projects ??
+			(services.store && supervisor
+				? createProjectService({
+						store: services.store,
+						chooseRoot: chooseProjectRoot,
+						supervisor,
+						signal: () => rendererAttachment.signal,
+					})
+				: undefined),
 	};
 	technicalSessions = supervisor
 		? new TechnicalSessions(supervisor)
@@ -372,6 +360,11 @@ export function registerIpcHandlers(
 		watchRenderer(window.webContents);
 	registerWorkspaceHandlers(registerHandler, allowedOrigins, workspaceServices);
 	unsubscribeProjectEvents = workspaceServices.supervisor?.subscribe(event => {
+		if (event.type === 'supervisor' && event.state.status === 'untrusted') {
+			const store = workspaceServices.store;
+			const project = store?.projects.get(event.projectId);
+			if (project?.trusted) store?.projects.save({...project, trusted: false});
+		}
 		if (
 			event.type === 'turn' &&
 			event.projectId === activeProjectId &&

@@ -278,15 +278,15 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Build**
 
-- [ ] Add a project through a main-process folder picker (`CHAT-01`)
-- [ ] Store the canonical root, session cwd and display name
-- [ ] Trust prompt before anything project-defined runs, listing what Nanocoder will run (`CHAT-02`, `SEC-17`, `DEC-30`)
-- [ ] Recent projects list and "locate" for a moved project
+- [x] Add a project through a main-process folder picker (`CHAT-01`) ([`project-service.spec.ts`](../source/main/projects/project-service.spec.ts), [`projects.e2e.ts`](../e2e/projects.e2e.ts), native selection and cancellation)
+- [x] Store the canonical root, session cwd and display name ([`project-service.spec.ts`](../source/main/projects/project-service.spec.ts), [`projects.e2e.ts`](../e2e/projects.e2e.ts), persistence across restart)
+- [ ] Trust prompt before anything project-defined runs, listing what Nanocoder will run (`CHAT-02`, `SEC-17`, `DEC-30`): native execution-sensitive consent and snapshot checks are implemented ([`project-consent.spec.ts`](../source/main/projects/project-consent.spec.ts), [`trust-summary.spec.ts`](../source/main/projects/trust-summary.spec.ts)); the proposal and upstream pre-trust/atomic-grant gaps remain open ([trust notes](projects-and-trust.md#pre-trust-probe-exception-and-upstream-gaps))
+- [x] Recent projects list and "locate" for a moved project ([`projects.e2e.ts`](../e2e/projects.e2e.ts), ID-based opening, missing-folder explanation and relocation)
 
 **Results we want**
 
-- [ ] Adding a folder through a symlink stores its real path
-- [ ] An untrusted project never starts Nanocoder, Git or watchers
+- [x] Adding a folder through a symlink stores its real path ([`project-service.spec.ts`](../source/main/projects/project-service.spec.ts), [`projects.e2e.ts`](../e2e/projects.e2e.ts))
+- [ ] An untrusted project never starts Nanocoder, Git or watchers: the G.3 ACP probe exception remains; the desktop starts no Git, watcher or session before a ready verdict ([trust notes](projects-and-trust.md#pre-trust-probe-exception-and-upstream-gaps))
 
 ### Phase 1.3: Nanocoder supervisor
 

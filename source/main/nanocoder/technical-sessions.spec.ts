@@ -43,6 +43,54 @@ const make = () =>
 	});
 test.after.always(removeFakeProjects);
 
+test('recovery refuses cached history after a located project changes root or session cwd', async t => {
+	for (const changed of ['cwd', 'connection-root'] as const) {
+		const supervisor = make();
+		t.teardown(() => supervisor.close());
+		const sessions = new TechnicalSessions(supervisor);
+		const chosen = project();
+		await supervisor.ensureProcess(chosen);
+		await sessions.prepare(chosen);
+		await supervisor.stop(chosen.id);
+		const root = fakeProject();
+		const located = {...chosen, canonicalRoot: root, sessionCwd: root};
+		await supervisor.ensureProcess(located);
+		const connection = supervisor.getConnection(located.id);
+		const target = changed === 'cwd' ? located : chosen;
+		await t.throwsAsync(
+			sessions.restore(target, connection, new AbortController().signal),
+			{
+				instanceOf: NanocoderFailure,
+				message: /project folder changed/,
+			},
+		);
+		t.false(
+			fakeEvents(connection.stderr.lines()).some(
+				event => event.method === 'session/resume',
+			),
+		);
+	}
+});
+
+test('a located project never resumes a cached session from its former cwd (CHAT-01)', async t => {
+	const supervisor = make();
+	t.teardown(() => supervisor.close());
+	const sessions = new TechnicalSessions(supervisor);
+	const chosen = project();
+	await supervisor.ensureProcess(chosen);
+	await sessions.prepare(chosen);
+	await supervisor.stop(chosen.id);
+	const root = fakeProject('missing-session');
+	const located = {...chosen, canonicalRoot: root, sessionCwd: root};
+	await supervisor.ensureProcess(located);
+	await sessions.prepare(located);
+	const methods = fakeEvents(
+		supervisor.getConnection(located.id).stderr.lines(),
+	).map(event => event.method);
+	t.true(methods.includes('session/new'));
+	t.false(methods.includes('session/resume'));
+});
+
 test('failed cached resumes stop the connection and invalidate readiness before a clean retry', async t => {
 	for (const mode of [
 		'missing-session',
