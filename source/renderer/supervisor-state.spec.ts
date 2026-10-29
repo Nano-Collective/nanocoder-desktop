@@ -117,6 +117,39 @@ test('removal hides a process and rejects stale ready replay', t => {
 	});
 });
 
+test('re-adding a removed root under a new project ID shows its ready state', t => {
+	const removed = observeSupervisor(ready(), {
+		type: 'project-removed',
+		projectId: 'a',
+		sequence: 10,
+	});
+	const readded = observeSupervisor(
+		removed,
+		event(1, state({projectId: 'b'}, '/a')),
+	);
+
+	t.deepEqual(acpBadge(readded, '/a'), {status: 'acp-ready'});
+	t.is(readded.a?.sequence, 10);
+	t.is(readded.a?.state, null);
+});
+
+test('stale events from a removed project cannot mask the replacement project', t => {
+	const exited = observeSupervisor(ready(), event(2, failed()));
+	const removed = observeSupervisor(exited, {
+		type: 'project-removed',
+		projectId: 'a',
+		sequence: 3,
+	});
+	const replacement = state({projectId: 'b'}, '/a');
+	const readded = observeSupervisor(removed, event(1, replacement));
+	const stale = observeSupervisor(readded, event(2, failed()));
+
+	t.deepEqual(acpBadge(stale, '/a'), {status: 'acp-ready'});
+	t.is(stale, readded);
+	t.is(stale.b?.state, replacement);
+	t.is(observeSupervisor(readded, event(1)), readded);
+});
+
 test('unrelated events and mismatched IDs cannot change a known process', t => {
 	const current = ready();
 	t.deepEqual(acpBadge(current, '/a'), {status: 'acp-ready'});

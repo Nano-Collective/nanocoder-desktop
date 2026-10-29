@@ -17,7 +17,7 @@ The transcript, permission cards and turn results stay in the stream's scroll re
 
 ## ACP status
 
-`supervisor-state.ts` consumes existing project-scoped supervisor events. The state index retains canonical-root identity when an exit clears the agent, rejects old/duplicate sequences and inconsistent project IDs, and tombstones removed projects against stale replay.
+`supervisor-state.ts` consumes existing project-scoped supervisor events. The state index retains canonical-root identity when an exit clears the agent, rejects old/duplicate sequences and inconsistent project IDs, and tombstones removed projects against stale replay. Root lookup ignores those tombstones, so adding the same folder under a new project ID uses the new project's state. Sequences remain scoped to each project, not compared across project IDs.
 
 The title bar derives ACP ready/exited from the selected project's current supervisor state, not its historical connect result or prompt error. Only ready with an agent produces ready. A stopped/failed process with a reported exit produces exited, showing the actual numeric code when present. Signal-only exits do not invent a code. Other states show no ACP claim. A real ready event after reconnect restores ready. A failed provider turn does not itself imply that the process exited.
 

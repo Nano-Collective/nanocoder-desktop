@@ -36,7 +36,7 @@ export function acpBadge(
 ): AcpBadge | null {
 	if (!root) return null;
 	const state = Object.values(current).find(
-		entry => entry.root === root,
+		entry => entry.root === root && entry.state !== null,
 	)?.state;
 	if (state?.status === 'ready' && state.agent) return {status: 'acp-ready'};
 	if (
