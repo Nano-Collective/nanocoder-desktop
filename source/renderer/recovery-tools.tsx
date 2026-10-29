@@ -4,6 +4,8 @@ import type {
 	DiagnosticsSnapshot,
 	IpcResult,
 	SupervisorState,
+	WorkspaceRequests,
+	WorkspaceValues,
 } from '@/shared/ipc';
 import '@/renderer/styles/recovery-tools.css';
 
@@ -11,10 +13,9 @@ interface RecoveryProps {
 	state: SupervisorState | null;
 	onRetry(projectId: string): Promise<IpcResult<SupervisorState>>;
 	onCapture(projectId: string): Promise<IpcResult<DiagnosticsSnapshot>>;
-	onExport(request: {
-		projectId: string;
-		snapshotId: string;
-	}): Promise<IpcResult<{status: 'exported' | 'cancelled'}>>;
+	onExport(
+		request: WorkspaceRequests['exportDiagnostics'],
+	): Promise<IpcResult<WorkspaceValues['exportDiagnostics']>>;
 }
 
 function ProcessRecovery({

@@ -3,6 +3,7 @@ import type {PermissionRequestInfo, TurnEvent} from '@/shared/ipc';
 export type TranscriptItem =
 	| {kind: 'user'; text: string}
 	| {kind: 'agent'; text: string}
+	| {kind: 'failure'; text: string}
 	| {kind: 'tool'; id: string; title: string; status: string};
 
 export interface Transcript {

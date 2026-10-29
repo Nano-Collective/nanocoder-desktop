@@ -2,36 +2,47 @@ import {randomUUID} from 'node:crypto';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import type {DiagnosticsService} from '@/main/ipc/workspace-services';
 import {type SupervisorClock, systemClock} from '@/main/nanocoder/clock';
-import type {DiagnosticsSnapshot} from '@/shared/ipc';
+import type {
+	DiagnosticsSnapshot,
+	WorkspaceRequests,
+	WorkspaceValues,
+} from '@/shared/ipc';
 
-const privateField =
-	/^(?:env|environment|prompt|messages?|transcript|content|arguments|input|output|result|tool.*)$/i;
+const methods = new Set([
+	'initialize',
+	'session/new',
+	'session/resume',
+	'session/set_mode',
+	'session/close',
+	'session/cancel',
+	'session/prompt',
+]);
 
-export function diagnosticLine(line: string): string {
-	if (line.startsWith('[stdout]')) return '[private payload omitted]';
-	const start = line.indexOf('{');
-	if (start !== -1) {
-		try {
-			const pending: unknown[] = [JSON.parse(line.slice(start))];
-			while (pending.length) {
-				const value = pending.pop();
-				if (typeof value !== 'object' || value === null) continue;
-				for (const [key, child] of Object.entries(value)) {
-					if (privateField.test(key)) return '[private payload omitted]';
-					pending.push(child);
-				}
-			}
-		} catch {
-			return '[private payload omitted]';
+export function diagnosticLine(line: string, expectedRoot?: string): string {
+	if (line === '[overlong stderr line omitted]') return line;
+	try {
+		const value: unknown = JSON.parse(line);
+		if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+			const metadata = value as Record<string, unknown>;
+			if (typeof metadata.method === 'string' && methods.has(metadata.method))
+				return JSON.stringify({method: metadata.method});
+			if (
+				metadata.started === true &&
+				typeof metadata.pid === 'number' &&
+				Number.isSafeInteger(metadata.pid) &&
+				metadata.pid > 0 &&
+				expectedRoot !== undefined &&
+				metadata.cwd === expectedRoot
+			)
+				return JSON.stringify({
+					started: true,
+					pid: metadata.pid,
+					cwd: expectedRoot,
+				});
+			if (metadata.stdinClosed === true) return '{"stdinClosed":true}';
 		}
-	}
-	if (
-		/\b(?:env|environment|prompt|messages?|transcript|content|tool[_ -]?(?:input|output|result)|user|assistant)["']?\s*[:=]/i.test(
-			line,
-		)
-	)
-		return '[private payload omitted]';
-	return line;
+	} catch {}
+	return '[private payload omitted]';
 }
 
 export class DiagnosticSnapshots {
@@ -107,10 +118,9 @@ export class DiagnosticsExporter implements DiagnosticsService {
 		},
 	) {}
 
-	async exportDiagnostics(request: {
-		projectId: string;
-		snapshotId: string;
-	}): Promise<{status: 'exported' | 'cancelled'}> {
+	async exportDiagnostics(
+		request: WorkspaceRequests['exportDiagnostics'],
+	): Promise<WorkspaceValues['exportDiagnostics']> {
 		if (this.exporting)
 			throw new IpcFailure('BUSY', 'A diagnostics export is already open');
 		this.exporting = true;

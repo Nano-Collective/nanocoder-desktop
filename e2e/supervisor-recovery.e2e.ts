@@ -18,6 +18,7 @@ import {
 } from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {ProjectEvent} from '@/shared/ipc';
+import {qaEnvironment} from './qa/environment';
 
 let work: string;
 let root: string;
@@ -44,11 +45,7 @@ test.beforeEach(async () => {
 	copyFileSync('source/main/nanocoder/fixtures/fake-nanocoder.mjs', cli);
 	app = await electron.launch({
 		args: ['.', `--user-data-dir=${path.join(work, 'profile')}`],
-		env: {
-			...process.env,
-			NANOCODER_DESKTOP_CLI: cli,
-			NANOCODER_DESKTOP_NODE: process.execPath,
-		},
+		env: qaEnvironment(process.env, {cliPath: cli, nodePath: process.execPath}),
 	});
 	page = await app.firstWindow();
 	await app.evaluate(({dialog}, folder) => {
@@ -125,6 +122,11 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 	await expect(
 		page.getByText('you: synthetic failed request', {exact: true}),
 	).toHaveCount(0);
+	await expect(page.locator('.ui-badge--failed')).toHaveCount(0);
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await expect(page.locator('.gate-message-failure')).toContainText(
+		'Nanocoder stopped during the turn',
+	);
 	const snapshot = await page.evaluate(async id => {
 		const result = await (
 			window as unknown as {desktop: DesktopApi}
@@ -133,8 +135,137 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 		return result.value;
 	}, projectId);
 	expect(
-		snapshot.lines.filter(line => line === '[private payload omitted]'),
+		snapshot.lines.filter(line => line === '{"method":"session/prompt"}'),
 	).toHaveLength(1);
+});
+
+test('ordinary reopen preserves the existing conversation when no replay is produced', async () => {
+	const projectId = await open();
+	await page
+		.getByRole('textbox', {name: 'message', exact: true})
+		.fill('fixture conversation');
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	await page
+		.getByRole('region', {name: 'permission request'})
+		.getByRole('button', {name: 'Deny', exact: true})
+		.click();
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	const conversation = page.getByRole('list', {name: 'conversation'});
+	const before = await conversation.innerText();
+	await expect(conversation.locator('li')).toHaveCount(4);
+	await page.evaluate(async projectId => {
+		await (window as unknown as {desktop: DesktopApi}).desktop.stopProject({
+			projectId,
+		});
+	}, projectId);
+	await open();
+	await expect(conversation.locator('li')).toHaveCount(4);
+	await expect(conversation).toHaveText(before, {useInnerText: true});
+});
+
+for (const {failure, action} of [
+	{failure: 'untrusted', action: 'open a project folder'},
+	{failure: 'crash', action: 'open a project folder'},
+	{failure: 'untrusted', action: 'add project folder'},
+	{failure: 'crash', action: 'add project folder'},
+]) {
+	test(`retry after an initial ${failure} via ${action} prepares a usable session without reopening the picker`, async () => {
+		writeFileSync(path.join(root, '.fake-nanocoder'), failure);
+		await app.evaluate(({dialog}, root) => {
+			const state = globalThis as {recoveryPickerCalls?: number};
+			state.recoveryPickerCalls = 0;
+			dialog.showOpenDialog = (async () => {
+				state.recoveryPickerCalls = (state.recoveryPickerCalls ?? 0) + 1;
+				return {canceled: false, filePaths: [root]};
+			}) as typeof dialog.showOpenDialog;
+			dialog.showMessageBox = (async () => ({
+				response: 1,
+				checkboxChecked: false,
+			})) as typeof dialog.showMessageBox;
+		}, root);
+		await page.getByRole('button', {name: action, exact: true}).click();
+		await expect(
+			page.getByRole('region', {name: 'Nanocoder recovery'}),
+		).toContainText('Nanocoder is not ready');
+		writeFileSync(
+			path.join(root, '.fake-nanocoder'),
+			failure === 'untrusted' ? 'untrusted' : 'ok',
+		);
+		await app.evaluate(({dialog}) => {
+			dialog.showMessageBox = (async () => ({
+				response: 0,
+				checkboxChecked: false,
+			})) as typeof dialog.showMessageBox;
+		});
+		await page
+			.getByRole('button', {name: 'retry Nanocoder', exact: true})
+			.click();
+		const input = page.getByRole('textbox', {name: 'message', exact: true});
+		await expect(input).toBeEnabled();
+		await expect(page.locator('.ui-badge--failed')).toHaveCount(0);
+		await input.fill('synthetic first retry turn');
+		await page.getByRole('button', {name: 'send', exact: true}).click();
+		await expect(
+			page.getByRole('region', {name: 'permission request'}),
+		).toBeVisible();
+		await page
+			.getByRole('region', {name: 'permission request'})
+			.getByRole('button', {name: 'Deny', exact: true})
+			.click();
+		await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+		await expect(page.getByRole('alert')).toHaveCount(0);
+		expect(
+			await app.evaluate(
+				() =>
+					(globalThis as {recoveryPickerCalls?: number}).recoveryPickerCalls,
+			),
+		).toBe(1);
+		const projects = await page.evaluate(() =>
+			(window as unknown as {desktop: DesktopApi}).desktop.listProjects({}),
+		);
+		expect(projects).toMatchObject({
+			ok: true,
+			value: [{canonicalRoot: root, trusted: true}],
+		});
+	});
+}
+
+test('recovery remains bound to the failed attempted project when another project emits ready', async () => {
+	const firstId = await open();
+	const other = path.join(work, 'failed-project');
+	mkdirSync(other);
+	writeFileSync(path.join(other, '.fake-nanocoder'), 'untrusted');
+	await app.evaluate(({dialog}, other) => {
+		dialog.showOpenDialog = (async () => ({
+			canceled: false,
+			filePaths: [other],
+		})) as typeof dialog.showOpenDialog;
+		dialog.showMessageBox = (async () => ({
+			response: 1,
+			checkboxChecked: false,
+		})) as typeof dialog.showMessageBox;
+	}, other);
+	await page
+		.getByRole('button', {name: 'open a project folder', exact: true})
+		.click();
+	await expect(page.getByRole('alert')).toContainText('not opened');
+	await page.evaluate(async firstId => {
+		const api = (window as unknown as {desktop: DesktopApi}).desktop;
+		await api.stopProject({projectId: firstId});
+		const started = await api.startProject({projectId: firstId});
+		if (!started.ok || started.value.status !== 'ready')
+			throw new Error('Expected the other project to be ready');
+	}, firstId);
+	await expect(
+		page.getByRole('button', {name: 'retry Nanocoder', exact: true}),
+	).toBeVisible();
+	await page.getByRole('button', {name: 'diagnostics', exact: true}).click();
+	await expect(
+		page.getByRole('region', {name: 'captured diagnostics'}),
+	).toContainText(other);
+	await expect(
+		page.getByRole('region', {name: 'captured diagnostics'}),
+	).not.toContainText(root);
 });
 
 test('diagnostics export reviews the exact snapshot and cancellation never writes', async () => {

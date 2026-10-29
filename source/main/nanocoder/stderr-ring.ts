@@ -5,16 +5,20 @@ const REDACTED = '[redacted]';
 const SECRET_PATTERNS: ReadonlyArray<[RegExp, string]> = [
 	[/\b([a-z][a-z\d+.-]*:\/\/)[^\s/@]+@/gi, `$1${REDACTED}@`],
 	[
+		/\b([a-z][a-z\d+.-]*:\/\/)[^\s/?#]*:[^\s/?#]*(?=$|[\s/?#])/gi,
+		`$1${REDACTED}`,
+	],
+	[
 		/\b(authorization["']?\s*[:=]\s*["']?)(?:[a-z]+\s+)?[^\s"',;]+/gi,
 		`$1${REDACTED}`,
 	],
 	[/\bbearer\s+[\w.~+/=-]+/gi, `Bearer ${REDACTED}`],
 	[
-		/\b([\w-]*(?:api[_-]?key|token|secret|password|passwd|credential)[\w-]*["']?\s*[:=]\s*["']?)[^\s"',;&]+/gi,
+		/\b([\w-]*(?:api[_-]?key|token|secret|password|passwd|credential)[\w-]*(?:\\?["'])?\s*[:=]\s*(?:\\?["'])?)[^\s"',;&]+/gi,
 		`$1${REDACTED}`,
 	],
 	[
-		/\b(?:sk-[\w-]{16,}|gh[opsur]_\w{20,}|github_pat_\w{20,}|glpat-[\w-]{20,}|xox[abposr]-[\w-]{10,}|AKIA[\dA-Z]{16}|AIza[\w-]{35})/g,
+		/\b(?:sk-[\w-]{16,}|gsk_[\w-]{20,}|hf_[\w-]{20,}|gh[opsur]_\w{20,}|github_pat_\w{20,}|glpat-[\w-]{20,}|xox[abposr]-[\w-]{10,}|AKIA[\dA-Z]{16}|AIza[\w-]{35})/g,
 		REDACTED,
 	],
 	[

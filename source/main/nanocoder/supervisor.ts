@@ -17,7 +17,7 @@ import {
 import {connectProject} from '@/main/nanocoder/open-project';
 import {PermissionBroker} from '@/main/nanocoder/permissions';
 import type {Resolution} from '@/main/nanocoder/runtime';
-import {StderrRing} from '@/main/nanocoder/stderr-ring';
+import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
 import type {NanocoderSupervisor} from '@/main/nanocoder/supervisor-contracts';
 import type {TrustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
@@ -47,6 +47,9 @@ interface Entry {
 	lastActivityAt: number;
 	diagnostics: StderrRing;
 	diagnosticsTruncated: boolean;
+	stderr: StderrRing;
+	diagnosticsRetained: boolean;
+	stopVersion: number;
 	idleStopping?: boolean;
 }
 
@@ -104,10 +107,11 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		return this.options.clock ?? systemClock;
 	}
 
-	private scheduleIdle(
-		entry: Entry,
-		delay = this.options.idleTimeoutMs ?? 300_000,
-	): void {
+	private get idleTimeoutMs(): number {
+		return this.options.idleTimeoutMs ?? 300_000;
+	}
+
+	private scheduleIdle(entry: Entry, delay = this.idleTimeoutMs): void {
 		if (
 			!this.options.activity ||
 			entry.abort.signal.aborted ||
@@ -124,7 +128,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			)
 				return;
 			const activity = this.options.activity?.(entry.project.id);
-			const timeout = this.options.idleTimeoutMs ?? 300_000;
+			const timeout = this.idleTimeoutMs;
 			if (
 				!activity ||
 				activity.runningTurn ||
@@ -205,6 +209,15 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		return value;
 	}
 
+	announceProject(project: ProjectInfo): void {
+		this.emit({
+			type: 'project',
+			projectId: project.id,
+			sequence: this.sequence(project.id),
+			project,
+		});
+	}
+
 	private publish(entry: Entry): void {
 		this.emit({
 			type: 'supervisor',
@@ -215,12 +228,23 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 	}
 
 	private retainDiagnostics(entry: Entry): void {
-		entry.diagnosticsTruncated ||= entry.connection?.stderr.truncated ?? false;
-		for (const line of entry.connection?.stderr.lines() ?? [])
-			entry.diagnostics.append(diagnosticLine(line));
+		if (entry.diagnosticsRetained) return;
+		entry.diagnosticsRetained = true;
+		entry.diagnosticsTruncated ||= entry.stderr.truncated;
+		const root = redact(entry.project.canonicalRoot, this.options.homeDir);
+		for (const line of entry.stderr.lines())
+			entry.diagnostics.append(diagnosticLine(line, root));
 	}
 
 	private turn(entry: Entry, sessionId: string, event: TurnEvent): void {
+		this.turnBatch(entry, sessionId, [event]);
+	}
+
+	private turnBatch(
+		entry: Entry,
+		sessionId: string,
+		events: TurnEvent[],
+	): void {
 		const projectId = entry.project.id;
 		let sequences = this.turnSequences.get(projectId);
 		if (!sequences) {
@@ -235,7 +259,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			projectId,
 			threadId: sessionId,
 			sequence,
-			events: [event],
+			events,
 		});
 	}
 
@@ -310,8 +334,17 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 					'Stop this project before changing its root',
 				);
 			}
-			if (existing.stopping && existing.idleStopping)
-				return existing.stopping.then(() => this.start(project, recovering));
+			if (existing.stopping && existing.idleStopping) {
+				const version = existing.stopVersion;
+				return existing.stopping.then(() => {
+					if (existing.stopVersion !== version)
+						throw new IpcFailure(
+							'AGENT_UNAVAILABLE',
+							'The project reopen was cancelled',
+						);
+					return this.start(project, recovering);
+				});
+			}
 			if (existing.stopping)
 				throw new IpcFailure('BUSY', 'The project is stopping');
 			return existing.starting ?? Promise.resolve(this.getState(project.id));
@@ -350,6 +383,9 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				existing?.diagnostics ??
 				new StderrRing({homeDir: this.options.homeDir}),
 			diagnosticsTruncated: existing?.diagnosticsTruncated ?? false,
+			stderr: new StderrRing({homeDir: this.options.homeDir}),
+			diagnosticsRetained: false,
+			stopVersion: 0,
 		};
 		this.entries.set(project.id, entry);
 		entry.starting = Promise.resolve()
@@ -414,6 +450,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				clientInfo: this.options.clientInfo,
 				env: this.options.env,
 				homeDir: this.options.homeDir,
+				stderr: entry.stderr,
 				confirmTrust: refusal => this.options.confirmTrust(refusal, root),
 				beforeLaunch: async () => {
 					await validateRoot();
@@ -487,8 +524,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 						signal,
 					);
 					if (restored)
-						for (const event of restored.history)
-							this.turn(entry, restored.session.id, event);
+						this.turnBatch(entry, restored.session.id, restored.history);
 				}
 				signal.throwIfAborted();
 				entry.state = {
@@ -620,6 +656,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 	stop(projectId: string): Promise<SupervisorState> {
 		const entry = this.entries.get(projectId);
 		if (!entry) return Promise.resolve(stopped(projectId));
+		entry.stopVersion++;
 		if (entry.stopping) return entry.stopping;
 		entry.cancelRetry?.();
 		entry.cancelRetry = undefined;
@@ -679,16 +716,21 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		const ring = new StderrRing({homeDir: this.options.homeDir});
 		for (const line of [
 			...entry.diagnostics.lines(),
-			...(entry.connection?.stderr.lines() ?? []),
+			...(entry.diagnosticsRetained ? [] : entry.stderr.lines()),
 		])
-			ring.append(diagnosticLine(line));
+			ring.append(
+				diagnosticLine(
+					line,
+					redact(entry.project.canonicalRoot, this.options.homeDir),
+				),
+			);
 		return this.snapshots.capture(
 			projectId,
 			ring.lines(),
 			ring.truncated ||
 				entry.diagnosticsTruncated ||
 				entry.diagnostics.truncated ||
-				(entry.connection?.stderr.truncated ?? false),
+				entry.stderr.truncated,
 		);
 	}
 

@@ -134,6 +134,7 @@ export class TechnicalSessions {
 			if (
 				state.activeThreadId ||
 				state.status === 'starting' ||
+				state.status === 'stopping' ||
 				state.restart.nextAttemptAt
 			)
 				ids.add(project.id);

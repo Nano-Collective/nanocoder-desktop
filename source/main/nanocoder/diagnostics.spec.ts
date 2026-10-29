@@ -40,7 +40,7 @@ test('diagnostic views exclude ACP stdout and structured conversation, environme
 		t.is(diagnosticLine(line), '[private payload omitted]');
 	const metadata =
 		'{"method":"session/close","params":{"sessionId":"synthetic"}}';
-	t.is(diagnosticLine(metadata), metadata);
+	t.is(diagnosticLine(metadata), '{"method":"session/close"}');
 });
 
 test('truncated structured payloads fail closed even when their field names are escaped', t => {

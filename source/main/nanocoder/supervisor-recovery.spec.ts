@@ -14,6 +14,7 @@ import {
 	removeFakeProjects,
 } from '@/main/nanocoder/fixtures/fake-project';
 import {connectProject} from '@/main/nanocoder/open-project';
+import {StderrRing} from '@/main/nanocoder/stderr-ring';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
 import {TechnicalSessions} from '@/main/nanocoder/technical-sessions';
 import type {ProjectEvent, ProjectInfo} from '@/shared/ipc';
@@ -51,6 +52,77 @@ const next = (
 		});
 	});
 test.after.always(removeFakeProjects);
+
+test('startup failure retains the child stderr ring in captured diagnostics', async t => {
+	let source: StderrRing | undefined;
+	const supervisor = new ProjectSupervisor({
+		resolveRuntime: async () => ({ok: true, runtime}),
+		clientInfo: {name: 'test', version: '0'},
+		confirmTrust: async () => false,
+		connect: options => {
+			source = options.stderr;
+			return connectProject(options);
+		},
+	});
+	t.teardown(() => supervisor.close());
+	const chosen = project('crash');
+	t.is((await supervisor.ensureProcess(chosen)).status, 'failed');
+	t.true(source?.lines().some(line => line.includes('"started":true')));
+	t.true(
+		supervisor
+			.getDiagnostics(chosen.id)
+			.lines.some(line => line.includes('"started":true')),
+	);
+});
+
+test('detach cancels a reopen queued behind an idle stop before another child starts', async t => {
+	const clock = new FakeClock();
+	let sessions: TechnicalSessions;
+	let release!: () => void;
+	const blocked = new Promise<void>(resolve => {
+		release = resolve;
+	});
+	let launches = 0;
+	const supervisor = new ProjectSupervisor({
+		clock,
+		idleTimeoutMs: 1000,
+		activity: id => sessions.activity(id),
+		resolveRuntime: async () => ({ok: true, runtime}),
+		clientInfo: {name: 'test', version: '0'},
+		confirmTrust: async () => false,
+		connect: async options => {
+			launches++;
+			const connection = await connectProject(options);
+			if ('status' in connection) return connection;
+			return {
+				...connection,
+				close: async () => {
+					await blocked;
+					await connection.close();
+				},
+			};
+		},
+	});
+	sessions = new TechnicalSessions(supervisor, clock);
+	t.teardown(async () => {
+		release();
+		await supervisor.close();
+	});
+	const chosen = project();
+	await supervisor.ensureProcess(chosen);
+	await sessions.prepare(chosen);
+	await sessions.detach([chosen]);
+	clock.advance(1000);
+	t.is(supervisor.getState(chosen.id).status, 'stopping');
+	const reopened = supervisor.ensureProcess(chosen).catch(error => error);
+	const detached = sessions.detach([chosen]);
+	release();
+	await detached;
+	await reopened;
+	t.is(sessions.activity(chosen.id).openSessions, 0);
+	t.is(launches, 1);
+	t.is(supervisor.getState(chosen.id).status, 'stopped');
+});
 
 test('records exit and schedules a bounded retry without replaying the failed prompt', async t => {
 	const clock = new FakeClock();
@@ -348,13 +420,13 @@ test('diagnostics captures an immutable redacted project snapshot that survives 
 	await supervisor.ensureProcess(chosen);
 	const connection = supervisor.getConnection(chosen.id);
 	connection.stderr.append(
-		'fixture-marker Authorization: Bearer private-value',
+		'{"method":"session/cancel","authorization":"Bearer private-value"}',
 	);
 	connection.stderr.append(
 		'{"prompt":[{"text":"private-conversation"}],"env":{"API_KEY":"private-environment"}}',
 	);
 	const snapshot = supervisor.getDiagnostics(chosen.id);
-	t.true(snapshot.lines.some(line => line.includes('fixture-marker')));
+	t.true(snapshot.lines.includes('{"method":"session/cancel"}'));
 	t.false(snapshot.lines.join('\n').includes('private-'));
 	snapshot.lines.push('forged');
 	t.false(
@@ -366,7 +438,7 @@ test('diagnostics captures an immutable redacted project snapshot that survives 
 	t.true(
 		supervisor
 			.getDiagnostics(chosen.id)
-			.lines.some(line => line.includes('fixture-marker')),
+			.lines.includes('{"method":"session/cancel"}'),
 	);
 	t.throws(() => supervisor.getCapturedDiagnostics(randomUUID(), snapshot.id), {
 		code: 'NOT_FOUND',
