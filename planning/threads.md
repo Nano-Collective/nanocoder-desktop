@@ -67,3 +67,8 @@ Rendered checks require at least 4.5:1 in both themes. The remaining selected
 `●`, `○`, `░`, `◌` and `◍` glyphs pass unchanged and get no backing rule.
 Tests reduce motion when sampling stable theme colours rather than sampling
 the permitted 200ms colour transition.
+
+The rail uses a zero-minimum grid track so long titles truncate inside its
+available width instead of widening the rail and scrolling its state glyphs
+out of view. Built Electron checks cover both themes at 1240, 1020 and 840px,
+including keyboard action focus and the unchanged selected 2px rule.

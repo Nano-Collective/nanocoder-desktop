@@ -80,6 +80,84 @@ test('connecting initialises Nanocoder without creating or resuming a session (C
 		expect(diagnostics.value.lines).not.toContain(JSON.stringify({method}));
 });
 
+test('long thread titles stay inside the rail with visible glyphs, selection rule and keyboard focus at every width and theme (U.3)', async () => {
+	await page.emulateMedia({reducedMotion: 'reduce'});
+	await page.getByRole('button', {name: 'open a project folder'}).click();
+	const selected = page.locator('.thread-row[data-selected="true"]');
+	await expect(selected).toBeVisible();
+	const title = 'waiting-approval fixture '.repeat(7).trim();
+	const renamed = await page.evaluate(async title => {
+		const {desktop} = window as unknown as {desktop: DesktopApi};
+		const ui = await desktop.getUiState({});
+		if (!ui.ok || !ui.value.activeProjectId || !ui.value.activeThreadId)
+			throw new Error('Expected a selected desktop thread');
+		return desktop.renameThread({
+			projectId: ui.value.activeProjectId,
+			threadId: ui.value.activeThreadId,
+			title,
+		});
+	}, title);
+	expect(renamed.ok).toBe(true);
+	await expect(selected.locator('.thread-title')).toHaveText(title);
+	for (const theme of ['dark', 'light']) {
+		await page.evaluate(theme => {
+			document.documentElement.dataset.theme = theme;
+		}, theme);
+		for (const width of [1240, 1020, 840]) {
+			await page.setViewportSize({width, height: 900});
+			await selected.locator('.thread-open').focus();
+			await page.keyboard.press('Tab');
+			await expect(selected.locator('summary')).toBeFocused();
+			await expect(selected.locator('summary')).toHaveCSS(
+				'outline-width',
+				'2px',
+			);
+			const bounds = await selected.evaluate(element => {
+				const rail = element.closest('.shell-project-rail');
+				const section = element.closest('.thread-rail');
+				const glyph = element.querySelector('.thread-status');
+				const title = element.querySelector('.thread-title');
+				if (!rail || !section || !glyph || !title)
+					throw new Error('Expected the complete thread rail');
+				const outer = rail.getBoundingClientRect();
+				const row = element.getBoundingClientRect();
+				const marker = glyph.getBoundingClientRect();
+				return {
+					track: Number.parseFloat(
+						getComputedStyle(section).gridTemplateColumns,
+					),
+					available: section.getBoundingClientRect().width,
+					railLeft: outer.left,
+					railRight: outer.right,
+					rowLeft: row.left,
+					rowRight: row.right,
+					glyphLeft: marker.left,
+					glyphRight: marker.right,
+					titleWidth: title.clientWidth,
+					titleContent: title.scrollWidth,
+					scrollLeft: rail.scrollLeft,
+				};
+			});
+			expect.soft(bounds.track).toBeLessThanOrEqual(bounds.available);
+			expect.soft(bounds.glyphLeft).toBeGreaterThanOrEqual(bounds.railLeft);
+			expect(bounds.glyphRight).toBeLessThanOrEqual(bounds.railRight);
+			expect(bounds.rowLeft).toBeGreaterThanOrEqual(bounds.railLeft);
+			expect(bounds.rowRight).toBeLessThanOrEqual(bounds.railRight);
+			expect(bounds.scrollLeft).toBe(0);
+			expect(bounds.titleContent).toBeGreaterThan(bounds.titleWidth);
+			await expect(selected.locator('.thread-title')).toHaveCSS(
+				'text-overflow',
+				'ellipsis',
+			);
+			await expect(selected).toHaveCSS('border-left-width', '2px');
+			await expect(selected).toHaveCSS(
+				'border-left-color',
+				theme === 'dark' ? 'rgb(69, 155, 247)' : 'rgb(0, 0, 238)',
+			);
+		}
+	}
+});
+
 for (const [state, glyph] of [
 	['new', '◌'],
 	['ready', '○'],
