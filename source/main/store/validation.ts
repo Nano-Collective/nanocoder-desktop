@@ -83,6 +83,12 @@ export const threadSchema = z.strictObject({
 	viewOnlyReason: z.string().max(1_000).nullable(),
 });
 
+export const threadTitleTarget = z.strictObject({projectId: id, threadId: id});
+export const threadTitlePatch = threadTitleTarget.extend({
+	title: z.string().trim().min(1).max(500),
+	manuallySet: z.boolean(),
+});
+
 export function validate<T>(schema: z.ZodType<T>, value: unknown): T {
 	const parsed = schema.safeParse(value);
 	if (!parsed.success) {

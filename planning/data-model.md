@@ -43,6 +43,7 @@ Columns in the whitepaper's diagram are Decided. Columns marked "added" are Sugg
 | | `project_id` | text, foreign key to `project.id`, `ON DELETE CASCADE` | Indexed. |
 | | `nanocoder_session_id` | text, unique | Durable join key (`DEC-34`). |
 | | `title` | text | Cached from `_nanocoder/sessionTitleChanged` or rename. |
+| | `title_manually_set` | integer (boolean) | Added for `CHAT-12`: main-only manual-rename precedence, never exposed through `ThreadInfo` or IPC. |
 | | `archive_state` | text: `active`, `archived` | UI metadata, not lifecycle. |
 | | `run_state` | text: the seven thread states | Last known state, so a crash is visible on next launch. |
 | | `last_activity_at` | text | Indexed with `project_id`. |
@@ -91,6 +92,7 @@ Suggestion (not discussed):
 | Column | Could it hold sensitive data? | Mitigation |
 |---|---|---|
 | `thread.title` | Yes: generated from the first prompt | Stored locally only; removed with the thread. |
+| `thread.title_manually_set` | No: one boolean | No title history or conversation data. Removed with the thread. |
 | `turn_summary.touched_files` | Paths can reveal project structure | Relative paths only (`DATA-05`). |
 | `browser_tab.url` | Yes: query strings can hold tokens | Cleared with browser data; Suggestion: strip query strings before storing. |
 | `project.canonical_root` | Reveals local folder names | Local only; never sent anywhere. |
@@ -107,6 +109,7 @@ Suggestion (not discussed): migrations live as numbered files in the source tree
 Phase 1.1 implements this in [`source/main/store/`](../source/main/store/), behind the library-independent `SqlDriver` contract (`DEC-04`). Main takes Electron's single-instance lock for the profile before opening `desktop.sqlite` under `userData`, registering workspace handlers or opening a window. A second instance quits and asks the owner to focus its window. The SQLite adapter uses WAL, foreign keys and parameterised statements. It turns database failures into fixed error messages, without logging SQL or values.
 
 - `001-metadata.ts` creates the eight planned tables and their indexes; `002-ui-state.ts` adds the singleton UI-state table. Each migration takes `BEGIN IMMEDIATE`, rechecks the schema marker and ledger, skips already applied work and commits its schema, record and `user_version` together.
+- `003-manual-thread-titles.ts` adds the boolean `title_manually_set` (`CHAT-12`). It marks existing titles manual because their origin is unknown; new rows default to automatic. Project-scoped title updates validate an allowlisted title and boolean together. An automatic title cannot overwrite a manual title or clear its flag, including after a crash. No title history is added.
 - An existing database gets an online SQLite backup before the first pending migration, including committed WAL changes. Backups are named `desktop.sqlite.backup-<uuid>`. A backup failure stops the upgrade. `STORE_TOO_NEW` refuses a newer version without replacing or upgrading it.
 - Startup checks schema compatibility before `PRAGMA integrity_check`, in one read transaction. An identifiable newer marker or ledger is always refused, even when integrity fails. Recoverable corruption or an invalid supported migration record closes the connection, then moves the database into `desktop.sqlite.corrupt-<uuid>/` and starts fresh. Closing SQLite can checkpoint committed WAL data into the database and remove WAL/SHM files; quarantine preserves committed data, not a byte-for-byte forensic snapshot. Files still present after close are moved too. Quarantines and backups are not automatically deleted.
 - The database directory is canonicalised. Existing database and sidecar symlinks, hard links and non-files are refused. New database and backup files are created with owner-only permissions where the platform supports them.

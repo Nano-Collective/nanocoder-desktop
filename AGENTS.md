@@ -36,6 +36,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/store/index.ts` | Opens `userData/desktop.sqlite`, checks integrity, quarantines corruption and stores validated settings/UI state |
 | `source/main/store/node-sqlite.ts` | `node:sqlite` adapter and online backup; library errors never expose SQL inputs |
 | `source/main/store/migrations/` | Numbered, transactional schema upgrades, with a backup before upgrading an existing database |
+| `source/main/store/migrations/003-manual-thread-titles.ts` | Main-only boolean for durable manual-title precedence; existing titles are conservatively protected (`CHAT-12`) |
 | `source/main/store/repositories.ts` | Project/thread metadata only, scoped queries, canonical paths and cascade removal |
 | `source/main/store/validation.ts` | Allowlisted metadata schemas, including the settings/UI patches shared with IPC |
 | `source/main/nanocoder/supervisor-contracts.ts` | Main-only per-project supervisor interface |
@@ -46,6 +47,8 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path |
 | `source/main/nanocoder/launch.ts` | Starts Nanocoder with an argument array and no shell |
 | `source/main/nanocoder/acp-client.ts` | Starts `nanocoder --acp` in the project root, sends `initialize`, and opens or resumes sessions with their mode set |
+| `source/main/nanocoder/session-title.ts` | Bounded, allowlisted parsing for main-only Nanocoder title notifications |
+| `source/main/threads/thread-service.ts` | Metadata-first desktop threads, mapped transient turn/title events and separately confirmed history deletion |
 | `source/main/nanocoder/trust.ts` | Reads Nanocoder's trust refusals and runs the short trust launch (`DEC-30`) |
 | `source/main/nanocoder/open-project.ts` | Connects, asks before trusting a folder, then opens or resumes a session in the starting mode |
 | `source/main/nanocoder/protocol-stream.ts` | Reads stdout as ACP only; anything else ends the connection |

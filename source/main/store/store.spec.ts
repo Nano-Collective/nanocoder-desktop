@@ -26,6 +26,7 @@ import {
 	transaction,
 } from '@/main/store/migrations';
 import {createNodeSqliteDriver} from '@/main/store/node-sqlite';
+import {repositories} from '@/main/store/repositories';
 import type {ProjectInfo, ThreadInfo} from '@/shared/ipc';
 
 function fixture(t: ExecutionContext) {
@@ -83,6 +84,114 @@ function thread(
 	};
 }
 
+function legacyMetadata(f: ReturnType<typeof fixture>, version: 1 | 2) {
+	const database = f.driver.open(f.filename);
+	const owner = project(f.root);
+	const saved = thread(owner);
+	try {
+		for (const migration of migrations.slice(0, version))
+			transaction(database, () => {
+				database.exec(migration.sql);
+				database
+					.prepare('INSERT INTO schema_migration VALUES (?, ?)')
+					.run(migration.version, '2026-10-29T12:00:00.000Z');
+				database.exec(`PRAGMA user_version = ${migration.version}`);
+			});
+		const legacy = repositories(database);
+		legacy.projects.save(owner);
+		legacy.threads.save(saved);
+	} finally {
+		database.close();
+	}
+	return {owner, saved};
+}
+
+for (const version of [1, 2] as const)
+	test(`upgrading a real 00${version} database protects existing titles and backs up once (CHAT-12)`, async t => {
+		const f = fixture(t);
+		const {owner, saved} = legacyMetadata(f, version);
+		const backups: string[] = [];
+		const store = await desktopStoreFactory.open({
+			databasePath: f.filename,
+			driver: {
+				open: f.driver.open,
+				backup: async (database, filename) => {
+					t.is(schemaVersion(database), version);
+					backups.push(filename);
+					await f.driver.backup(database, filename);
+				},
+			},
+		});
+		t.teardown(() => store.close());
+		t.true(store.threads.getTitleManuallySet(owner.id, saved.id));
+		t.deepEqual(store.threads.get(owner.id, saved.id), saved);
+		t.is(backups.length, 1);
+		const backup = f.driver.open(backups[0]);
+		try {
+			t.is(schemaVersion(backup), version);
+			t.false(
+				backup
+					.prepare('PRAGMA table_info(thread)')
+					.all()
+					.some(column => column.name === 'title_manually_set'),
+			);
+			t.is(
+				backup.prepare('SELECT title FROM thread WHERE id = ?').get(saved.id)
+					?.title,
+				saved.title,
+			);
+		} finally {
+			backup.close();
+		}
+		store.close();
+		const upgraded = f.driver.open(f.filename);
+		try {
+			t.is(schemaVersion(upgraded), 3);
+			t.deepEqual(
+				upgraded
+					.prepare('SELECT version FROM schema_migration ORDER BY version')
+					.all()
+					.map(row => row.version),
+				[1, 2, 3],
+			);
+		} finally {
+			upgraded.close();
+		}
+		(await f.open()).close();
+		t.is(
+			readdirSync(f.root).filter(name => name.includes('.backup-')).length,
+			1,
+		);
+	});
+
+test('a failed manual-title migration rolls back its column and version (CHAT-12, DATA-03)', t => {
+	const f = fixture(t);
+	const {saved} = legacyMetadata(f, 2);
+	const database = f.driver.open(f.filename);
+	t.teardown(() => database.close());
+	const injected: SqlDatabase = {
+		...database,
+		exec: sql => {
+			if (sql === 'PRAGMA user_version = 3')
+				throw new IpcFailure('INTERNAL', 'fixture migration failure');
+			database.exec(sql);
+		},
+	};
+	t.throws(() => migrate(injected), {code: 'INTERNAL'});
+	t.is(schemaVersion(database), 2);
+	t.false(
+		database
+			.prepare('PRAGMA table_info(thread)')
+			.all()
+			.some(column => column.name === 'title_manually_set'),
+	);
+	t.is(
+		database.prepare('SELECT title FROM thread WHERE id = ?').get(saved.id)
+			?.title,
+		saved.title,
+	);
+});
+
 test('empty database runs every numbered migration and persists the version', async t => {
 	const f = fixture(t);
 	const store = await f.open();
@@ -95,11 +204,96 @@ test('empty database runs every numbered migration and persists the version', as
 			.prepare('SELECT version FROM schema_migration ORDER BY version')
 			.all()
 			.map(row => row.version),
-		[1, 2],
+		[1, 2, 3],
 	);
 	t.false(readdirSync(f.root).some(name => name.includes('.backup-')));
 	if (process.platform !== 'win32')
 		t.is(statSync(f.filename).mode & 0o777, 0o600);
+});
+
+test('title updates persist only scoped current metadata and a sticky boolean (CHAT-12)', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const owner = project(f.root);
+	const saved = thread(owner);
+	store.projects.save(owner);
+	store.threads.save(saved);
+	const target = {projectId: owner.id, threadId: saved.id};
+	t.false(store.threads.getTitleManuallySet(owner.id, saved.id));
+	t.deepEqual(
+		store.threads.setTitle({
+			...target,
+			title: 'fixture generated',
+			manuallySet: false,
+		}),
+		{...saved, title: 'fixture generated'},
+	);
+	t.false(store.threads.getTitleManuallySet(owner.id, saved.id));
+	const renamed = store.threads.setTitle({
+		...target,
+		title: '  fixture manual  ',
+		manuallySet: true,
+	});
+	t.deepEqual(renamed, {...saved, title: 'fixture manual'});
+	t.true(store.threads.getTitleManuallySet(owner.id, saved.id));
+	t.deepEqual(
+		store.threads.setTitle({
+			...target,
+			title: 'late generated',
+			manuallySet: false,
+		}),
+		renamed,
+	);
+	store.threads.save({...renamed, runState: 'running'});
+	store.close();
+	const reopened = await f.open();
+	t.true(reopened.threads.getTitleManuallySet(owner.id, saved.id));
+	t.deepEqual(reopened.threads.get(owner.id, saved.id), {
+		...renamed,
+		runState: 'running',
+	});
+});
+
+test('title metadata refuses cross-project targets and non-allowlisted fields (CHAT-12, DATA-04)', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const owner = project(f.root);
+	const saved = thread(owner);
+	store.projects.save(owner);
+	store.threads.save(saved);
+	const input = {
+		projectId: owner.id,
+		threadId: saved.id,
+		title: 'fixture manual',
+		manuallySet: true,
+	};
+	t.is(store.threads.getTitleManuallySet(randomUUID(), saved.id), undefined);
+	t.throws(() => store.threads.setTitle({...input, projectId: randomUUID()}), {
+		code: 'NOT_FOUND',
+	});
+	t.throws(() => store.threads.setTitle({...input, threadId: randomUUID()}), {
+		code: 'NOT_FOUND',
+	});
+	for (const changed of [
+		{title: ''},
+		{title: '   '},
+		{title: 't'.repeat(501)},
+		{manuallySet: 'true'},
+		{threadId: 'not-an-id'},
+		{projectId: 'not-an-id'},
+		{prompt: 'fixture content must not persist'},
+		{history: []},
+	]) {
+		t.throws(
+			() => store.threads.setTitle({...input, ...changed} as typeof input),
+			{code: 'VALIDATION'},
+		);
+	}
+	t.throws(() => store.threads.getTitleManuallySet('not-an-id', saved.id), {
+		code: 'VALIDATION',
+	});
+	t.deepEqual(store.threads.get(owner.id, saved.id), saved);
+	t.false(store.threads.getTitleManuallySet(owner.id, saved.id));
 });
 
 test('all migrated tables are introspected and have no content-bearing column', async t => {
@@ -699,13 +893,13 @@ test('concurrent opens recheck the migration version under the write lock', asyn
 	});
 	const db = f.driver.open(f.filename);
 	t.teardown(() => db.close());
-	t.is(schemaVersion(db), 2);
+	t.is(schemaVersion(db), 3);
 	t.deepEqual(
 		db
 			.prepare('SELECT version FROM schema_migration ORDER BY version')
 			.all()
 			.map(row => row.version),
-		[1, 2],
+		[1, 2, 3],
 	);
 });
 
@@ -760,7 +954,7 @@ test('settings and UI patches hold the write lock before reading the previous st
 	t.is(store.getUiState().inspector, 'review');
 });
 
-for (const version of [2, 3]) {
+for (const version of [migrations.length, migrations.length + 1]) {
 	test(`a failed integrity check cannot replace a newer ledger with user_version ${version}`, async t => {
 		const f = fixture(t);
 		(await f.open()).close();
@@ -772,7 +966,7 @@ for (const version of [2, 3]) {
 			PRAGMA ignore_check_constraints = OFF;
 		`);
 		db.prepare('INSERT INTO schema_migration VALUES (?, ?)').run(
-			3,
+			migrations.length + 1,
 			'2026-10-29T12:00:00.000Z',
 		);
 		db.exec(`PRAGMA user_version = ${version}`);
