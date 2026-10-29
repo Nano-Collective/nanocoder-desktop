@@ -5,6 +5,7 @@ import {
 	emptyTranscript,
 	type Transcript,
 } from '@/renderer/transcript';
+import {Button, Card, Divider, StatusBadge} from '@/renderer/ui';
 import type {
 	AppInfo,
 	ConnectedAgent,
@@ -27,60 +28,83 @@ function AgentDetails({
 }) {
 	const {capabilities} = agent;
 	return (
-		<section aria-label="Connected agent">
+		<Card aria-label="connected agent">
 			<p>
-				Connected to {agent.name ?? 'an unnamed agent'}{' '}
+				connected to {agent.name ?? 'an unnamed agent'}{' '}
 				{agent.version ?? '(no version)'} over ACP protocol version{' '}
 				{agent.protocolVersion} in {agent.root}
 			</p>
 			<p>
-				Session {session.id} in {session.mode} mode
+				session {session.id} in {session.mode} mode
 			</p>
-			<dl>
-				<dt>Resume sessions</dt>
+			<Divider soft />
+			<dl className="gate-capabilities">
+				<dt>resume sessions</dt>
 				<dd>{yesNo(capabilities.sessions.resume)}</dd>
-				<dt>Close sessions</dt>
+				<dt>close sessions</dt>
 				<dd>{yesNo(capabilities.sessions.close)}</dd>
-				<dt>List sessions</dt>
+				<dt>list sessions</dt>
 				<dd>{yesNo(capabilities.sessions.list)}</dd>
-				<dt>Delete sessions</dt>
+				<dt>delete sessions</dt>
 				<dd>{yesNo(capabilities.sessions.delete)}</dd>
-				<dt>Load sessions</dt>
+				<dt>load sessions</dt>
 				<dd>{yesNo(capabilities.loadSession)}</dd>
 			</dl>
-		</section>
+		</Card>
 	);
 }
 
 function PermissionCard({request}: {request: PermissionRequestInfo}) {
 	return (
-		<section aria-label="Permission request">
+		<Card variant="approval" aria-label="permission request">
+			<h2>
+				<span aria-hidden="true">▲</span> approval required
+			</h2>
 			<p>Nanocoder asks to run: {request.title}</p>
-			{request.options.map(option => (
-				<button
-					key={option.id}
-					type="button"
-					onClick={() => {
-						void window.desktop.answerPermission(request.id, option.id);
-					}}
-				>
-					{option.name}
-				</button>
-			))}
-		</section>
+			<div className="gate-actions">
+				{request.options.map(option => (
+					<Button
+						key={option.id}
+						variant={option.kind.startsWith('allow') ? 'allow' : 'reject'}
+						onClick={() => {
+							void window.desktop.answerPermission(request.id, option.id);
+						}}
+					>
+						<span aria-hidden="true">
+							{option.kind.startsWith('allow') ? '✓' : '✕'}
+						</span>
+						{option.name}
+					</Button>
+				))}
+			</div>
+		</Card>
 	);
 }
 
 function Conversation({transcript}: {transcript: Transcript}) {
 	return (
-		<ol aria-label="Conversation">
+		<ol className="gate-transcript" aria-label="conversation">
 			{transcript.items.map((item, index) => (
-				<li key={item.kind === 'tool' ? item.id : `${item.kind}-${index}`}>
-					{item.kind === 'user' && <>You: {item.text}</>}
-					{item.kind === 'agent' && <>Nanocoder: {item.text}</>}
+				<li
+					className={`gate-message-${item.kind}`}
+					key={item.kind === 'tool' ? item.id : `${item.kind}-${index}`}
+				>
+					{item.kind === 'user' && <>you: {item.text}</>}
+					{item.kind === 'agent' && (
+						<>
+							<span aria-hidden="true">✱ </span>Nanocoder: {item.text}
+						</>
+					)}
 					{item.kind === 'tool' && (
 						<>
-							Tool {item.title}: {item.status}
+							<span aria-hidden="true">
+								{item.status === 'completed'
+									? '✓'
+									: item.status === 'failed'
+										? '✕'
+										: '◐'}{' '}
+							</span>
+							tool <code>{item.title}</code>: {item.status}
 						</>
 					)}
 				</li>
@@ -148,49 +172,88 @@ export function App() {
 	const outcome = opened?.ok ? opened.value : null;
 
 	return (
-		<main>
-			<h1>{info?.name}</h1>
-			{info && (
-				<p>
-					Version {info.version}. Pre-v0.1: an early build, with most features
-					still to come.
-				</p>
-			)}
-			{runtime?.ok && (
-				<p>
-					Nanocoder {runtime.value.version} at {runtime.value.cliPath}, on
-					Node.js {runtime.value.nodeVersion} at {runtime.value.nodePath}
-				</p>
-			)}
-			{runtime && !runtime.ok && (
-				<>
-					<p role="alert">{runtime.error.message}</p>
-					<button type="button" onClick={checkRuntime}>
-						Check again
-					</button>
-				</>
-			)}
-			{runtime?.ok && (
-				<button type="button" onClick={connect} disabled={connecting}>
-					{connecting ? 'Starting Nanocoder' : 'Open a project folder'}
-				</button>
-			)}
+		<main className="technical-gate">
+			<header className="gate-header">
+				<h1>{info?.name}</h1>
+				{info && (
+					<p className="gate-meta">
+						version {info.version}. pre-v0.1: an early build, with most features
+						still to come.
+					</p>
+				)}
+				<div className="gate-actions">
+					<StatusBadge
+						status={
+							transcript.permissions.length
+								? 'approval'
+								: sending
+									? 'running'
+									: (turn && !turn.ok) || (opened && !opened.ok)
+										? 'failed'
+										: 'idle'
+						}
+					/>
+					{outcome?.status === 'connected' && (
+						<StatusBadge status="acp-ready" />
+					)}
+				</div>
+			</header>
+			<Divider />
+			<section className="gate-runtime" aria-label="Nanocoder runtime">
+				{runtime?.ok && (
+					<p>
+						Nanocoder {runtime.value.version} at {runtime.value.cliPath}, on
+						Node.js {runtime.value.nodeVersion} at {runtime.value.nodePath}
+					</p>
+				)}
+				{runtime && !runtime.ok && (
+					<>
+						<p role="alert">{runtime.error.message}</p>
+						<Button onClick={checkRuntime}>check again</Button>
+					</>
+				)}
+				{runtime?.ok && (
+					<Button onClick={connect} disabled={connecting}>
+						{connecting ? (
+							<>
+								<span className="spinner" aria-hidden="true">
+									◐
+								</span>{' '}
+								starting Nanocoder
+							</>
+						) : (
+							'open a project folder'
+						)}
+					</Button>
+				)}
+			</section>
 			{outcome?.status === 'connected' && (
 				<AgentDetails agent={outcome.agent} session={outcome.session} />
 			)}
 			{outcome?.status === 'connected' && (
-				<form onSubmit={send}>
+				<form className="gate-composer" onSubmit={send}>
 					<label>
-						Message
+						message
 						<input
 							value={draft}
 							onChange={event => setDraft(event.target.value)}
 							disabled={sending}
+							placeholder="ask anything…"
+							aria-describedby="composer-hint"
 						/>
 					</label>
-					<button type="submit" disabled={sending || draft.trim() === ''}>
-						Send
-					</button>
+					<div className="gate-actions">
+						<Button type="submit" disabled={sending || draft.trim() === ''}>
+							send
+						</Button>
+						<p id="composer-hint" className="gate-hint">
+							{sending
+								? 'waiting for Nanocoder to finish the turn'
+								: draft.trim() === ''
+									? 'enter a message to send'
+									: 'ready to send'}
+						</p>
+					</div>
 				</form>
 			)}
 			{outcome?.status === 'connected' && (
@@ -199,12 +262,30 @@ export function App() {
 			{transcript.permissions.map(request => (
 				<PermissionCard key={request.id} request={request} />
 			))}
-			{turn?.ok && <p>Turn ended: {turn.value.stopReason}</p>}
-			{turn && !turn.ok && <p role="alert">{turn.error.message}</p>}
-			{outcome?.status === 'untrusted' && (
-				<p role="alert">Not opened. {outcome.message}</p>
+			{turn?.ok && <p role="status">turn ended: {turn.value.stopReason}</p>}
+			{turn && !turn.ok && (
+				<Card variant="failure" role="alert">
+					<span>
+						<span aria-hidden="true">✕ </span>
+						{turn.error.message}
+					</span>
+				</Card>
 			)}
-			{opened && !opened.ok && <p role="alert">{opened.error.message}</p>}
+			{outcome?.status === 'untrusted' && (
+				<Card variant="failure" role="alert">
+					<span>
+						<span aria-hidden="true">✕ </span>not opened. {outcome.message}
+					</span>
+				</Card>
+			)}
+			{opened && !opened.ok && (
+				<Card variant="failure" role="alert">
+					<span>
+						<span aria-hidden="true">✕ </span>
+						{opened.error.message}
+					</span>
+				</Card>
+			)}
 		</main>
 	);
 }

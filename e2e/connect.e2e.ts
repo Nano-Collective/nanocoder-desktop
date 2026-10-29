@@ -146,10 +146,10 @@ test('opens a trusted folder in normal mode without asking', async () => {
 	await openFolder(root);
 	const agent = page.getByRole('region', {name: 'Connected agent'});
 	await expect(agent).toContainText(
-		`Connected to nanocoder 9.9.9 over ACP protocol version 1 in ${root}`,
+		`connected to nanocoder 9.9.9 over ACP protocol version 1 in ${root}`,
 	);
-	await expect(agent).toContainText('Session fake-session in normal mode');
-	await expect(agent.locator('dt:has-text("Resume sessions") + dd')).toHaveText(
+	await expect(agent).toContainText('session fake-session in normal mode');
+	await expect(agent.locator('dt:has-text("resume sessions") + dd')).toHaveText(
 		'yes',
 	);
 	expect(await trustPrompts()).toEqual([]);
@@ -166,7 +166,7 @@ test("asks with Nanocoder's reason, and shows its message when the user says no"
 		`${path.sep}${path.basename(root)} is not trusted.`,
 	);
 	const alert = page.getByRole('alert');
-	await expect(alert).toContainText('Not opened. Directory');
+	await expect(alert).toContainText('not opened. Directory');
 	await expect(alert).toContainText('is not trusted.');
 	await expect(alert).not.toContainText('--trust-directory');
 	await expect(alert).not.toContainText('NANOCODER_TRUST_DIRECTORY');
@@ -180,7 +180,7 @@ test('trusts the folder through Nanocoder when the user agrees, then opens it', 
 	expect(existsSync(path.join(root, '.fake-trusted'))).toBe(true);
 	await expect(
 		page.getByRole('region', {name: 'Connected agent'}),
-	).toContainText('Session fake-session in normal mode');
+	).toContainText('session fake-session in normal mode');
 	await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
@@ -213,12 +213,14 @@ test("shows the permission request with Nanocoder's options and waits for the us
 	await startTurn('wait');
 	const card = page.getByRole('region', {name: 'Permission request'});
 	await expect(card).toContainText('execute_bash: echo hi');
-	await expect(card.getByRole('button')).toHaveText(['Allow', 'Deny']);
+	await expect(card.getByRole('button')).toHaveCount(2);
+	await expect(card.getByRole('button').first()).toHaveAccessibleName('Allow');
+	await expect(card.getByRole('button').last()).toHaveAccessibleName('Deny');
 	// Nothing answers for the user: the turn is still open.
-	await expect(page.getByText('Turn ended')).toHaveCount(0);
+	await expect(page.getByText('turn ended')).toHaveCount(0);
 	await expect(page.getByRole('button', {name: 'Send'})).toBeDisabled();
 	await card.getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 });
 
 test('allow once: the tool runs and the turn ends', async () => {
@@ -229,13 +231,13 @@ test('allow once: the tool runs and the turn ends', async () => {
 		.click();
 
 	const conversation = page.getByRole('list', {name: 'Conversation'});
-	await expect(conversation).toContainText('You: Run the command');
+	await expect(conversation).toContainText('you: Run the command');
 	await expect(conversation).toContainText('Nanocoder: Working on it.');
 	await expect(conversation).toContainText(
-		'Tool execute_bash: echo hi: completed',
+		'tool execute_bash: echo hi: completed',
 	);
 	await expect(conversation).toContainText('Tool ran.');
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 	await expect(
 		page.getByRole('region', {name: 'Permission request'}),
 	).toHaveCount(0);
@@ -250,10 +252,10 @@ test('reject once: the tool is marked failed and the turn goes on', async () => 
 
 	const conversation = page.getByRole('list', {name: 'Conversation'});
 	await expect(conversation).toContainText(
-		'Tool execute_bash: echo hi: failed',
+		'tool execute_bash: echo hi: failed',
 	);
 	await expect(conversation).toContainText('Tool denied.');
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 });
 
 test('only an option Nanocoder offered can answer a waiting request', async () => {
@@ -278,7 +280,7 @@ test('only an option Nanocoder offered can answer a waiting request', async () =
 	// The same live request still accepts an option it offered.
 	const offered = await bridge('answerPermission', live, 'allow');
 	expect(offered.ok).toBe(true);
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 });
 
 test('shows every waiting request, so none is left unanswerable', async () => {
@@ -290,10 +292,10 @@ test('shows every waiting request, so none is left unanswerable', async () => {
 	await cards().last().getByRole('button', {name: 'Deny'}).click();
 	await expect(cards()).toHaveCount(1);
 	await expect(cards().first()).toContainText('echo call_1');
-	await expect(page.getByText('Turn ended')).toHaveCount(0);
+	await expect(page.getByText('turn ended')).toHaveCount(0);
 
 	await cards().first().getByRole('button', {name: 'Allow'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
 		'Both answered.',
 	);
@@ -311,7 +313,7 @@ test('opening another project is not blocked by a turn left open', async () => {
 	await expect(cards()).toBeVisible();
 	await expect(page.getByText('already working')).toHaveCount(0);
 	await cards().getByRole('button', {name: 'Allow'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 });
 
 test('validates a prompt', async () => {
