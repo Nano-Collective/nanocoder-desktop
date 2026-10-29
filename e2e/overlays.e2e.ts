@@ -337,6 +337,30 @@ test('keyboard selection stays visible when recent projects overflow the palette
 	await page.keyboard.press('Escape');
 });
 
+test('composing Escape cancels neither the palette nor its search focus', async () => {
+	const page = await app.firstWindow();
+	for (const composing of [{isComposing: true}, {keyCode: 229}]) {
+		await page.getByRole('button', {name: 'command palette'}).click();
+		const input = page.getByRole('combobox');
+		await input.fill('theme');
+		await input.evaluate((input, composing) => {
+			input.dispatchEvent(
+				new KeyboardEvent('keydown', {
+					key: 'Escape',
+					bubbles: true,
+					cancelable: true,
+					...composing,
+				}),
+			);
+		}, composing);
+		await expect(page.getByRole('dialog')).toBeVisible();
+		await expect(input).toBeFocused();
+		await expect(input).toHaveValue('theme');
+		await page.keyboard.press('Escape');
+		await expect(page.getByRole('dialog')).toBeHidden();
+	}
+});
+
 test('Ctrl+K opens the palette on non-Mac platforms', async () => {
 	const page = await app.firstWindow();
 	await page.addInitScript(() => {

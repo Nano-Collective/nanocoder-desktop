@@ -20,6 +20,8 @@ queue. They add no IPC channels or preload capabilities.
   and close control stay above the scrolling results.
 - `?` opens the shortcut sheet outside text fields. Typing `?` in a message,
   command search or editable field does not open it.
+- Keys used during IME composition, including composing Escape and legacy
+  key-code 229, do not close an overlay or execute a command.
 - Native modal dialogs keep the background inert. Escape closes from every
   control, including an empty search. The close button and backdrop also close.
   Focus returns to the original control, or the palette button if that control

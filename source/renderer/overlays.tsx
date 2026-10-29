@@ -125,7 +125,8 @@ export function OverlayProvider({
 
 	useEffect(() => {
 		const keydown = (event: KeyboardEvent) => {
-			if (event.defaultPrevented || event.isComposing) return;
+			if (event.defaultPrevented || event.isComposing || event.keyCode === 229)
+				return;
 			if (event.key === 'Escape' && dialog.current?.open) {
 				event.preventDefault();
 				close();
@@ -226,6 +227,11 @@ export function OverlayProvider({
 					if (event.target === dialog.current) close();
 				}}
 				onKeyDown={event => {
+					if (
+						event.nativeEvent.isComposing ||
+						event.nativeEvent.keyCode === 229
+					)
+						return;
 					if (event.key === 'Escape') {
 						event.preventDefault();
 						close();
@@ -266,7 +272,11 @@ export function OverlayProvider({
 										setSelected(0);
 									}}
 									onKeyDown={event => {
-										if (event.nativeEvent.isComposing) return;
+										if (
+											event.nativeEvent.isComposing ||
+											event.nativeEvent.keyCode === 229
+										)
+											return;
 										if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 											event.preventDefault();
 											setSelected(
