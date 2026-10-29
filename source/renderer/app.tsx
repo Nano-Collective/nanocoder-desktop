@@ -18,6 +18,7 @@ import {
 	addUserMessage,
 	applyEvents,
 	emptyTranscript,
+	settleSubagentTurn,
 	type Transcript,
 } from '@/renderer/transcript';
 import {TrustFeedback} from '@/renderer/trust-feedback';
@@ -352,6 +353,17 @@ export function App() {
 				};
 			});
 		if ((processGenerations.current.get(root) ?? 0) !== generation) return;
+		setTranscripts(current => ({
+			...current,
+			[root]: settleSubagentTurn(
+				current[root] ?? emptyTranscript,
+				result.ok
+					? result.value.stopReason === 'cancelled'
+						? 'cancelled'
+						: 'completed'
+					: 'failed',
+			),
+		}));
 		setTurns(current => ({...current, [root]: result}));
 		setRunning(current => ({...current, [root]: false}));
 	};
@@ -534,7 +546,22 @@ export function App() {
 			}
 		>
 			{outcome?.status === 'connected' && (
-				<ConversationStream transcript={transcript} running={sending}>
+				<ConversationStream
+					key={root}
+					transcript={transcript}
+					running={sending}
+					onStopTurn={cancel}
+					stopping={cancellation === 'pending'}
+					outcome={
+						turn?.ok
+							? turn.value.stopReason === 'cancelled'
+								? 'cancelled'
+								: 'completed'
+							: turn
+								? 'failed'
+								: undefined
+					}
+				>
 					<ApprovalRequests
 						key={root}
 						requests={transcript.permissions}

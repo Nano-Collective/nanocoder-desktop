@@ -19,6 +19,9 @@ export type TranscriptItem = (
 			status: string;
 			toolKind?: string;
 			details?: StreamToolDetails;
+			delegation?: import('@/shared/subagents').SubagentDisplay;
+			approvalOnly?: true;
+			turnOutcome?: 'completed' | 'failed' | 'cancelled';
 	  }
 	| {kind: 'plan'; id: string | null; content: StreamPlan}
 	| {kind: 'notice'; severity: string; title: string; description?: string}
@@ -61,6 +64,34 @@ export interface Transcript {
 
 export const emptyTranscript: Transcript = {items: [], permissions: []};
 
+export function settleSubagentTurn(
+	transcript: Transcript,
+	outcome: 'completed' | 'failed' | 'cancelled',
+): Transcript {
+	const start = currentTurnStart(transcript.items);
+	let changed = false;
+	const items = transcript.items.map((item, index) => {
+		if (
+			index <= start ||
+			item.kind !== 'tool' ||
+			!item.delegation ||
+			item.delegation.history ||
+			item.turnOutcome ||
+			!['pending', 'in_progress'].includes(item.status)
+		)
+			return item;
+		changed = true;
+		return {...item, turnOutcome: outcome};
+	});
+	return changed ? {...transcript, items} : transcript;
+}
+
+export function currentTurnStart(items: readonly TranscriptItem[]): number {
+	for (let index = items.length - 1; index >= 0; index--)
+		if (items[index].kind === 'user') return index;
+	return -1;
+}
+
 export function addUserMessage(
 	transcript: Transcript,
 	text: string,
@@ -70,7 +101,7 @@ export function addUserMessage(
 
 function upsert(
 	transcript: Transcript,
-	matches: (item: TranscriptItem) => boolean,
+	matches: (item: TranscriptItem, index: number) => boolean,
 	update: (previous?: TranscriptItem) => TranscriptItem,
 ): Transcript {
 	const index = transcript.items.findIndex(matches);
@@ -121,26 +152,43 @@ function applyContent(transcript: Transcript, event: TurnEvent): Transcript {
 				items: join ? [...items.slice(0, -1), item] : [...items, item],
 			};
 		}
-		case 'tool':
+		case 'tool': {
+			const start = currentTurnStart(items);
 			return upsert(
 				transcript,
-				item => item.kind === 'tool' && item.id === event.id,
+				(item, index) =>
+					item.kind === 'tool' && item.id === event.id && index > start,
 				previous => {
 					const known = previous?.kind === 'tool' ? previous : undefined;
+					if (
+						known &&
+						(known.turnOutcome ||
+							['completed', 'failed', 'cancelled'].includes(known.status)) &&
+						(event.status === 'pending' || event.status === 'in_progress')
+					)
+						return known;
 					return {
 						kind: 'tool',
 						id: event.id,
 						title: event.title ?? known?.title ?? event.id,
 						status: event.status ?? known?.status ?? 'pending',
+						...(known?.turnOutcome ? {turnOutcome: known.turnOutcome} : {}),
 						...(event.toolKind || known?.toolKind
 							? {toolKind: event.toolKind ?? known?.toolKind}
 							: {}),
 						...(event.details || known?.details
 							? {details: {...known?.details, ...event.details}}
 							: {}),
+						...(known?.delegation || event.delegation
+							? {delegation: known?.delegation ?? event.delegation}
+							: {}),
+						...(known?.approvalOnly || event.approvalOnly
+							? {approvalOnly: true}
+							: {}),
 					};
 				},
 			);
+		}
 		case 'plan':
 			if (event.content === null)
 				return {

@@ -3,10 +3,10 @@
 Everything read to write this planning set, with commits and the date read.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-10-29
 - Drafted by: @akramcodez
 
-All sources were read on 2026-10-23.
+Sources were first read on 2026-10-23; later source checks are dated below.
 
 ## Reference repositories
 
@@ -40,6 +40,10 @@ Nanocoder: [#1709](https://github.com/Nano-Collective/nanocoder/pull/1709), [#16
 ## Nanocoder source files (at `8a5f4d4`)
 
 `source/acp/` (agent, capabilities, server, session, conversation, timeline, types and specs), `source/session/session-manager.ts`, `source/session/session-paths.ts`, `source/subagents/subagent-executor.ts`, `source/services/timeline-manager.ts`, `source/constants.ts`, `source/tools/browser.tsx`, `source/tools/tool-manager.ts`, `source/config/index.ts` (including `.env` loading), `source/config/env-substitution.ts`, `source/config/preferences.ts`, `source/plain/initialize.ts`, `source/utils/ensure-nanocoder-gitignore.ts`, `source/cli.tsx`, `docs/features/acp.md`, `docs/features/hooks.md`, `docs/configuration/index.md`, `plugins/vscode/src/acp-client.ts`, `package.json`, `pnpm-workspace.yaml`, `biome.json`, `knip.json`, `tsconfig.json`, `.changeset/`, `.github/`. `@agentclientprotocol/sdk` 1.4.0 (method tables and schema types) from Nanocoder's installed dependencies.
+
+## Subagent source recheck (2026-10-29)
+
+Nanocoder [`fc01e239a80ddb2e09ca174e3c909508832d5340`](https://github.com/Nano-Collective/nanocoder/tree/fc01e239a80ddb2e09ca174e3c909508832d5340), package version 1.31.0: `source/acp/acp-tool-call.ts`, `source/acp/acp-conversation.ts`, `source/acp/acp-permission.ts`, `source/acp/acp-agent.ts`, `source/subagents/subagent-executor.ts`, `source/tools/approval-policy.ts`, `source/plain/initialize.ts` and `source/hooks/chat-handler/conversation/tool-executor.tsx`. Checked delegation classification, initial/progress/update wire shapes, early approval completion, policy-dependent requests, whole-turn cancellation, synthetic replay and the distinction between executor/batch bounds and ACP sequential execution. Three scripted real ACP tests accompany phase 1.10. This does not change the provisional desktop minimum or close `OQ-02`/`OQ-03`.
 
 ## This repository
 
