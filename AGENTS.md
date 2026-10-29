@@ -63,6 +63,8 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `planning/ui-foundations.md` | Theme switching, keyboard-focus QA and the proposed Markdown renderer |
 | `planning/projects-and-trust.md` | Project opening, safe summary limits, the pre-trust probe exception and remaining Nanocoder trust gaps |
 | `planning/app-shell.md` | Shell composition, supervisor badge rules and locked multi-width QA |
+| `source/renderer/overlays.tsx`, `source/renderer/overlay-model.ts` | U.12 renderer-only command palette, shortcuts, focus return and clock-injected toast queue |
+| `planning/ui-overlays.md` | Overlay commands, keyboard rules and notification verification |
 | `THIRD-PARTY-NOTICES.txt` | Bundled font copyright and full OFL 1.1 licence |
 | `source/main/nanocoder/capabilities.ts` | Records `initialize` capabilities and builds feature gates with reasons; extensions need safe probes |
 | `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp`, a scripted model provider and test helpers, including the setup shared by the `*.acp.ts` tests |

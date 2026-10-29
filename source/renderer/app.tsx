@@ -1,6 +1,8 @@
 import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
 import {ApprovalRequests} from '@/renderer/approval-requests';
+import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
+import {projectPalette} from '@/renderer/project-palette';
 import {RecentProjects} from '@/renderer/recent-projects';
 import {
 	acpBadge,
@@ -251,8 +253,9 @@ export function App() {
 		setCancellations(current => ({...current, [root]: result}));
 	};
 
-	return (
+	const shell = (
 		<AppShell
+			palette={<PaletteButton />}
 			title={info?.name}
 			projectRail={
 				<RecentProjects
@@ -417,5 +420,33 @@ export function App() {
 				</Card>
 			)}
 		</AppShell>
+	);
+
+	return (
+		<OverlayProvider
+			actions={[
+				...projectPalette({
+					...projectControls,
+					pending: connecting || projectControls.pending,
+				}),
+				{
+					id: 'open-folder',
+					label: 'open a project folder',
+					glyph: '⌗',
+					keywords: 'add directory',
+					disabledReason:
+						connecting || projectControls.pending
+							? 'another project request or native dialog is pending'
+							: !runtime?.ok
+								? 'Nanocoder runtime is not available'
+								: undefined,
+					run: () => {
+						void connect();
+					},
+				},
+			]}
+		>
+			{shell}
+		</OverlayProvider>
 	);
 }
