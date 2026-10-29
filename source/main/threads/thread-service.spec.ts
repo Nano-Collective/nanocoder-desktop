@@ -830,3 +830,131 @@ test('a pending history confirmation locks its desktop row against removal (CHAT
 	t.is(removal, 'BUSY');
 	t.deepEqual(store.threads.get(project.id, thread.id), thread);
 });
+
+test('opening a new thread selects its metadata without starting a session (CHAT-03, CHAT-04)', async t => {
+	const {project, service, store, calls} = await fixture(t);
+	const thread = await service.createThread({projectId: project.id});
+	store.updateUiState({activeThreadId: null, openThreadIds: []});
+	t.deepEqual(
+		await service.openThread({projectId: project.id, threadId: thread.id}),
+		{thread, sequence: 0, replaying: false, events: []},
+	);
+	t.is(store.getUiState().activeThreadId, thread.id);
+	t.deepEqual(store.getUiState().openThreadIds, [thread.id]);
+	t.deepEqual(calls, []);
+});
+
+test('opening a current session reads its in-memory snapshot without resume (CHAT-03)', async t => {
+	const {project, service, supervisor} = await fixture(t, true);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	connection.prompt = async () => ({stopReason: 'end_turn'});
+	connection.resumeSession = async () => {
+		throw new Error('A current session must not resume again');
+	};
+	const request = {projectId: project.id, threadId: thread.id};
+	await service.promptThread({...request, text: 'fixture prompt'});
+	const before = await service.getThreadSnapshot(request);
+	t.deepEqual(await service.openThread(request), before);
+});
+
+test('opening a missing Nanocoder session keeps its ID and shows unable-to-resume reason (CHAT-04 upstream limit)', async t => {
+	const {project, service, store} = await fixture(t, true);
+	const thread = seed(project);
+	store.threads.save(thread);
+	const snapshot = await service.openThread({
+		projectId: project.id,
+		threadId: thread.id,
+	});
+	t.is(snapshot.thread.id, thread.id);
+	t.is(snapshot.thread.nanocoderSessionId, thread.nanocoderSessionId);
+	t.is(snapshot.thread.title, thread.title);
+	t.is(snapshot.thread.runState, 'view-only');
+	t.regex(
+		snapshot.thread.viewOnlyReason ?? '',
+		/Nanocoder has no saved history/,
+	);
+	t.deepEqual(snapshot.events, []);
+	t.deepEqual(store.threads.get(project.id, thread.id), snapshot.thread);
+});
+
+test('opening a stored session delegates replay and never restores yolo (CHAT-04, DEC-31)', async t => {
+	const events: ProjectEvent[] = [];
+	const {project, service, store, supervisor} = await fixture(
+		t,
+		true,
+		event => {
+			if (event.type === 'turn') events.push(event);
+		},
+	);
+	const thread = seed(project, {
+		nanocoderSessionId: 'fake-session',
+		mode: 'yolo',
+	});
+	store.threads.save(thread);
+	const snapshot = await service.openThread({
+		projectId: project.id,
+		threadId: thread.id,
+	});
+	t.is(snapshot.thread.nanocoderSessionId, 'fake-session');
+	t.is(snapshot.thread.runState, 'ready');
+	t.is(snapshot.thread.mode, 'auto-accept');
+	t.deepEqual(snapshot.events, [
+		{type: 'user', text: 'Earlier question'},
+		{type: 'text', text: 'Earlier answer'},
+		{
+			type: 'tool',
+			id: 'old_call',
+			title: 'execute_bash: echo old',
+			status: 'completed',
+		},
+	]);
+	t.deepEqual(events, []);
+	const connection = supervisor.getConnection(project.id);
+	await supervisor.close();
+	const modes = fakeEvents(connection.stderr.lines())
+		.filter(event => event.method === 'session/set_mode')
+		.map(event => (event.params as {modeId: string}).modeId);
+	t.deepEqual(modes, ['auto-accept']);
+});
+
+test('creating a thread keeps the persisted open-tab list bounded (CHAT-03)', async t => {
+	const {project, service, store} = await fixture(t);
+	const previous = Array.from({length: 100}, () => seed(project));
+	for (const thread of previous) store.threads.save(thread);
+	store.updateUiState({
+		activeProjectId: project.id,
+		activeThreadId: previous[0].id,
+		openThreadIds: previous.map(thread => thread.id),
+	});
+	const thread = await service.createThread({projectId: project.id});
+	t.deepEqual(store.getUiState().openThreadIds, [
+		...previous.slice(1).map(thread => thread.id),
+		thread.id,
+	]);
+	t.is(store.getUiState().activeThreadId, thread.id);
+});
+
+test('an unable-to-resume thread refuses prompts without showing new content (CHAT-04 upstream limit)', async t => {
+	const events: ProjectEvent[] = [];
+	const {project, service, store, calls} = await fixture(t, true, event => {
+		if (event.type === 'turn') events.push(event);
+	});
+	const thread = seed(project, {
+		runState: 'view-only',
+		viewOnlyReason: 'Fixture history is not available',
+	});
+	store.threads.save(thread);
+	const error = await t.throwsAsync(
+		service.promptThread({
+			projectId: project.id,
+			threadId: thread.id,
+			text: 'fixture prompt',
+		}),
+		{instanceOf: IpcFailure},
+	);
+	t.is((error as IpcFailure).code, 'UNAVAILABLE');
+	t.deepEqual(events, []);
+	t.deepEqual(calls, []);
+});
