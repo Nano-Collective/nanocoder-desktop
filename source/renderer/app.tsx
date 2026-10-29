@@ -1,11 +1,14 @@
 import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
+import {RecentProjects} from '@/renderer/recent-projects';
 import {
 	addUserMessage,
 	applyEvent,
 	emptyTranscript,
 	type Transcript,
 } from '@/renderer/transcript';
+import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, Divider, StatusBadge} from '@/renderer/ui';
+import {useProjects} from '@/renderer/use-projects';
 import type {
 	AppInfo,
 	CapabilityGates,
@@ -141,6 +144,7 @@ export function App() {
 	);
 	const [connecting, setConnecting] = useState(false);
 	const [opened, setOpened] = useState<IpcResult<ConnectResult> | null>(null);
+	const projectControls = useProjects(() => setOpened(null));
 	const [transcripts, setTranscripts] = useState<Record<string, Transcript>>(
 		{},
 	);
@@ -201,6 +205,7 @@ export function App() {
 	const connect = async () => {
 		setConnecting(true);
 		const result = await window.desktop.connectNanocoder();
+		void projectControls.refresh();
 		setConnecting(false);
 		if (!result.ok || result.value.status !== 'cancelled') {
 			setOpened(result);
@@ -262,7 +267,10 @@ export function App() {
 					</>
 				)}
 				{runtime?.ok && (
-					<Button onClick={connect} disabled={connecting}>
+					<Button
+						onClick={connect}
+						disabled={connecting || projectControls.pending}
+					>
 						{connecting ? (
 							<>
 								<span className="spinner" aria-hidden="true">
@@ -276,6 +284,11 @@ export function App() {
 					</Button>
 				)}
 			</section>
+			<RecentProjects
+				{...projectControls}
+				pending={connecting || projectControls.pending}
+			/>
+			<TrustFeedback feedback={projectControls.feedback} />
 			{outcome?.status === 'connected' && (
 				<AgentDetails agent={outcome.agent} session={outcome.session} />
 			)}

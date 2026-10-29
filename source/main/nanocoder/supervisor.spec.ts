@@ -79,6 +79,20 @@ function nextEvent(
 
 test.after.always(removeFakeProjects);
 
+test('the native trust confirmer receives only the main-owned canonical project root (DEC-30)', async t => {
+	const chosen = {...project('untrusted'), trusted: false};
+	const roots: string[] = [];
+	const supervisor = make({
+		confirmTrust: async (_refusal, root) => {
+			roots.push(root);
+			return false;
+		},
+	});
+	t.teardown(() => supervisor.close());
+	t.is((await supervisor.probeProject(chosen)).status, 'untrusted');
+	t.deepEqual(roots, [chosen.canonicalRoot]);
+});
+
 test('state replay preserves process identity and gates with a new sequence', async t => {
 	const supervisor = make();
 	t.teardown(() => supervisor.close());

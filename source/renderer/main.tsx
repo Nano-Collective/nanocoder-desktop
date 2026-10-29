@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {App} from '@/renderer/app';
 import '@/renderer/styles/foundations.css';
 import '@/renderer/styles/technical-gate.css';
+import '@/renderer/styles/projects.css';
 
 const root = document.getElementById('root');
 if (!root) {
