@@ -98,5 +98,5 @@ The subagent event projection in [`acp-integration.md`](../acp-integration.md#na
 [nc-poll]: https://github.com/Nano-Collective/nanocoder/blob/fc01e239a80ddb2e09ca174e3c909508832d5340/source/acp/acp-conversation.ts#L660-L704
 [nc-approval]: https://github.com/Nano-Collective/nanocoder/blob/fc01e239a80ddb2e09ca174e3c909508832d5340/source/acp/acp-conversation.ts#L98-L160
 [nc-policy]: https://github.com/Nano-Collective/nanocoder/blob/fc01e239a80ddb2e09ca174e3c909508832d5340/source/tools/approval-policy.ts#L49-L82
-[nc-replay]: https://github.com/Nano-Collective/nanocoder/blob/fc01e239a80ddb2e09ca174e3c909508832d5340/source/acp/agent.ts#L925-L938
+[nc-replay]: https://github.com/Nano-Collective/nanocoder/blob/fc01e239a80ddb2e09ca174e3c909508832d5340/source/acp/acp-agent.ts#L925-L938
 [nc1105]: https://github.com/Nano-Collective/nanocoder/issues/1105
