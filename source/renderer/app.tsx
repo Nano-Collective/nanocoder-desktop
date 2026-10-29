@@ -1,4 +1,10 @@
 import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
+import {AppShell} from '@/renderer/app-shell';
+import {
+	acpBadge,
+	observeSupervisor,
+	type SupervisorIndex,
+} from '@/renderer/supervisor-state';
 import {
 	addUserMessage,
 	applyEvent,
@@ -150,16 +156,21 @@ export function App() {
 		Record<string, IpcResult<TurnResult> | null>
 	>({});
 	const [gates, setGates] = useState<Record<string, CapabilityGates>>({});
+	const [supervisors, setSupervisors] = useState<SupervisorIndex>({});
 	const roots = useRef(new Map<string, string>());
 	const outcome = opened?.ok ? opened.value : null;
 	const root = outcome?.status === 'connected' ? outcome.agent.root : '';
 	const transcript = transcripts[root] ?? emptyTranscript;
 	const sending = running[root] ?? false;
 	const turn = turns[root];
+	const processBadge = acpBadge(supervisors, root);
 
 	useEffect(
 		() =>
 			window.desktop.onProjectEvent(event => {
+				if (event.type === 'supervisor' || event.type === 'project-removed') {
+					setSupervisors(current => observeSupervisor(current, event));
+				}
 				if (
 					event.type === 'supervisor' &&
 					event.state.agent &&
@@ -224,15 +235,9 @@ export function App() {
 	};
 
 	return (
-		<main className="technical-gate">
-			<header className="gate-header">
-				<h1>{info?.name}</h1>
-				{info && (
-					<p className="gate-meta">
-						version {info.version}. pre-v0.1: an early build, with most features
-						still to come.
-					</p>
-				)}
+		<AppShell
+			title={info?.name}
+			statusBadges={
 				<div className="gate-actions">
 					<StatusBadge
 						status={
@@ -245,69 +250,82 @@ export function App() {
 										: 'idle'
 						}
 					/>
+					{processBadge && <StatusBadge {...processBadge} />}
 				</div>
-			</header>
-			<Divider />
-			<section className="gate-runtime" aria-label="Nanocoder runtime">
-				{runtime?.ok && (
-					<p>
-						Nanocoder {runtime.value.version} at {runtime.value.cliPath}, on
-						Node.js {runtime.value.nodeVersion} at {runtime.value.nodePath}
-					</p>
-				)}
-				{runtime && !runtime.ok && (
-					<>
-						<p role="alert">{runtime.error.message}</p>
-						<Button onClick={checkRuntime}>check again</Button>
-					</>
-				)}
-				{runtime?.ok && (
-					<Button onClick={connect} disabled={connecting}>
-						{connecting ? (
-							<>
-								<span className="spinner" aria-hidden="true">
-									◐
-								</span>{' '}
-								starting Nanocoder
-							</>
-						) : (
-							'open a project folder'
-						)}
-					</Button>
-				)}
-			</section>
-			{outcome?.status === 'connected' && (
-				<AgentDetails agent={outcome.agent} session={outcome.session} />
-			)}
-			{outcome?.status === 'connected' && gates[outcome.agent.root] && (
-				<FeatureDetails gates={gates[outcome.agent.root]} />
-			)}
-			{outcome?.status === 'connected' && (
-				<form className="gate-composer" onSubmit={send}>
-					<label>
-						message
-						<input
-							value={draft}
-							onChange={event => setDraft(event.target.value)}
-							disabled={sending}
-							placeholder="ask anything…"
-							aria-describedby="composer-hint"
-						/>
-					</label>
-					<div className="gate-actions">
-						<Button type="submit" disabled={sending || draft.trim() === ''}>
-							send
-						</Button>
-						<p id="composer-hint" className="gate-hint">
-							{sending
-								? 'waiting for Nanocoder to finish the turn'
-								: draft.trim() === ''
-									? 'enter a message to send'
-									: 'ready to send'}
+			}
+			streamTools={
+				<>
+					{info && (
+						<p className="gate-meta">
+							version {info.version}. pre-v0.1: an early build, with most
+							features still to come.
 						</p>
-					</div>
-				</form>
-			)}
+					)}
+					<section className="gate-runtime" aria-label="Nanocoder runtime">
+						{runtime?.ok && (
+							<p>
+								Nanocoder {runtime.value.version} at {runtime.value.cliPath}, on
+								Node.js {runtime.value.nodeVersion} at {runtime.value.nodePath}
+							</p>
+						)}
+						{runtime && !runtime.ok && (
+							<>
+								<p role="alert">{runtime.error.message}</p>
+								<Button onClick={checkRuntime}>check again</Button>
+							</>
+						)}
+						{runtime?.ok && (
+							<Button onClick={connect} disabled={connecting}>
+								{connecting ? (
+									<>
+										<span className="spinner" aria-hidden="true">
+											◐
+										</span>{' '}
+										starting Nanocoder
+									</>
+								) : (
+									'open a project folder'
+								)}
+							</Button>
+						)}
+					</section>
+					{outcome?.status === 'connected' && (
+						<AgentDetails agent={outcome.agent} session={outcome.session} />
+					)}
+					{outcome?.status === 'connected' && gates[outcome.agent.root] && (
+						<FeatureDetails gates={gates[outcome.agent.root]} />
+					)}
+				</>
+			}
+			composer={
+				outcome?.status === 'connected' && (
+					<form className="gate-composer" onSubmit={send}>
+						<label>
+							message
+							<input
+								value={draft}
+								onChange={event => setDraft(event.target.value)}
+								disabled={sending}
+								placeholder="ask anything…"
+								aria-describedby="composer-hint"
+							/>
+						</label>
+						<div className="gate-actions">
+							<Button type="submit" disabled={sending || draft.trim() === ''}>
+								send
+							</Button>
+							<p id="composer-hint" className="gate-hint">
+								{sending
+									? 'waiting for Nanocoder to finish the turn'
+									: draft.trim() === ''
+										? 'enter a message to send'
+										: 'ready to send'}
+							</p>
+						</div>
+					</form>
+				)
+			}
+		>
 			{outcome?.status === 'connected' && (
 				<Conversation transcript={transcript} />
 			)}
@@ -338,6 +356,6 @@ export function App() {
 					</span>
 				</Card>
 			)}
-		</main>
+		</AppShell>
 	);
 }

@@ -5,7 +5,7 @@ Implementation notes for U.0 and U.1 from [work list #17](https://github.com/Nan
 - Status: Draft
 - Last updated: 2026-10-29
 
-Visual decisions remain in [`DESIGN.md`](../DESIGN.md), which is not changed by the implementation. This is the existing technical-gate renderer, not the U.2 app shell.
+Visual decisions remain in [`DESIGN.md`](../DESIGN.md), which is not changed by the implementation. The foundations style the technical-gate renderer, now composed inside the [U.2 app shell](app-shell.md).
 
 ## Token pipeline
 
@@ -39,7 +39,7 @@ There are 200ms colour transitions. Playwright uses `page.emulateMedia({reducedM
 
 `source/renderer/ui.tsx` provides native buttons, status badges, cards and dividers. Controls keep native names, roles and disabled states. State glyphs sit beside words and are hidden from assistive technology only to avoid duplicate announcements. Global `:focus-visible` styles apply to keyboard controls.
 
-The technical gate shows only the turn state it can derive from received updates and prompt results. It does not show a live ACP badge: the historical connect result cannot prove that the child is still connected. ACP ready/exited variants remain available in the shared component for the later integration with phase 1.3 supervisor state.
+The turn badge uses received turn updates and prompt results. The app-shell ACP badge now consumes phase 1.3 supervisor state, never the historical connect result, to avoid claiming that an exited child is ready. See [app-shell status](app-shell.md#acp-status).
 
 The button has an optional key-hint slot, but no technical-gate control uses it. The prescribed 55% hint opacity creates an unlisted contrast gap in light mode. It needs the designer's decision before use. Hiding text from assistive technology does not exempt it from contrast checks. The rendered-text e2e audit deliberately inserts such a hint and proves it is caught. Do not enable hints without extending the pairing inventory and passing that audit.
 

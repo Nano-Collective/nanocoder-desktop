@@ -1,13 +1,10 @@
 .technical-gate {
 	display: grid;
 	gap: var(--spacing-xxl);
-	max-width: var(--spacing-width-mid);
-	margin: 0 auto;
-	padding: var(--spacing-xxl);
+	padding: var(--spacing-stream-padding);
 	overflow-wrap: anywhere;
 }
 
-.gate-header,
 .gate-runtime {
 	display: grid;
 	gap: var(--spacing-md);
