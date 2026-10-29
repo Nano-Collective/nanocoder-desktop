@@ -6,6 +6,8 @@ import type {
 	ThreadInfo,
 	ThreadRequest,
 	ThreadSnapshot,
+	TurnResult,
+	WorkspaceRequests,
 } from '@/shared/ipc';
 
 const ok = <T>(value: T): IpcResult<T> => ({ok: true, value});
@@ -90,6 +92,22 @@ function fixture() {
 		): Promise<IpcResult<{status: 'deleted' | 'cancelled'}>> => {
 			calls.push(['delete-history', request]);
 			return ok({status: 'cancelled'});
+		},
+		promptThread: async (
+			request: WorkspaceRequests['promptThread'],
+		): Promise<IpcResult<TurnResult>> => {
+			calls.push(['prompt', request]);
+			return ok({stopReason: 'end_turn'});
+		},
+		cancelThread: async (request: ThreadRequest): Promise<IpcResult<null>> => {
+			calls.push(['cancel', request]);
+			return ok(null);
+		},
+		answerThreadPermission: async (
+			request: WorkspaceRequests['answerThreadPermission'],
+		): Promise<IpcResult<null>> => {
+			calls.push(['answer', request]);
+			return ok(null);
 		},
 		onProjectEvent: (callback: (event: ProjectEvent) => void) => {
 			listener = callback;
@@ -457,3 +475,263 @@ for (const transition of ['switch', 'dispose']) {
 		t.deepEqual(controller.getState(), before);
 	});
 }
+
+test('thread commands capture desktop ownership without inventing content or blocking selection and approval/cancel (CHAT-03, CHAT-06, ACP-10)', async t => {
+	const {bridge, controller, calls, delivered, emit} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	await controller.read('created');
+	calls.length = 0;
+	delivered.length = 0;
+	const result = deferred<IpcResult<TurnResult>>();
+	const cancellation = deferred<IpcResult<null>>();
+	bridge.promptThread = request => {
+		calls.push(['prompt', request]);
+		return result.promise;
+	};
+	bridge.cancelThread = request => {
+		calls.push(['cancel', request]);
+		return cancellation.promise;
+	};
+	const sending = controller.prompt('created', 'captured text');
+	t.is(controller.getState().promptingThreadId, 'created');
+	t.false(controller.getState().pending);
+	emit({
+		type: 'thread',
+		projectId: 'project-a',
+		sequence: 1,
+		thread: row('peer'),
+	});
+	t.true(await controller.read('peer'));
+	const cancelling = controller.cancel('created');
+	t.deepEqual(controller.getState().cancellingThreadIds, ['created']);
+	t.deepEqual(
+		await controller.answer('created', 'request-a', 'offered-a'),
+		ok(null),
+	);
+	t.deepEqual(calls, [
+		[
+			'prompt',
+			{projectId: 'project-a', threadId: 'created', text: 'captured text'},
+		],
+		['snapshot', {projectId: 'project-a', threadId: 'peer'}],
+		['cancel', {projectId: 'project-a', threadId: 'created'}],
+		[
+			'answer',
+			{
+				projectId: 'project-a',
+				threadId: 'created',
+				requestId: 'request-a',
+				optionId: 'offered-a',
+			},
+		],
+	]);
+	t.deepEqual(delivered, [{type: 'snapshot', value: snap('peer')}]);
+	cancellation.resolve(ok(null));
+	t.deepEqual(await cancelling, ok(null));
+	t.deepEqual(controller.getState().cancellingThreadIds, []);
+	t.is(controller.getState().promptingThreadId, 'created');
+	result.resolve(ok({stopReason: 'end_turn'}));
+	t.deepEqual(await sending, ok({stopReason: 'end_turn'}));
+	t.is(controller.getState().promptingThreadId, null);
+	t.is(controller.getState().activeThreadId, 'peer');
+	t.is(
+		controller.getState().threads.find(thread => thread.id === 'created')
+			?.runState,
+		'new',
+	);
+});
+
+test('unknown disposed archived view-only empty and metadata-pending prompts refuse without blocking scoped cancel or answers (CHAT-06, ACP-10)', async t => {
+	const {bridge, controller, calls, emit} = fixture();
+	t.is(await controller.prompt('missing', 'text'), null);
+	t.is(await controller.cancel('missing'), null);
+	t.is(await controller.answer('missing', 'request', 'option'), null);
+	t.deepEqual(calls, []);
+	await controller.selectProject('project-a');
+	await controller.create();
+	emit({
+		type: 'thread',
+		projectId: 'project-a',
+		sequence: 1,
+		thread: {...row('archive'), archiveState: 'archived'},
+	});
+	emit({
+		type: 'thread',
+		projectId: 'project-a',
+		sequence: 2,
+		thread: {
+			...row('view'),
+			runState: 'view-only',
+			viewOnlyReason: 'no history',
+		},
+	});
+	calls.length = 0;
+	for (const [id, text] of [
+		['created', ' \n '],
+		['missing', 'text'],
+		['archive', 'text'],
+		['view', 'text'],
+	]) {
+		t.is(await controller.prompt(id, text), null);
+	}
+	t.is(await controller.cancel('missing'), null);
+	t.is(await controller.answer('missing', 'request', 'option'), null);
+	t.deepEqual(calls, []);
+	const pending = deferred<IpcResult<ThreadSnapshot>>();
+	bridge.openThread = () => pending.promise;
+	const opening = controller.open('created');
+	t.is(await controller.prompt('created', 'text'), null);
+	t.deepEqual(await controller.cancel('created'), ok(null));
+	t.deepEqual(
+		await controller.answer('created', 'request', 'option'),
+		ok(null),
+	);
+	pending.resolve(ok(snap('created')));
+	t.true(await opening);
+	t.deepEqual(calls, [
+		['cancel', {projectId: 'project-a', threadId: 'created'}],
+		[
+			'answer',
+			{
+				projectId: 'project-a',
+				threadId: 'created',
+				requestId: 'request',
+				optionId: 'option',
+			},
+		],
+	]);
+	controller.dispose();
+	t.is(await controller.prompt('created', 'text'), null);
+	t.is(await controller.cancel('created'), null);
+	t.is(await controller.answer('created', 'request', 'option'), null);
+	t.is(calls.length, 2);
+});
+
+test('a project permits one local prompt and deduplicates each pending cancel and exact approval answer (CHAT-06, ACP-10)', async t => {
+	const {bridge, controller, calls, emit} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	emit({
+		type: 'thread',
+		projectId: 'project-a',
+		sequence: 1,
+		thread: row('peer'),
+	});
+	const result = deferred<IpcResult<TurnResult>>();
+	const action = deferred<IpcResult<null>>();
+	bridge.promptThread = request => {
+		calls.push(['prompt', request]);
+		return result.promise;
+	};
+	bridge.cancelThread = request => {
+		calls.push(['cancel', request]);
+		return action.promise;
+	};
+	bridge.answerThreadPermission = request => {
+		calls.push(['answer', request]);
+		return request.requestId === 'request-a'
+			? action.promise
+			: Promise.resolve(ok(null));
+	};
+	calls.length = 0;
+	const sending = controller.prompt('created', 'first');
+	t.is(await controller.prompt('created', 'duplicate'), null);
+	t.is(await controller.prompt('peer', 'not queued'), null);
+	const cancelling = controller.cancel('created');
+	t.is(await controller.cancel('created'), null);
+	const answering = controller.answer('created', 'request-a', 'offered');
+	t.is(await controller.answer('created', 'request-a', 'different'), null);
+	t.deepEqual(
+		await controller.answer('created', 'request-b', 'offered'),
+		ok(null),
+	);
+	t.is(calls.length, 4);
+	action.resolve(ok(null));
+	result.resolve(ok({stopReason: 'cancelled'}));
+	await Promise.all([sending, cancelling, answering]);
+	t.is(controller.getState().promptingThreadId, null);
+	t.deepEqual(controller.getState().cancellingThreadIds, []);
+});
+
+for (const transition of ['switch', 'remove', 'dispose']) {
+	test(`pending turn-command replies cannot re-enter state after ${transition} (CHAT-03, ACP-10)`, async t => {
+		const {bridge, controller, delivered, emit} = fixture();
+		await controller.selectProject('project-a');
+		await controller.create();
+		const result = deferred<IpcResult<TurnResult>>();
+		const action = deferred<IpcResult<null>>();
+		bridge.promptThread = () => result.promise;
+		bridge.cancelThread = () => action.promise;
+		bridge.answerThreadPermission = () => action.promise;
+		const pending = [
+			controller.prompt('created', 'old text'),
+			controller.cancel('created'),
+			controller.answer('created', 'old request', 'offered'),
+		];
+		if (transition === 'switch') await controller.selectProject('project-b');
+		else if (transition === 'remove')
+			emit({
+				type: 'thread-removed',
+				projectId: 'project-a',
+				threadId: 'created',
+				sequence: 1,
+			});
+		else controller.dispose();
+		const before = controller.getState();
+		result.resolve({
+			ok: false,
+			error: {code: 'DENIED', message: 'obsolete failure', retryable: false},
+		});
+		action.resolve(ok(null));
+		t.deepEqual(await Promise.all(pending), [null, null, null]);
+		t.deepEqual(controller.getState(), before);
+		t.deepEqual(delivered, []);
+	});
+}
+
+for (const resultKind of ['resolve', 'reject']) {
+	test(`an old prompt ${resultKind} cannot unlock a new project prompt with the same local key (CHAT-03, CHAT-06)`, async t => {
+		const {bridge, controller} = fixture();
+		await controller.selectProject('project-a');
+		await controller.create();
+		const old = deferred<IpcResult<TurnResult>>();
+		const fresh = deferred<IpcResult<TurnResult>>();
+		bridge.promptThread = request =>
+			request.projectId === 'project-a' ? old.promise : fresh.promise;
+		const obsolete = controller.prompt('created', 'old');
+		await controller.selectProject('project-b');
+		await controller.create();
+		const current = controller.prompt('created', 'new');
+		if (resultKind === 'resolve') old.resolve(ok({stopReason: 'end_turn'}));
+		else old.reject(new Error('obsolete transport failure'));
+		t.is(await obsolete, null);
+		t.is(controller.getState().promptingThreadId, 'created');
+		t.is(controller.getState().projectId, 'project-b');
+		t.is(controller.getState().error, null);
+		fresh.resolve(ok({stopReason: 'end_turn'}));
+		t.deepEqual(await current, ok({stopReason: 'end_turn'}));
+		t.is(controller.getState().promptingThreadId, null);
+	});
+}
+
+test('turn command transport failures clear only their own busy state and expose no thrown detail (CHAT-06, DATA-07)', async t => {
+	const {bridge, controller, delivered} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	bridge.promptThread = async () => {
+		throw new Error('untrusted fixture detail');
+	};
+	t.deepEqual(await controller.prompt('created', 'text'), {
+		ok: false,
+		error: {
+			code: 'AGENT_UNAVAILABLE',
+			message: 'the thread request could not finish',
+			retryable: true,
+		},
+	});
+	t.is(controller.getState().promptingThreadId, null);
+	t.false(controller.getState().pending);
+	t.is(controller.getState().threads[0]?.runState, 'new');
+	t.deepEqual(delivered, []);
+});

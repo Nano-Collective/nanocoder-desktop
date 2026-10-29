@@ -18,6 +18,9 @@ type ThreadBridge = Pick<
 	| 'deleteThreadHistory'
 	| 'openThread'
 	| 'getThreadSnapshot'
+	| 'promptThread'
+	| 'cancelThread'
+	| 'answerThreadPermission'
 >;
 
 export interface ThreadControllerState {
@@ -26,6 +29,8 @@ export interface ThreadControllerState {
 	activeThreadId: string | null;
 	loading: boolean;
 	pending: boolean;
+	promptingThreadId: string | null;
+	cancellingThreadIds: string[];
 	error: string | null;
 }
 
@@ -42,12 +47,18 @@ export function createThreadController(options: {
 		activeThreadId: null,
 		loading: false,
 		pending: false,
+		promptingThreadId: null,
+		cancellingThreadIds: [],
 		error: null,
 	};
 	let generation = 0;
 	let disposed = false;
 	let revision = 0;
 	const sequences = new Map<string, number>();
+	const commands = new Map<
+		string,
+		{threadId: string; kind: 'prompt' | 'cancel' | 'answer'}
+	>();
 	const changes = new Map<
 		string,
 		{revision: number; thread: ThreadInfo | null}
@@ -55,6 +66,58 @@ export function createThreadController(options: {
 	const update = (patch: Partial<ThreadControllerState>) => {
 		state = {...state, ...patch};
 		options.onChange(structuredClone(state));
+	};
+	const commandState = () => ({
+		promptingThreadId: commands.get('prompt')?.threadId ?? null,
+		cancellingThreadIds: [...commands.values()]
+			.filter(command => command.kind === 'cancel')
+			.map(command => command.threadId),
+	});
+	const command = async <T>(
+		threadId: string,
+		key: string,
+		kind: 'prompt' | 'cancel' | 'answer',
+		work: (projectId: string) => Promise<IpcResult<T>>,
+	): Promise<IpcResult<T> | null> => {
+		const projectId = state.projectId;
+		if (
+			disposed ||
+			!projectId ||
+			state.loading ||
+			commands.has(key) ||
+			!state.threads.some(
+				thread => thread.id === threadId && thread.projectId === projectId,
+			)
+		)
+			return null;
+		const current = generation;
+		const owned = {threadId, kind};
+		commands.set(key, owned);
+		update(commandState());
+		const isCurrent = () =>
+			current === generation &&
+			commands.get(key) === owned &&
+			state.threads.some(thread => thread.id === threadId);
+		try {
+			const result = await work(projectId);
+			return isCurrent() ? result : null;
+		} catch {
+			return isCurrent()
+				? {
+						ok: false,
+						error: {
+							code: 'AGENT_UNAVAILABLE',
+							message: 'the thread request could not finish',
+							retryable: true,
+						},
+					}
+				: null;
+		} finally {
+			if (current === generation && commands.get(key) === owned) {
+				commands.delete(key);
+				update(commandState());
+			}
+		}
 	};
 	const put = (thread: ThreadInfo) => {
 		changes.set(thread.id, {
@@ -71,8 +134,12 @@ export function createThreadController(options: {
 	const forget = (threadId: string) => {
 		const existed = state.threads.some(thread => thread.id === threadId);
 		stream.remove(threadId);
+		for (const [key, command] of commands) {
+			if (command.threadId === threadId) commands.delete(key);
+		}
 		changes.set(threadId, {revision: ++revision, thread: null});
 		update({
+			...commandState(),
 			threads: state.threads.filter(row => row.id !== threadId),
 			activeThreadId:
 				state.activeThreadId === threadId ? null : state.activeThreadId,
@@ -197,6 +264,7 @@ export function createThreadController(options: {
 		const current = ++generation;
 		revision = 0;
 		changes.clear();
+		commands.clear();
 		stream.selectProject(projectId);
 		update({
 			projectId,
@@ -204,6 +272,7 @@ export function createThreadController(options: {
 			activeThreadId: null,
 			loading: projectId !== null,
 			pending: false,
+			...commandState(),
 			error: null,
 		});
 		if (!projectId) return;
@@ -255,6 +324,36 @@ export function createThreadController(options: {
 		selectProject,
 		open: (threadId: string) => load(threadId, true),
 		read: (threadId: string) => load(threadId, false),
+		prompt: (threadId: string, text: string) => {
+			const thread = state.threads.find(row => row.id === threadId);
+			if (
+				!text.trim() ||
+				state.pending ||
+				thread?.archiveState !== 'active' ||
+				thread.runState === 'view-only'
+			)
+				return Promise.resolve(null);
+			return command(threadId, 'prompt', 'prompt', projectId =>
+				options.bridge.promptThread({projectId, threadId, text}),
+			);
+		},
+		cancel: (threadId: string) =>
+			command(threadId, `cancel:${threadId}`, 'cancel', projectId =>
+				options.bridge.cancelThread({projectId, threadId}),
+			),
+		answer: (threadId: string, requestId: string, optionId: string) =>
+			command(
+				threadId,
+				`answer:${threadId}:${requestId}`,
+				'answer',
+				projectId =>
+					options.bridge.answerThreadPermission({
+						projectId,
+						threadId,
+						requestId,
+						optionId,
+					}),
+			),
 		rename: (threadId: string, title: string) =>
 			run(
 				threadId,
@@ -302,6 +401,7 @@ export function createThreadController(options: {
 			disposed = true;
 			generation++;
 			changes.clear();
+			commands.clear();
 			sequences.clear();
 			stream.selectProject(null);
 			unsubscribe();
