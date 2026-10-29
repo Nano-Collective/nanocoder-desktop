@@ -39,11 +39,49 @@ export function PaletteButton() {
 	);
 }
 
+function Notifications({
+	active,
+	toast,
+	pendingApprovalCount = 0,
+}: {
+	active: boolean;
+	toast: Toast | null;
+	pendingApprovalCount?: number;
+}) {
+	return (
+		<div
+			className="toast-region"
+			role="status"
+			aria-label="notification"
+			aria-live={active ? 'polite' : 'off'}
+			aria-hidden={!active}
+			aria-atomic="true"
+		>
+			<span className="overlay-approval-announcement">
+				{active && pendingApprovalCount > 0
+					? `approval required · ${pendingApprovalCount} waiting`
+					: ''}
+			</span>
+			{active && toast && (
+				<div
+					key={toast.id}
+					className="overlay-toast"
+					data-exiting={toast.exiting}
+				>
+					<span aria-hidden="true">✓</span> {toast.message}
+				</div>
+			)}
+		</div>
+	);
+}
+
 export function OverlayProvider({
 	actions,
+	pendingApprovalCount = 0,
 	children,
 }: {
 	actions: PaletteAction[];
+	pendingApprovalCount?: number;
 	children: ReactNode;
 }) {
 	const [kind, setKind] = useState<Overlay | null>(null);
@@ -380,24 +418,13 @@ export function OverlayProvider({
 						</dl>
 					)}
 				</div>
+				<Notifications
+					active={opened}
+					toast={toast}
+					pendingApprovalCount={pendingApprovalCount}
+				/>
 			</dialog>
-			<div
-				className="toast-region"
-				role="status"
-				aria-label="notification"
-				aria-live="polite"
-				aria-atomic="true"
-			>
-				{toast && (
-					<div
-						key={toast.id}
-						className="overlay-toast"
-						data-exiting={toast.exiting}
-					>
-						<span aria-hidden="true">✓</span> {toast.message}
-					</div>
-				)}
-			</div>
+			<Notifications active={!opened} toast={toast} />
 		</OverlayContext>
 	);
 }

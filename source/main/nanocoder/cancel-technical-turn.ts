@@ -1,9 +1,6 @@
-import {z} from 'zod';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import type {ProjectSupervisor} from '@/main/nanocoder/supervisor';
 import type {SessionInfo} from '@/shared/ipc';
-
-export const cancelPromptRequest = z.strictObject({});
 
 export async function cancelTechnicalTurn(
 	supervisor: Pick<ProjectSupervisor, 'cancel'> | undefined,

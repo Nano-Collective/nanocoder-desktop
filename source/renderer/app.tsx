@@ -424,6 +424,7 @@ export function App() {
 
 	return (
 		<OverlayProvider
+			pendingApprovalCount={transcript.permissions.length}
 			actions={[
 				...projectPalette({
 					...projectControls,

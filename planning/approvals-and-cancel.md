@@ -27,11 +27,17 @@ One origin is retained across the request queue. Focus moves to the oldest remai
 
 Taking focus scrolls the whole card into view, not just its inner dialog. A token-based scroll margin keeps the border and pulse clear of the stream edge, including after earlier turns have filled the stream.
 
+Focus recovery also runs after an answer settles and after any request-array change, including same-size queue replacement. A refused answer leaves the request pending, re-enables its options and recovers focus if disabling the selected button left it on the body.
+
+Native palette and shortcut dialogs keep focus while open. Incoming approvals are announced by count only through the dialog's pre-existing polite region, without request titles, labels or IDs. Only the non-inert layer's notification region is active. After the dialog closes, a waiting approval takes focus, or a cancelled queue returns focus to its original control or composer. Explicitly opening an overlay from an approval and closing it returns to that exact approval control; Escape never chooses an option.
+
 Design deviation, agreed for accessibility: `.approval-key-hints .ui-key-hint` uses full-opacity muted ink rather than the design's 55% opacity. This keeps required key hints readable and avoids the known contrast conflict. `DESIGN.md` remains unchanged for the designer to resolve.
 
 ## Cancel
 
 The temporary technical-gate `cancelPrompt()` bridge sends a strict empty payload on `nanocoder:cancel-prompt`. Main chooses the active project and session; renderer-supplied IDs or extra fields are rejected. No open session returns `AGENT_UNAVAILABLE`; an open session with no active turn is a clean no-op.
+
+The pure request schema and its refusal test live in `source/main/ipc/cancel-prompt.ts` and the adjacent spec, not in the Nanocoder cancellation helper.
 
 Cancellation reuses `ProjectSupervisor.cancel`, which cancels pending permissions and waits for the turn to settle. A cancelled turn is shown as interrupted, not successful or failed. The cancel control remains available during approval, and the composer becomes usable again afterwards.
 

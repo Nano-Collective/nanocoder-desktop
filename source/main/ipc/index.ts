@@ -7,6 +7,7 @@ import {
 	type WebContents,
 } from 'electron';
 import {z} from 'zod';
+import {cancelPromptRequest} from '@/main/ipc/cancel-prompt';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
 import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
@@ -14,10 +15,7 @@ import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {disposeDesktop} from '@/main/lifecycle';
 import {untilAborted} from '@/main/nanocoder/abort';
 import {NanocoderFailure} from '@/main/nanocoder/acp-client';
-import {
-	cancelPromptRequest,
-	cancelTechnicalTurn,
-} from '@/main/nanocoder/cancel-technical-turn';
+import {cancelTechnicalTurn} from '@/main/nanocoder/cancel-technical-turn';
 import {resolveNanocoder} from '@/main/nanocoder/runtime';
 import {createLookup} from '@/main/nanocoder/runtime-lookup';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';

@@ -14,8 +14,8 @@ function canFocus(
 }
 
 function useApprovalFocus(
-	firstId: string | undefined,
-	count: number,
+	requests: readonly PermissionRequestInfo[],
+	answering: boolean,
 	busy: boolean,
 	fallback?: React.RefObject<HTMLElement | null>,
 ) {
@@ -41,39 +41,46 @@ function useApprovalFocus(
 	}, []);
 
 	React.useLayoutEffect(() => {
-		if (firstId && count > 0) {
-			if (origin.current === undefined) {
-				const active = document.activeElement;
-				origin.current =
-					active instanceof HTMLElement &&
-					active !== document.body &&
-					!container.current?.contains(active)
-						? active
-						: lastOutside.current;
-			}
-			if (
-				previous.current !== firstId ||
-				document.activeElement === document.body
-			) {
-				const dialog = dialogs.current.get(firstId);
-				dialog?.focus({preventScroll: true});
-				dialog
-					?.closest('.ui-card--approval')
-					?.scrollIntoView({block: 'nearest'});
-			}
-		} else if (origin.current !== undefined) {
-			const target = canFocus(origin.current)
-				? origin.current
-				: fallback?.current;
-			if (canFocus(target)) {
-				origin.current = undefined;
-				target.focus();
-			} else if (!busy) {
-				origin.current = undefined;
-			}
+		const firstId = requests[0]?.id;
+		if (firstId && origin.current === undefined) {
+			const active = document.activeElement;
+			origin.current =
+				active instanceof HTMLElement &&
+				active !== document.body &&
+				!container.current?.contains(active)
+					? active
+					: lastOutside.current;
 		}
-		previous.current = firstId;
-	}, [firstId, count, busy, fallback]);
+		const focus = () => {
+			if (answering || document.querySelector('dialog:modal')) return;
+			if (firstId) {
+				if (
+					previous.current !== firstId ||
+					document.activeElement === document.body
+				) {
+					const dialog = dialogs.current.get(firstId);
+					dialog?.focus({preventScroll: true});
+					dialog
+						?.closest('.ui-card--approval')
+						?.scrollIntoView({block: 'nearest'});
+				}
+			} else if (origin.current !== undefined) {
+				const target = canFocus(origin.current)
+					? origin.current
+					: fallback?.current;
+				if (canFocus(target)) {
+					origin.current = undefined;
+					target.focus();
+				} else if (!busy) {
+					origin.current = undefined;
+				}
+			}
+			previous.current = firstId;
+		};
+		focus();
+		document.addEventListener('close', focus, true);
+		return () => document.removeEventListener('close', focus, true);
+	}, [requests, answering, busy, fallback]);
 
 	return {container, dialogs};
 }
@@ -173,14 +180,14 @@ export function ApprovalRequests({
 	fallbackFocus?: React.RefObject<HTMLElement | null>;
 	onAnswer: DesktopApi['answerPermission'];
 }) {
+	const pending = React.useRef(false);
+	const [answering, setAnswering] = React.useState(false);
 	const {container, dialogs} = useApprovalFocus(
-		requests[0]?.id,
-		requests.length,
+		requests,
+		answering,
 		busy,
 		fallbackFocus,
 	);
-	const pending = React.useRef(false);
-	const [answering, setAnswering] = React.useState(false);
 	const [error, setError] = React.useState<{
 		id: string;
 		message: string;

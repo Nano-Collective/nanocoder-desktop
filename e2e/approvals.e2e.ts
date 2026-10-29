@@ -15,8 +15,10 @@ import {
 	type Page,
 	test,
 } from '@playwright/test';
+import {build} from 'vite';
 import type {DesktopApi} from '@/shared/desktop-api';
-import type {IpcResult} from '@/shared/ipc';
+import type {IpcResult, PermissionRequestInfo} from '@/shared/ipc';
+import type {approvalHarness} from './qa/approval-harness';
 import {qaEnvironment} from './qa/environment';
 
 const work = realpathSync.native(
@@ -374,6 +376,11 @@ test.describe('approval and overlay focus', () => {
 
 		test(`an approval arriving during ${kind} is announced without stealing focus and takes focus after Escape`, async () => {
 			await open();
+			const persistent = page.locator('dialog [aria-label="notification"]');
+			await expect(persistent).toHaveCount(1);
+			await expect(persistent).toHaveText('');
+			const previousRegion = await persistent.elementHandle();
+			if (!previousRegion) throw new Error('Missing persistent modal region');
 			await input().fill('fixture approval request');
 			await input().focus();
 			await page.evaluate(kind => {
@@ -393,14 +400,26 @@ test.describe('approval and overlay focus', () => {
 			await expect(page.getByRole('dialog', {name, exact: true})).toBeVisible();
 			await expect(page.locator('.approval-dialog')).toHaveCount(1);
 			await expect(focusedControl()).toBeFocused();
-			const notification = page.locator('.toast-region');
+			const notification = page.getByRole('status', {name: 'notification'});
 			await expect(notification).toHaveAttribute('aria-live', 'polite');
-			await expect(notification).toContainText('approval required · 1 waiting');
+			await expect(notification).toHaveText('approval required · 1 waiting');
 			expect(
-				await notification.evaluate(region =>
-					region.closest('dialog:modal')?.getAttribute('aria-label'),
+				await notification.evaluate(
+					(region, previous) => region === previous,
+					previousRegion,
+				),
+			).toBe(true);
+			expect(
+				await notification.evaluate(
+					region =>
+						region.closest('[inert], [aria-hidden="true"]') === null &&
+						region.closest('dialog:modal')?.getAttribute('aria-label'),
 				),
 			).toBe(name);
+			await expect(
+				page.locator('[aria-label="notification"][aria-live="polite"]'),
+			).toHaveCount(1);
+			await previousRegion.dispose();
 			await page.keyboard.press('Escape');
 			await expect(page.locator('dialog[open]')).toHaveCount(0);
 			await expect(dialogs()).toBeFocused();
@@ -426,4 +445,97 @@ test.describe('approval and overlay focus', () => {
 			await expect(page.getByText('turn interrupted: cancelled')).toBeVisible();
 		});
 	}
+});
+
+test.describe('approval focus recovery', () => {
+	type HarnessWindow = {
+		approvalFixture: {approvalHarness: typeof approvalHarness};
+	};
+	const fixture = () => page.locator('#approval-focus-fixture');
+	const request = (id: string): PermissionRequestInfo => ({
+		id,
+		title: `fixture ${id}`,
+		options: [{id: 'allow', name: 'Allow', kind: 'allow_once'}],
+	});
+
+	test.beforeAll(async () => {
+		const result = await build({
+			configFile: false,
+			logLevel: 'silent',
+			define: {'process.env.NODE_ENV': JSON.stringify('production')},
+			resolve: {alias: {'@': path.resolve('source')}},
+			build: {
+				write: false,
+				minify: false,
+				lib: {
+					entry: path.resolve('e2e/qa/approval-harness.ts'),
+					name: 'approvalFixture',
+					formats: ['iife'],
+				},
+			},
+		});
+		const outputs = Array.isArray(result) ? result : [result];
+		const code = outputs
+			.flatMap(output =>
+				'output' in output
+					? output.output.flatMap(file =>
+							file.type === 'chunk' ? [file.code] : [],
+						)
+					: [],
+			)
+			.join('\n');
+		if (!code) throw new Error('Missing component fixture bundle');
+		await page.evaluate(code);
+	});
+
+	test.afterEach(async () => {
+		await page.evaluate(() =>
+			(
+				window as unknown as HarnessWindow
+			).approvalFixture.approvalHarness.dispose(),
+		);
+	});
+
+	test('a refused answer re-enables choices and recovers focus without consuming the request', async () => {
+		const pending = request('failed-answer');
+		pending.options[0].id = 'x'.repeat(201);
+		await page.evaluate(
+			requests =>
+				(
+					window as unknown as HarnessWindow
+				).approvalFixture.approvalHarness.render(requests),
+			[pending],
+		);
+		const dialog = fixture().getByRole('alertdialog');
+		await expect(dialog).toBeFocused();
+		const option = dialog.getByRole('button', {name: 'Allow'});
+		await option.click();
+		await expect(dialog.getByRole('alert')).toBeVisible();
+		await expect(option).toBeEnabled();
+		await expect(dialog).toBeFocused();
+		await expect(fixture().getByRole('alertdialog')).toHaveCount(1);
+	});
+
+	test('same-size queue replacement recovers the oldest request when the focused card disappears', async () => {
+		await page.evaluate(
+			requests =>
+				(
+					window as unknown as HarnessWindow
+				).approvalFixture.approvalHarness.render(requests),
+			[request('A'), request('B')],
+		);
+		const dialogs = fixture().getByRole('alertdialog');
+		await expect(dialogs).toHaveCount(2);
+		await dialogs.nth(1).getByRole('button').focus();
+		await page.evaluate(
+			requests =>
+				(
+					window as unknown as HarnessWindow
+				).approvalFixture.approvalHarness.render(requests),
+			[request('A'), request('C')],
+		);
+		await expect(dialogs.nth(1)).toContainText('fixture C');
+		await expect(dialogs).toHaveCount(2);
+		await expect(dialogs.nth(0)).toBeFocused();
+	});
 });
