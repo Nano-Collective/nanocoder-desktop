@@ -218,7 +218,9 @@ test('unfinished shell regions are readable static placeholders, not live contro
 	await expect(page.getByRole('banner')).toContainText(
 		'session tabs · not built yet',
 	);
-	await expect(page.getByRole('banner')).toContainText('palette not built yet');
+	await expect(
+		page.getByRole('banner').getByRole('button', {name: 'command palette'}),
+	).toBeVisible();
 	await expect(
 		page.getByRole('complementary', {name: 'project rail'}),
 	).toContainText('thread list not built yet');

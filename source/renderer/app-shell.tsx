@@ -6,6 +6,7 @@ export function AppShell({
 	projectRail,
 	streamTools,
 	composer,
+	palette,
 	children,
 }: {
 	title: React.ReactNode;
@@ -13,6 +14,7 @@ export function AppShell({
 	projectRail?: React.ReactNode;
 	streamTools?: React.ReactNode;
 	composer?: React.ReactNode;
+	palette?: React.ReactNode;
 	children: React.ReactNode;
 }) {
 	return (
@@ -29,9 +31,11 @@ export function AppShell({
 					</span>
 				</div>
 				<div className="gate-actions">{statusBadges}</div>
-				<span className="shell-placeholder shell-palette">
-					<kbd>⌘K</kbd> palette not built yet
-				</span>
+				{palette ?? (
+					<span className="shell-placeholder shell-palette">
+						<kbd>⌘K</kbd> palette not built yet
+					</span>
+				)}
 			</header>
 			<div className="shell-columns">
 				<aside className="shell-project-rail" aria-label="project rail">
