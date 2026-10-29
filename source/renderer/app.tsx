@@ -1,4 +1,4 @@
-import {type FormEvent, useCallback, useEffect, useState} from 'react';
+import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
 import {
 	addUserMessage,
 	applyEvent,
@@ -7,6 +7,7 @@ import {
 } from '@/renderer/transcript';
 import type {
 	AppInfo,
+	CapabilityGates,
 	ConnectedAgent,
 	ConnectResult,
 	IpcResult,
@@ -17,6 +18,26 @@ import type {
 } from '@/shared/ipc';
 
 const yesNo = (value: boolean) => (value ? 'yes' : 'no');
+
+function FeatureDetails({gates}: {gates: CapabilityGates}) {
+	return (
+		<section aria-label="Nanocoder features">
+			{gates.versionPolicy.reason && (
+				<p role="status">{gates.versionPolicy.reason}</p>
+			)}
+			<dl>
+				{Object.entries(gates.features).map(([name, gate]) => (
+					<div key={name}>
+						<dt>{name}</dt>
+						<dd>
+							{gate.enabled ? 'available' : `unavailable: ${gate.reason}`}
+						</dd>
+					</div>
+				))}
+			</dl>
+		</section>
+	);
+}
 
 function AgentDetails({
 	agent,
@@ -96,15 +117,46 @@ export function App() {
 	);
 	const [connecting, setConnecting] = useState(false);
 	const [opened, setOpened] = useState<IpcResult<ConnectResult> | null>(null);
-	const [transcript, setTranscript] = useState<Transcript>(emptyTranscript);
+	const [transcripts, setTranscripts] = useState<Record<string, Transcript>>(
+		{},
+	);
 	const [draft, setDraft] = useState('');
-	const [sending, setSending] = useState(false);
-	const [turn, setTurn] = useState<IpcResult<TurnResult> | null>(null);
+	const [running, setRunning] = useState<Record<string, boolean>>({});
+	const [turns, setTurns] = useState<
+		Record<string, IpcResult<TurnResult> | null>
+	>({});
+	const [gates, setGates] = useState<Record<string, CapabilityGates>>({});
+	const roots = useRef(new Map<string, string>());
+	const outcome = opened?.ok ? opened.value : null;
+	const root = outcome?.status === 'connected' ? outcome.agent.root : '';
+	const transcript = transcripts[root] ?? emptyTranscript;
+	const sending = running[root] ?? false;
+	const turn = turns[root];
 
 	useEffect(
 		() =>
-			window.desktop.onNanocoderEvent(event => {
-				setTranscript(current => applyEvent(current, event));
+			window.desktop.onProjectEvent(event => {
+				if (
+					event.type === 'supervisor' &&
+					event.state.agent &&
+					event.state.gates
+				) {
+					const root = event.state.agent.root;
+					roots.current.set(event.projectId, root);
+					const next = event.state.gates;
+					setGates(current => ({...current, [root]: next}));
+				}
+				if (event.type === 'turn') {
+					const root = roots.current.get(event.projectId);
+					if (root)
+						setTranscripts(current => ({
+							...current,
+							[root]: event.events.reduce(
+								applyEvent,
+								current[root] ?? emptyTranscript,
+							),
+						}));
+				}
 			}),
 		[],
 	);
@@ -128,8 +180,6 @@ export function App() {
 		setConnecting(false);
 		if (!result.ok || result.value.status !== 'cancelled') {
 			setOpened(result);
-			setTranscript(emptyTranscript);
-			setTurn(null);
 		}
 	};
 
@@ -138,14 +188,16 @@ export function App() {
 		const text = draft.trim();
 		if (!text || sending) return;
 		setDraft('');
-		setSending(true);
-		setTurn(null);
-		setTranscript(current => addUserMessage(current, text));
-		setTurn(await window.desktop.sendPrompt(text));
-		setSending(false);
+		setRunning(current => ({...current, [root]: true}));
+		setTurns(current => ({...current, [root]: null}));
+		setTranscripts(current => ({
+			...current,
+			[root]: addUserMessage(current[root] ?? emptyTranscript, text),
+		}));
+		const result = await window.desktop.sendPrompt(text);
+		setTurns(current => ({...current, [root]: result}));
+		setRunning(current => ({...current, [root]: false}));
 	};
-
-	const outcome = opened?.ok ? opened.value : null;
 
 	return (
 		<main>
@@ -177,6 +229,9 @@ export function App() {
 			)}
 			{outcome?.status === 'connected' && (
 				<AgentDetails agent={outcome.agent} session={outcome.session} />
+			)}
+			{outcome?.status === 'connected' && gates[outcome.agent.root] && (
+				<FeatureDetails gates={gates[outcome.agent.root]} />
 			)}
 			{outcome?.status === 'connected' && (
 				<form onSubmit={send}>

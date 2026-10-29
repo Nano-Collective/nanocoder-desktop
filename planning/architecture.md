@@ -155,6 +155,18 @@ Decided ([whitepaper, Architecture][wp-arch]): standard output is protocol only,
 | One active project | v1 shows one active project at a time ([Main window][wp-window]). What happens to a background project's running turn is `OQ-19`. | Decided (one active); background behaviour Open |
 | Parallel root turns | Future work, after Nanocoder isolates model state per session. | Decided (deferred) |
 
+## Phase 1.3 supervisor implementation
+
+[`supervisor.ts`](../source/main/nanocoder/supervisor.ts) implements the main-only supervisor contract without importing Electron. Its project-ID map coalesces starts for the same project and refuses a second live identity for the same canonical root. Ordinary starts require trusted, available main-owned metadata. The existing native folder-picker flow alone uses the explicit pre-trust probe (`DEC-30`); its project metadata is transient until the store and project-service phases are integrated.
+
+Every launch resolves the runtime with the canonical root as an excluded location. Explicit overrides do not bypass containment. Native realpath resolves symlinks and the volume's case aliases before component comparisons; POSIX names are not blindly case-folded. Roots and runtime paths are checked again immediately before each ACP or trust launch, including after an asynchronous lookup or trust confirmation. A changed root or runtime fails closed.
+
+Session notifications and permissions retain their project and session IDs. Supervisor and capability events have per-project sequences; transient turn events have per-session sequences. In the technical gate only, a Nanocoder session ID stands in for a transient thread ID. Persisted thread IDs and the session-to-thread mapping belong to the thread-service phases. The existing screen keeps each project's transient conversation, permission cards and turn result separate in memory; the legacy event channel receives only the selected project's session.
+
+The technical session cache records a session only after its mode is set. A failed resume or mode change invalidates that cache entry and stops its connection, so a later open prepares a fresh session. Until ThreadService supplies re-fetchable snapshots, reloading, losing or closing the app renderer safely cancels pending permissions and stops active or starting technical processes; idle projects remain ready. Reopening waits for cleanup before preparing a mode-ready session. No hidden approval is allowed on the user's behalf.
+
+Stop cancels pending approvals and aborts lookups, initialisation, probes and trust confirmations. A late lookup or confirmation cannot start or trust anything. Shutdown closes advertised sessions, lets cancelled prompts settle, closes stdin and the connection, then escalates to termination and forced kill on bounded deadlines. All project stops settle before supervisor disposal returns, even when one fails, so the existing lifecycle can close storage afterwards. Restart with backoff, idle shutdown, diagnostics and process-tree hardening remain later work. There is no automatic restart, including after a trust refusal.
+
 ## Sources of truth
 
 From the [whitepaper, Sources of truth][wp-truth] (Decided), with the reading rules this plan adds.

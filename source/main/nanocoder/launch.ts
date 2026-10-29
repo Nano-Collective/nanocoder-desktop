@@ -3,6 +3,7 @@ import {
 	type ChildProcessByStdio,
 	spawn,
 } from 'node:child_process';
+import path from 'node:path';
 import type {Readable, Writable} from 'node:stream';
 import type {NanocoderRuntime} from '@/shared/ipc';
 
@@ -31,6 +32,21 @@ export function launchNanocoder(
 	env: NodeJS.ProcessEnv = process.env,
 	{trustDirectory = false}: {trustDirectory?: boolean} = {},
 ): ChildProcessByStdio<Writable, Readable, Readable> {
+	if (
+		![runtime.nodePath, runtime.cliPath, cwd].every(value =>
+			path.isAbsolute(value),
+		)
+	) {
+		throw new Error('Nanocoder launch paths must be absolute');
+	}
+	if (
+		args.some(
+			arg =>
+				arg === '--trust-directory' || arg.startsWith('--trust-directory='),
+		)
+	) {
+		throw new Error('Directory trust must use the confirmed trust launch');
+	}
 	const clean = childEnv(env);
 	return spawn(runtime.nodePath, [runtime.cliPath, ...args], {
 		cwd,

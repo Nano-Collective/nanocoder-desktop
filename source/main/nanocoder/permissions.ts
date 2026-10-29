@@ -16,12 +16,15 @@ export class PermissionBroker {
 	private readonly pending = new Map<string, Pending>();
 	private counter = 0;
 
-	constructor(private readonly emit: (event: TurnEvent) => void) {}
+	constructor(
+		private readonly emit: (event: TurnEvent) => void,
+		private readonly nextId = () => `permission-${++this.counter}`,
+	) {}
 
 	request(
 		params: RequestPermissionRequest,
 	): Promise<RequestPermissionResponse> {
-		const id = `permission-${++this.counter}`;
+		const id = this.nextId();
 		const info: PermissionRequestInfo = {
 			id,
 			title: params.toolCall.title ?? params.toolCall.toolCallId,

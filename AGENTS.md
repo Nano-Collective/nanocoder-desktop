@@ -26,6 +26,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/index.ts` | App entry: profile ownership lock, `app://` protocol, CSP, sandbox, navigation and window rules |
 | `source/main/lifecycle.ts` | Ready-gated, shutdown-stopped window requests, service disposal and quit guard; supervisor cleanup finishes before the store closes |
 | `source/main/security.ts` | Origin checks, renderer file resolution, Content Security Policy |
+| `source/main/paths.ts` | Shared native realpath canonicalisation (symlinks and volume case aliases) and component containment |
 | `source/main/ipc/handle-request.ts` | Sender check, schema validation and the result shape for every IPC call |
 | `source/main/ipc/index.ts` | Registers the IPC handlers |
 | `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |
@@ -37,6 +38,10 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/store/repositories.ts` | Project/thread metadata only, scoped queries, canonical paths and cascade removal |
 | `source/main/store/validation.ts` | Allowlisted metadata schemas, including the settings/UI patches shared with IPC |
 | `source/main/nanocoder/supervisor-contracts.ts` | Main-only per-project supervisor interface |
+| `source/main/nanocoder/supervisor.ts` | One canonical-root process per project, scoped events and permissions, abortable starts and awaited shutdown |
+| `source/main/nanocoder/technical-sessions.ts` | Technical-gate mode-ready session cache and safe active-turn cleanup when a renderer detaches |
+| `source/main/nanocoder/version-policy.ts` | Provisional minimum version, fail-closed parsing and untested-version warnings (`ACP-04`, `OQ-02`) |
+| `source/main/nanocoder/abort.ts` | Cancels pending lookups and trust confirmations without allowing late launches |
 | `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path |
 | `source/main/nanocoder/launch.ts` | Starts Nanocoder with an argument array and no shell |
 | `source/main/nanocoder/acp-client.ts` | Starts `nanocoder --acp` in the project root, sends `initialize`, and opens or resumes sessions with their mode set |
@@ -47,12 +52,13 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/permissions.ts` | Holds each permission request until the user answers; only an option Nanocoder offered counts |
 | `source/main/nanocoder/turn-events.ts` | Turns ACP session updates into the few events the UI shows |
 | `source/renderer/transcript.ts` | Merges turn events into the conversation the UI shows |
-| `source/main/nanocoder/capabilities.ts` | Records the version and capabilities from `initialize` |
+| `source/main/nanocoder/capabilities.ts` | Records `initialize` capabilities and builds feature gates with reasons; extensions need safe probes |
 | `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp`, a scripted model provider and test helpers, including the setup shared by the `*.acp.ts` tests |
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
 | `source/preload/index.ts` | The `window.desktop` bridge |
 | `e2e/*.e2e.ts` | Playwright tests against the built app |
 | `e2e/store.e2e.ts` | Built-main persistence, migration backup, corruption recovery and storage refusal tests |
+| `e2e/supervisor.e2e.ts` | Built-main quit while a child is still initialising, including child-exit verification |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |
 | `scripts/node-sidecar.json` | The pinned Node sidecar: exact version and SHA-256 per platform (`DEC-38`) |
 | `scripts/fetch-node-sidecar.mjs`, `scripts/measure-runtime.mjs` | Download and verify the sidecar; measure both runtimes (phase G.6) |

@@ -1,3 +1,12 @@
+import {
+	mkdirSync,
+	mkdtempSync,
+	realpathSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from 'node:fs';
+import {tmpdir} from 'node:os';
 import path from 'node:path';
 import test from 'ava';
 import {
@@ -7,7 +16,19 @@ import {
 	resolveRendererFile,
 } from '@/main/security';
 
-const root = path.resolve('/app/out/renderer');
+const work = realpathSync(mkdtempSync(path.join(tmpdir(), 'nd-renderer-')));
+const root = path.join(work, 'renderer');
+for (const name of [
+	'index.html',
+	'assets/index.js',
+	'main/index.js',
+	'..tools/index.js',
+]) {
+	const file = path.join(root, name);
+	mkdirSync(path.dirname(file), {recursive: true});
+	writeFileSync(file, '');
+}
+test.after.always(() => rmSync(work, {recursive: true, force: true}));
 
 test('allows navigation within the app origin', t => {
 	t.true(isAllowedOrigin('app://renderer/index.html', [APP_ORIGIN]));
@@ -48,7 +69,36 @@ test('keeps dot segments the URL parser resolves inside the folder', t => {
 test('refuses requests that leave the renderer folder', t => {
 	t.is(resolveRendererFile('app://renderer/..%2f..%2fsecret', root), null);
 	t.is(resolveRendererFile('app://renderer/..%5c..%5csecret', root), null);
+	t.is(
+		resolveRendererFile('app://renderer/..%2frenderer-other/secret', root),
+		null,
+	);
+	t.is(resolveRendererFile('app://renderer/missing.js', root), null);
 });
+
+test('a two-dot-prefixed renderer directory remains inside its root', t => {
+	t.is(
+		resolveRendererFile('app://renderer/..tools/index.js', root),
+		path.join(root, '..tools/index.js'),
+	);
+});
+
+const symlinkTest = process.platform === 'win32' ? test.skip : test;
+symlinkTest(
+	'renderer file resolution checks the canonical target it returns',
+	t => {
+		const outside = path.join(work, 'renderer-other');
+		mkdirSync(outside);
+		writeFileSync(path.join(outside, 'secret'), '');
+		symlinkSync(outside, path.join(root, 'escape'), 'dir');
+		symlinkSync(path.join(root, 'assets'), path.join(root, 'inside'), 'dir');
+		t.is(resolveRendererFile('app://renderer/escape/secret', root), null);
+		t.is(
+			resolveRendererFile('app://renderer/inside/index.js', root),
+			path.join(root, 'assets/index.js'),
+		);
+	},
+);
 
 test('refuses other hosts, schemes and malformed requests', t => {
 	t.is(resolveRendererFile('app://other/index.html', root), null);

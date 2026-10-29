@@ -1,3 +1,4 @@
+import {untilAborted} from '@/main/nanocoder/abort';
 import {
 	type ConnectOptions,
 	connectNanocoder,
@@ -17,26 +18,46 @@ export type OpenOutcome =
 	  }
 	| {status: 'untrusted'; message: string};
 
+interface ProjectOptions extends ConnectOptions {
+	confirmTrust: (refusal: TrustRefusal) => Promise<boolean>;
+	beforeLaunch?: () => Promise<void>;
+}
+
+export async function connectProject(
+	options: ProjectOptions,
+): Promise<NanocoderConnection | {status: 'untrusted'; message: string}> {
+	const connect = async () => {
+		await options.beforeLaunch?.();
+		options.signal?.throwIfAborted();
+		return connectNanocoder(options);
+	};
+	try {
+		return await connect();
+	} catch (error) {
+		if (!(error instanceof NanocoderFailure) || !error.trust) throw error;
+		options.signal?.throwIfAborted();
+		const confirmation = options.confirmTrust(error.trust);
+		const confirmed = options.signal
+			? await untilAborted(confirmation, options.signal)
+			: await confirmation;
+		if (!confirmed) return {status: 'untrusted', message: error.message};
+		options.signal?.throwIfAborted();
+		await options.beforeLaunch?.();
+		await trustDirectory(options);
+		// A second refusal is reported, not asked about again.
+		return connect();
+	}
+}
+
 export async function openProject(
-	options: ConnectOptions & {
+	options: ProjectOptions & {
 		mode: NanocoderMode;
 		// Resume this session instead of starting a new one.
 		resumeSessionId?: string;
-		confirmTrust: (refusal: TrustRefusal) => Promise<boolean>;
 	},
 ): Promise<OpenOutcome> {
-	let connection: NanocoderConnection;
-	try {
-		connection = await connectNanocoder(options);
-	} catch (error) {
-		if (!(error instanceof NanocoderFailure) || !error.trust) throw error;
-		if (!(await options.confirmTrust(error.trust))) {
-			return {status: 'untrusted', message: error.message};
-		}
-		await trustDirectory(options);
-		// A second refusal is reported, not asked about again, so a failed save cannot loop.
-		connection = await connectNanocoder(options);
-	}
+	const connection = await connectProject(options);
+	if ('status' in connection) return connection;
 
 	try {
 		if (options.resumeSessionId) {

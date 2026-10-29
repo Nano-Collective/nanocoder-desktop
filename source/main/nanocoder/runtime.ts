@@ -1,13 +1,9 @@
 import {execFile} from 'node:child_process';
-import {
-	accessSync,
-	constants,
-	readFileSync,
-	realpathSync,
-	statSync,
-} from 'node:fs';
+import {accessSync, constants, readFileSync, statSync} from 'node:fs';
 import path from 'node:path';
 import {promisify} from 'node:util';
+import {childEnv} from '@/main/nanocoder/launch';
+import {canonicalPathSync, isInside} from '@/main/paths';
 import type {NanocoderRuntime} from '@/shared/ipc';
 
 const PACKAGE_NAME = '@nanocollective/nanocoder';
@@ -22,7 +18,8 @@ export interface ResolveOptions {
 	env: NodeJS.ProcessEnv;
 	platform: NodeJS.Platform;
 	untrustedRoots: readonly string[];
-	readNodeVersion?: (nodePath: string) => Promise<string>;
+	signal?: AbortSignal;
+	readNodeVersion?: (nodePath: string, signal?: AbortSignal) => Promise<string>;
 }
 
 function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
@@ -80,14 +77,14 @@ export function cliFromShim(shimPath: string): string | undefined {
 
 function locateCli(binPath: string): string | undefined {
 	try {
-		const real = realpathSync(binPath);
+		const real = canonicalPathSync(binPath);
 		if (/[\\/]dist[\\/]cli\.js$/.test(real)) return real;
 	} catch {
 		return undefined;
 	}
 	const fromShim = cliFromShim(binPath);
 	try {
-		return fromShim ? realpathSync(fromShim) : undefined;
+		return fromShim ? canonicalPathSync(fromShim) : undefined;
 	} catch {
 		return undefined;
 	}
@@ -112,27 +109,17 @@ function readPackageVersion(cliPath: string): string | undefined {
 	}
 }
 
-export function isInside(
-	child: string,
-	roots: readonly string[],
-	platform: NodeJS.Platform,
-): boolean {
-	const fold = (p: string) =>
-		platform === 'win32' || platform === 'darwin' ? p.toLowerCase() : p;
-	const flavour = platform === 'win32' ? path.win32 : path.posix;
-	return roots.some(root => {
-		const relative = flavour.relative(fold(root), fold(child));
-		return (
-			relative === '' ||
-			(!relative.startsWith('..') && !flavour.isAbsolute(relative))
-		);
-	});
-}
-
-async function defaultNodeVersion(nodePath: string): Promise<string> {
+async function defaultNodeVersion(
+	nodePath: string,
+	signal?: AbortSignal,
+): Promise<string> {
 	const {stdout} = await promisify(execFile)(nodePath, ['--version'], {
 		timeout: 10_000,
 		windowsHide: true,
+		env: childEnv(process.env),
+		signal,
+		killSignal: 'SIGKILL',
+		shell: false,
 	});
 	return stdout.trim();
 }
@@ -140,7 +127,21 @@ async function defaultNodeVersion(nodePath: string): Promise<string> {
 export async function resolveNanocoder(
 	options: ResolveOptions,
 ): Promise<Resolution> {
-	const {env, platform, untrustedRoots} = options;
+	options.signal?.throwIfAborted();
+	const {env, platform} = options;
+	let untrustedRoots: string[];
+	try {
+		untrustedRoots = options.untrustedRoots.map(root => {
+			if (!path.isAbsolute(root)) throw new Error('Project root is relative');
+			return canonicalPathSync(root);
+		});
+	} catch {
+		return {
+			ok: false,
+			code: 'DENIED',
+			message: 'The project root is unavailable',
+		};
+	}
 	const dirs = pathDirectories(env);
 	const exe = (name: string) =>
 		platform === 'win32' ? [`${name}.exe`] : [name];
@@ -169,7 +170,7 @@ export async function resolveNanocoder(
 			message: 'Nanocoder is not installed or not on PATH',
 		};
 	}
-	if (!cliOverride && isInside(cliPath, untrustedRoots, platform)) {
+	if (isInside(cliPath, untrustedRoots, platform)) {
 		return {
 			ok: false,
 			code: 'DENIED',
@@ -201,8 +202,8 @@ export async function resolveNanocoder(
 			message: 'Node.js is not installed or not on PATH',
 		};
 	}
-	const nodePath = realpathSync(nodeFound);
-	if (!nodeOverride && isInside(nodePath, untrustedRoots, platform)) {
+	const nodePath = canonicalPathSync(nodeFound);
+	if (isInside(nodePath, untrustedRoots, platform)) {
 		return {
 			ok: false,
 			code: 'DENIED',
@@ -214,6 +215,7 @@ export async function resolveNanocoder(
 	try {
 		nodeVersion = await (options.readNodeVersion ?? defaultNodeVersion)(
 			nodePath,
+			options.signal,
 		);
 	} catch {
 		return {

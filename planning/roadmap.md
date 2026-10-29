@@ -292,7 +292,7 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Build**
 
-- [ ] One process per project, started at the canonical root
+- [x] One process per project, started at the canonical root ([`supervisor.spec.ts`](../source/main/nanocoder/supervisor.spec.ts), concurrent turns and event isolation in [`connect.e2e.ts`](../e2e/connect.e2e.ts))
 - [ ] Exit detection, limited restart with backoff (`ACP-17`)
 - [ ] Idle shutdown that closes sessions first (`ACP-08`, `ACP-23`)
 - [ ] Diagnostics view over the stderr ring, export only after review (`SEC-08`)
@@ -307,14 +307,14 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Build**
 
-- [ ] Feature gates from `initialize`, version and probes (`ACP-03`)
-- [ ] Supported version range check (`ACP-04`)
-- [ ] Visible reasons for every disabled feature (`CHAT-15`)
+- [x] Feature gates from `initialize`, version and probes (`ACP-03`) ([`capabilities.spec.ts`](../source/main/nanocoder/capabilities.spec.ts), safe extension probes in [`acp-client.spec.ts`](../source/main/nanocoder/acp-client.spec.ts))
+- [x] Supported version range check (`ACP-04`) ([`version-policy.spec.ts`](../source/main/nanocoder/version-policy.spec.ts), provisional minimum and untested-version warning documented in [`acp-integration.md`](acp-integration.md#supported-nanocoder-versions))
+- [x] Visible reasons for every disabled feature (`CHAT-15`) ([`connect.e2e.ts`](../e2e/connect.e2e.ts), nine feature reasons and version warning)
 
 **Results we want**
 
-- [ ] An older Nanocoder shows the right features turned off, each with a reason
-- [ ] A version below the minimum is refused with a clear message
+- [x] An older Nanocoder shows the right features turned off, each with a reason ([`connect.e2e.ts`](../e2e/connect.e2e.ts), fake 1.32.0 with no optional capabilities)
+- [x] A version below the minimum is refused with a clear message ([`version-policy.spec.ts`](../source/main/nanocoder/version-policy.spec.ts), package and negotiated-version refusal in [`supervisor.spec.ts`](../source/main/nanocoder/supervisor.spec.ts), visible upgrade message in [`connect.e2e.ts`](../e2e/connect.e2e.ts))
 
 ### Phase 1.5: threads
 

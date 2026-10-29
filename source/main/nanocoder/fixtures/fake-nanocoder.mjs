@@ -25,17 +25,29 @@ function refuse(reason) {
 const results = {
 	initialize: () => ({
 		protocolVersion: mode === 'future' ? 2 : 1,
-		agentCapabilities: {
-			loadSession: true,
-			providers: {},
-			sessionCapabilities: {
-				close: {},
-				list: {},
-				...(mode === 'no-delete' ? {} : {delete: {}}),
-				...(mode === 'no-resume' ? {} : {resume: {}}),
-			},
+		agentCapabilities:
+			mode === 'no-gates' || mode === 'minimum-no-gates'
+				? {}
+				: {
+						loadSession: true,
+						providers: {},
+						sessionCapabilities: {
+							...(mode === 'no-close' ? {} : {close: {}}),
+							list: {},
+							...(mode === 'no-delete' ? {} : {delete: {}}),
+							...(mode === 'no-resume' ? {} : {resume: {}}),
+						},
+					},
+		agentInfo: {
+			name: 'nanocoder',
+			title: 'Nanocoder',
+			version:
+				mode === 'old-version'
+					? '1.31.0'
+					: mode === 'minimum-version' || mode === 'minimum-no-gates'
+						? '1.32.0'
+						: '9.9.9',
 		},
-		agentInfo: {name: 'nanocoder', title: 'Nanocoder', version: '9.9.9'},
 		authMethods: [],
 	}),
 	'session/new': () =>
@@ -195,6 +207,55 @@ function serve() {
 				return;
 			}
 			log({method, params});
+			if (
+				[
+					'renameSession',
+					'_renameSession',
+					'timeline/list',
+					'_timeline/list',
+				].includes(method)
+			) {
+				if (mode === 'silent-probes') return;
+				if (mode === 'ambiguous-probes') {
+					send({id, error: {code: -32603, message: 'Internal error'}});
+					return;
+				}
+				if (mode === 'successful-probes') {
+					send({id, result: {}});
+					return;
+				}
+				const bare = method.replace(/^_/, '');
+				const supported =
+					(mode === 'extensions' && !method.startsWith('_')) ||
+					mode === 'prefixed-extensions';
+				send({
+					id,
+					error: supported
+						? {
+								code: -32603,
+								message: 'Internal error',
+								data: {
+									details:
+										bare === 'renameSession'
+											? 'renameSession requires string sessionId and title params'
+											: 'timeline/list requires a string sessionId',
+								},
+							}
+						: {code: -32601, message: 'Method not found'},
+				});
+				return;
+			}
+			if (method === 'session/set_mode' && mode === 'slow-mode') {
+				say('fake-session', 'mode waiting');
+				return;
+			}
+			if (
+				(method === 'session/new' && mode === 'slow-new') ||
+				(method === 'session/resume' && mode === 'slow-resume')
+			) {
+				say('fake-session', `${method} waiting`);
+				return;
+			}
 			if (method === 'session/prompt') {
 				void runTurn(id, params);
 				return;
@@ -213,10 +274,22 @@ function serve() {
 					: {id, result},
 			);
 		})
-		.on('close', () => process.exit(0));
+		.on('close', () => {
+			if (mode !== 'ignore-shutdown') process.exit(0);
+		});
 }
 
-log({started: true, trustEnv: process.env.NANOCODER_TRUST_DIRECTORY ?? null});
+log({
+	started: true,
+	pid: process.pid,
+	cwd: process.cwd(),
+	trustEnv: process.env.NANOCODER_TRUST_DIRECTORY ?? null,
+});
+
+if (mode === 'ignore-shutdown') {
+	process.on('SIGTERM', () => {});
+	setInterval(() => {}, 1000);
+}
 
 if (mode === 'refuse') {
 	process.stderr.write('(node:1) Warning: an unrelated warning\n');
