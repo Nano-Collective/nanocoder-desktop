@@ -144,6 +144,8 @@ export function createThreadService(
 		const active = options.supervisor.getState(thread.projectId).activeThreadId;
 		if (
 			mutations.has(thread.id) ||
+			(restoring.has(thread.projectId) &&
+				currentSessions.get(thread.projectId)?.thread.id === thread.id) ||
 			pending.get(thread.projectId) === thread.id ||
 			(thread.nanocoderSessionId !== null &&
 				active === thread.nanocoderSessionId)
@@ -239,6 +241,8 @@ export function createThreadService(
 	};
 	const removeMetadata = (request: ThreadRequest) => {
 		options.store.threads.remove(request.projectId, request.threadId);
+		if (currentSessions.get(request.projectId)?.thread.id === request.threadId)
+			currentSessions.delete(request.projectId);
 		snapshots.delete(request.threadId);
 		prepared.delete(request.threadId);
 		permissionIds.delete(request.threadId);
@@ -296,13 +300,19 @@ export function createThreadService(
 		signal.throwIfAborted();
 		if (options.supervisor.getConnection(project.id) !== connection)
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'The project process changed');
+		const fresh = getThread(request);
+		if (
+			fresh.nanocoderSessionId !== sessionId ||
+			fresh.sessionCwd !== current.sessionCwd
+		)
+			throw new IpcFailure('DENIED', 'The thread session changed');
 		saveThread({
-			...current,
+			...fresh,
 			mode: restored.session.mode,
 			runState: 'ready',
 			viewOnlyReason: null,
 		});
-		remember(thread, connection);
+		remember(fresh, connection);
 		snapshots.set(thread.id, {
 			sequence: (snapshots.get(thread.id)?.sequence ?? 0) + 1,
 			events: structuredClone(restored.history),
@@ -361,14 +371,15 @@ export function createThreadService(
 						'The project folder changed; open it again before resuming',
 					);
 				signal.throwIfAborted();
+				const fresh = getThread(request);
 				if (
 					getProject(project.id).canonicalRoot !== owner.canonicalRoot ||
 					getProject(project.id).sessionCwd !== owner.sessionCwd ||
-					getThread(request).nanocoderSessionId !== thread.nanocoderSessionId ||
-					getThread(request).sessionCwd !== thread.sessionCwd
+					fresh.nanocoderSessionId !== thread.nanocoderSessionId ||
+					fresh.sessionCwd !== thread.sessionCwd
 				)
 					throw new IpcFailure('DENIED', 'The thread session changed');
-				return {...thread, nanocoderSessionId: thread.nanocoderSessionId};
+				return {...fresh, nanocoderSessionId: thread.nanocoderSessionId};
 			};
 			restoring.set(project.id, signal);
 			try {

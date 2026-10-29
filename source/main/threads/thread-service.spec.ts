@@ -417,6 +417,237 @@ for (const [mode, resume] of [
 	});
 }
 
+test('removed desktop metadata also forgets the remembered recovery session without resuming it (CHAT-14, ACP-13)', async t => {
+	const {service, supervisor, store, project} = await fixture(t, true);
+	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+	store.threads.save(thread);
+	await service.openThread({projectId: project.id, threadId: thread.id});
+	await service.removeThread({projectId: project.id, threadId: thread.id});
+	await supervisor.stop(project.id);
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	await t.notThrowsAsync(
+		service.restore(project, connection, new AbortController().signal),
+	);
+	t.false(
+		fakeEvents(connection.stderr.lines()).some(
+			event =>
+				typeof event.method === 'string' && event.method.startsWith('session/'),
+		),
+	);
+});
+
+for (const recovery of [false, true]) {
+	test(`${recovery ? 'recovery' : 'ordinary open'} preserves a generated title received during post-resume validation (CHAT-12)`, async t => {
+		const {service, supervisor, store, project, notifyTitle} = await fixture(
+			t,
+			true,
+		);
+		const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+		store.threads.save(thread);
+		if (recovery) {
+			await service.openThread({projectId: project.id, threadId: thread.id});
+			await supervisor.stop(project.id);
+		}
+		await supervisor.ensureProcess(project);
+		const connection = supervisor.getConnection(project.id);
+		const originalResume = connection.resumeSession;
+		let resumed = false;
+		connection.resumeSession = async (...args) => {
+			const result = await originalResume(...args);
+			resumed = true;
+			return result;
+		};
+		const originalGet = store.projects.get.bind(store.projects);
+		let reads = 0;
+		store.projects.get = id => {
+			const owner = originalGet(id);
+			if (resumed && ++reads === 2)
+				notifyTitle('fake-session', 'late generated title');
+			return owner;
+		};
+		if (recovery)
+			await service.restore(project, connection, new AbortController().signal);
+		else await service.openThread({projectId: project.id, threadId: thread.id});
+		t.is(
+			store.threads.get(project.id, thread.id)?.title,
+			'late generated title',
+		);
+		t.false(store.threads.getTitleManuallySet(project.id, thread.id));
+	});
+}
+
+for (const action of [
+	'archive',
+	'rename',
+	'remove',
+	'delete history',
+] as const) {
+	test(`thread recovery refuses ${action} of its preparing row (ACP-13, CHAT-12, CHAT-14)`, async t => {
+		const {service, supervisor, store, project} = await fixture(t, true);
+		const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+		store.threads.save(thread);
+		const request = {projectId: project.id, threadId: thread.id};
+		await service.openThread(request);
+		const connection = supervisor.getConnection(project.id);
+		const original = connection.resumeSession;
+		const entered = deferred<void>();
+		const release = deferred<void>();
+		connection.resumeSession = async (...args) => {
+			const result = await original(...args);
+			entered.resolve();
+			await release.promise;
+			return result;
+		};
+		const restoring = service.restore(
+			project,
+			connection,
+			new AbortController().signal,
+		);
+		t.teardown(async () => {
+			release.resolve();
+			await restoring.catch(() => undefined);
+		});
+		await entered.promise;
+		const mutation =
+			action === 'archive'
+				? service.archiveThread({...request, archived: true})
+				: action === 'rename'
+					? service.renameThread({...request, title: 'not saved'})
+					: action === 'remove'
+						? service.removeThread(request)
+						: service.deleteThreadHistory(request);
+		await t.throwsAsync(mutation, {instanceOf: IpcFailure, code: 'BUSY'});
+	});
+}
+
+test('thread recovery refuses a located root or mismatched supplied connection before session resume (ACP-13, CHAT-01)', async t => {
+	for (const changed of ['cwd', 'connection-root']) {
+		const {root, service, supervisor, store, project} = await fixture(t, true);
+		const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+		store.threads.save(thread);
+		await service.openThread({projectId: project.id, threadId: thread.id});
+		await supervisor.stop(project.id);
+		const folder = path.join(root, 'located');
+		mkdirSync(folder);
+		const located = {...project, canonicalRoot: folder, sessionCwd: folder};
+		if (changed === 'cwd') {
+			store.projects.save(located);
+			store.threads.save({...thread, sessionCwd: folder});
+		}
+		await supervisor.ensureProcess(located);
+		const connection = supervisor.getConnection(project.id);
+		await t.throwsAsync(
+			service.restore(
+				changed === 'cwd' ? located : project,
+				connection,
+				new AbortController().signal,
+			),
+			{instanceOf: IpcFailure, code: 'DENIED'},
+		);
+		t.false(
+			fakeEvents(connection.stderr.lines()).some(
+				event => event.method === 'session/resume',
+			),
+		);
+	}
+});
+
+test('thread recovery refuses already-aborted and late-aborted mode results without replacing history (ACP-13)', async t => {
+	for (const late of [false, true]) {
+		const {service, supervisor, store, project} = await fixture(t, true);
+		const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+		store.threads.save(thread);
+		const request = {projectId: project.id, threadId: thread.id};
+		const before = await service.openThread(request);
+		const connection = supervisor.getConnection(project.id);
+		const entered = deferred<void>();
+		const release = deferred<void>();
+		const original = connection.resumeSession;
+		connection.resumeSession = async (...args) => {
+			const result = await original(...args);
+			entered.resolve();
+			await release.promise;
+			return result;
+		};
+		const abort = new AbortController();
+		if (!late) abort.abort(new Error('cancelled recovery'));
+		const restoring = service.restore(project, connection, abort.signal);
+		const rejected = t.throwsAsync(restoring, {message: 'cancelled recovery'});
+		if (late) {
+			await entered.promise;
+			abort.abort(new Error('cancelled recovery'));
+		}
+		release.resolve();
+		await rejected;
+		t.deepEqual(await service.getThreadSnapshot(request), before);
+		t.false(service.activity(project.id).preparing);
+	}
+});
+
+test('thread detach cancels a reopen queued behind idle stop without a second runtime resolution or spawn (ACP-13)', async t => {
+	const {service, supervisor, store, project, clock, calls} = await fixture(
+		t,
+		true,
+		undefined,
+		true,
+	);
+	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+	store.threads.save(thread);
+	await service.openThread({projectId: project.id, threadId: thread.id});
+	const connection = supervisor.getConnection(project.id);
+	const release = deferred<void>();
+	const originalClose = connection.close;
+	connection.close = async () => {
+		await release.promise;
+		await originalClose();
+	};
+	t.teardown(() => release.resolve());
+	await service.detach([project]);
+	clock.advance(300_000);
+	t.is(supervisor.getState(project.id).status, 'stopping');
+	const reopened = supervisor.ensureProcess(project).catch(error => error);
+	const detached = service.detach([project]);
+	release.resolve();
+	await detached;
+	await reopened;
+	t.is(calls.filter(call => call === 'launch').length, 1);
+	t.is(supervisor.getState(project.id).status, 'stopped');
+	t.is(service.activity(project.id).openSessions, 0);
+});
+
+test('thread detached cleanup settles every project even if one stop rejects (ACP-13)', async t => {
+	const {root, service, supervisor, store, project} = await fixture(t, true);
+	const folder = path.join(root, 'other');
+	mkdirSync(folder);
+	const other = {
+		...project,
+		id: randomUUID(),
+		canonicalRoot: folder,
+		sessionCwd: folder,
+	};
+	store.projects.save(other);
+	const starting = [project, other].map(chosen =>
+		supervisor.ensureProcess(chosen),
+	);
+	const originalStop = supervisor.stop.bind(supervisor);
+	t.teardown(() => {
+		supervisor.stop = originalStop;
+	});
+	const stopped: string[] = [];
+	supervisor.stop = async id => {
+		const state = await originalStop(id);
+		stopped.push(id);
+		if (id === project.id) throw new Error('fixture cleanup failure');
+		return state;
+	};
+	await service.detach([project, other]);
+	await Promise.all(starting);
+	t.is(stopped.length, 2);
+	t.is(supervisor.getState(project.id).status, 'stopped');
+	t.is(supervisor.getState(other.id).status, 'stopped');
+});
+
 test('first prompt saves the mode-ready session ID before content is published (CHAT-04)', async t => {
 	const events: ProjectEvent[] = [];
 	const {project, service, store, supervisor} = await fixture(
