@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import type {ThreadService} from '@/main/ipc/workspace-services';
+import {untilAborted} from '@/main/nanocoder/abort';
 import {
 	type NanocoderConnection,
 	NanocoderFailure,
@@ -432,6 +433,7 @@ export function createThreadService(
 			}
 			attached.clear();
 			pending.clear();
+			mutations.clear();
 			restoring.clear();
 			permissionIds.clear();
 			await Promise.allSettled([
@@ -515,49 +517,63 @@ export function createThreadService(
 				return structuredClone(snapshot(request));
 			}),
 		getThreadSnapshot: async request => structuredClone(snapshot(request)),
-		renameThread: async request => {
-			const patch = validate(threadTitlePatch, {...request, manuallySet: true});
-			const thread = getThread(request);
-			assertMutable(thread);
-			const sessionId = thread.nanocoderSessionId;
-			if (!sessionId)
-				return publishThread(options.store.threads.setTitle(patch));
-			const project = getProject(thread.projectId);
-			const unchanged = () => {
-				const current = getThread(request);
-				const owner = getProject(thread.projectId);
-				if (
-					current.nanocoderSessionId !== sessionId ||
-					current.sessionCwd !== thread.sessionCwd ||
-					owner.canonicalRoot !== project.canonicalRoot ||
-					owner.sessionCwd !== project.sessionCwd
-				)
-					throw new IpcFailure('DENIED', 'The thread session changed');
-				return current;
-			};
-			mutations.add(thread.id);
-			try {
-				const owner = await validateProject(unchanged());
-				await options.supervisor.ensureProcess(owner);
-				await validateProject(unchanged());
-				const gate = options.supervisor.getCapabilityGates(owner.id).features
-					.rename;
-				if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
-				const connection = options.supervisor.getConnection(owner.id);
-				const title = await connection.renameSession(sessionId, patch.title);
-				await validateProject(unchanged());
-				if (options.supervisor.getConnection(owner.id) !== connection)
-					throw new IpcFailure(
-						'AGENT_UNAVAILABLE',
-						'The project process changed',
+		renameThread: request =>
+			operation(request.projectId, async signal => {
+				const patch = validate(threadTitlePatch, {
+					...request,
+					manuallySet: true,
+				});
+				const thread = getThread(request);
+				assertMutable(thread);
+				const sessionId = thread.nanocoderSessionId;
+				if (!sessionId)
+					return publishThread(options.store.threads.setTitle(patch));
+				const project = getProject(thread.projectId);
+				const unchanged = () => {
+					const current = getThread(request);
+					const owner = getProject(thread.projectId);
+					if (
+						current.nanocoderSessionId !== sessionId ||
+						current.sessionCwd !== thread.sessionCwd ||
+						owner.canonicalRoot !== project.canonicalRoot ||
+						owner.sessionCwd !== project.sessionCwd
+					)
+						throw new IpcFailure('DENIED', 'The thread session changed');
+					return current;
+				};
+				mutations.add(thread.id);
+				try {
+					const owner = await validateProject(unchanged());
+					signal.throwIfAborted();
+					await options.supervisor.ensureProcess(owner);
+					signal.throwIfAborted();
+					await validateProject(unchanged());
+					signal.throwIfAborted();
+					const gate = options.supervisor.getCapabilityGates(owner.id).features
+						.rename;
+					if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
+					const connection = options.supervisor.getConnection(owner.id);
+					const title = await untilAborted(
+						connection.renameSession(sessionId, patch.title),
+						signal,
 					);
-				return publishThread(options.store.threads.setTitle({...patch, title}));
-			} catch (error) {
-				return failure(error);
-			} finally {
-				mutations.delete(thread.id);
-			}
-		},
+					signal.throwIfAborted();
+					await validateProject(unchanged());
+					signal.throwIfAborted();
+					if (options.supervisor.getConnection(owner.id) !== connection)
+						throw new IpcFailure(
+							'AGENT_UNAVAILABLE',
+							'The project process changed',
+						);
+					return publishThread(
+						options.store.threads.setTitle({...patch, title}),
+					);
+				} catch (error) {
+					return failure(error);
+				} finally {
+					if (!signal.aborted) mutations.delete(thread.id);
+				}
+			}),
 		archiveThread: async request => {
 			const previous = getThread(request);
 			assertMutable(previous);
@@ -573,56 +589,68 @@ export function createThreadService(
 			removeMetadata(request);
 			return null;
 		},
-		deleteThreadHistory: async request => {
-			const thread = getThread(request);
-			assertMutable(thread);
-			const project = getProject(thread.projectId);
-			const sessionId = thread.nanocoderSessionId;
-			if (!sessionId)
-				throw new IpcFailure(
-					'UNSUPPORTED',
-					'This thread has no Nanocoder history; remove its desktop row instead',
-				);
-			const unchanged = () => {
-				const current = getThread(request);
-				const owner = getProject(thread.projectId);
-				if (
-					current.nanocoderSessionId !== sessionId ||
-					current.sessionCwd !== thread.sessionCwd ||
-					current.title !== thread.title ||
-					owner.canonicalRoot !== project.canonicalRoot ||
-					owner.sessionCwd !== project.sessionCwd
-				)
+		deleteThreadHistory: request =>
+			operation(request.projectId, async signal => {
+				const thread = getThread(request);
+				assertMutable(thread);
+				const project = getProject(thread.projectId);
+				const sessionId = thread.nanocoderSessionId;
+				if (!sessionId)
 					throw new IpcFailure(
-						'DENIED',
-						'The thread changed; confirm its history deletion again',
+						'UNSUPPORTED',
+						'This thread has no Nanocoder history; remove its desktop row instead',
 					);
-				return current;
-			};
-			mutations.add(thread.id);
-			try {
-				const confirmed = await options.confirmDeleteHistory?.(
-					structuredClone({project, thread}),
-				);
-				if (confirmed !== true) return {status: 'cancelled'};
-				const owner = await validateProject(unchanged());
-				await options.supervisor.ensureProcess(owner);
-				await validateProject(unchanged());
-				const gate = options.supervisor.getCapabilityGates(owner.id).features
-					.delete;
-				if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
-				await options.supervisor
-					.getConnection(owner.id)
-					.deleteSession(sessionId);
-				unchanged();
-				removeMetadata(request);
-				return {status: 'deleted'};
-			} catch (error) {
-				return failure(error);
-			} finally {
-				mutations.delete(thread.id);
-			}
-		},
+				const unchanged = () => {
+					const current = getThread(request);
+					const owner = getProject(thread.projectId);
+					if (
+						current.nanocoderSessionId !== sessionId ||
+						current.sessionCwd !== thread.sessionCwd ||
+						current.title !== thread.title ||
+						owner.canonicalRoot !== project.canonicalRoot ||
+						owner.sessionCwd !== project.sessionCwd
+					)
+						throw new IpcFailure(
+							'DENIED',
+							'The thread changed; confirm its history deletion again',
+						);
+					return current;
+				};
+				mutations.add(thread.id);
+				try {
+					const confirmed = await untilAborted(
+						Promise.resolve(
+							options.confirmDeleteHistory?.(
+								structuredClone({project, thread}),
+							),
+						),
+						signal,
+					);
+					signal.throwIfAborted();
+					if (confirmed !== true) return {status: 'cancelled'};
+					const owner = await validateProject(unchanged());
+					signal.throwIfAborted();
+					await options.supervisor.ensureProcess(owner);
+					signal.throwIfAborted();
+					await validateProject(unchanged());
+					signal.throwIfAborted();
+					const gate = options.supervisor.getCapabilityGates(owner.id).features
+						.delete;
+					if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
+					await untilAborted(
+						options.supervisor.getConnection(owner.id).deleteSession(sessionId),
+						signal,
+					);
+					signal.throwIfAborted();
+					unchanged();
+					removeMetadata(request);
+					return {status: 'deleted'};
+				} catch (error) {
+					return failure(error);
+				} finally {
+					if (!signal.aborted) mutations.delete(thread.id);
+				}
+			}),
 		promptThread: request =>
 			operation(request.projectId, async signal => {
 				let thread = getThread(request);

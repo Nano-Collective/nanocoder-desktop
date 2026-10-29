@@ -1161,6 +1161,81 @@ test('session ID survives the process ending immediately after session/new witho
 	}
 });
 
+test('a history confirmation returned after detach cannot launch or delete anything (CHAT-14, ACP-13)', async t => {
+	const {service, store, project, calls, confirmDeletion} = await fixture(
+		t,
+		true,
+	);
+	const thread = seed(project);
+	store.threads.save(thread);
+	const entered = deferred<void>();
+	const answer = deferred<boolean>();
+	confirmDeletion(() => {
+		entered.resolve();
+		return answer.promise;
+	});
+	const deleting = service.deleteThreadHistory({
+		projectId: project.id,
+		threadId: thread.id,
+	});
+	const rejected = t.throwsAsync(deleting, {
+		instanceOf: IpcFailure,
+		code: 'AGENT_UNAVAILABLE',
+	});
+	await entered.promise;
+	await service.detach([project]);
+	answer.resolve(true);
+	await rejected;
+	t.deepEqual(calls, ['confirm-delete']);
+	t.deepEqual(store.threads.get(project.id, thread.id), thread);
+});
+
+for (const action of ['rename', 'delete'] as const) {
+	test(`a late upstream ${action} result cannot mutate desktop metadata after detach (CHAT-12, CHAT-14, ACP-13)`, async t => {
+		const {service, store, supervisor, project, confirmDeletion} =
+			await fixture(t, true);
+		const thread = seed(project);
+		store.threads.save(thread);
+		writeFileSync(
+			path.join(project.canonicalRoot, '.fake-nanocoder'),
+			'extensions',
+		);
+		await supervisor.ensureProcess(project);
+		const connection = supervisor.getConnection(project.id);
+		const entered = deferred<void>();
+		const answer = deferred<void>();
+		connection.renameSession = async () => {
+			entered.resolve();
+			await answer.promise;
+			return 'late fixture title';
+		};
+		connection.deleteSession = async () => {
+			entered.resolve();
+			await answer.promise;
+		};
+		confirmDeletion(async () => true);
+		const request = {projectId: project.id, threadId: thread.id};
+		const mutation =
+			action === 'rename'
+				? service.renameThread({...request, title: 'late fixture title'})
+				: service.deleteThreadHistory(request);
+		const rejected = t.throwsAsync(mutation, {
+			instanceOf: IpcFailure,
+			code: 'AGENT_UNAVAILABLE',
+		});
+		await entered.promise;
+		await service.detach([project]);
+		answer.resolve();
+		await rejected;
+		t.deepEqual(store.threads.get(project.id, thread.id), thread);
+		t.false(store.threads.getTitleManuallySet(project.id, thread.id));
+		t.is(
+			(await service.archiveThread({...request, archived: true})).archiveState,
+			'archived',
+		);
+	});
+}
+
 test('deleting history needs a separate main confirmation and cancellation starts no process (CHAT-14)', async t => {
 	const {project, service, store, calls, confirmDeletion} = await fixture(t);
 	const thread = seed(project);
