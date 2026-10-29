@@ -1,0 +1,121 @@
+.thread-rail {
+	display: grid;
+	gap: var(--spacing-xl);
+	min-width: 0;
+}
+
+.thread-rail-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--spacing-xs);
+}
+
+.thread-group-heading {
+	margin: 0 0 var(--spacing-sm);
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-label-section-font-size);
+	font-weight: var(--typography-label-section-font-weight);
+	letter-spacing: var(--typography-label-section-letter-spacing);
+	text-transform: uppercase;
+}
+
+.thread-group > summary,
+.thread-actions > summary {
+	cursor: pointer;
+}
+
+.thread-list {
+	padding: 0;
+	list-style: none;
+}
+
+.thread-row {
+	position: relative;
+	min-width: 0;
+	border-left: 2px solid transparent;
+}
+
+.thread-row[data-selected="true"] {
+	border-left-color: var(--colors-primary);
+	background: var(--colors-primary-soft);
+	color: var(--colors-on-surface);
+}
+
+.thread-open {
+	display: flex;
+	align-items: center;
+	gap: var(--spacing-sm);
+	width: 100%;
+	padding: var(--spacing-xs) 24px var(--spacing-xs) var(--spacing-sm);
+	border: 0;
+	background: transparent;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.thread-open:disabled {
+	cursor: not-allowed;
+}
+
+.thread-title {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.thread-status--primary {
+	color: var(--colors-primary);
+}
+
+.thread-status--warning {
+	color: var(--colors-warning);
+}
+
+.thread-status--error {
+	color: var(--colors-error);
+}
+
+.thread-actions {
+	position: absolute;
+	top: 0;
+	right: 0;
+}
+
+.thread-actions > summary {
+	padding: var(--spacing-xs);
+	list-style: none;
+}
+
+.thread-actions > summary::-webkit-details-marker {
+	display: none;
+}
+
+.thread-action-list {
+	position: absolute;
+	z-index: 1;
+	top: 100%;
+	right: 0;
+	display: grid;
+	gap: var(--spacing-md);
+	width: calc(var(--spacing-rail-width) - 2 * var(--spacing-xl));
+	padding: var(--spacing-sm);
+	border: 1px solid var(--colors-stroke);
+	border-radius: var(--rounded-md);
+	background: var(--colors-surface-elevated);
+}
+
+.thread-action .ui-button {
+	justify-content: flex-start;
+	width: 100%;
+	text-align: left;
+}
+
+.thread-action-reason,
+.thread-rail-note {
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-meta-font-size);
+	overflow-wrap: anywhere;
+}

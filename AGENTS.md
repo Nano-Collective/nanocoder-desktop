@@ -60,6 +60,8 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/transcript.ts` | Merges turn events into the conversation the UI shows |
 | `source/renderer/recovery-tools.tsx` | Plain-props process recovery and captured diagnostics controls |
 | `source/renderer/app-shell.tsx`, `source/renderer/styles/app-shell.css` | U.2 grid and plain-child rail/tools slots; inspector hidden at 840px and below |
+| `source/renderer/thread-rail.tsx`, `source/renderer/thread-rail-model.ts` | Plain-prop U.3 thread groups, state glyphs and metadata actions; presentation uses `styles/threads.css` |
+| `source/renderer/thread-palette.ts` | New, rename and archive palette commands sharing the rail's callbacks and refusal policy |
 | `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
 | `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |
 | `source/renderer/recent-projects.tsx`, `source/renderer/trust-feedback.tsx` | Standalone, plain-prop project controls and trust feedback; `use-projects.ts` owns bridge calls |
