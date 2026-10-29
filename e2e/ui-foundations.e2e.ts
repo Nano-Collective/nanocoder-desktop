@@ -324,9 +324,17 @@ test('running and failed badge backgrounds and failure typography follow their c
 });
 
 test('a child exit shows a failed turn without a stale ACP readiness claim in either theme', async () => {
-	writeFileSync(path.join(project, '.fake-nanocoder'), 'die-in-turn');
 	await page.emulateMedia({reducedMotion: 'reduce'});
 	for (const theme of ['dark', 'light']) {
+		const folder = path.join(work, `exit-${theme}`);
+		mkdirSync(folder);
+		writeFileSync(path.join(folder, '.fake-nanocoder'), 'die-in-turn');
+		await app.evaluate(({dialog}, folder) => {
+			dialog.showOpenDialog = (async () => ({
+				canceled: false,
+				filePaths: [folder],
+			})) as typeof dialog.showOpenDialog;
+		}, folder);
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
 		}, theme);
@@ -336,7 +344,7 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		).toBeEnabled();
 		await expect(
 			page.getByRole('region', {name: 'connected agent'}),
-		).toBeVisible();
+		).toContainText(folder);
 		await page
 			.getByRole('textbox', {name: 'message'})
 			.fill('synthetic exit check');
@@ -359,7 +367,9 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 			.getByRole('textbox', {name: 'message'})
 			.fill('synthetic follow-up');
 		await page.getByRole('button', {name: 'send', exact: true}).click();
-		await expect(failure).toContainText('No project is open');
+		await expect(failure).toContainText(
+			'Nanocoder stopped. Start the project again when you are ready.',
+		);
 		await expect(page.locator('.ui-badge--success')).toHaveCount(0);
 		expect(await visibleTextContrast(page, theme)).toEqual([]);
 	}

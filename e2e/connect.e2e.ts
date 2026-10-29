@@ -525,7 +525,7 @@ test('a failed cached resume closes its process and the next open prepares a fre
 	await openFolder(root);
 	await expect(
 		page.getByRole('region', {name: 'Connected agent'}),
-	).toContainText('Session fake-session in normal mode');
+	).toContainText('session fake-session in normal mode');
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
