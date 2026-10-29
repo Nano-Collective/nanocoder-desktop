@@ -29,6 +29,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/paths.ts` | Shared native realpath canonicalisation (symlinks and volume case aliases) and component containment |
 | `source/main/ipc/handle-request.ts` | Sender check, schema validation and the result shape for every IPC call |
 | `source/main/ipc/index.ts` | Registers the IPC handlers |
+| `source/main/ipc/cancel-prompt.ts` | Pure strict schema for temporary technical-turn cancellation, with co-located refusal tests |
 | `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |
 | `source/main/ipc/workspace-services.ts` | Main-only project and thread service contracts |
 | `source/main/projects/` | Canonical project selection and relocation, bounded read-only trust summaries, and snapshot-checked native consent |
@@ -56,6 +57,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/protocol-stream.ts` | Reads stdout as ACP only; anything else ends the connection |
 | `source/main/nanocoder/stderr-ring.ts` | Bounded, redacted, in-memory ring for Nanocoder's stderr |
 | `source/main/nanocoder/permissions.ts` | Holds each permission request until the user answers; only an option Nanocoder offered counts |
+| `source/main/nanocoder/cancel-technical-turn.ts` | Main-owned technical-turn cancellation and awaited supervisor settlement |
 | `source/main/nanocoder/turn-events.ts` | Turns ACP session updates into the few events the UI shows |
 | `source/renderer/transcript.ts` | Merges turn events into the conversation the UI shows |
 | `source/renderer/recovery-tools.tsx` | Plain-props process recovery and captured diagnostics controls |
@@ -64,6 +66,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/thread-palette.ts` | New, rename and archive palette commands sharing the rail's callbacks and refusal policy |
 | `source/renderer/thread-controller.ts` | Scoped renderer thread metadata, project state sequences and stale async/disposal guards |
 | `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
+| `source/renderer/approval-requests.tsx` | U.6 plain-prop approval cards, request-scoped shortcuts and queued focus return |
 | `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |
 | `source/renderer/recent-projects.tsx`, `source/renderer/trust-feedback.tsx` | Standalone, plain-prop project controls and trust feedback; `use-projects.ts` owns bridge calls |
 | `scripts/generate-design-tokens.mjs` | Generates committed CSS custom properties from `DESIGN.md`; the adjacent spec rejects drift |
@@ -83,6 +86,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `e2e/supervisor.e2e.ts` | Built-main quit while a child is still initialising, including child-exit verification |
 | `e2e/supervisor-recovery.e2e.ts` | Crash/retry, saved-history replay, crash-loop limits and reviewed diagnostics refusals |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |
+| `e2e/qa/approval-harness.ts` | Browser-only component fixture for failed answers and atomic same-size approval queue replacement |
 | `e2e/qa/ui-contrast.ts` | Token-pair and rendered-text contrast checks, with a co-located AVA spec |
 | `scripts/node-sidecar.json` | The pinned Node sidecar: exact version and SHA-256 per platform (`DEC-38`) |
 | `scripts/fetch-node-sidecar.mjs`, `scripts/measure-runtime.mjs` | Download and verify the sidecar; measure both runtimes (phase G.6) |
