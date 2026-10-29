@@ -76,6 +76,30 @@ test('no waiting request renders no approval controls', t => {
 	);
 });
 
+test('A11Y-03 queued approval landmarks have unique payload-free positions', t => {
+	const markup = renderToStaticMarkup(
+		createElement(ApprovalRequests, {
+			requests: [
+				{...request, id: 'private-first-request-id'},
+				{...request, id: 'private-second-request-id'},
+			],
+			mode: 'normal',
+			busy: true,
+			onAnswer: async () => ({ok: true, value: null}),
+		}),
+	);
+	const names = [
+		...markup.matchAll(/aria-label="(permission request[^"]*)"/g),
+	].map(match => match[1]);
+	t.deepEqual(names, [
+		'permission request 1 of 2',
+		'permission request 2 of 2',
+	]);
+	t.false(names.join().includes('private-'));
+	t.false(names.join().includes(request.title));
+	t.is((markup.match(/role="alertdialog"/g) ?? []).length, 2);
+});
+
 test('SUB-03 child approval names its source without inventing a parent or execution success', t => {
 	const markup = renderToStaticMarkup(
 		createElement(ApprovalRequests, {
