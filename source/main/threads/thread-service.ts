@@ -5,7 +5,11 @@ import {
 	type NanocoderConnection,
 	NanocoderFailure,
 } from '@/main/nanocoder/acp-client';
-import type {ProjectSupervisor} from '@/main/nanocoder/supervisor';
+import {type SupervisorClock, systemClock} from '@/main/nanocoder/clock';
+import type {
+	ProjectActivity,
+	ProjectSupervisor,
+} from '@/main/nanocoder/supervisor';
 import {canonicalPath} from '@/main/paths';
 import type {DesktopStore} from '@/main/store/contracts';
 import {threadTitlePatch, validate} from '@/main/store/validation';
@@ -35,6 +39,7 @@ interface ThreadOptions {
 		| 'stop'
 	>;
 	now?(): Date;
+	clock?: Pick<SupervisorClock, 'now'>;
 	onEvent?(event: ProjectEvent): void;
 	confirmDeleteHistory?(snapshot: {
 		project: ProjectInfo;
@@ -47,15 +52,56 @@ type AsyncThreadService = {
 		...args: Parameters<ThreadService[K]>
 	) => Promise<Awaited<ReturnType<ThreadService[K]>>>;
 };
+type ThreadRuntimeService = AsyncThreadService & {
+	dispose(): void;
+	attachProject(projectId: string): void;
+	activity(projectId: string): ProjectActivity;
+	restore(
+		project: ProjectInfo,
+		connection: NanocoderConnection,
+		signal: AbortSignal,
+	): Promise<void>;
+	detach(projects: Iterable<ProjectInfo>): Promise<void>;
+};
 
 export function createThreadService(
 	options: ThreadOptions,
-): AsyncThreadService & {dispose(): void} {
+): ThreadRuntimeService {
 	const snapshots = new Map<string, {sequence: number; events: TurnEvent[]}>();
 	const prepared = new Map<string, NanocoderConnection>();
 	const pending = new Map<string, string>();
 	const mutations = new Set<string>();
 	const permissionIds = new Map<string, Set<string>>();
+	const attached = new Set<string>();
+	const lastActivity = new Map<string, number>();
+	const currentSessions = new Map<
+		string,
+		{thread: ThreadInfo; connection: NanocoderConnection}
+	>();
+	const restoring = new Map<string, AbortSignal>();
+	const operations = new Map<string, Set<Promise<unknown>>>();
+	let attachment = new AbortController();
+	let disposed = false;
+	const operation = <T>(
+		projectId: string,
+		work: (signal: AbortSignal) => Promise<T>,
+	): Promise<T> => {
+		const {signal} = attachment;
+		const task = Promise.resolve().then(() => {
+			signal.throwIfAborted();
+			return work(signal);
+		});
+		const tasks = operations.get(projectId) ?? new Set<Promise<unknown>>();
+		tasks.add(task);
+		operations.set(projectId, tasks);
+		const finished = () => {
+			tasks.delete(task);
+			if (!tasks.size && operations.get(projectId) === tasks)
+				operations.delete(projectId);
+		};
+		void task.then(finished, finished);
+		return task;
+	};
 	const now = () => (options.now?.() ?? new Date()).toISOString();
 	const publishThread = (thread: ThreadInfo) => {
 		options.supervisor.publishThread(thread);
@@ -66,9 +112,24 @@ export function createThreadService(
 		return publishThread(thread);
 	};
 	const getProject = (projectId: string) => {
+		if (disposed)
+			throw new IpcFailure('AGENT_UNAVAILABLE', 'The thread service stopped');
 		const project = options.store.projects.get(projectId);
 		if (!project) throw new IpcFailure('NOT_FOUND', 'Project not found');
 		return project;
+	};
+	const attachProject = (projectId: string) => {
+		getProject(projectId);
+		attached.add(projectId);
+		lastActivity.set(projectId, (options.clock ?? systemClock).now());
+	};
+	const remember = (thread: ThreadInfo, connection: NanocoderConnection) => {
+		prepared.set(thread.id, connection);
+		currentSessions.set(thread.projectId, {
+			thread: structuredClone(thread),
+			connection,
+		});
+		attachProject(thread.projectId);
 	};
 	const unavailable = async (): Promise<never> => {
 		throw new IpcFailure('UNAVAILABLE', 'This feature is not available yet');
@@ -202,6 +263,7 @@ export function createThreadService(
 		);
 	};
 	const select = (request: ThreadRequest) => {
+		attachProject(request.projectId);
 		const ids = options.store.getUiState().openThreadIds;
 		options.store.updateUiState({
 			activeProjectId: request.projectId,
@@ -217,6 +279,7 @@ export function createThreadService(
 		thread: ThreadInfo,
 		connection: NanocoderConnection,
 		project: ProjectInfo,
+		signal: AbortSignal,
 	) => {
 		const sessionId = thread.nanocoderSessionId;
 		if (!sessionId) return;
@@ -224,11 +287,13 @@ export function createThreadService(
 			sessionId,
 			startingMode(thread, project),
 		);
+		signal.throwIfAborted();
 		const request = {projectId: thread.projectId, threadId: thread.id};
 		const current = getThread(request);
 		if (current.nanocoderSessionId !== sessionId)
 			throw new IpcFailure('DENIED', 'The thread session changed');
 		await validateProject(current);
+		signal.throwIfAborted();
 		if (options.supervisor.getConnection(project.id) !== connection)
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'The project process changed');
 		saveThread({
@@ -237,7 +302,7 @@ export function createThreadService(
 			runState: 'ready',
 			viewOnlyReason: null,
 		});
-		prepared.set(thread.id, connection);
+		remember(thread, connection);
 		snapshots.set(thread.id, {
 			sequence: (snapshots.get(thread.id)?.sequence ?? 0) + 1,
 			events: structuredClone(restored.history),
@@ -257,7 +322,117 @@ export function createThreadService(
 		});
 	};
 	return {
+		attachProject,
+		activity: (projectId: string) => ({
+			runningTurn:
+				options.supervisor.getState(projectId).activeThreadId !== null,
+			openSessions: attached.has(projectId) ? 1 : 0,
+			preparing: pending.has(projectId) || restoring.has(projectId),
+			lastActivityAt: lastActivity.get(projectId) ?? 0,
+		}),
+		restore: async (project, connection, signal) => {
+			signal.throwIfAborted();
+			const cached = currentSessions.get(project.id);
+			if (!cached || !attached.has(project.id)) return;
+			const request = {projectId: project.id, threadId: cached.thread.id};
+			const check = async () => {
+				signal.throwIfAborted();
+				if (disposed || !attached.has(project.id))
+					throw new IpcFailure(
+						'AGENT_UNAVAILABLE',
+						'The thread workspace detached',
+					);
+				const thread = getThread(request);
+				const owner = getProject(project.id);
+				if (
+					thread.nanocoderSessionId !== cached.thread.nanocoderSessionId ||
+					!thread.nanocoderSessionId ||
+					thread.sessionCwd !== cached.thread.sessionCwd ||
+					thread.sessionCwd !== owner.sessionCwd ||
+					owner.sessionCwd !== owner.canonicalRoot ||
+					owner.canonicalRoot !== project.canonicalRoot ||
+					owner.sessionCwd !== project.sessionCwd ||
+					cached.connection.agent.root !== project.canonicalRoot ||
+					connection.agent.root !== project.canonicalRoot ||
+					(await canonicalPath(owner.canonicalRoot)) !== owner.canonicalRoot
+				)
+					throw new IpcFailure(
+						'DENIED',
+						'The project folder changed; open it again before resuming',
+					);
+				signal.throwIfAborted();
+				if (
+					getProject(project.id).canonicalRoot !== owner.canonicalRoot ||
+					getProject(project.id).sessionCwd !== owner.sessionCwd ||
+					getThread(request).nanocoderSessionId !== thread.nanocoderSessionId ||
+					getThread(request).sessionCwd !== thread.sessionCwd
+				)
+					throw new IpcFailure('DENIED', 'The thread session changed');
+				return {...thread, nanocoderSessionId: thread.nanocoderSessionId};
+			};
+			restoring.set(project.id, signal);
+			try {
+				const thread = await check();
+				const restored = await connection.resumeSession(
+					thread.nanocoderSessionId,
+					startingMode(thread, project),
+				);
+				const fresh = await check();
+				snapshots.set(thread.id, {
+					sequence: (snapshots.get(thread.id)?.sequence ?? 0) + 1,
+					events: structuredClone(restored.history),
+				});
+				remember(fresh, connection);
+				saveThread({
+					...fresh,
+					mode: restored.session.mode,
+					runState: 'ready',
+					viewOnlyReason: null,
+				});
+			} finally {
+				if (restoring.get(project.id) === signal) restoring.delete(project.id);
+			}
+		},
+		detach: async projects => {
+			const tasks = [...operations.values()].flatMap(values => [...values]);
+			const ids = new Set([
+				...pending.keys(),
+				...restoring.keys(),
+				...operations.keys(),
+			]);
+			const candidates = new Set([
+				...attached,
+				...[...projects].map(project => project.id),
+			]);
+			attachment.abort(
+				new IpcFailure('AGENT_UNAVAILABLE', 'The app renderer detached'),
+			);
+			attachment = new AbortController();
+			for (const projectId of candidates) {
+				lastActivity.set(projectId, (options.clock ?? systemClock).now());
+				const state = options.supervisor.getState(projectId);
+				if (
+					state.activeThreadId !== null ||
+					state.status === 'starting' ||
+					state.status === 'stopping' ||
+					state.restart.nextAttemptAt !== null
+				)
+					ids.add(projectId);
+			}
+			attached.clear();
+			pending.clear();
+			restoring.clear();
+			permissionIds.clear();
+			await Promise.allSettled([
+				...[...ids].map(async id => options.supervisor.stop(id)),
+				...tasks,
+			]);
+		},
 		dispose: () => {
+			disposed = true;
+			attachment.abort(
+				new IpcFailure('AGENT_UNAVAILABLE', 'The thread service stopped'),
+			);
 			unsubscribe();
 			unsubscribeTitles();
 			permissionIds.clear();
@@ -284,43 +459,50 @@ export function createThreadService(
 			select({projectId, threadId: thread.id});
 			return thread;
 		},
-		openThread: async request => {
-			const thread = getThread(request);
-			select(request);
-			if (!thread.nanocoderSessionId) return structuredClone(snapshot(request));
-			let preparing = false;
-			try {
-				const project = await validateProject(thread);
-				const state = options.supervisor.getState(project.id);
-				if (
-					state.status === 'ready' &&
-					prepared.get(thread.id) ===
-						options.supervisor.getConnection(project.id)
-				)
+		openThread: request =>
+			operation(request.projectId, async signal => {
+				const thread = getThread(request);
+				select(request);
+				if (!thread.nanocoderSessionId)
 					return structuredClone(snapshot(request));
-				if (pending.has(project.id) || state.activeThreadId !== null)
-					return structuredClone(snapshot(request));
-				pending.set(project.id, thread.id);
-				preparing = true;
-				await options.supervisor.ensureProcess(project);
-				await validateProject(getThread(request));
-				await resume(
-					getThread(request),
-					options.supervisor.getConnection(project.id),
-					project,
-				);
-			} catch (error) {
-				if (
-					error instanceof IpcFailure &&
-					['DENIED', 'BUSY'].includes(error.code)
-				)
-					return failure(error);
-				viewOnly(request, error);
-			} finally {
-				if (preparing) pending.delete(thread.projectId);
-			}
-			return structuredClone(snapshot(request));
-		},
+				let preparing = false;
+				try {
+					const project = await validateProject(thread);
+					signal.throwIfAborted();
+					const state = options.supervisor.getState(project.id);
+					if (
+						state.status === 'ready' &&
+						prepared.get(thread.id) ===
+							options.supervisor.getConnection(project.id)
+					)
+						return structuredClone(snapshot(request));
+					if (pending.has(project.id) || state.activeThreadId !== null)
+						return structuredClone(snapshot(request));
+					pending.set(project.id, thread.id);
+					preparing = true;
+					await options.supervisor.ensureProcess(project);
+					signal.throwIfAborted();
+					await validateProject(getThread(request));
+					signal.throwIfAborted();
+					await resume(
+						getThread(request),
+						options.supervisor.getConnection(project.id),
+						project,
+						signal,
+					);
+				} catch (error) {
+					if (signal.aborted) return failure(signal.reason);
+					if (
+						error instanceof IpcFailure &&
+						['DENIED', 'BUSY'].includes(error.code)
+					)
+						return failure(error);
+					viewOnly(request, error);
+				} finally {
+					if (preparing && !signal.aborted) pending.delete(thread.projectId);
+				}
+				return structuredClone(snapshot(request));
+			}),
 		getThreadSnapshot: async request => structuredClone(snapshot(request)),
 		renameThread: async request => {
 			const patch = validate(threadTitlePatch, {...request, manuallySet: true});
@@ -430,110 +612,124 @@ export function createThreadService(
 				mutations.delete(thread.id);
 			}
 		},
-		promptThread: async request => {
-			let thread = getThread(request);
-			assertMutable(thread);
-			if (thread.runState === 'view-only')
-				throw new IpcFailure(
-					'UNAVAILABLE',
-					thread.viewOnlyReason ?? 'This thread cannot accept prompts',
-				);
-			if (thread.archiveState === 'archived')
-				throw new IpcFailure(
-					'DENIED',
-					'Unarchive this thread before sending a prompt',
-				);
-			if (
-				pending.has(thread.projectId) ||
-				options.supervisor.getState(thread.projectId).activeThreadId !== null
-			)
-				throw new IpcFailure(
-					'BUSY',
-					'Nanocoder is already working on a turn',
-					true,
-				);
-			pending.set(thread.projectId, thread.id);
-			let started = false;
-			try {
-				const project = await validateProject(thread);
-				await options.supervisor.ensureProcess(project);
-				await validateProject(getThread(request));
-				const connection = options.supervisor.getConnection(project.id);
-				if (!thread.nanocoderSessionId) {
-					const session = await connection.newSession(
-						startingMode(thread, project),
-					);
-					try {
-						thread = {
-							...getThread(request),
-							nanocoderSessionId: session.id,
-							mode: session.mode,
-						};
-						saveThread(thread);
-						prepared.set(thread.id, connection);
-					} catch (error) {
-						await options.supervisor.stop(project.id).catch(() => undefined);
-						if (error instanceof IpcFailure) throw error;
-						throw new IpcFailure(
-							'INTERNAL',
-							'The session id could not be stored',
-						);
-					}
-				} else if (prepared.get(thread.id) !== connection) {
-					await resume(thread, connection, project);
-					thread = getThread(request);
-				}
-				await validateProject(getThread(request));
-				if (options.supervisor.getConnection(project.id) !== connection)
+		promptThread: request =>
+			operation(request.projectId, async signal => {
+				let thread = getThread(request);
+				assertMutable(thread);
+				if (thread.runState === 'view-only')
 					throw new IpcFailure(
-						'AGENT_UNAVAILABLE',
-						'The project process changed before the prompt',
+						'UNAVAILABLE',
+						thread.viewOnlyReason ?? 'This thread cannot accept prompts',
 					);
-				const sessionId = thread.nanocoderSessionId;
-				if (!sessionId)
-					throw new IpcFailure('AGENT_UNAVAILABLE', 'No session is ready');
-				thread = {
-					...thread,
-					title:
-						thread.title === 'new thread' &&
-						options.store.threads.getTitleManuallySet(
+				if (thread.archiveState === 'archived')
+					throw new IpcFailure(
+						'DENIED',
+						'Unarchive this thread before sending a prompt',
+					);
+				if (
+					pending.has(thread.projectId) ||
+					options.supervisor.getState(thread.projectId).activeThreadId !== null
+				)
+					throw new IpcFailure(
+						'BUSY',
+						'Nanocoder is already working on a turn',
+						true,
+					);
+				pending.set(thread.projectId, thread.id);
+				let started = false;
+				try {
+					const project = await validateProject(thread);
+					signal.throwIfAborted();
+					await options.supervisor.ensureProcess(project);
+					signal.throwIfAborted();
+					await validateProject(getThread(request));
+					signal.throwIfAborted();
+					const connection = options.supervisor.getConnection(project.id);
+					if (!thread.nanocoderSessionId) {
+						const session = await connection.newSession(
+							startingMode(thread, project),
+						);
+						signal.throwIfAborted();
+						try {
+							thread = {
+								...getThread(request),
+								nanocoderSessionId: session.id,
+								mode: session.mode,
+							};
+							saveThread(thread);
+							remember(thread, connection);
+						} catch (error) {
+							await options.supervisor.stop(project.id).catch(() => undefined);
+							if (error instanceof IpcFailure) throw error;
+							throw new IpcFailure(
+								'INTERNAL',
+								'The session id could not be stored',
+							);
+						}
+					} else if (prepared.get(thread.id) !== connection) {
+						await resume(thread, connection, project, signal);
+						thread = getThread(request);
+					}
+					await validateProject(getThread(request));
+					signal.throwIfAborted();
+					if (options.supervisor.getConnection(project.id) !== connection)
+						throw new IpcFailure(
+							'AGENT_UNAVAILABLE',
+							'The project process changed before the prompt',
+						);
+					const sessionId = thread.nanocoderSessionId;
+					if (!sessionId)
+						throw new IpcFailure('AGENT_UNAVAILABLE', 'No session is ready');
+					thread = {
+						...thread,
+						title:
+							thread.title === 'new thread' &&
+							options.store.threads.getTitleManuallySet(
+								thread.projectId,
+								thread.id,
+							) === false
+								? request.text.trim().replace(/\s+/g, ' ').slice(0, 80)
+								: thread.title,
+						runState: 'running',
+						lastActivityAt: now(),
+					};
+					saveThread(thread);
+					remember(thread, connection);
+					started = true;
+					append(thread, [{type: 'user', text: request.text}]);
+					const result = await options.supervisor.prompt(
+						project.id,
+						sessionId,
+						request.text,
+					);
+					saveThread({
+						...getThread(request),
+						runState:
+							result.stopReason === 'cancelled' ? 'interrupted' : 'ready',
+						lastActivityAt: now(),
+					});
+					return result;
+				} catch (error) {
+					if (started && !disposed) {
+						const current = options.store.threads.get(
 							thread.projectId,
 							thread.id,
-						) === false
-							? request.text.trim().replace(/\s+/g, ' ').slice(0, 80)
-							: thread.title,
-					runState: 'running',
-					lastActivityAt: now(),
-				};
-				saveThread(thread);
-				started = true;
-				append(thread, [{type: 'user', text: request.text}]);
-				const result = await options.supervisor.prompt(
-					project.id,
-					sessionId,
-					request.text,
-				);
-				saveThread({
-					...getThread(request),
-					runState: result.stopReason === 'cancelled' ? 'interrupted' : 'ready',
-					lastActivityAt: now(),
-				});
-				return result;
-			} catch (error) {
-				if (started) {
-					const current = options.store.threads.get(
-						thread.projectId,
-						thread.id,
-					);
-					if (current?.nanocoderSessionId === thread.nanocoderSessionId)
-						saveThread({...current, runState: 'failed', lastActivityAt: now()});
+						);
+						if (current?.nanocoderSessionId === thread.nanocoderSessionId)
+							saveThread({
+								...current,
+								runState: 'failed',
+								lastActivityAt: now(),
+							});
+					}
+					return failure(error);
+				} finally {
+					if (!signal.aborted) {
+						pending.delete(thread.projectId);
+						permissionIds.delete(thread.id);
+					}
 				}
-				return failure(error);
-			} finally {
-				pending.delete(thread.projectId);
-				permissionIds.delete(thread.id);
-			}
-		},
+			}),
 		cancelThread: async request => {
 			const thread = getThread(request);
 			const sessionId = thread.nanocoderSessionId;
