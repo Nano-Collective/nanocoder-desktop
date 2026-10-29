@@ -3,7 +3,13 @@ import {
 	createThreadConversations,
 	type ThreadConversationState,
 } from '@/renderer/thread-conversations';
-import type {ProjectEvent, ThreadSnapshot, TurnEvent} from '@/shared/ipc';
+import type {
+	IpcResult,
+	ProjectEvent,
+	ThreadSnapshot,
+	TurnEvent,
+	TurnResult,
+} from '@/shared/ipc';
 
 const snapshot = (
 	id: string,
@@ -38,11 +44,14 @@ const turn = (
 	events,
 });
 
-function fixture() {
+function fixture(onChange?: (state: ThreadConversationState) => void) {
 	const changes: ThreadConversationState[] = [];
 	const timers: {callback(): void; delayMs: number; cancelled: boolean}[] = [];
 	const conversations = createThreadConversations({
-		onChange: state => changes.push(state),
+		onChange: state => {
+			changes.push(state);
+			onChange?.(state);
+		},
 		clock: {
 			schedule(callback, delayMs) {
 				const timer = {callback, delayMs, cancelled: false};
@@ -334,4 +343,191 @@ test('switch remove and disposal flush or discard only owned queues and refuse e
 	t.is(changes.length, before);
 	t.is(conversations.getState().projectId, null);
 	t.deepEqual(conversations.getState().transcript.items, []);
+});
+
+for (const outcome of ['completed', 'failed', 'cancelled'] as const) {
+	test(`a mapped ${outcome} terminal settles only its flushed current subagent cards and cannot revert on the next turn (SUB-04, CHAT-05)`, t => {
+		const {conversations, timers} = fixture();
+		conversations.snapshot(
+			snapshot('a', [
+				{type: 'user', text: 'earlier'},
+				{
+					type: 'tool',
+					id: 'subagent:opaque',
+					status: 'in_progress',
+					delegation: {history: true},
+				},
+			]),
+		);
+		const earlier = conversations.getState().transcript.items[1];
+		conversations.setDraft('sent');
+		const ticket = conversations.beginTurn('a');
+		if (!ticket) return t.fail('the selected draft should begin a turn');
+		conversations.receive(
+			turn([
+				{type: 'user', text: 'sent'},
+				{
+					type: 'tool',
+					id: 'subagent:opaque',
+					status: 'in_progress',
+					delegation: {history: false},
+				},
+			]),
+		);
+		conversations.setDraft('next draft');
+		const result: IpcResult<TurnResult> =
+			outcome === 'failed'
+				? {
+						ok: false,
+						error: {
+							code: 'AGENT_UNAVAILABLE',
+							message: 'turn failed',
+							retryable: true,
+						},
+					}
+				: {
+						ok: true,
+						value: {
+							stopReason: outcome === 'cancelled' ? 'cancelled' : 'end_turn',
+						},
+					};
+		t.true(conversations.finishTurn(ticket, result));
+		const items = conversations.getState().transcript.items;
+		const settled = items[3];
+		t.is(settled.kind, 'tool');
+		if (settled.kind !== 'tool') return;
+		t.is(settled.turnOutcome, outcome);
+		t.is(items[1], earlier);
+		t.true(timers[0].cancelled);
+		t.is(conversations.getState().draft, 'next draft');
+		t.truthy(conversations.beginTurn('a'));
+		conversations.receive(
+			turn([
+				{type: 'user', text: 'next draft'},
+				{
+					type: 'tool',
+					id: 'subagent:opaque',
+					status: 'pending',
+					delegation: {history: false},
+				},
+			]),
+		);
+		conversations.flush('a');
+		t.is(conversations.getState().transcript.items[3], settled);
+		const next = conversations.getState().transcript.items.at(-1);
+		t.is(next?.kind, 'tool');
+		if (next?.kind === 'tool') t.is(next.turnOutcome, undefined);
+	});
+}
+
+test('a refused repeated prompt restores only its unsent draft and never settles an earlier cached subagent (CHAT-04, CHAT-07, SUB-04)', t => {
+	const {conversations} = fixture();
+	conversations.snapshot(
+		snapshot('a', [
+			{type: 'user', text: 'same prompt'},
+			{
+				type: 'tool',
+				id: 'subagent:opaque',
+				status: 'in_progress',
+				delegation: {history: false},
+			},
+		]),
+	);
+	const before = conversations.getState().transcript.items[1];
+	conversations.setDraft(' same prompt ');
+	const ticket = conversations.beginTurn('a');
+	if (!ticket) return t.fail('the selected draft should begin a turn');
+	t.true(
+		conversations.finishTurn(ticket, {
+			ok: true,
+			value: {stopReason: 'cancelled'},
+		}),
+	);
+	t.is(conversations.getState().draft, ' same prompt ');
+	t.is(conversations.getState().transcript.items[1], before);
+});
+
+test('an old terminal cannot flush or settle a same-id subagent in a replacement project (SUB-04, CHAT-03)', t => {
+	const {conversations, timers} = fixture();
+	conversations.setDraft('old');
+	const old = conversations.beginTurn('a');
+	if (!old) return t.fail('the selected draft should begin a turn');
+	conversations.selectProject('project-b');
+	conversations.selectThread('a');
+	conversations.setDraft('new');
+	t.truthy(conversations.beginTurn('a'));
+	conversations.receive(
+		turn(
+			[
+				{type: 'user', text: 'new'},
+				{
+					type: 'tool',
+					id: 'subagent:opaque',
+					status: 'in_progress',
+					delegation: {history: false},
+				},
+			],
+			'a',
+			'project-b',
+		),
+	);
+	const before = conversations.getState();
+	t.false(
+		conversations.finishTurn(old, {
+			ok: true,
+			value: {stopReason: 'cancelled'},
+		}),
+	);
+	t.is(conversations.getState().transcript, before.transcript);
+	t.false(timers[0].cancelled);
+	timers[0].callback();
+	const tool = conversations.getState().transcript.items[1];
+	t.is(tool.kind, 'tool');
+	if (tool.kind === 'tool') t.is(tool.turnOutcome, undefined);
+});
+
+test('terminal settlement rechecks the owning ticket after a flush callback changes the project (SUB-04, CHAT-03)', t => {
+	let replace = false;
+	const {conversations} = fixture(() => {
+		if (!replace) return;
+		replace = false;
+		conversations.selectProject('project-b');
+		conversations.selectThread('a');
+		conversations.snapshot(
+			snapshot(
+				'a',
+				[
+					{type: 'user', text: 'new'},
+					{
+						type: 'tool',
+						id: 'subagent:opaque',
+						status: 'in_progress',
+						delegation: {history: false},
+					},
+				],
+				'project-b',
+			),
+		);
+		conversations.setDraft('new turn');
+		t.truthy(conversations.beginTurn('a'));
+		conversations.setDraft('replacement draft');
+	});
+	conversations.setDraft('old');
+	const old = conversations.beginTurn('a');
+	if (!old) return t.fail('the selected draft should begin a turn');
+	conversations.receive(turn([{type: 'user', text: 'old'}]));
+	replace = true;
+	t.false(
+		conversations.finishTurn(old, {
+			ok: true,
+			value: {stopReason: 'cancelled'},
+		}),
+	);
+	t.is(conversations.getState().projectId, 'project-b');
+	t.is(conversations.getState().turn, null);
+	t.is(conversations.getState().draft, 'replacement draft');
+	t.is(conversations.beginTurn('a'), null);
+	const tool = conversations.getState().transcript.items[1];
+	t.is(tool.kind, 'tool');
+	if (tool.kind === 'tool') t.is(tool.turnOutcome, undefined);
 });

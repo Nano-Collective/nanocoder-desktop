@@ -5,6 +5,7 @@ import {
 import {
 	applyEvents,
 	emptyTranscript,
+	settleSubagentTurn,
 	type Transcript,
 } from '@/renderer/transcript';
 import type {
@@ -28,6 +29,7 @@ interface TurnTicket {
 	threadId: string;
 	text: string;
 	draft: string;
+	userCount: number;
 }
 
 export function createThreadConversations(options: {
@@ -141,26 +143,41 @@ export function createThreadConversations(options: {
 				threadId,
 				text: current.draft.trim(),
 				draft: current.draft,
+				userCount: view(threadId).transcript.items.filter(
+					item => item.kind === 'user',
+				).length,
 			};
 			tickets.set(key(threadId), ticket);
 			put(threadId, {draft: '', turn: null, cancellation: null});
 			return ticket;
 		},
 		finishTurn(ticket: TurnTicket, result: IpcResult<TurnResult> | null) {
-			if (
-				ticket.projectId !== projectId ||
-				!allowed(ticket.threadId) ||
-				tickets.get(key(ticket.threadId)) !== ticket
-			)
-				return false;
+			const isCurrent = () =>
+				ticket.projectId === projectId &&
+				allowed(ticket.threadId) &&
+				tickets.get(key(ticket.threadId)) === ticket;
+			if (!isCurrent()) return false;
 			batcher.flush(ticket.threadId);
+			if (!isCurrent()) return false;
 			tickets.delete(key(ticket.threadId));
 			const current = view(ticket.threadId);
 			const interrupted =
 				!result || !result.ok || result.value.stopReason === 'cancelled';
-			const displayed = current.transcript.items.some(
-				item => item.kind === 'user' && item.text === ticket.text,
-			);
+			const displayed = current.transcript.items
+				.flatMap(item => (item.kind === 'user' ? [item.text] : []))
+				.slice(ticket.userCount)
+				.includes(ticket.text);
+			const transcript =
+				result && displayed
+					? settleSubagentTurn(
+							current.transcript,
+							result.ok
+								? result.value.stopReason === 'cancelled'
+									? 'cancelled'
+									: 'completed'
+								: 'failed',
+						)
+					: current.transcript;
 			put(ticket.threadId, {
 				draft:
 					interrupted && !displayed && !current.draft
@@ -170,13 +187,13 @@ export function createThreadConversations(options: {
 				transcript:
 					result && !result.ok
 						? {
-								...current.transcript,
+								...transcript,
 								items: [
-									...current.transcript.items,
+									...transcript.items,
 									{kind: 'failure', text: result.error.message},
 								],
 							}
-						: current.transcript,
+						: transcript,
 			});
 			return result !== null;
 		},
