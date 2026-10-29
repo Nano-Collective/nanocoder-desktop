@@ -61,7 +61,7 @@
 
 .palette-option {
 	display: grid;
-	grid-template-columns: 16px 1fr auto;
+	grid-template-columns: 16px minmax(0, 1fr) auto;
 	align-items: center;
 	gap: var(--spacing-md);
 	padding: var(--spacing-md);
@@ -78,9 +78,11 @@
 	cursor: not-allowed;
 }
 
-.palette-reason {
+.palette-reason,
+.palette-description {
 	display: block;
 	font-size: var(--typography-meta-font-size);
+	overflow-wrap: anywhere;
 }
 
 .overlay-hint,

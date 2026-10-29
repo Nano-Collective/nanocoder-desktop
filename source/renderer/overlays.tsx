@@ -300,6 +300,11 @@ export function OverlayProvider({
 										<span aria-hidden="true">{action.glyph}</span>
 										<span>
 											{action.label}
+											{action.description && (
+												<span className="palette-description">
+													{action.description}
+												</span>
+											)}
 											{action.disabledReason && (
 												<span className="palette-reason">
 													unavailable: {action.disabledReason}

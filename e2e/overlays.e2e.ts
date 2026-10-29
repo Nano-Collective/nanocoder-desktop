@@ -2,6 +2,7 @@ import {
 	copyFileSync,
 	mkdirSync,
 	mkdtempSync,
+	renameSync,
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
@@ -230,6 +231,72 @@ test('toast is polite, never focuses, honours reduced motion and automatically d
 	expect(setting.ok && setting.value.theme).toBe('dark');
 	await page.reload();
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+});
+
+test('palette adds opens and locates projects through the existing project controls', async () => {
+	const page = await app.firstWindow();
+	const folder = path.join(work, 'palette-project');
+	const moved = path.join(work, 'palette-project-moved');
+	mkdirSync(folder);
+	writeFileSync(path.join(folder, '.fake-nanocoder'), 'ok');
+	const picker = async (folder: string) => {
+		await app.evaluate(({dialog}, folder) => {
+			dialog.showOpenDialog = (async () => ({
+				canceled: false,
+				filePaths: [folder],
+			})) as typeof dialog.showOpenDialog;
+		}, folder);
+	};
+	const command = async (label: string) => {
+		await page.getByRole('button', {name: 'command palette'}).click();
+		await page.getByRole('combobox').fill(label);
+		await expect(page.getByRole('option').first()).toContainText(label);
+		await page.keyboard.press('Enter');
+	};
+	await picker(folder);
+	await command('add project folder');
+	await expect(
+		page.getByRole('region', {name: 'recent projects'}),
+	).toContainText(folder);
+	await expect(
+		page.getByRole('status', {name: 'project trust feedback'}),
+	).toContainText('project ready: palette-project');
+	await expect(
+		page.getByRole('button', {name: 'add project folder', exact: true}),
+	).toBeEnabled();
+	await command('open project palette-project');
+	await expect(
+		page.getByRole('status', {name: 'project trust feedback'}),
+	).toContainText('project ready: palette-project');
+	await expect(
+		page.getByRole('button', {name: 'add project folder', exact: true}),
+	).toBeEnabled();
+	await expect(page.getByRole('dialog')).toBeHidden();
+	renameSync(folder, moved);
+	await page.reload();
+	await expect(
+		page.getByRole('region', {name: 'recent projects'}),
+	).toContainText('folder missing');
+	await page.getByRole('button', {name: 'command palette'}).click();
+	await page.getByRole('combobox').fill('open project palette-project');
+	await expect(page.getByRole('option').first()).toHaveAttribute(
+		'aria-disabled',
+		'true',
+	);
+	await expect(page.getByRole('option').first()).toContainText(
+		'folder missing; locate it before opening',
+	);
+	await page.keyboard.press('Enter');
+	await expect(page.getByRole('dialog')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await picker(moved);
+	await command('locate project palette-project');
+	await expect(
+		page.getByRole('status', {name: 'project trust feedback'}),
+	).toContainText('project ready: palette-project-moved');
+	await expect(
+		page.getByRole('region', {name: 'recent projects'}),
+	).toContainText(moved);
 });
 
 test('Ctrl+K opens the palette on non-Mac platforms', async () => {

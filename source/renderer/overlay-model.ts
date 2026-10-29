@@ -4,6 +4,7 @@ export interface PaletteAction {
 	glyph: string;
 	shortcut?: string;
 	keywords?: string;
+	description?: string;
 	disabledReason?: string;
 	run(): void;
 }

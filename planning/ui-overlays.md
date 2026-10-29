@@ -29,9 +29,13 @@ queue. They add no IPC channels or preload capabilities.
   its 180ms exit. An injected clock tests time without sleeps. Reduced motion
   disables the transition.
 
-The initial action set opens the existing folder flow, switches to dark or light
-theme, and opens the keyboard shortcut sheet. Project commands can be supplied
-as plain action descriptors without changing the overlay shell.
+The action set adds a project folder, opens a recent project, locates a moved
+project, opens the existing technical-session folder flow, switches to dark or
+light theme, and opens the keyboard shortcut sheet. Project commands use
+`useProjects` callbacks (`CHAT-01`, `CHAT-02`). Missing or replaced folders keep
+their open command visible with a locate-first reason. A pending project request
+disables every project command. Canonical roots distinguish projects with the
+same name and are searchable, without passing any new paths to main.
 
 ## Verification
 
