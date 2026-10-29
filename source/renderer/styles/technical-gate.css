@@ -13,10 +13,6 @@
 	gap: var(--spacing-md);
 }
 
-.gate-header h1 {
-	font-size: var(--typography-body-md-font-size);
-}
-
 .gate-meta,
 dt,
 .gate-hint {

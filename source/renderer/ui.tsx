@@ -47,7 +47,10 @@ export function StatusBadge({
 }) {
 	const {glyph, label, tone} = badges[status];
 	return (
-		<span className={`ui-badge ui-badge--${tone}`} role="status">
+		<span
+			className={`ui-badge ui-badge--${tone} ui-badge--${status}`}
+			role="status"
+		>
 			<span aria-hidden="true">{glyph}</span> {label}
 			{status === 'acp-exited' && exitCode !== undefined && ` (${exitCode})`}
 		</span>

@@ -42,6 +42,7 @@ test('every badge has a word as well as a decorative state glyph', t => {
 			createElement(StatusBadge, {status, exitCode: 1}),
 		);
 		t.true(html.includes('role="status"'));
+		t.true(html.includes(`ui-badge--${status}`));
 		t.true(html.includes('aria-hidden="true"'));
 		t.true(html.includes(status.startsWith('acp') ? 'acp · ' : status));
 		if (status === 'acp-exited') t.true(html.includes('exited (1)'));

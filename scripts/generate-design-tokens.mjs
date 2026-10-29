@@ -10,18 +10,19 @@ export const cssUrl = new URL(
 );
 
 const kebab = value => value.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`);
+const tokenGroups = [
+	'colors',
+	'typography',
+	'rounded',
+	'spacing',
+	'components',
+];
 
 export function parseDesign(markdown) {
 	const frontMatter = /^---\r?\n([\s\S]+?)\r?\n---/.exec(markdown);
 	if (!frontMatter) throw new Error('DESIGN.md needs YAML front matter');
 	const tokens = parse(frontMatter[1]);
-	for (const group of [
-		'colors',
-		'typography',
-		'rounded',
-		'spacing',
-		'components',
-	]) {
+	for (const group of tokenGroups) {
 		if (!tokens[group]) throw new Error(`Missing token group: ${group}`);
 	}
 	for (const name of Object.keys(tokens.colors)) {
@@ -59,13 +60,7 @@ export function generateTokens(tokens) {
 		}
 		declarations.push(`\t--${parts.join('-')}: ${value};`);
 	}
-	for (const group of [
-		'colors',
-		'typography',
-		'rounded',
-		'spacing',
-		'components',
-	]) {
+	for (const group of tokenGroups) {
 		flatten(tokens[group], [group]);
 	}
 	const light = Object.entries(tokens.colors)

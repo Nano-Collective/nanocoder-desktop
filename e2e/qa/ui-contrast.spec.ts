@@ -7,7 +7,7 @@ import {
 	rgb,
 	themedColor,
 	usedPairs,
-} from '../ui-contrast';
+} from './ui-contrast';
 
 test('contrast maths matches WCAG reference black and white', t => {
 	t.is(contrast(rgb('#000000'), rgb('#ffffff')), 21);
@@ -51,4 +51,15 @@ test('55% key hints need a design decision before they can be used', t => {
 	const hint = composite(themedColor('on-surface', 'light'), background, 0.55);
 	t.true(contrast(hint, background) < 4.5);
 	t.false(isKnownGap(hint, background, 'light'));
+});
+
+test('the light running badge pairing is covered by its listed design gap', t => {
+	const foreground = themedColor('success', 'light');
+	const background = themedColor('surface-panel', 'light');
+	t.true(
+		usedPairs.some(([fg, bg]) => fg === 'success' && bg === 'surface-panel'),
+	);
+	t.true(contrast(foreground, background) < 4.5);
+	t.true(isKnownGap(foreground, background, 'light'));
+	t.true(contrast(themedColor('error', 'light'), background) >= 4.5);
 });

@@ -137,6 +137,14 @@ pre,
 	color: var(--colors-error);
 }
 
+:root[data-theme="light"] .ui-badge--running {
+	background: var(--components-status-badge-running-light-background-color);
+}
+
+:root[data-theme="light"] .ui-badge--failed {
+	background: var(--components-status-badge-failed-light-background-color);
+}
+
 .ui-card {
 	display: grid;
 	gap: var(--spacing-lg);
@@ -164,6 +172,10 @@ pre,
 	background: var(--colors-surface-elevated);
 	border-color: var(--colors-error);
 	color: var(--components-failure-banner-text-color);
+	font-family: var(--components-failure-banner-font-family);
+	font-size: var(--components-failure-banner-font-size);
+	font-weight: var(--components-failure-banner-font-weight);
+	line-height: var(--components-failure-banner-line-height);
 }
 
 .ui-divider {

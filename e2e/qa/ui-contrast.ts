@@ -20,7 +20,10 @@ export const usedPairs: readonly Pair[] = [
 	['error', 'surface-elevated'],
 ];
 
-const design = readFileSync(new URL('../DESIGN.md', import.meta.url), 'utf8');
+const design = readFileSync(
+	new URL('../../DESIGN.md', import.meta.url),
+	'utf8',
+);
 const colors = (
 	parse(/^---\n([\s\S]*?)\n---/.exec(design)?.[1] ?? '') as {
 		colors: Record<string, string>;

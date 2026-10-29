@@ -193,9 +193,6 @@ export function App() {
 										: 'idle'
 						}
 					/>
-					{outcome?.status === 'connected' && (
-						<StatusBadge status="acp-ready" />
-					)}
 				</div>
 			</header>
 			<Divider />

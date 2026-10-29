@@ -52,6 +52,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/preload/index.ts` | The `window.desktop` bridge |
 | `e2e/*.e2e.ts` | Playwright tests against the built app |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |
+| `e2e/qa/ui-contrast.ts` | Token-pair and rendered-text contrast checks, with a co-located AVA spec |
 | `scripts/node-sidecar.json` | The pinned Node sidecar: exact version and SHA-256 per platform (`DEC-38`) |
 | `scripts/fetch-node-sidecar.mjs`, `scripts/measure-runtime.mjs` | Download and verify the sidecar; measure both runtimes (phase G.6) |
 | `electron.vite.config.ts`, `electron-builder.yml` | Build and packaging |

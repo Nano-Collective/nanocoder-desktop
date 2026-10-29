@@ -29,7 +29,7 @@ For a fake-fixture-only visual check:
 1. Run `pnpm build`, then `pnpm qa:launch`. Note the printed launcher PID.
 2. Run `agent-browser connect 9333`. On Factory hosts, pass `--cdp 9333` on every later command too, so it does not select the Factory pane.
 3. Run `agent-browser --cdp 9333 set viewport 1240 900` (repeat at 1020 and 840).
-4. Use `agent-browser --cdp 9333 eval "document.documentElement.dataset.theme = 'light'"` to switch themes. Wait for the final colour with `agent-browser --cdp 9333 wait --fn "getComputedStyle(document.documentElement).backgroundColor === 'rgb(246, 246, 249)'"`. Dark's colour is `rgb(22, 22, 24)`.
+4. Use `agent-browser --cdp 9333 eval "document.documentElement.dataset.theme = 'light'"` to switch themes. Wait for both the target background and every descendant colour transition to finish with `agent-browser --cdp 9333 wait --fn "getComputedStyle(document.documentElement).backgroundColor === 'rgb(246, 246, 249)' && document.getAnimations().filter(animation => animation instanceof CSSTransition).every(animation => animation.playState === 'finished')"`. Dark's target background is `rgb(22, 22, 24)`. The background check alone is not enough: child controls can still be transitioning.
 5. Press `Tab` from the initial screen to focus `open a project folder`. Press `Enter` to use the stubbed folder picker and trust confirmation, then `Tab` to focus `message`. Enter synthetic text, then `Tab` to focus `send`. Send it to show the approval card, whose `Allow` and `Deny` labels come unchanged from fake Nanocoder.
 6. Run `agent-browser --cdp 9333 a11y`. Save screenshots under `.qa/` only, and stop the printed launcher PID with `kill -TERM <pid>`.
 
@@ -39,9 +39,11 @@ There are 200ms colour transitions. Playwright uses `page.emulateMedia({reducedM
 
 `source/renderer/ui.tsx` provides native buttons, status badges, cards and dividers. Controls keep native names, roles and disabled states. State glyphs sit beside words and are hidden from assistive technology only to avoid duplicate announcements. Global `:focus-visible` styles apply to keyboard controls.
 
+The technical gate shows only the turn state it can derive from received updates and prompt results. It does not show a live ACP badge: the historical connect result cannot prove that the child is still connected. ACP ready/exited variants remain available in the shared component for the later integration with phase 1.3 supervisor state.
+
 The button has an optional key-hint slot, but no technical-gate control uses it. The prescribed 55% hint opacity creates an unlisted contrast gap in light mode. It needs the designer's decision before use. Hiding text from assistive technology does not exempt it from contrast checks. The rendered-text e2e audit deliberately inserts such a hint and proves it is caught. Do not enable hints without extending the pairing inventory and passing that audit.
 
-Contrast tests compute WCAG ratios from the design tokens for every pairing used here. The only exceptions come from `DESIGN.md`'s known-gaps table, with its measured ratios checked too. E2e also checks actual visible text, including text marked `aria-hidden`, in both themes. The used known gaps are light allow buttons, light approval titles, and failure banners in both themes. These exceptions still need fixing before public release.
+Contrast tests compute WCAG ratios from the design tokens for every pairing used here. The only exceptions come from `DESIGN.md`'s known-gaps table, with its measured ratios checked too. E2e also checks actual visible text, including text marked `aria-hidden`, in both themes. Running and failed light badges use their explicit panel-background tokens. The used known gaps are light allow buttons and running badges, light approval titles, and failure banners in both themes. These exceptions still need fixing before public release.
 
 ## Font and notices
 

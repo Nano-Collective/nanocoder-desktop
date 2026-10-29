@@ -1,8 +1,8 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import {App} from './app';
-import './styles/foundations.css';
-import './styles/technical-gate.css';
+import {App} from '@/renderer/app';
+import '@/renderer/styles/foundations.css';
+import '@/renderer/styles/technical-gate.css';
 
 const root = document.getElementById('root');
 if (!root) {

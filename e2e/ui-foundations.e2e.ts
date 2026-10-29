@@ -16,7 +16,7 @@ import {
 	test,
 } from '@playwright/test';
 import {qaEnvironment} from './qa/environment';
-import {visibleTextContrast} from './ui-contrast';
+import {visibleTextContrast} from './qa/ui-contrast';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-ui-')));
 const cli = path.join(work, 'nanocoder/dist/cli.js');
@@ -281,5 +281,86 @@ test('visible low-contrast key hints are caught even when hidden from assistive 
 		await page.evaluate(() =>
 			document.getElementById('hint-fixture')?.remove(),
 		);
+	}
+});
+
+test('running and failed badge backgrounds and failure typography follow their component tokens', async () => {
+	await page.emulateMedia({reducedMotion: 'reduce'});
+	await page.evaluate(() => {
+		const fixture = document.createElement('div');
+		fixture.id = 'token-fixture';
+		fixture.innerHTML =
+			'<span class="ui-badge ui-badge--success ui-badge--running">● running</span><span class="ui-badge ui-badge--error ui-badge--failed">✕ failed</span><section class="ui-card ui-card--failure">✕ operation failed</section>';
+		document.body.append(fixture);
+	});
+	try {
+		for (const theme of ['dark', 'light']) {
+			await page.evaluate(theme => {
+				document.documentElement.dataset.theme = theme;
+			}, theme);
+			for (const state of ['running', 'failed']) {
+				await expect(
+					page.locator(`#token-fixture .ui-badge--${state}`),
+				).toHaveCSS(
+					'background-color',
+					theme === 'light' ? 'rgb(237, 237, 242)' : 'rgb(22, 22, 24)',
+				);
+			}
+			await expect(page.locator('#token-fixture .ui-card--failure')).toHaveCSS(
+				'font-size',
+				'11.5px',
+			);
+			await expect(page.locator('#token-fixture .ui-card--failure')).toHaveCSS(
+				'line-height',
+				'17.825px',
+			);
+			expect(await visibleTextContrast(page, theme)).toEqual([]);
+		}
+	} finally {
+		await page.evaluate(() =>
+			document.getElementById('token-fixture')?.remove(),
+		);
+	}
+});
+
+test('a child exit shows a failed turn without a stale ACP readiness claim in either theme', async () => {
+	writeFileSync(path.join(project, '.fake-nanocoder'), 'die-in-turn');
+	await page.emulateMedia({reducedMotion: 'reduce'});
+	for (const theme of ['dark', 'light']) {
+		await page.evaluate(theme => {
+			document.documentElement.dataset.theme = theme;
+		}, theme);
+		await page.getByRole('button', {name: 'open a project folder'}).click();
+		await expect(
+			page.getByRole('button', {name: 'open a project folder'}),
+		).toBeEnabled();
+		await expect(
+			page.getByRole('region', {name: 'connected agent'}),
+		).toBeVisible();
+		await page
+			.getByRole('textbox', {name: 'message'})
+			.fill('synthetic exit check');
+		await page.getByRole('button', {name: 'send', exact: true}).click();
+		const failure = page.getByRole('alert');
+		await expect(failure).toContainText('Nanocoder stopped during the turn');
+		await expect(failure).toHaveCSS('font-size', '11.5px');
+		await expect(
+			page.getByRole('status').filter({hasText: 'failed'}),
+		).toBeVisible();
+		await expect(
+			page.getByRole('status').filter({hasText: /ready|running|idle/}),
+		).toHaveCount(0);
+		await expect(page.locator('.ui-badge--success')).toHaveCount(0);
+		await expect(page.locator('.ui-badge--failed')).toHaveCSS(
+			'background-color',
+			theme === 'light' ? 'rgb(237, 237, 242)' : 'rgb(22, 22, 24)',
+		);
+		await page
+			.getByRole('textbox', {name: 'message'})
+			.fill('synthetic follow-up');
+		await page.getByRole('button', {name: 'send', exact: true}).click();
+		await expect(failure).toContainText('No project is open');
+		await expect(page.locator('.ui-badge--success')).toHaveCount(0);
+		expect(await visibleTextContrast(page, theme)).toEqual([]);
 	}
 });
