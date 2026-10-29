@@ -6,6 +6,10 @@ import type {
 	ToolCallUpdate,
 } from '@agentclientprotocol/sdk';
 import {
+	delegationDisplay,
+	permissionSource,
+} from '@/main/nanocoder/subagent-display';
+import {
 	type MetadataWarning,
 	parseTurnMetadata,
 } from '@/main/nanocoder/turn-metadata';
@@ -120,6 +124,7 @@ function mapUpdate(
 		case 'tool_call':
 		case 'tool_call_update': {
 			const details = toolDetails(update);
+			const delegation = delegationDisplay(update, history);
 			return {
 				type: 'tool',
 				id: update.toolCallId,
@@ -129,6 +134,10 @@ function mapUpdate(
 					update.status ??
 					(update.sessionUpdate === 'tool_call' ? 'pending' : undefined),
 				...(details ? {details} : {}),
+				...(delegation ? {delegation} : {}),
+				...(update.status === 'completed' && permissionSource(update)
+					? {approvalOnly: true}
+					: {}),
 			};
 		}
 		case 'plan':

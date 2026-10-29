@@ -391,15 +391,16 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Build**
 
-- [ ] Subagent run cards from `agent` tool calls with live progress (`SUB-01`, `SUB-02`)
-- [ ] Subagent approvals attributed to the subagent (`SUB-03`)
-- [ ] Stop that cancels the turn and says so (`SUB-04`)
-- [ ] `agent_run` rows and plain tool-card fallback (`SUB-05`, `SUB-06`, `SUB-07`)
+- [x] Supported `agent` source shapes render flat run cards and literal title progress (`SUB-01`, `SUB-02`), with truthful missing depth/elapsed/child detail ([implementation](subagents.md), [`subagents.spec.ts`](../source/renderer/subagents.spec.ts), [`subagents.e2e.ts`](../e2e/subagents.e2e.ts))
+- [x] Subagent approvals carry bounded display attribution in the existing queue (`SUB-03`), without guessing a parent from a shared name; approved is not successful ([`permissions.spec.ts`](../source/main/nanocoder/permissions.spec.ts), [`subagents.acp.ts`](../source/main/nanocoder/subagents.acp.ts))
+- [x] Stop cancels the entire turn and says so (`SUB-04`), including all pending permissions; known interrupted/failed display outcomes remain on their cards ([`subagents.e2e.ts`](../e2e/subagents.e2e.ts))
+- [x] Informational bounds and safe tool-card fallback when child details are missing (`SUB-06`, `SUB-07`), without a fabricated tree or child action ([implementation](subagents.md))
+- [ ] `agent_run` rows per actual run (`SUB-05`): tested passive repository/consumer only, not composed; stable main-owned turn/run identity and committed replay await phase 1.8 ([integration contract](subagents.md#sub-05-remains-pending))
 
 **Results we want**
 
-- [ ] A delegated task shows its subagent, progress and approvals
-- [ ] Stopping a subagent ends the turn as Interrupted
+- [x] A supported delegated task shows its reported role, task/progress and attributed approvals, without guessed parent linkage ([`subagents.e2e.ts`](../e2e/subagents.e2e.ts), pinned real ACP allow/deny/cancel in [`subagents.acp.ts`](../source/main/nanocoder/subagents.acp.ts))
+- [x] Stopping from a card ends the whole turn as Interrupted ([`subagents.e2e.ts`](../e2e/subagents.e2e.ts)); per-child stop, a true tree and `OQ-03` remain open (`SUB-08`)
 
 ### Milestone 1 exit
 

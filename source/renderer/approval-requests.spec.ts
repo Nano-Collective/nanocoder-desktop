@@ -75,3 +75,30 @@ test('no waiting request renders no approval controls', t => {
 		'',
 	);
 });
+
+test('SUB-03 child approval names its source without inventing a parent or execution success', t => {
+	const markup = renderToStaticMarkup(
+		createElement(ApprovalRequests, {
+			requests: [
+				{
+					...request,
+					title: 'execute_bash (explore)',
+					source: {
+						kind: 'subagent',
+						toolCallId: 'subagent:fixture',
+						label: 'execute_bash (explore)',
+					},
+				},
+			],
+			mode: 'normal',
+			busy: true,
+			onAnswer: async () => ({ok: true, value: null}),
+		}),
+	);
+	t.true(markup.includes('subagent approval'));
+	t.true(markup.includes('execute_bash (explore)'));
+	t.true(markup.includes('may still fail afterwards'));
+	t.true(markup.includes('parent run not reported'));
+	t.false(markup.includes('succeeded'));
+	t.is((markup.match(/role="alertdialog"/g) ?? []).length, 1);
+});

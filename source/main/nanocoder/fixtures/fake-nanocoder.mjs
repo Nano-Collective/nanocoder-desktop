@@ -223,10 +223,105 @@ async function streamFixture(id, sessionId) {
 	});
 }
 
+let subagentTurn = 0;
+async function subagentFixture(id, {sessionId, prompt}) {
+	const text = prompt
+		.filter(part => part.type === 'text')
+		.map(part => part.text)
+		.join('');
+	const update = body => notify('session/update', {sessionId, update: body});
+	const turn = ++subagentTurn;
+	const roots = text.includes('two')
+		? [`delegate-${turn}-1`, `delegate-${turn}-2`]
+		: [`delegate-${turn}-1`];
+	const fallback = text.includes('fallback');
+	for (const toolCallId of roots) {
+		update({
+			sessionUpdate: 'tool_call',
+			toolCallId,
+			title: fallback ? 'agent' : 'explore: inspect fixture',
+			kind: 'think',
+			status: 'pending',
+			rawInput: fallback
+				? {}
+				: {
+						subagent_type: 'explore',
+						description: 'inspect fixture',
+						prompt: 'private fixture task',
+					},
+		});
+		tool(sessionId, toolCallId, {status: 'in_progress'});
+		if (!fallback)
+			tool(sessionId, toolCallId, {
+				title: 'explore • 1.2k tokens • 3 tools (read_file)',
+			});
+	}
+	if (text.includes('fast')) {
+		for (const root of roots) tool(sessionId, root, {status: 'completed'});
+		send({id, result: {stopReason: 'end_turn'}});
+		return;
+	}
+	let cancelled = false;
+	const cancellation = new Promise(resolve =>
+		cancellations.set(sessionId, () => {
+			cancelled = true;
+			resolve();
+		}),
+	);
+	try {
+		if (text.includes('no approval') || fallback) {
+			await cancellation;
+			send({id, result: {stopReason: 'cancelled'}});
+			return;
+		}
+		const calls = roots.map((_, index) => `subagent:inner-${turn}-${index}`);
+		const answers = await Promise.all(
+			calls.map(toolCallId => {
+				const title = 'execute_bash fixture (explore)';
+				update({
+					sessionUpdate: 'tool_call',
+					toolCallId,
+					title,
+					kind: 'execute',
+					status: 'pending',
+				});
+				return ask('session/request_permission', {
+					sessionId,
+					toolCall: {toolCallId, title, status: 'pending'},
+					options: OPTIONS,
+				});
+			}),
+		);
+		if (
+			cancelled ||
+			answers.some(answer => answer.outcome.outcome !== 'selected')
+		) {
+			send({id, result: {stopReason: 'cancelled'}});
+			return;
+		}
+		calls.forEach((call, index) =>
+			tool(sessionId, call, {
+				status:
+					answers[index].outcome.optionId === 'allow' ? 'completed' : 'failed',
+			}),
+		);
+		for (const root of roots)
+			tool(sessionId, root, {
+				status: text.includes('failure') ? 'failed' : 'completed',
+			});
+		say(sessionId, 'fixture delegation settled');
+		send({id, result: {stopReason: 'end_turn'}});
+	} finally {
+		cancellations.delete(sessionId);
+	}
+}
+
 // One turn: some text, protected tool calls that wait for the client's answers, more text.
-async function runTurn(id, {sessionId}) {
+async function runTurn(id, params) {
+	const {sessionId} = params;
 	if (mode === 'die-in-turn') process.exit(3);
 	if (mode === 'streaming') return streamFixture(id, sessionId);
+	if (mode === 'subagents') return subagentFixture(id, params);
 	if (mode === 'reported-usage') {
 		say(sessionId, 'Reported usage fixture.');
 		send({
