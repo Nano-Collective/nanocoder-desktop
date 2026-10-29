@@ -31,6 +31,7 @@
 .recent-project--active {
 	background: var(--colors-primary-soft);
 	border-left-color: var(--colors-primary);
+	color: var(--colors-on-surface);
 }
 
 .recent-project-description {

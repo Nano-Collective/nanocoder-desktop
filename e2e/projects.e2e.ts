@@ -359,6 +359,25 @@ test('opening a recent project hides the legacy composer for the previous projec
 	await expect(recent.locator('[aria-current="true"]')).toContainText(
 		'second-project',
 	);
+	await expect(
+		page
+			.locator('[data-shell-slot="stream-tools"]')
+			.getByLabel('project trust feedback'),
+	).toBeVisible();
+	await page.emulateMedia({reducedMotion: 'reduce'});
+	for (const [theme, color] of [
+		['dark', 'rgb(230, 230, 234)'],
+		['light', 'rgb(27, 33, 50)'],
+	]) {
+		await page.evaluate(theme => {
+			document.documentElement.dataset.theme = theme;
+		}, theme);
+		await expect(
+			recent
+				.locator('[aria-current="true"] .recent-project-description > p')
+				.first(),
+		).toHaveCSS('color', color);
+	}
 });
 
 test('opening a folder through the legacy action refreshes the active recent project (CHAT-02)', async () => {
