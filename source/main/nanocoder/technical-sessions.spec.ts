@@ -43,6 +43,25 @@ const make = () =>
 	});
 test.after.always(removeFakeProjects);
 
+test('a located project never resumes a cached session from its former cwd (CHAT-01)', async t => {
+	const supervisor = make();
+	t.teardown(() => supervisor.close());
+	const sessions = new TechnicalSessions(supervisor);
+	const chosen = project();
+	await supervisor.ensureProcess(chosen);
+	await sessions.prepare(chosen);
+	await supervisor.stop(chosen.id);
+	const root = fakeProject('missing-session');
+	const located = {...chosen, canonicalRoot: root, sessionCwd: root};
+	await supervisor.ensureProcess(located);
+	await sessions.prepare(located);
+	const methods = fakeEvents(
+		supervisor.getConnection(located.id).stderr.lines(),
+	).map(event => event.method);
+	t.true(methods.includes('session/new'));
+	t.false(methods.includes('session/resume'));
+});
+
 test('failed cached resumes stop the connection and invalidate readiness before a clean retry', async t => {
 	for (const mode of [
 		'missing-session',

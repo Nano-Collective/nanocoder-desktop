@@ -5,6 +5,7 @@ import '@/renderer/styles/foundations.css';
 import '@/renderer/styles/app-shell.css';
 import '@/renderer/styles/approvals.css';
 import '@/renderer/styles/technical-gate.css';
+import '@/renderer/styles/projects.css';
 
 const root = document.getElementById('root');
 if (!root) {

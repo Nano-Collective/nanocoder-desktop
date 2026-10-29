@@ -8,7 +8,7 @@ import type {ProjectInfo, SessionInfo} from '@/shared/ipc';
 export class TechnicalSessions {
 	private readonly sessions = new Map<
 		string,
-		{connection: NanocoderConnection; session: SessionInfo}
+		{connection: NanocoderConnection; session: SessionInfo; sessionCwd: string}
 	>();
 	private readonly preparing = new Map<string, Promise<SessionInfo>>();
 
@@ -19,7 +19,11 @@ export class TechnicalSessions {
 		const pending = this.preparing.get(project.id);
 		if (pending) return pending;
 		const connection = this.supervisor.getConnection(project.id);
-		const cached = this.sessions.get(project.id);
+		let cached = this.sessions.get(project.id);
+		if (cached && cached.sessionCwd !== project.sessionCwd) {
+			this.sessions.delete(project.id);
+			cached = undefined;
+		}
 		if (cached?.connection === connection)
 			return Promise.resolve(cached.session);
 		const preparation = Promise.resolve()
@@ -39,7 +43,11 @@ export class TechnicalSessions {
 						'AGENT_UNAVAILABLE',
 						'The project process changed during session preparation',
 					);
-				this.sessions.set(project.id, {connection, session});
+				this.sessions.set(project.id, {
+					connection,
+					session,
+					sessionCwd: project.sessionCwd,
+				});
 				return session;
 			})
 			.catch(async error => {
