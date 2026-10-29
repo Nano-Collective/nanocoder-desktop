@@ -17,6 +17,10 @@ import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {disposeDesktop} from '@/main/lifecycle';
 import {untilAborted} from '@/main/nanocoder/abort';
 import {NanocoderFailure} from '@/main/nanocoder/acp-client';
+import {
+	cancelPromptRequest,
+	cancelTechnicalTurn,
+} from '@/main/nanocoder/cancel-technical-turn';
 import {resolveNanocoder} from '@/main/nanocoder/runtime';
 import {createLookup} from '@/main/nanocoder/runtime-lookup';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
@@ -357,6 +361,12 @@ export function registerIpcHandlers(
 		CHANNELS.answerPermission,
 		z.strictObject({id: z.string().max(64), optionId: z.string().max(200)}),
 		answerPermission,
+		allowedOrigins,
+	);
+	registerHandler(
+		CHANNELS.cancelPrompt,
+		cancelPromptRequest,
+		() => cancelTechnicalTurn(supervisor, activeProjectId, session),
 		allowedOrigins,
 	);
 }

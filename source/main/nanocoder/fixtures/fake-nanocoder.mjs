@@ -119,6 +119,21 @@ const OPTIONS = [
 	{optionId: 'allow', name: 'Allow', kind: 'allow_once'},
 	{optionId: 'deny', name: 'Deny', kind: 'reject_once'},
 ];
+const permissionOptions =
+	mode === 'all-permissions'
+		? [
+				{optionId: 'allow', name: 'Allow once', kind: 'allow_once'},
+				{optionId: 'allow-always', name: 'Allow always', kind: 'allow_always'},
+				{optionId: 'deny', name: 'Reject once', kind: 'reject_once'},
+				{optionId: 'deny-always', name: 'Reject all', kind: 'reject_always'},
+			]
+		: mode === 'ask-user'
+			? [
+					{optionId: 'answer-0', name: 'First choice', kind: 'allow_once'},
+					{optionId: 'answer-1', name: 'Second choice', kind: 'allow_once'},
+				]
+			: OPTIONS;
+const cancellations = new Map();
 const say = (sessionId, text) =>
 	notify('session/update', {
 		sessionId,
@@ -144,15 +159,26 @@ async function runTurn(id, {sessionId}) {
 		return;
 	}
 	say(sessionId, 'Working on it. ');
+	if (mode === 'wait-for-cancel') {
+		await new Promise(resolve => cancellations.set(sessionId, resolve));
+		cancellations.delete(sessionId);
+		send({id, result: {stopReason: 'cancelled'}});
+		return;
+	}
 	const calls = mode === 'two-tools' ? ['call_1', 'call_2'] : ['call_1'];
-	const title = toolCallId => `execute_bash: echo ${toolCallId}`;
+	const title = toolCallId =>
+		mode === 'ask-user'
+			? 'Which fixture option?'
+			: calls.length > 1
+				? `execute_bash: echo ${toolCallId}`
+				: 'execute_bash: echo hi';
 	for (const toolCallId of calls) {
 		notify('session/update', {
 			sessionId,
 			update: {
 				sessionUpdate: 'tool_call',
 				toolCallId,
-				title: calls.length > 1 ? title(toolCallId) : 'execute_bash: echo hi',
+				title: title(toolCallId),
 				status: 'pending',
 			},
 		});
@@ -163,10 +189,10 @@ async function runTurn(id, {sessionId}) {
 				sessionId,
 				toolCall: {
 					toolCallId,
-					title: calls.length > 1 ? title(toolCallId) : 'execute_bash: echo hi',
+					title: title(toolCallId),
 					status: 'pending',
 				},
-				options: OPTIONS,
+				options: permissionOptions,
 			}),
 		),
 	);
@@ -177,7 +203,11 @@ async function runTurn(id, {sessionId}) {
 		send({id, result: {stopReason: 'cancelled'}});
 		return;
 	}
-	const allowed = answers.map(({outcome}) => outcome.optionId === 'allow');
+	const allowed = answers.map(({outcome}) =>
+		permissionOptions
+			.find(option => option.optionId === outcome.optionId)
+			?.kind.startsWith('allow'),
+	);
 	calls.forEach((toolCallId, index) =>
 		tool(sessionId, toolCallId, {
 			status: allowed[index] ? 'completed' : 'failed',
@@ -258,6 +288,10 @@ function serve() {
 			}
 			if (method === 'session/prompt') {
 				void runTurn(id, params);
+				return;
+			}
+			if (method === 'session/cancel') {
+				cancellations.get(params.sessionId)?.();
 				return;
 			}
 			if (method === 'session/resume') {

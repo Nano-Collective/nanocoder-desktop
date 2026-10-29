@@ -33,6 +33,7 @@ const badges = {
 	running: {glyph: '●', label: 'running', tone: 'success'},
 	approval: {glyph: '◐', label: 'approval', tone: 'warning'},
 	idle: {glyph: '○', label: 'idle', tone: 'muted'},
+	interrupted: {glyph: '○', label: 'interrupted', tone: 'muted'},
 	failed: {glyph: '✕', label: 'failed', tone: 'error'},
 	'acp-ready': {glyph: '✓', label: 'acp · ready', tone: 'success'},
 	'acp-exited': {glyph: '○', label: 'acp · exited', tone: 'muted'},

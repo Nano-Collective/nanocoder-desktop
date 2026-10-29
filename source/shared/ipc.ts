@@ -25,6 +25,7 @@ export const CHANNELS = {
 	getNanocoderRuntime: 'nanocoder:get-runtime',
 	connectNanocoder: 'nanocoder:connect',
 	sendPrompt: 'nanocoder:send-prompt',
+	cancelPrompt: 'nanocoder:cancel-prompt',
 	answerPermission: 'nanocoder:answer-permission',
 	getSettings: 'store:get-settings',
 	updateSettings: 'store:update-settings',

@@ -50,6 +50,7 @@ const api: DesktopApi = {
 		ipcRenderer.invoke(CHANNELS.getNanocoderRuntime, {}),
 	connectNanocoder: () => ipcRenderer.invoke(CHANNELS.connectNanocoder, {}),
 	sendPrompt: text => ipcRenderer.invoke(CHANNELS.sendPrompt, {text}),
+	cancelPrompt: () => ipcRenderer.invoke(CHANNELS.cancelPrompt, {}),
 	answerPermission: (id, optionId) =>
 		ipcRenderer.invoke(CHANNELS.answerPermission, {id, optionId}),
 	onNanocoderEvent: listener => {

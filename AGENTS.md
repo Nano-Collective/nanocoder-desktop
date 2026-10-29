@@ -50,10 +50,12 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/protocol-stream.ts` | Reads stdout as ACP only; anything else ends the connection |
 | `source/main/nanocoder/stderr-ring.ts` | Bounded, redacted, in-memory ring for Nanocoder's stderr |
 | `source/main/nanocoder/permissions.ts` | Holds each permission request until the user answers; only an option Nanocoder offered counts |
+| `source/main/nanocoder/cancel-technical-turn.ts` | Strict temporary technical-gate cancellation, scoped to main's active project/session |
 | `source/main/nanocoder/turn-events.ts` | Turns ACP session updates into the few events the UI shows |
 | `source/renderer/transcript.ts` | Merges turn events into the conversation the UI shows |
 | `source/renderer/app-shell.tsx`, `source/renderer/styles/app-shell.css` | U.2 grid and plain-child rail/tools slots; inspector hidden at 840px and below |
 | `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
+| `source/renderer/approval-requests.tsx` | U.6 plain-prop approval cards, request-scoped shortcuts and queued focus return |
 | `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |
 | `scripts/generate-design-tokens.mjs` | Generates committed CSS custom properties from `DESIGN.md`; the adjacent spec rejects drift |
 | `planning/ui-foundations.md` | Theme switching, keyboard-focus QA and the proposed Markdown renderer |

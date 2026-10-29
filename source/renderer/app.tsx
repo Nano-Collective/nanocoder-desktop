@@ -1,5 +1,6 @@
 import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
+import {ApprovalRequests} from '@/renderer/approval-requests';
 import {
 	acpBadge,
 	observeSupervisor,
@@ -19,7 +20,6 @@ import type {
 	ConnectResult,
 	IpcResult,
 	NanocoderRuntime,
-	PermissionRequestInfo,
 	SessionInfo,
 	TurnResult,
 } from '@/shared/ipc';
@@ -81,33 +81,6 @@ function AgentDetails({
 	);
 }
 
-function PermissionCard({request}: {request: PermissionRequestInfo}) {
-	return (
-		<Card variant="approval" aria-label="permission request">
-			<h2>
-				<span aria-hidden="true">▲</span> approval required
-			</h2>
-			<p>Nanocoder asks to run: {request.title}</p>
-			<div className="gate-actions">
-				{request.options.map(option => (
-					<Button
-						key={option.id}
-						variant={option.kind.startsWith('allow') ? 'allow' : 'reject'}
-						onClick={() => {
-							void window.desktop.answerPermission(request.id, option.id);
-						}}
-					>
-						<span aria-hidden="true">
-							{option.kind.startsWith('allow') ? '✓' : '✕'}
-						</span>
-						{option.name}
-					</Button>
-				))}
-			</div>
-		</Card>
-	);
-}
-
 function Conversation({transcript}: {transcript: Transcript}) {
 	return (
 		<ol className="gate-transcript" aria-label="conversation">
@@ -157,13 +130,29 @@ export function App() {
 	>({});
 	const [gates, setGates] = useState<Record<string, CapabilityGates>>({});
 	const [supervisors, setSupervisors] = useState<SupervisorIndex>({});
+	const [cancellations, setCancellations] = useState<
+		Record<string, IpcResult<null> | 'pending' | null>
+	>({});
+	const composerInput = useRef<HTMLInputElement>(null);
 	const roots = useRef(new Map<string, string>());
 	const outcome = opened?.ok ? opened.value : null;
 	const root = outcome?.status === 'connected' ? outcome.agent.root : '';
 	const transcript = transcripts[root] ?? emptyTranscript;
 	const sending = running[root] ?? false;
 	const turn = turns[root];
+	const cancellation = cancellations[root];
 	const processBadge = acpBadge(supervisors, root);
+
+	useEffect(() => {
+		if (
+			!sending &&
+			cancellation &&
+			cancellation !== 'pending' &&
+			cancellation.ok &&
+			document.activeElement === document.body
+		)
+			composerInput.current?.focus();
+	}, [sending, cancellation]);
 
 	useEffect(
 		() =>
@@ -225,6 +214,7 @@ export function App() {
 		setDraft('');
 		setRunning(current => ({...current, [root]: true}));
 		setTurns(current => ({...current, [root]: null}));
+		setCancellations(current => ({...current, [root]: null}));
 		setTranscripts(current => ({
 			...current,
 			[root]: addUserMessage(current[root] ?? emptyTranscript, text),
@@ -232,6 +222,25 @@ export function App() {
 		const result = await window.desktop.sendPrompt(text);
 		setTurns(current => ({...current, [root]: result}));
 		setRunning(current => ({...current, [root]: false}));
+	};
+
+	const cancel = async () => {
+		if (cancellation === 'pending') return;
+		setCancellations(current => ({...current, [root]: 'pending'}));
+		let result: IpcResult<null>;
+		try {
+			result = await window.desktop.cancelPrompt();
+		} catch {
+			result = {
+				ok: false,
+				error: {
+					code: 'AGENT_UNAVAILABLE',
+					message: 'could not cancel the turn. try again.',
+					retryable: true,
+				},
+			};
+		}
+		setCancellations(current => ({...current, [root]: result}));
 	};
 
 	return (
@@ -247,7 +256,9 @@ export function App() {
 									? 'running'
 									: (turn && !turn.ok) || (opened && !opened.ok)
 										? 'failed'
-										: 'idle'
+										: turn?.ok && turn.value.stopReason === 'cancelled'
+											? 'interrupted'
+											: 'idle'
 						}
 					/>
 					{processBadge && <StatusBadge {...processBadge} />}
@@ -303,6 +314,7 @@ export function App() {
 						<label>
 							message
 							<input
+								ref={composerInput}
 								value={draft}
 								onChange={event => setDraft(event.target.value)}
 								disabled={sending}
@@ -314,6 +326,19 @@ export function App() {
 							<Button type="submit" disabled={sending || draft.trim() === ''}>
 								send
 							</Button>
+							{sending && (
+								<Button
+									variant="reject"
+									disabled={connecting || cancellation === 'pending'}
+									onClick={() => {
+										void cancel();
+									}}
+								>
+									{cancellation === 'pending'
+										? 'cancelling turn'
+										: 'cancel turn'}
+								</Button>
+							)}
 							<p id="composer-hint" className="gate-hint">
 								{sending
 									? 'waiting for Nanocoder to finish the turn'
@@ -322,6 +347,9 @@ export function App() {
 										: 'ready to send'}
 							</p>
 						</div>
+						{cancellation && cancellation !== 'pending' && !cancellation.ok && (
+							<p role="alert">{cancellation.error.message}</p>
+						)}
 					</form>
 				)
 			}
@@ -329,10 +357,24 @@ export function App() {
 			{outcome?.status === 'connected' && (
 				<Conversation transcript={transcript} />
 			)}
-			{transcript.permissions.map(request => (
-				<PermissionCard key={request.id} request={request} />
-			))}
-			{turn?.ok && <p role="status">turn ended: {turn.value.stopReason}</p>}
+			<ApprovalRequests
+				key={root}
+				requests={transcript.permissions}
+				mode={outcome?.status === 'connected' ? outcome.session.mode : 'normal'}
+				busy={sending}
+				fallbackFocus={composerInput}
+				onAnswer={(id, optionId) =>
+					window.desktop.answerPermission(id, optionId)
+				}
+			/>
+			{turn?.ok && (
+				<p role="status">
+					{turn.value.stopReason === 'cancelled'
+						? 'turn interrupted'
+						: 'turn ended'}
+					: {turn.value.stopReason}
+				</p>
+			)}
 			{turn && !turn.ok && (
 				<Card variant="failure" role="alert">
 					<span>
