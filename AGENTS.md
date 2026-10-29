@@ -55,8 +55,10 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/stderr-ring.ts` | Bounded, redacted, in-memory ring for Nanocoder's stderr |
 | `source/main/nanocoder/permissions.ts` | Holds each permission request until the user answers; only an option Nanocoder offered counts |
 | `source/main/nanocoder/cancel-technical-turn.ts` | Main-owned technical-turn cancellation and awaited supervisor settlement |
-| `source/main/nanocoder/turn-events.ts` | Turns ACP session updates into the few events the UI shows |
-| `source/renderer/transcript.ts` | Merges turn events into the conversation the UI shows |
+| `source/main/nanocoder/turn-events.ts`, `source/main/nanocoder/turn-metadata.ts` | Normalises SDK stream updates and allowlisted vendor metadata without adding capabilities |
+| `source/renderer/transcript.ts`, `source/renderer/stream-batcher.ts` | Ordered immutable transcript patches and cancellable 16ms renderer batching |
+| `source/renderer/conversation-stream.tsx`, `source/renderer/agent-markdown.tsx`, `source/renderer/stream-commands.tsx` | U.4 stream rows, isolated inert Markdown and advertised-command draft suggestions |
+| `planning/streaming-conversation.md` | Phase 1.6 stream semantics, metadata boundaries, performance and remaining integration seams |
 | `source/renderer/recovery-tools.tsx` | Plain-props process recovery and captured diagnostics controls |
 | `source/renderer/app-shell.tsx`, `source/renderer/styles/app-shell.css` | U.2 grid and plain-child rail/tools slots; inspector hidden at 840px and below |
 | `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
@@ -69,7 +71,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `planning/app-shell.md` | Shell composition, supervisor badge rules and locked multi-width QA |
 | `source/renderer/overlays.tsx`, `source/renderer/overlay-model.ts` | U.12 renderer-only command palette, shortcuts, focus return and clock-injected toast queue |
 | `planning/ui-overlays.md` | Overlay commands, keyboard rules and notification verification |
-| `THIRD-PARTY-NOTICES.txt` | Bundled font copyright and full OFL 1.1 licence |
+| `THIRD-PARTY-NOTICES.txt` | Bundled font OFL 1.1 and Markdown dependency copyright/licence notices |
 | `source/main/nanocoder/capabilities.ts` | Records `initialize` capabilities and builds feature gates with reasons; extensions need safe probes |
 | `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp`, a scripted model provider and test helpers, including the setup shared by the `*.acp.ts` tests |
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
@@ -79,6 +81,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `e2e/projects.e2e.ts` | Isolated-profile project persistence, native trust, recents, relocation and trust-revocation tests |
 | `e2e/supervisor.e2e.ts` | Built-main quit while a child is still initialising, including child-exit verification |
 | `e2e/supervisor-recovery.e2e.ts` | Crash/retry, saved-history replay, crash-loop limits and reviewed diagnostics refusals |
+| `e2e/streaming.e2e.ts` | Fake stream cadence, ordered rendering, input/scroll/frame response, safe resources and multi-width stream QA |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |
 | `e2e/qa/approval-harness.ts` | Browser-only component fixture for failed answers and atomic same-size approval queue replacement |
 | `e2e/qa/ui-contrast.ts` | Token-pair and rendered-text contrast checks, with a co-located AVA spec |

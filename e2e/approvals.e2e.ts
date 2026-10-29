@@ -361,7 +361,13 @@ test.describe('approval and overlay focus', () => {
 		await page.keyboard.press('Escape');
 		await expect(origin).toBeFocused();
 		await expect(cards()).toHaveCount(1);
-		await expect(input()).toBeDisabled();
+		await expect(input()).toBeEnabled();
+		await expect(
+			page.getByRole('button', {name: 'send', exact: true}),
+		).toBeDisabled();
+		await expect(input()).toHaveAccessibleDescription(
+			'waiting for Nanocoder to finish the turn',
+		);
 		await page.keyboard.press('3');
 		await expect(cards()).toHaveCount(0);
 		await expect(input()).toBeFocused();

@@ -152,9 +152,95 @@ const tool = (sessionId, toolCallId, update) =>
 		update: {sessionUpdate: 'tool_call_update', toolCallId, ...update},
 	});
 
+async function streamFixture(id, sessionId) {
+	const update = body => notify('session/update', {sessionId, update: body});
+	update({
+		sessionUpdate: 'available_commands_update',
+		availableCommands: [
+			{
+				name: '/review',
+				description: 'review fixture changes',
+				input: {hint: 'focus'},
+			},
+		],
+	});
+	update({
+		sessionUpdate: 'agent_thought_chunk',
+		content: {type: 'text', text: 'checking the scripted fixture'},
+	});
+	update({
+		sessionUpdate: 'tool_call',
+		toolCallId: 'subagent:fixture',
+		title: 'fixture tool',
+		kind: 'execute',
+		status: 'in_progress',
+		content: [
+			{type: 'content', content: {type: 'text', text: 'fixture tool detail'}},
+		],
+		rawInput: {fixture: true},
+	});
+	say(
+		sessionId,
+		'# streamed fixture\n\n[fixture link](https://fixture.invalid) ![fixture image](https://fixture.invalid/image)\n\n<script>fixture</script>\n\n',
+	);
+	await new Promise(resolve => {
+		let index = 0;
+		const started = performance.now();
+		const period = 1000 / 105;
+		const tick = () => {
+			const due = Math.min(
+				300,
+				Math.floor((performance.now() - started) / period),
+			);
+			while (index < due) say(sessionId, `item ${++index}\n\n`);
+			if (index === 300) resolve();
+			else
+				setTimeout(
+					tick,
+					Math.max(0, started + (index + 1) * period - performance.now()),
+				);
+		};
+		tick();
+	});
+	tool(sessionId, 'subagent:fixture', {title: 'fixture tool finished'});
+	tool(sessionId, 'subagent:fixture', {status: 'completed'});
+	update({
+		sessionUpdate: 'usage_update',
+		used: 1250,
+		size: 10000,
+		cost: {amount: 0.5, currency: 'USD'},
+	});
+	send({
+		id,
+		result: {
+			stopReason: 'end_turn',
+			usage: {inputTokens: 100, outputTokens: 300, totalTokens: 400},
+			_meta: {
+				'nanocoder/usage': {cost: 0.01, privatePayload: 'synthetic-private'},
+				unknown: 'synthetic-private',
+			},
+		},
+	});
+}
+
 // One turn: some text, protected tool calls that wait for the client's answers, more text.
 async function runTurn(id, {sessionId}) {
 	if (mode === 'die-in-turn') process.exit(3);
+	if (mode === 'streaming') return streamFixture(id, sessionId);
+	if (mode === 'reported-usage') {
+		say(sessionId, 'Reported usage fixture.');
+		send({
+			id,
+			result: {
+				stopReason: 'end_turn',
+				usage: {inputTokens: 12, outputTokens: 8, totalTokens: 20},
+				_meta: {
+					'nanocoder/usage': {cost: 0.01, privatePayload: 'synthetic-private'},
+				},
+			},
+		});
+		return;
+	}
 	if (mode === 'prompt-error') {
 		send({
 			id,
