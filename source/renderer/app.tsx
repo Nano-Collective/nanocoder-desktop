@@ -1,5 +1,6 @@
 import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
+import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
 import {
 	acpBadge,
 	observeSupervisor,
@@ -234,8 +235,9 @@ export function App() {
 		setRunning(current => ({...current, [root]: false}));
 	};
 
-	return (
+	const shell = (
 		<AppShell
+			palette={<PaletteButton />}
 			title={info?.name}
 			statusBadges={
 				<div className="gate-actions">
@@ -357,5 +359,28 @@ export function App() {
 				</Card>
 			)}
 		</AppShell>
+	);
+
+	return (
+		<OverlayProvider
+			actions={[
+				{
+					id: 'open-folder',
+					label: 'open a project folder',
+					glyph: '⌗',
+					keywords: 'add directory',
+					disabledReason: connecting
+						? 'another folder is opening'
+						: !runtime?.ok
+							? 'Nanocoder runtime is not available'
+							: undefined,
+					run: () => {
+						void connect();
+					},
+				},
+			]}
+		>
+			{shell}
+		</OverlayProvider>
 	);
 }
