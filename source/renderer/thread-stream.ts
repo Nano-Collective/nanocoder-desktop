@@ -90,6 +90,8 @@ export function createThreadStream(options: {
 			return true;
 		},
 		receive,
+		isCurrent: (threadId: string, value: number) =>
+			pending.get(threadId)?.token === value,
 		remove: (threadId: string) => {
 			sequences.delete(threadId);
 			pending.delete(threadId);

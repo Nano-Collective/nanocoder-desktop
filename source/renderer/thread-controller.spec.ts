@@ -5,6 +5,7 @@ import type {
 	ProjectEvent,
 	ThreadInfo,
 	ThreadRequest,
+	ThreadSnapshot,
 } from '@/shared/ipc';
 
 const ok = <T>(value: T): IpcResult<T> => ({ok: true, value});
@@ -20,17 +21,30 @@ const row = (id: string, projectId = 'project-a'): ThreadInfo => ({
 	mode: 'normal',
 	viewOnlyReason: null,
 });
+const snap = (id: string, sequence = 0): ThreadSnapshot => ({
+	thread: row(id),
+	sequence,
+	replaying: false,
+	events: sequence ? [{type: 'text', text: `prefix ${sequence}`}] : [],
+});
 const deferred = <T>() => {
 	let resolve!: (value: T) => void;
-	const promise = new Promise<T>(done => {
+	let reject!: (reason: Error) => void;
+	const promise = new Promise<T>((done, fail) => {
 		resolve = done;
+		reject = fail;
 	});
-	return {promise, resolve};
+	return {promise, resolve, reject};
 };
 
 function fixture() {
 	let listener: ((event: ProjectEvent) => void) | undefined;
 	const calls: unknown[] = [];
+	const delivered: Array<
+		| {type: 'snapshot'; value: ThreadSnapshot}
+		| {type: 'turn'; value: Extract<ProjectEvent, {type: 'turn'}>}
+	> = [];
+	const removed: string[] = [];
 	const bridge = {
 		listThreads: async (request: {
 			projectId: string;
@@ -42,6 +56,14 @@ function fixture() {
 		createThread: async (request: {projectId: string}) => {
 			calls.push(['create', request]);
 			return ok(row('created', request.projectId));
+		},
+		openThread: async (request: ThreadRequest) => {
+			calls.push(['open', request]);
+			return ok(snap(request.threadId));
+		},
+		getThreadSnapshot: async (request: ThreadRequest) => {
+			calls.push(['snapshot', request]);
+			return ok(snap(request.threadId));
 		},
 		renameThread: async (request: ThreadRequest & {title: string}) => {
 			calls.push(['rename', request]);
@@ -79,11 +101,16 @@ function fixture() {
 	const controller = createThreadController({
 		bridge,
 		onChange: () => undefined,
+		onSnapshot: value => delivered.push({type: 'snapshot', value}),
+		onTurn: value => delivered.push({type: 'turn', value}),
+		onRemoved: id => removed.push(id),
 	});
 	return {
 		bridge,
 		calls,
 		controller,
+		delivered,
+		removed,
 		emit: (event: ProjectEvent) => listener?.(event),
 	};
 }
@@ -275,3 +302,158 @@ test('unknown pending and disposed metadata actions refuse without extra bridge 
 	t.false(await controller.archive('created', true));
 	t.is(calls.length, 1);
 });
+
+test('controller opens or reads only the selected desktop thread and routes a main snapshot (CHAT-03, CHAT-04)', async t => {
+	const {controller, calls, delivered} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	calls.length = 0;
+	t.true(await controller.open('created'));
+	t.true(await controller.read('created'));
+	t.deepEqual(calls, [
+		['open', {projectId: 'project-a', threadId: 'created'}],
+		['snapshot', {projectId: 'project-a', threadId: 'created'}],
+	]);
+	t.deepEqual(delivered, [
+		{type: 'snapshot', value: snap('created')},
+		{type: 'snapshot', value: snap('created')},
+	]);
+});
+
+test('controller buffers live thread events behind an in-flight open snapshot (CHAT-04)', async t => {
+	const {bridge, controller, emit, delivered} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	const result = deferred<IpcResult<ThreadSnapshot>>();
+	bridge.openThread = () => result.promise;
+	const opening = controller.open('created');
+	const live = {
+		type: 'turn',
+		projectId: 'project-a',
+		threadId: 'created',
+		sequence: 2,
+		events: [{type: 'text', text: 'newer'}],
+	} as const;
+	emit({...live, events: [...live.events]});
+	t.deepEqual(delivered, []);
+	result.resolve(ok(snap('created', 1)));
+	t.true(await opening);
+	t.deepEqual(delivered, [
+		{type: 'snapshot', value: snap('created', 1)},
+		{type: 'turn', value: live},
+	]);
+});
+
+test('metadata and chat counters stay independent and a chat gap reads main without opening a session (CHAT-04)', async t => {
+	const {bridge, controller, emit, delivered, calls} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	t.true(await controller.read('created'));
+	emit({
+		type: 'thread',
+		projectId: 'project-a',
+		sequence: 100,
+		thread: {...row('created'), title: 'latest'},
+	});
+	const live: Extract<ProjectEvent, {type: 'turn'}> = {
+		type: 'turn',
+		projectId: 'project-a',
+		threadId: 'created',
+		sequence: 1,
+		events: [{type: 'text', text: 'first'}],
+	};
+	emit(live);
+	emit(live);
+	emit({...live, projectId: 'project-b', sequence: 500});
+	t.is(delivered.length, 2);
+	t.is(controller.getState().threads[0]?.title, 'latest');
+	const result = deferred<IpcResult<ThreadSnapshot>>();
+	const requested = deferred<void>();
+	bridge.getThreadSnapshot = request => {
+		calls.push(['snapshot', request]);
+		requested.resolve();
+		return result.promise;
+	};
+	emit({...live, sequence: 3});
+	await requested.promise;
+	result.resolve(ok(snap('created', 3)));
+	await Promise.resolve();
+	t.is(delivered.at(-1)?.type, 'snapshot');
+	if (delivered.at(-1)?.type === 'snapshot')
+		t.is((delivered.at(-1)?.value as ThreadSnapshot).sequence, 3);
+	t.false(calls.some(call => Array.isArray(call) && call[0] === 'open'));
+});
+
+test('a thread removed during an open cannot be restored by its old snapshot response (CHAT-14)', async t => {
+	const {bridge, controller, emit, delivered, removed} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	const result = deferred<IpcResult<ThreadSnapshot>>();
+	bridge.openThread = () => result.promise;
+	const opening = controller.open('created');
+	t.true(controller.getState().pending);
+	emit({
+		type: 'thread-removed',
+		projectId: 'project-a',
+		sequence: 4,
+		threadId: 'created',
+	});
+	result.resolve(ok(snap('created', 2)));
+	t.false(await opening);
+	t.deepEqual(delivered, []);
+	t.deepEqual(removed, ['created']);
+	t.deepEqual(controller.getState().threads, []);
+});
+
+test('a rejected superseded gap lookup cannot replace the newer successful read with an error (CHAT-04)', async t => {
+	const {bridge, controller, emit, delivered} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	t.true(await controller.read('created'));
+	const gap = deferred<IpcResult<ThreadSnapshot>>();
+	bridge.getThreadSnapshot = () => gap.promise;
+	emit({
+		type: 'turn',
+		projectId: 'project-a',
+		threadId: 'created',
+		sequence: 2,
+		events: [{type: 'text', text: 'gap'}],
+	});
+	bridge.getThreadSnapshot = async () => ok(snap('created', 2));
+	t.true(await controller.read('created'));
+	gap.reject(new Error('obsolete fixture read'));
+	await gap.promise.catch(() => undefined);
+	t.is(controller.getState().error, null);
+	t.is(delivered.length, 2);
+});
+
+test('snapshot replies with the wrong project or desktop thread are refused without exposing their content (CHAT-04)', async t => {
+	for (const thread of [row('foreign'), row('created', 'project-b')]) {
+		const {bridge, controller, delivered} = fixture();
+		await controller.selectProject('project-a');
+		await controller.create();
+		bridge.openThread = async () => ok({...snap('created', 1), thread});
+		t.false(await controller.open('created'));
+		t.deepEqual(delivered, []);
+		t.deepEqual(controller.getState().threads, [row('created')]);
+		controller.dispose();
+	}
+});
+
+for (const transition of ['switch', 'dispose']) {
+	test(`an outstanding snapshot cannot deliver after ${transition} (CHAT-03, CHAT-04)`, async t => {
+		const {bridge, controller, delivered} = fixture();
+		await controller.selectProject('project-a');
+		await controller.create();
+		const pending = deferred<IpcResult<ThreadSnapshot>>();
+		bridge.openThread = () => pending.promise;
+		const opening = controller.open('created');
+		if (transition === 'switch') await controller.selectProject('project-b');
+		else controller.dispose();
+		const before = controller.getState();
+		pending.resolve(ok(snap('created', 1)));
+		t.false(await opening);
+		t.deepEqual(delivered, []);
+		t.deepEqual(controller.getState(), before);
+	});
+}

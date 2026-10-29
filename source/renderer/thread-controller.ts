@@ -1,5 +1,11 @@
+import {createThreadStream} from '@/renderer/thread-stream';
 import type {DesktopApi} from '@/shared/desktop-api';
-import type {IpcResult, ProjectEvent, ThreadInfo} from '@/shared/ipc';
+import type {
+	IpcResult,
+	ProjectEvent,
+	ThreadInfo,
+	ThreadSnapshot,
+} from '@/shared/ipc';
 
 type ThreadBridge = Pick<
 	DesktopApi,
@@ -10,6 +16,8 @@ type ThreadBridge = Pick<
 	| 'archiveThread'
 	| 'removeThread'
 	| 'deleteThreadHistory'
+	| 'openThread'
+	| 'getThreadSnapshot'
 >;
 
 export interface ThreadControllerState {
@@ -24,6 +32,9 @@ export interface ThreadControllerState {
 export function createThreadController(options: {
 	bridge: ThreadBridge;
 	onChange(state: ThreadControllerState): void;
+	onSnapshot?(snapshot: ThreadSnapshot): void;
+	onTurn?(event: Extract<ProjectEvent, {type: 'turn'}>): void;
+	onRemoved?(threadId: string): void;
 }) {
 	let state: ThreadControllerState = {
 		projectId: null,
@@ -58,12 +69,15 @@ export function createThreadController(options: {
 		});
 	};
 	const forget = (threadId: string) => {
+		const existed = state.threads.some(thread => thread.id === threadId);
+		stream.remove(threadId);
 		changes.set(threadId, {revision: ++revision, thread: null});
 		update({
 			threads: state.threads.filter(row => row.id !== threadId),
 			activeThreadId:
 				state.activeThreadId === threadId ? null : state.activeThreadId,
 		});
+		if (existed) options.onRemoved?.(threadId);
 	};
 	const accept = (thread: ThreadInfo, started: number, expectedId?: string) => {
 		if (
@@ -109,11 +123,81 @@ export function createThreadController(options: {
 			if (current === generation) update({pending: false});
 		}
 	};
+	const stream = createThreadStream({
+		onSnapshot: snapshot => options.onSnapshot?.(snapshot),
+		onTurn: event => options.onTurn?.(event),
+		onGap: (threadId, token) => {
+			void readGap(threadId, token);
+		},
+	});
+	const replace = (
+		snapshot: ThreadSnapshot,
+		started: number,
+		threadId: string,
+		token: number,
+	) => {
+		if (
+			!stream.isCurrent(threadId, token) ||
+			!accept(snapshot.thread, started, threadId)
+		)
+			return false;
+		const thread = state.threads.find(row => row.id === threadId);
+		return !!thread && stream.replace(token, {...snapshot, thread});
+	};
+	async function readGap(threadId: string, token: number) {
+		const projectId = state.projectId;
+		if (
+			disposed ||
+			!projectId ||
+			!state.threads.some(row => row.id === threadId)
+		)
+			return;
+		const current = generation;
+		const started = revision;
+		try {
+			const result = await options.bridge.getThreadSnapshot({
+				projectId,
+				threadId,
+			});
+			if (current !== generation || !stream.isCurrent(threadId, token)) return;
+			if (!result.ok) {
+				if (state.activeThreadId === threadId)
+					update({error: result.error.message});
+				return;
+			}
+			replace(result.value, started, threadId, token);
+		} catch {
+			if (
+				current === generation &&
+				stream.isCurrent(threadId, token) &&
+				state.activeThreadId === threadId
+			)
+				update({error: 'the thread snapshot is unavailable'});
+		}
+	}
+	const load = (threadId: string, open: boolean) => {
+		let token = 0;
+		return run(
+			threadId,
+			projectId => {
+				token = stream.begin(threadId);
+				return open
+					? options.bridge.openThread({projectId, threadId})
+					: options.bridge.getThreadSnapshot({projectId, threadId});
+			},
+			(snapshot, started) => {
+				if (!replace(snapshot, started, threadId, token)) return false;
+				update({activeThreadId: threadId});
+				return true;
+			},
+		);
+	};
 	const selectProject = async (projectId: string | null) => {
 		if (disposed) return;
 		const current = ++generation;
 		revision = 0;
 		changes.clear();
+		stream.selectProject(projectId);
 		update({
 			projectId,
 			threads: [],
@@ -153,12 +237,8 @@ export function createThreadController(options: {
 		}
 	};
 	const onEvent = (event: ProjectEvent) => {
-		if (
-			disposed ||
-			event.projectId !== state.projectId ||
-			event.type === 'turn'
-		)
-			return;
+		if (disposed || event.projectId !== state.projectId) return;
+		if (event.type === 'turn') return stream.receive(event);
 		if (event.sequence <= (sequences.get(event.projectId) ?? 0)) return;
 		sequences.set(event.projectId, event.sequence);
 		if (event.type === 'thread' && event.thread.projectId === event.projectId)
@@ -173,6 +253,8 @@ export function createThreadController(options: {
 	return {
 		getState: () => structuredClone(state),
 		selectProject,
+		open: (threadId: string) => load(threadId, true),
+		read: (threadId: string) => load(threadId, false),
 		rename: (threadId: string, title: string) =>
 			run(
 				threadId,
@@ -221,6 +303,7 @@ export function createThreadController(options: {
 			generation++;
 			changes.clear();
 			sequences.clear();
+			stream.selectProject(null);
 			unsubscribe();
 		},
 	};
