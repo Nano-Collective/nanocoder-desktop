@@ -119,6 +119,8 @@ Suggestion (not discussed): starting budgets, to be confirmed after the first me
 
 ## Accessibility targets
 
+Phase 1.3 recovery checks live in `supervisor-recovery.spec.ts`, `diagnostics*.spec.ts`, `stderr-security.spec.ts` and `e2e/supervisor-recovery.e2e.ts`. A fake clock advances backoff and idle deadlines without sleeps. Refusal cases cover initialisation/trust/version failures, stale roots and handles, late approvals, resume/mode failures, cancelled timers, foreign or expired captures and renderer-supplied export lines or paths. Built-main tests use temporary profiles and fake projects only. Recovery QA covers keyboard retry and diagnostics focus at 1240px, 1020px and 840px in both themes. The existing failure-banner error-on-elevated contrast gap remains recorded in `DESIGN.md`; it is not a new token choice.
+
 Behaviour only. Visual design: see [`DESIGN.md`](../DESIGN.md). The criteria named are from WCAG 2.2; Suggestion (not discussed) to adopt them.
 
 | ID | Target | Checked how |

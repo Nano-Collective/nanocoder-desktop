@@ -10,6 +10,7 @@ const TRUST_REASONS = {
 	untrusted: 'is not trusted',
 	changed: 'changed since you trusted it',
 };
+let nextSession = 0;
 
 const log = event => process.stderr.write(`${JSON.stringify(event)}\n`);
 const send = message =>
@@ -54,7 +55,10 @@ const results = {
 		mode === 'no-session'
 			? undefined
 			: {
-					sessionId: 'fake-session',
+					sessionId:
+						mode === 'multiple-sessions'
+							? `fake-session-${++nextSession}`
+							: 'fake-session',
 					modes: modeState(),
 				},
 	'session/set_mode': () => (mode === 'mode-fails' ? undefined : {}),
@@ -275,6 +279,7 @@ function serve() {
 			);
 		})
 		.on('close', () => {
+			if (mode === 'multiple-sessions') log({stdinClosed: true});
 			if (mode !== 'ignore-shutdown') process.exit(0);
 		});
 }

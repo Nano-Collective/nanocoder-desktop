@@ -96,11 +96,11 @@ test('drops the oldest lines past the size bound', t => {
 	t.deepEqual(ring.lines(), ['bbbbbbbbbb', 'cccccccccc']);
 });
 
-test('truncates a long line, even without a newline', t => {
+test('omits an overlong unfinished line until its newline arrives', t => {
 	const ring = new StderrRing();
 	ring.write('x'.repeat(5000));
 	const [line] = ring.lines();
-	t.is(line, `${'x'.repeat(4096)} [truncated]`);
+	t.is(line, '[overlong stderr line omitted]');
 });
 
 test('returns a copy of its lines', t => {

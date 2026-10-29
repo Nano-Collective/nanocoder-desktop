@@ -122,6 +122,7 @@ export function registerWorkspaceHandlers(
 		stopProject: ({projectId}) =>
 			available(services.supervisor).stop(projectId),
 		restartProject: ({projectId}) => {
+			if (services.restartProject) return services.restartProject(projectId);
 			const supervisor = available(services.supervisor);
 			return supervisor.restart(trustedProject(projectId));
 		},

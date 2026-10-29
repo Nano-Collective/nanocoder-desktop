@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {writeFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import path from 'node:path';
 import {
@@ -17,6 +18,7 @@ import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {disposeDesktop} from '@/main/lifecycle';
 import {untilAborted} from '@/main/nanocoder/abort';
 import {NanocoderFailure} from '@/main/nanocoder/acp-client';
+import {DiagnosticsExporter} from '@/main/nanocoder/diagnostics';
 import {resolveNanocoder} from '@/main/nanocoder/runtime';
 import {createLookup} from '@/main/nanocoder/runtime-lookup';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
@@ -300,10 +302,67 @@ export function registerIpcHandlers(
 				},
 				homeDir: homedir(),
 				confirmTrust,
+				activity: projectId =>
+					technicalSessions?.activity(projectId) ?? {
+						runningTurn: false,
+						openSessions: 0,
+						preparing: false,
+						lastActivityAt: 0,
+					},
+				recover: async (project, connection, signal) => {
+					return technicalSessions?.restore(project, connection, signal);
+				},
 			});
 	workspaceServices = {
 		...services,
 		supervisor: services.supervisor ?? supervisor,
+		restartProject:
+			services.restartProject ??
+			(supervisor
+				? async projectId => {
+						const chosen = [...technicalProjects.values()].find(
+							project => project.id === projectId,
+						);
+						if (!chosen || !supervisor)
+							throw new IpcFailure('NOT_FOUND', 'Project not found');
+						return supervisor.restart(chosen);
+					}
+				: undefined),
+		diagnostics:
+			services.diagnostics ??
+			(supervisor
+				? new DiagnosticsExporter({
+						read: (projectId, snapshotId) => {
+							if (!supervisor)
+								throw new IpcFailure('NOT_FOUND', 'Project not found');
+							return supervisor.getCapturedDiagnostics(projectId, snapshotId);
+						},
+						review: async snapshot => {
+							const {response} = await dialog.showMessageBox({
+								type: 'question',
+								title: 'Review redacted diagnostics',
+								message: 'Review these diagnostics before exporting',
+								detail:
+									snapshot.lines.join('\n') || 'No diagnostics were captured.',
+								buttons: ['Choose destination', 'Cancel'],
+								defaultId: 1,
+								cancelId: 1,
+								noLink: true,
+							});
+							return response === 0;
+						},
+						chooseDestination: async () => {
+							const chosen = await dialog.showSaveDialog({
+								title: 'Export redacted diagnostics',
+								defaultPath: 'nanocoder-diagnostics.txt',
+								filters: [{name: 'Text', extensions: ['txt']}],
+							});
+							return chosen.canceled ? undefined : chosen.filePath;
+						},
+						write: (destination, contents) =>
+							writeFile(destination, contents, {mode: 0o600, flag: 'wx'}),
+					})
+				: undefined),
 	};
 	technicalSessions = supervisor
 		? new TechnicalSessions(supervisor)

@@ -15,6 +15,7 @@ import {
 	type Page,
 	test,
 } from '@playwright/test';
+import type {DesktopApi} from '@/shared/desktop-api';
 import {qaEnvironment} from './qa/environment';
 import {visibleTextContrast} from './qa/ui-contrast';
 
@@ -183,6 +184,13 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 		page.getByRole('region', {name: 'connected agent'}),
 	).toBeVisible();
 	await page.keyboard.press('Tab');
+	const diagnostics = page.getByRole('button', {
+		name: 'diagnostics',
+		exact: true,
+	});
+	await expect(diagnostics).toBeFocused();
+	await expect(diagnostics).toHaveCSS('outline-width', '2px');
+	await page.keyboard.press('Tab');
 	const input = page.getByRole('textbox', {name: 'message'});
 	await expect(input).toBeFocused();
 	await expect(input).toHaveCSS('outline-width', '2px');
@@ -195,6 +203,10 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	await expect(
 		page.getByRole('button', {name: 'send', exact: true}),
 	).toBeEnabled();
+	await page.keyboard.press('Tab');
+	await expect(
+		page.getByRole('button', {name: 'send', exact: true}),
+	).toBeFocused();
 });
 
 test('approval parts have named actions and no new contrast gaps in either theme', async () => {
@@ -348,7 +360,26 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		await page
 			.getByRole('textbox', {name: 'message'})
 			.fill('synthetic exit check');
+		await page.evaluate(() => {
+			const state = window as unknown as {
+				desktop: DesktopApi;
+				exitStopped: Promise<unknown>;
+			};
+			state.exitStopped = new Promise(resolve => {
+				const off = state.desktop.onProjectEvent(event => {
+					if (event.type !== 'supervisor' || event.state.status !== 'failed')
+						return;
+					off();
+					void state.desktop
+						.stopProject({projectId: event.projectId})
+						.then(resolve);
+				});
+			});
+		});
 		await page.getByRole('button', {name: 'send', exact: true}).click();
+		await page.evaluate(
+			() => (window as unknown as {exitStopped: Promise<unknown>}).exitStopped,
+		);
 		const failure = page.getByRole('alert');
 		await expect(failure).toContainText('Nanocoder stopped during the turn');
 		await expect(failure).toHaveCSS('font-size', '11.5px');
@@ -356,20 +387,22 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 			page.getByRole('status').filter({hasText: 'failed'}),
 		).toBeVisible();
 		await expect(
-			page.getByRole('status').filter({hasText: /ready|running|idle/}),
+			page
+				.locator('.ui-badge[role="status"]')
+				.filter({hasText: /ready|running|idle/}),
 		).toHaveCount(0);
 		await expect(page.locator('.ui-badge--success')).toHaveCount(0);
 		await expect(page.locator('.ui-badge--failed')).toHaveCSS(
 			'background-color',
 			theme === 'light' ? 'rgb(237, 237, 242)' : 'rgb(22, 22, 24)',
 		);
-		await page
-			.getByRole('textbox', {name: 'message'})
-			.fill('synthetic follow-up');
-		await page.getByRole('button', {name: 'send', exact: true}).click();
-		await expect(failure).toContainText(
-			'Nanocoder stopped. Start the project again when you are ready.',
-		);
+		await expect(page.getByRole('textbox', {name: 'message'})).toBeDisabled();
+		await expect(
+			page.getByRole('button', {name: 'send', exact: true}),
+		).toBeDisabled();
+		await expect(
+			page.getByRole('button', {name: 'retry Nanocoder', exact: true}),
+		).toBeEnabled();
 		await expect(page.locator('.ui-badge--success')).toHaveCount(0);
 		expect(await visibleTextContrast(page, theme)).toEqual([]);
 	}

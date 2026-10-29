@@ -1,4 +1,5 @@
 import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
+import {RecoveryTools} from '@/renderer/recovery-tools';
 import {
 	addUserMessage,
 	applyEvent,
@@ -15,6 +16,7 @@ import type {
 	NanocoderRuntime,
 	PermissionRequestInfo,
 	SessionInfo,
+	SupervisorState,
 	TurnResult,
 } from '@/shared/ipc';
 
@@ -151,15 +153,42 @@ export function App() {
 	>({});
 	const [gates, setGates] = useState<Record<string, CapabilityGates>>({});
 	const roots = useRef(new Map<string, string>());
+	const recoveryReplay = useRef(new Map<string, Transcript>());
+	const [processes, setProcesses] = useState<Record<string, SupervisorState>>(
+		{},
+	);
+	const [latestProcess, setLatestProcess] = useState<SupervisorState | null>(
+		null,
+	);
 	const outcome = opened?.ok ? opened.value : null;
 	const root = outcome?.status === 'connected' ? outcome.agent.root : '';
 	const transcript = transcripts[root] ?? emptyTranscript;
 	const sending = running[root] ?? false;
 	const turn = turns[root];
+	const processState = processes[root] ?? (root ? null : latestProcess);
+	const accepting = processState?.status === 'ready';
 
 	useEffect(
 		() =>
 			window.desktop.onProjectEvent(event => {
+				if (event.type === 'supervisor') {
+					setLatestProcess(event.state);
+					const processRoot =
+						event.state.agent?.root ?? roots.current.get(event.projectId);
+					if (event.state.status === 'starting')
+						recoveryReplay.current.set(event.projectId, emptyTranscript);
+					else {
+						const replayed = recoveryReplay.current.get(event.projectId);
+						if (event.state.status === 'ready' && processRoot && replayed)
+							setTranscripts(current => ({
+								...current,
+								[processRoot]: replayed,
+							}));
+						recoveryReplay.current.delete(event.projectId);
+					}
+					if (processRoot)
+						setProcesses(current => ({...current, [processRoot]: event.state}));
+				}
 				if (
 					event.type === 'supervisor' &&
 					event.state.agent &&
@@ -171,6 +200,14 @@ export function App() {
 					setGates(current => ({...current, [root]: next}));
 				}
 				if (event.type === 'turn') {
+					const replayed = recoveryReplay.current.get(event.projectId);
+					if (replayed) {
+						recoveryReplay.current.set(
+							event.projectId,
+							event.events.reduce(applyEvent, replayed),
+						);
+						return;
+					}
 					const root = roots.current.get(event.projectId);
 					if (root)
 						setTranscripts(current => ({
@@ -210,7 +247,7 @@ export function App() {
 	const send = async (event: FormEvent) => {
 		event.preventDefault();
 		const text = draft.trim();
-		if (!text || sending) return;
+		if (!text || sending || !accepting) return;
 		setDraft('');
 		setRunning(current => ({...current, [root]: true}));
 		setTurns(current => ({...current, [root]: null}));
@@ -282,6 +319,12 @@ export function App() {
 			{outcome?.status === 'connected' && gates[outcome.agent.root] && (
 				<FeatureDetails gates={gates[outcome.agent.root]} />
 			)}
+			<RecoveryTools
+				state={processState}
+				onRetry={projectId => window.desktop.restartProject({projectId})}
+				onCapture={projectId => window.desktop.getDiagnostics({projectId})}
+				onExport={request => window.desktop.exportDiagnostics(request)}
+			/>
 			{outcome?.status === 'connected' && (
 				<form className="gate-composer" onSubmit={send}>
 					<label>
@@ -289,21 +332,26 @@ export function App() {
 						<input
 							value={draft}
 							onChange={event => setDraft(event.target.value)}
-							disabled={sending}
+							disabled={sending || !accepting}
 							placeholder="ask anything…"
 							aria-describedby="composer-hint"
 						/>
 					</label>
 					<div className="gate-actions">
-						<Button type="submit" disabled={sending || draft.trim() === ''}>
+						<Button
+							type="submit"
+							disabled={sending || !accepting || draft.trim() === ''}
+						>
 							send
 						</Button>
 						<p id="composer-hint" className="gate-hint">
-							{sending
-								? 'waiting for Nanocoder to finish the turn'
-								: draft.trim() === ''
-									? 'enter a message to send'
-									: 'ready to send'}
+							{!accepting
+								? 'Nanocoder is not ready. retry before sending.'
+								: sending
+									? 'waiting for Nanocoder to finish the turn'
+									: draft.trim() === ''
+										? 'enter a message to send'
+										: 'ready to send'}
 						</p>
 					</div>
 				</form>

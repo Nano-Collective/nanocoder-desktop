@@ -38,8 +38,10 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/store/repositories.ts` | Project/thread metadata only, scoped queries, canonical paths and cascade removal |
 | `source/main/store/validation.ts` | Allowlisted metadata schemas, including the settings/UI patches shared with IPC |
 | `source/main/nanocoder/supervisor-contracts.ts` | Main-only per-project supervisor interface |
-| `source/main/nanocoder/supervisor.ts` | One canonical-root process per project, scoped events and permissions, abortable starts and awaited shutdown |
-| `source/main/nanocoder/technical-sessions.ts` | Technical-gate mode-ready session cache and safe active-turn cleanup when a renderer detaches |
+| `source/main/nanocoder/supervisor.ts` | Canonical-root process ownership, bounded recovery, injected idle activity and awaited shutdown |
+| `source/main/nanocoder/technical-sessions.ts` | Technical session cache, safe-mode recovery, activity and renderer-detach cleanup |
+| `source/main/nanocoder/clock.ts`, `source/main/nanocoder/fixtures/fake-clock.ts` | Cancellable supervisor timers and deterministic recovery/idle tests |
+| `source/main/nanocoder/diagnostics.ts` | Payload-filtered immutable captures, expiry and exact main-owned review/export |
 | `source/main/nanocoder/version-policy.ts` | Provisional minimum version, fail-closed parsing and untested-version warnings (`ACP-04`, `OQ-02`) |
 | `source/main/nanocoder/abort.ts` | Cancels pending lookups and trust confirmations without allowing late launches |
 | `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path |
@@ -52,6 +54,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/permissions.ts` | Holds each permission request until the user answers; only an option Nanocoder offered counts |
 | `source/main/nanocoder/turn-events.ts` | Turns ACP session updates into the few events the UI shows |
 | `source/renderer/transcript.ts` | Merges turn events into the conversation the UI shows |
+| `source/renderer/recovery-tools.tsx` | Plain-props process recovery and captured diagnostics controls |
 | `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |
 | `scripts/generate-design-tokens.mjs` | Generates committed CSS custom properties from `DESIGN.md`; the adjacent spec rejects drift |
 | `planning/ui-foundations.md` | Theme switching, keyboard-focus QA and the proposed Markdown renderer |
@@ -63,6 +66,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `e2e/*.e2e.ts` | Playwright tests against the built app |
 | `e2e/store.e2e.ts` | Built-main persistence, migration backup, corruption recovery and storage refusal tests |
 | `e2e/supervisor.e2e.ts` | Built-main quit while a child is still initialising, including child-exit verification |
+| `e2e/supervisor-recovery.e2e.ts` | Crash/retry, saved-history replay, crash-loop limits and reviewed diagnostics refusals |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |
 | `e2e/qa/ui-contrast.ts` | Token-pair and rendered-text contrast checks, with a co-located AVA spec |
 | `scripts/node-sidecar.json` | The pinned Node sidecar: exact version and SHA-256 per platform (`DEC-38`) |
@@ -102,7 +106,7 @@ These hold in every change:
 - Permission requests are answered only by the user, from the main process: the renderer sends a request id and an option id, and both are checked against what Nanocoder offered. With no handler, a request is answered as cancelled, never allowed (`ACP-10`).
 - Every Nanocoder session gets its mode with `session/set_mode` before its first prompt, checked against `availableModes`. A thread takes no prompt until that succeeds, and `yolo` is never restored (`DEC-31`).
 - Paths are canonicalised and checked to stay inside their root before use.
-- Chat messages, file contents, tool results, Nanocoder's stderr and secrets are never written to disk or logs.
+- Chat messages, file contents, tool results and secrets are never written to disk or logs. Redacted stderr stays in memory unless the user reviews that exact captured snapshot in main and chooses an export destination.
 - The app renderer loads nothing remote and keeps its strict Content Security Policy.
 
 ## Code Style Guidelines
