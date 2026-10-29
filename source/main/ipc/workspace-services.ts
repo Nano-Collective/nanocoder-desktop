@@ -1,6 +1,10 @@
 import type {NanocoderSupervisor} from '@/main/nanocoder/supervisor-contracts';
 import type {DesktopStore} from '@/main/store/contracts';
-import type {WorkspaceRequests, WorkspaceValues} from '@/shared/ipc';
+import type {
+	SupervisorState,
+	WorkspaceRequests,
+	WorkspaceValues,
+} from '@/shared/ipc';
 
 type ServiceMethods<K extends keyof WorkspaceRequests> = {
 	[M in K]: (
@@ -43,4 +47,5 @@ export interface WorkspaceServices {
 	supervisor?: NanocoderSupervisor;
 	threads?: ThreadService;
 	diagnostics?: DiagnosticsService;
+	restartProject?: (projectId: string) => Promise<SupervisorState>;
 }

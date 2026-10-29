@@ -13,12 +13,29 @@ export function observeSupervisor(
 	current: SupervisorIndex,
 	event: ProjectEvent,
 ): SupervisorIndex {
-	if (event.type !== 'supervisor' && event.type !== 'project-removed')
+	if (
+		event.type !== 'supervisor' &&
+		event.type !== 'project-removed' &&
+		event.type !== 'project'
+	)
 		return current;
 	if (event.type === 'supervisor' && event.state.projectId !== event.projectId)
 		return current;
+	if (event.type === 'project' && event.project.id !== event.projectId)
+		return current;
 	const previous = current[event.projectId];
 	if (previous && previous.sequence >= event.sequence) return current;
+	if (event.type === 'project') {
+		const root = event.project.canonicalRoot;
+		return {
+			...current,
+			[event.projectId]: {
+				sequence: event.sequence,
+				root,
+				state: previous?.root === root ? previous.state : null,
+			},
+		};
+	}
 	const state = event.type === 'supervisor' ? event.state : null;
 	return {
 		...current,

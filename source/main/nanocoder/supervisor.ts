@@ -6,11 +6,18 @@ import {
 	type ConnectOptions,
 	type NanocoderConnection,
 	NanocoderFailure,
+	type ResumedSession,
 } from '@/main/nanocoder/acp-client';
 import {capabilityGates, describeAgent} from '@/main/nanocoder/capabilities';
+import {type SupervisorClock, systemClock} from '@/main/nanocoder/clock';
+import {
+	DiagnosticSnapshots,
+	diagnosticLine,
+} from '@/main/nanocoder/diagnostics';
 import {connectProject} from '@/main/nanocoder/open-project';
 import {PermissionBroker} from '@/main/nanocoder/permissions';
 import type {Resolution} from '@/main/nanocoder/runtime';
+import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
 import type {NanocoderSupervisor} from '@/main/nanocoder/supervisor-contracts';
 import type {TrustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
@@ -35,6 +42,22 @@ interface Entry {
 	stopping?: Promise<SupervisorState>;
 	permissions: Map<string, PermissionBroker>;
 	activeTurn?: {sessionId: string; cancelled: boolean; settled: Promise<void>};
+	cancelRetry?: () => void;
+	cancelIdle?: () => void;
+	lastActivityAt: number;
+	diagnostics: StderrRing;
+	diagnosticsTruncated: boolean;
+	stderr: StderrRing;
+	diagnosticsRetained: boolean;
+	stopVersion: number;
+	idleStopping?: boolean;
+}
+
+export interface ProjectActivity {
+	runningTurn: boolean;
+	openSessions: number;
+	preparing: boolean;
+	lastActivityAt: number;
 }
 
 interface SupervisorOptions {
@@ -44,6 +67,14 @@ interface SupervisorOptions {
 	env?: NodeJS.ProcessEnv;
 	homeDir?: string;
 	connect?: typeof connectProject;
+	clock?: SupervisorClock;
+	idleTimeoutMs?: number;
+	activity?: (projectId: string) => ProjectActivity;
+	recover?: (
+		project: ProjectInfo,
+		connection: NanocoderConnection,
+		signal: AbortSignal,
+	) => Promise<ResumedSession | void>;
 }
 
 const stopped = (projectId: string): SupervisorState => ({
@@ -66,8 +97,100 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 	private closed = false;
 	private closing?: Promise<void>;
 	private permissionCounter = 0;
+	private readonly snapshots: DiagnosticSnapshots;
 
-	constructor(private readonly options: SupervisorOptions) {}
+	constructor(private readonly options: SupervisorOptions) {
+		this.snapshots = new DiagnosticSnapshots({clock: options.clock});
+	}
+
+	private get clock(): SupervisorClock {
+		return this.options.clock ?? systemClock;
+	}
+
+	private get idleTimeoutMs(): number {
+		return this.options.idleTimeoutMs ?? 300_000;
+	}
+
+	private scheduleIdle(entry: Entry, delay = this.idleTimeoutMs): void {
+		if (
+			!this.options.activity ||
+			entry.abort.signal.aborted ||
+			entry.state.status !== 'ready'
+		)
+			return;
+		entry.cancelIdle?.();
+		entry.cancelIdle = this.clock.setTimeout(() => {
+			entry.cancelIdle = undefined;
+			if (
+				this.entries.get(entry.project.id) !== entry ||
+				entry.abort.signal.aborted ||
+				entry.state.status !== 'ready'
+			)
+				return;
+			const activity = this.options.activity?.(entry.project.id);
+			const timeout = this.idleTimeoutMs;
+			if (
+				!activity ||
+				activity.runningTurn ||
+				activity.openSessions > 0 ||
+				activity.preparing ||
+				entry.activeTurn
+			) {
+				this.scheduleIdle(entry);
+				return;
+			}
+			const remaining =
+				Math.max(entry.lastActivityAt, activity.lastActivityAt) +
+				timeout -
+				this.clock.now();
+			if (remaining > 0) this.scheduleIdle(entry, remaining);
+			else {
+				entry.idleStopping = true;
+				void this.stop(entry.project.id).catch(() => {});
+			}
+		}, delay);
+	}
+
+	private scheduleRetry(entry: Entry): void {
+		const restart = entry.state.restart;
+		if (
+			this.closed ||
+			entry.abort.signal.aborted ||
+			restart.attempt >= restart.limit
+		)
+			return;
+		const delay = 1000 * 2 ** restart.attempt;
+		entry.state.restart = {
+			...restart,
+			attempt: restart.attempt + 1,
+			nextAttemptAt: new Date(this.clock.now() + delay).toISOString(),
+		};
+		entry.cancelRetry = this.clock.setTimeout(() => {
+			entry.cancelRetry = undefined;
+			if (
+				this.entries.get(entry.project.id) !== entry ||
+				entry.abort.signal.aborted ||
+				this.closed
+			)
+				return;
+			entry.state.restart.nextAttemptAt = null;
+			const refused = () => {
+				if (
+					this.entries.get(entry.project.id) !== entry ||
+					entry.abort.signal.aborted
+				)
+					return;
+				entry.state.reason =
+					'Automatic recovery could not start. Retry when ready.';
+				this.publish(entry);
+			};
+			try {
+				void this.start(entry.project, true).catch(refused);
+			} catch {
+				refused();
+			}
+		}, delay);
+	}
 
 	subscribe(listener: (event: ProjectEvent) => void): () => void {
 		this.listeners.add(listener);
@@ -86,6 +209,15 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		return value;
 	}
 
+	announceProject(project: ProjectInfo): void {
+		this.emit({
+			type: 'project',
+			projectId: project.id,
+			sequence: this.sequence(project.id),
+			project,
+		});
+	}
+
 	private publish(entry: Entry): void {
 		this.emit({
 			type: 'supervisor',
@@ -95,7 +227,24 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		});
 	}
 
+	private retainDiagnostics(entry: Entry): void {
+		if (entry.diagnosticsRetained) return;
+		entry.diagnosticsRetained = true;
+		entry.diagnosticsTruncated ||= entry.stderr.truncated;
+		const root = redact(entry.project.canonicalRoot, this.options.homeDir);
+		for (const line of entry.stderr.lines())
+			entry.diagnostics.append(diagnosticLine(line, root));
+	}
+
 	private turn(entry: Entry, sessionId: string, event: TurnEvent): void {
+		this.turnBatch(entry, sessionId, [event]);
+	}
+
+	private turnBatch(
+		entry: Entry,
+		sessionId: string,
+		events: TurnEvent[],
+	): void {
 		const projectId = entry.project.id;
 		let sequences = this.turnSequences.get(projectId);
 		if (!sequences) {
@@ -110,7 +259,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			projectId,
 			threadId: sessionId,
 			sequence,
-			events: [event],
+			events,
 		});
 	}
 
@@ -157,7 +306,10 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		return this.start(project);
 	}
 
-	private start(project: ProjectInfo): Promise<SupervisorState> {
+	private start(
+		project: ProjectInfo,
+		recovering = false,
+	): Promise<SupervisorState> {
 		if (this.closed)
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'The desktop is shutting down');
 		if (
@@ -182,6 +334,17 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 					'Stop this project before changing its root',
 				);
 			}
+			if (existing.stopping && existing.idleStopping) {
+				const version = existing.stopVersion;
+				return existing.stopping.then(() => {
+					if (existing.stopVersion !== version)
+						throw new IpcFailure(
+							'AGENT_UNAVAILABLE',
+							'The project reopen was cancelled',
+						);
+					return this.start(project, recovering);
+				});
+			}
 			if (existing.stopping)
 				throw new IpcFailure('BUSY', 'The project is stopping');
 			return existing.starting ?? Promise.resolve(this.getState(project.id));
@@ -198,15 +361,35 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				);
 			}
 		}
+		existing?.cancelRetry?.();
+		existing?.cancelIdle?.();
+		existing?.abort.abort(
+			new NanocoderFailure('AGENT_UNAVAILABLE', 'The project process changed'),
+		);
 		const entry: Entry = {
 			project: structuredClone(project),
-			state: {...stopped(project.id), status: 'starting'},
+			state: {
+				...stopped(project.id),
+				status: 'starting',
+				restart: {
+					...(existing?.state.restart ?? stopped(project.id).restart),
+					nextAttemptAt: null,
+				},
+			},
 			abort: new AbortController(),
 			permissions: new Map(),
+			lastActivityAt: this.clock.now(),
+			diagnostics:
+				existing?.diagnostics ??
+				new StderrRing({homeDir: this.options.homeDir}),
+			diagnosticsTruncated: existing?.diagnosticsTruncated ?? false,
+			stderr: new StderrRing({homeDir: this.options.homeDir}),
+			diagnosticsRetained: false,
+			stopVersion: 0,
 		};
 		this.entries.set(project.id, entry);
 		entry.starting = Promise.resolve()
-			.then(() => this.launch(entry))
+			.then(() => this.launch(entry, recovering))
 			.finally(() => {
 				entry.starting = undefined;
 			});
@@ -214,7 +397,10 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		return entry.starting;
 	}
 
-	private async launch(entry: Entry): Promise<SupervisorState> {
+	private async launch(
+		entry: Entry,
+		recovering: boolean,
+	): Promise<SupervisorState> {
 		const {
 			project,
 			abort: {signal},
@@ -264,6 +450,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				clientInfo: this.options.clientInfo,
 				env: this.options.env,
 				homeDir: this.options.homeDir,
+				stderr: entry.stderr,
 				confirmTrust: refusal => this.options.confirmTrust(refusal, root),
 				beforeLaunch: async () => {
 					await validateRoot();
@@ -287,6 +474,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				},
 				onSessionUpdate: notification => {
 					if (signal.aborted) return;
+					entry.lastActivityAt = this.clock.now();
 					const event = toTurnEvent(notification.update);
 					if (event) this.turn(entry, notification.sessionId, event);
 				},
@@ -330,8 +518,22 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				if (negotiatedPolicy.status === 'refused') {
 					throw new NanocoderFailure('UNSUPPORTED', negotiatedPolicy.reason);
 				}
+				if (recovering && this.options.recover) {
+					const restored = await untilAborted(
+						this.options.recover(project, result, signal),
+						signal,
+					);
+					if (restored)
+						this.turnBatch(entry, restored.session.id, restored.history);
+				}
 				signal.throwIfAborted();
-				entry.state = {...entry.state, status: 'ready', reason: null};
+				entry.state = {
+					...entry.state,
+					status: 'ready',
+					reason: null,
+					restart: {...entry.state.restart, limit: 3, nextAttemptAt: null},
+				};
+				this.scheduleIdle(entry);
 				this.emit({
 					type: 'capabilities',
 					projectId: project.id,
@@ -340,7 +542,11 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				});
 				void result.exited.then(exit => {
 					if (entry.connection !== result || signal.aborted) return;
+					this.retainDiagnostics(entry);
+					entry.cancelIdle?.();
+					entry.cancelIdle = undefined;
 					entry.connection = undefined;
+					if (entry.activeTurn) entry.activeTurn.cancelled = true;
 					for (const broker of entry.permissions.values()) broker.cancelAll();
 					entry.state = {
 						...entry.state,
@@ -350,11 +556,13 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 						reason:
 							'Nanocoder stopped. Start the project again when you are ready.',
 					};
+					this.scheduleRetry(entry);
 					this.publish(entry);
 				});
 			}
 		} catch (error) {
 			await entry.connection?.close();
+			this.retainDiagnostics(entry);
 			entry.connection = undefined;
 			if (!signal.aborted) {
 				entry.state = {
@@ -385,6 +593,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		const connection = this.getConnection(projectId);
 		const entry = this.entries.get(projectId);
 		if (!entry) throw new IpcFailure('AGENT_UNAVAILABLE', 'No project is open');
+		entry.lastActivityAt = this.clock.now();
 		if (entry.activeTurn)
 			throw new IpcFailure(
 				'BUSY',
@@ -408,6 +617,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		} finally {
 			if (entry.activeTurn === turn) {
 				entry.activeTurn = undefined;
+				entry.lastActivityAt = this.clock.now();
 				entry.state.activeThreadId = null;
 				if (!entry.abort.signal.aborted) this.publish(entry);
 			}
@@ -446,7 +656,13 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 	stop(projectId: string): Promise<SupervisorState> {
 		const entry = this.entries.get(projectId);
 		if (!entry) return Promise.resolve(stopped(projectId));
+		entry.stopVersion++;
 		if (entry.stopping) return entry.stopping;
+		entry.cancelRetry?.();
+		entry.cancelRetry = undefined;
+		entry.cancelIdle?.();
+		entry.cancelIdle = undefined;
+		entry.state.restart.nextAttemptAt = null;
 		entry.state = {...entry.state, status: 'stopping', reason: null};
 		entry.stopping = Promise.resolve()
 			.then(async () => {
@@ -454,6 +670,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 					Promise.resolve().then(() => entry.connection?.close()),
 					entry.starting,
 				]);
+				this.retainDiagnostics(entry);
 				entry.connection = undefined;
 				entry.permissions.clear();
 				entry.activeTurn = undefined;
@@ -469,6 +686,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			})
 			.finally(() => {
 				entry.stopping = undefined;
+				entry.idleStopping = false;
 			});
 		for (const broker of entry.permissions.values()) broker.cancelAll();
 		entry.abort.abort(
@@ -478,18 +696,49 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		return entry.stopping;
 	}
 
-	restart(_project: ProjectInfo): Promise<SupervisorState> {
-		throw new IpcFailure(
-			'UNAVAILABLE',
-			'Process recovery is not available yet',
+	async restart(project: ProjectInfo): Promise<SupervisorState> {
+		const entry = this.entries.get(project.id);
+		if (
+			!entry ||
+			entry.project.canonicalRoot !== project.canonicalRoot ||
+			entry.project.sessionCwd !== project.sessionCwd
+		) {
+			throw new IpcFailure('NOT_FOUND', 'The project process is not available');
+		}
+		await this.stop(project.id);
+		entry.state.restart = {attempt: 0, limit: 0, nextAttemptAt: null};
+		return this.start(entry.project, true);
+	}
+
+	getDiagnostics(projectId: string): DiagnosticsSnapshot {
+		const entry = this.entries.get(projectId);
+		if (!entry) throw new IpcFailure('NOT_FOUND', 'Project not found');
+		const ring = new StderrRing({homeDir: this.options.homeDir});
+		for (const line of [
+			...entry.diagnostics.lines(),
+			...(entry.diagnosticsRetained ? [] : entry.stderr.lines()),
+		])
+			ring.append(
+				diagnosticLine(
+					line,
+					redact(entry.project.canonicalRoot, this.options.homeDir),
+				),
+			);
+		return this.snapshots.capture(
+			projectId,
+			ring.lines(),
+			ring.truncated ||
+				entry.diagnosticsTruncated ||
+				entry.diagnostics.truncated ||
+				entry.stderr.truncated,
 		);
 	}
 
-	getDiagnostics(_projectId: string): DiagnosticsSnapshot {
-		throw new IpcFailure(
-			'UNAVAILABLE',
-			'The diagnostics view is not available yet',
-		);
+	getCapturedDiagnostics(
+		projectId: string,
+		snapshotId: string,
+	): DiagnosticsSnapshot {
+		return this.snapshots.get(projectId, snapshotId);
 	}
 
 	close(): Promise<void> {

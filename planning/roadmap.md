@@ -293,15 +293,15 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 **Build**
 
 - [x] One process per project, started at the canonical root ([`supervisor.spec.ts`](../source/main/nanocoder/supervisor.spec.ts), concurrent turns and event isolation in [`connect.e2e.ts`](../e2e/connect.e2e.ts))
-- [ ] Exit detection, limited restart with backoff (`ACP-17`)
-- [ ] Idle shutdown that closes sessions first (`ACP-08`, `ACP-23`)
-- [ ] Diagnostics view over the stderr ring, export only after review (`SEC-08`)
+- [x] Exit detection, limited restart with backoff (`ACP-17`) ([`supervisor-recovery.spec.ts`](../source/main/nanocoder/supervisor-recovery.spec.ts))
+- [x] Idle shutdown that closes sessions first (`ACP-08`, `ACP-23`) ([`supervisor-recovery.spec.ts`](../source/main/nanocoder/supervisor-recovery.spec.ts))
+- [x] Diagnostics view over the stderr ring, export only after review (`SEC-08`) ([`diagnostics-export.spec.ts`](../source/main/nanocoder/diagnostics-export.spec.ts), [`supervisor-recovery.e2e.ts`](../e2e/supervisor-recovery.e2e.ts))
 
 **Results we want**
 
-- [ ] Killing Nanocoder marks the running thread Failed and offers retry
-- [ ] A crash loop stops after the retry limit and waits for the user
-- [ ] Exported diagnostics contain no keys or tokens (`SEC-07`)
+- [x] Killing Nanocoder marks the running thread Failed and offers retry ([`supervisor-recovery.e2e.ts`](../e2e/supervisor-recovery.e2e.ts))
+- [x] A crash loop stops after the retry limit and waits for the user ([`supervisor-recovery.spec.ts`](../source/main/nanocoder/supervisor-recovery.spec.ts), [`supervisor-recovery.e2e.ts`](../e2e/supervisor-recovery.e2e.ts))
+- [x] Exported diagnostics contain no keys or tokens (`SEC-07`) ([`stderr-ring.spec.ts`](../source/main/nanocoder/stderr-ring.spec.ts), [`stderr-security.spec.ts`](../source/main/nanocoder/stderr-security.spec.ts))
 
 ### Phase 1.4: capability gates and version policy
 

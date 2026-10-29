@@ -768,7 +768,7 @@ test('shutdown cancels waiting approvals and closes every project before returni
 	t.is(supervisor.close(), supervisor.close());
 });
 
-test('exit is reported without restart and subscription/state copies stay isolated', async t => {
+test('exit is reported and subscription/state copies stay isolated', async t => {
 	const supervisor = make();
 	t.teardown(() => supervisor.close());
 	const chosen = project('die-in-turn');
@@ -795,8 +795,9 @@ test('exit is reported without restart and subscription/state copies stay isolat
 	t.is(updates, before);
 	t.is(supervisor.getState('unknown').status, 'stopped');
 	t.is((await supervisor.stop('unknown')).status, 'stopped');
-	t.throws(() => supervisor.restart(chosen), {instanceOf: IpcFailure});
-	t.throws(() => supervisor.getDiagnostics(chosen.id), {
+	t.is((await supervisor.restart(chosen)).status, 'ready');
+	t.is(supervisor.getDiagnostics(chosen.id).projectId, chosen.id);
+	t.throws(() => supervisor.getDiagnostics('unknown'), {
 		instanceOf: IpcFailure,
 	});
 	t.throws(() => supervisor.getCapabilityGates('unknown'), {
