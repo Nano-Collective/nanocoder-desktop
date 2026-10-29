@@ -1,3 +1,4 @@
+import {writeFile} from 'node:fs/promises';
 import {homedir} from 'node:os';
 import {
 	app,
@@ -14,6 +15,7 @@ import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {disposeDesktop} from '@/main/lifecycle';
 import {untilAborted} from '@/main/nanocoder/abort';
 import {NanocoderFailure} from '@/main/nanocoder/acp-client';
+import {DiagnosticsExporter} from '@/main/nanocoder/diagnostics';
 import {resolveNanocoder} from '@/main/nanocoder/runtime';
 import {createLookup} from '@/main/nanocoder/runtime-lookup';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
@@ -28,6 +30,7 @@ import {
 	CHANNELS,
 	type ConnectResult,
 	type NanocoderRuntime,
+	type ProjectInfo,
 	type SessionInfo,
 	type TurnEvent,
 	type TurnResult,
@@ -151,21 +154,7 @@ async function connect(): Promise<ConnectResult> {
 			signal,
 		);
 		if (opened.status !== 'opened') return opened;
-		const project = opened.project;
-		const connection = currentSupervisor.getConnection(project.id);
-		const prepared = await untilAborted(
-			sessions.prepare(project, signal),
-			signal,
-		);
-		signal.throwIfAborted();
-		if (currentSupervisor.getConnection(project.id) !== connection)
-			throw new IpcFailure(
-				'AGENT_UNAVAILABLE',
-				'The project process changed while connecting',
-			);
-		session = prepared;
-		currentSupervisor.replayState(project.id);
-		return {status: 'connected', agent: connection.agent, session};
+		return await prepareProject(opened.project, signal);
 	} catch (error) {
 		if (error instanceof NanocoderFailure)
 			throw new IpcFailure(error.code, error.message);
@@ -174,6 +163,33 @@ async function connect(): Promise<ConnectResult> {
 		if (connecting === attempt) connecting = undefined;
 		settle();
 	}
+}
+
+async function prepareProject(
+	project: ProjectInfo,
+	signal: AbortSignal,
+): Promise<ConnectResult> {
+	const currentSupervisor = supervisor;
+	const sessions = technicalSessions;
+	if (!currentSupervisor || !sessions)
+		throw new IpcFailure('AGENT_UNAVAILABLE', 'The desktop cannot connect now');
+	const connection = currentSupervisor.getConnection(project.id);
+	const prepared = await untilAborted(
+		sessions.prepare(project, signal),
+		signal,
+	);
+	signal.throwIfAborted();
+	if (
+		activeProjectId !== project.id ||
+		currentSupervisor.getConnection(project.id) !== connection
+	)
+		throw new IpcFailure(
+			'AGENT_UNAVAILABLE',
+			'The project process changed while connecting',
+		);
+	session = prepared;
+	currentSupervisor.replayState(project.id);
+	return {status: 'connected', agent: connection.agent, session};
 }
 
 async function sendPrompt({text}: {text: string}): Promise<TurnResult> {
@@ -280,10 +296,98 @@ export function registerIpcHandlers(
 				},
 				homeDir: homedir(),
 				confirmTrust,
+				activity: projectId =>
+					technicalSessions?.activity(projectId) ?? {
+						runningTurn: false,
+						openSessions: 0,
+						preparing: false,
+						lastActivityAt: 0,
+					},
+				recover: async (project, connection, signal) => {
+					return technicalSessions?.restore(project, connection, signal);
+				},
 			});
 	workspaceServices = {
 		...services,
 		supervisor: services.supervisor ?? supervisor,
+		restartProject:
+			services.restartProject ??
+			(supervisor
+				? async projectId => {
+						const chosen = workspaceServices.store?.projects.get(projectId);
+						if (!chosen || !supervisor)
+							throw new IpcFailure('NOT_FOUND', 'Project not found');
+						if (connecting)
+							throw new IpcFailure(
+								'BUSY',
+								'Already connecting to Nanocoder',
+								true,
+							);
+						const {signal} = rendererAttachment;
+						const state = await untilAborted(
+							supervisor.restart(chosen),
+							signal,
+						);
+						if (
+							state.status === 'ready' &&
+							activeProjectId === projectId &&
+							!session &&
+							workspaceServices.projects
+						) {
+							const opened = await untilAborted(
+								Promise.resolve(
+									workspaceServices.projects.openProject({projectId}),
+								),
+								signal,
+							);
+							if (opened.status === 'opened') {
+								try {
+									await prepareProject(opened.project, signal);
+								} catch (error) {
+									if (error instanceof NanocoderFailure)
+										throw new IpcFailure(error.code, error.message);
+									throw error;
+								}
+							}
+						}
+						return supervisor.getState(projectId);
+					}
+				: undefined),
+		diagnostics:
+			services.diagnostics ??
+			(supervisor
+				? new DiagnosticsExporter({
+						read: (projectId, snapshotId) => {
+							if (!supervisor)
+								throw new IpcFailure('NOT_FOUND', 'Project not found');
+							return supervisor.getCapturedDiagnostics(projectId, snapshotId);
+						},
+						review: async snapshot => {
+							const {response} = await dialog.showMessageBox({
+								type: 'question',
+								title: 'Review redacted diagnostics',
+								message: 'Review these diagnostics before exporting',
+								detail:
+									snapshot.lines.join('\n') || 'No diagnostics were captured.',
+								buttons: ['Choose destination', 'Cancel'],
+								defaultId: 1,
+								cancelId: 1,
+								noLink: true,
+							});
+							return response === 0;
+						},
+						chooseDestination: async () => {
+							const chosen = await dialog.showSaveDialog({
+								title: 'Export redacted diagnostics',
+								defaultPath: 'nanocoder-diagnostics.txt',
+								filters: [{name: 'Text', extensions: ['txt']}],
+							});
+							return chosen.canceled ? undefined : chosen.filePath;
+						},
+						write: (destination, contents) =>
+							writeFile(destination, contents, {mode: 0o600, flag: 'wx'}),
+					})
+				: undefined),
 		projects:
 			services.projects ??
 			(services.store && supervisor
@@ -292,6 +396,13 @@ export function registerIpcHandlers(
 						chooseRoot: chooseProjectRoot,
 						supervisor,
 						signal: () => rendererAttachment.signal,
+						announceProject: project => {
+							if (activeProjectId !== project.id) {
+								activeProjectId = project.id;
+								session = undefined;
+							}
+							supervisor?.announceProject(project);
+						},
 					})
 				: undefined),
 	};

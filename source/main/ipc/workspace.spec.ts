@@ -1,5 +1,9 @@
 import test from 'ava';
-import {handleRequest, type Sender} from '@/main/ipc/handle-request';
+import {
+	handleRequest,
+	IpcFailure,
+	type Sender,
+} from '@/main/ipc/handle-request';
 import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
 import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {APP_ORIGIN} from '@/main/security';
@@ -7,6 +11,7 @@ import {
 	CHANNELS,
 	type IpcResult,
 	type ProjectInfo,
+	type SupervisorState,
 	type WorkspaceMethod,
 	type WorkspaceRequests,
 } from '@/shared/ipc';
@@ -284,4 +289,49 @@ test('start and restart refuse missing or untrusted projects without launching a
 		}
 	}
 	t.is(starts, 0);
+});
+
+test('main-owned recovery refuses unknown or stale handles and renderer paths', async t => {
+	const handles = new Set([projectId]);
+	let launches = 0;
+	const state: SupervisorState = {
+		projectId,
+		status: 'ready',
+		reason: null,
+		runtime: null,
+		agent: null,
+		gates: null,
+		activeThreadId: null,
+		exit: null,
+		restart: {attempt: 0, limit: 3, nextAttemptAt: null},
+	};
+	const request = registered({
+		restartProject: async handle => {
+			if (!handles.has(handle))
+				throw new IpcFailure('NOT_FOUND', 'Project not found');
+			launches++;
+			return state;
+		},
+	});
+	const unknown = await request('restartProject', {projectId: threadId});
+	t.false(unknown.ok);
+	if (!unknown.ok) t.is(unknown.error.code, 'NOT_FOUND');
+	t.deepEqual(await request('restartProject', project), {
+		ok: true,
+		value: state,
+	});
+	for (const extra of [
+		{canonicalRoot: '/renderer-path'},
+		{path: '/renderer-path'},
+		{trusted: true},
+	]) {
+		const denied = await request('restartProject', {...project, ...extra});
+		t.false(denied.ok);
+		if (!denied.ok) t.is(denied.error.code, 'VALIDATION');
+	}
+	handles.clear();
+	const stale = await request('restartProject', project);
+	t.false(stale.ok);
+	if (!stale.ok) t.is(stale.error.code, 'NOT_FOUND');
+	t.is(launches, 1);
 });

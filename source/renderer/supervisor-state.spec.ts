@@ -65,6 +65,34 @@ test('ready requires the current selected supervisor and a connected agent', t =
 	);
 });
 
+test('stored project announcements seed the sequenced root without inventing readiness', t => {
+	const announced: ProjectEvent = {
+		type: 'project',
+		projectId: 'a',
+		sequence: 2,
+		project: {
+			id: 'a',
+			canonicalRoot: '/picked',
+			sessionCwd: '/picked',
+			displayName: 'picked',
+			trusted: false,
+			availability: 'available',
+			defaultMode: 'normal',
+			createdAt: '',
+			lastOpenedAt: '',
+		},
+	};
+	const selected = observeSupervisor(ready(), announced);
+	t.is(selected.a?.root, '/picked');
+	t.is(selected.a?.state, null);
+	t.is(acpBadge(selected, '/picked'), null);
+	t.is(observeSupervisor(selected, event(1)), selected);
+	t.is(
+		observeSupervisor(selected, {...announced, projectId: 'b', sequence: 3}),
+		selected,
+	);
+});
+
 test('an exit retains its root and actual code when the agent disappears', t => {
 	const current = observeSupervisor(ready(), event(2, failed()));
 	t.deepEqual(acpBadge(current, '/a'), {status: 'acp-exited', exitCode: 3});

@@ -255,7 +255,45 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			await page.setViewportSize({width, height: 900});
 			const open = page.getByRole('button', {name: 'open a project folder'});
 			const input = page.getByRole('textbox', {name: 'message'});
-			await open.focus();
+			const palette = page.getByRole('button', {
+				name: 'command palette',
+				exact: true,
+			});
+			await palette.focus();
+			await page.keyboard.press('Tab');
+			await page.keyboard.press('Shift+Tab');
+			await expect(palette).toBeFocused();
+			await expect(palette).toHaveCSS('outline-width', '2px');
+			const recent = page.getByRole('region', {name: 'recent projects'});
+			await page.keyboard.press('Tab');
+			const add = recent.getByRole('button', {
+				name: 'add project folder',
+				exact: true,
+			});
+			await expect(add).toBeFocused();
+			await expect(add).toHaveCSS('outline-width', '2px');
+			const projects = recent.getByRole('listitem');
+			expect(await projects.count()).toBeGreaterThan(0);
+			for (const project of await projects.all()) {
+				for (const name of ['open', 'locate']) {
+					await page.keyboard.press('Tab');
+					const button = project.getByRole('button', {
+						name: new RegExp(`^${name} `),
+					});
+					await expect(button).toBeFocused();
+					await expect(button).toHaveCSS('outline-width', '2px');
+				}
+			}
+			await page.keyboard.press('Tab');
+			await expect(open).toBeFocused();
+			await expect(open).toHaveCSS('outline-width', '2px');
+			await page.keyboard.press('Tab');
+			const diagnostics = page.getByRole('button', {
+				name: 'diagnostics',
+				exact: true,
+			});
+			await expect(diagnostics).toBeFocused();
+			await expect(diagnostics).toHaveCSS('outline-width', '2px');
 			await page.keyboard.press('Tab');
 			await expect(input).toBeFocused();
 			await expect(input).toHaveCSS('outline-width', '2px');
