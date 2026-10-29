@@ -30,6 +30,8 @@ interface ThreadOptions {
 		| 'answerPermission'
 		| 'subscribe'
 		| 'subscribeTitles'
+		| 'publishThread'
+		| 'publishThreadRemoved'
 		| 'stop'
 	>;
 	now?(): Date;
@@ -54,6 +56,14 @@ export function createThreadService(
 	const pending = new Map<string, string>();
 	const mutations = new Set<string>();
 	const now = () => (options.now?.() ?? new Date()).toISOString();
+	const publishThread = (thread: ThreadInfo) => {
+		options.supervisor.publishThread(thread);
+		return thread;
+	};
+	const saveThread = (thread: ThreadInfo) => {
+		options.store.threads.save(thread);
+		return publishThread(thread);
+	};
 	const getProject = (projectId: string) => {
 		const project = options.store.projects.get(projectId);
 		if (!project) throw new IpcFailure('NOT_FOUND', 'Project not found');
@@ -109,13 +119,20 @@ export function createThreadService(
 			...options.store.threads.list(change.projectId, 'active'),
 			...options.store.threads.list(change.projectId, 'archived'),
 		].find(thread => thread.nanocoderSessionId === change.sessionId);
-		if (thread)
-			options.store.threads.setTitle({
-				projectId: thread.projectId,
-				threadId: thread.id,
-				title: change.title,
-				manuallySet: false,
-			});
+		if (
+			thread &&
+			thread.title !== change.title &&
+			options.store.threads.getTitleManuallySet(thread.projectId, thread.id) ===
+				false
+		)
+			publishThread(
+				options.store.threads.setTitle({
+					projectId: thread.projectId,
+					threadId: thread.id,
+					title: change.title,
+					manuallySet: false,
+				}),
+			);
 	});
 	const validateProject = async (thread: ThreadInfo) => {
 		const project = getProject(thread.projectId);
@@ -150,6 +167,10 @@ export function createThreadService(
 				ui.activeThreadId === request.threadId ? null : ui.activeThreadId,
 			openThreadIds: ui.openThreadIds.filter(id => id !== request.threadId),
 		});
+		options.supervisor.publishThreadRemoved(
+			request.projectId,
+			request.threadId,
+		);
 	};
 	const failure = (error: unknown): never => {
 		if (error instanceof IpcFailure) throw error;
@@ -188,7 +209,7 @@ export function createThreadService(
 		await validateProject(current);
 		if (options.supervisor.getConnection(project.id) !== connection)
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'The project process changed');
-		options.store.threads.save({
+		saveThread({
 			...current,
 			mode: restored.session.mode,
 			runState: 'ready',
@@ -207,7 +228,7 @@ export function createThreadService(
 				: error instanceof IpcFailure || error instanceof NanocoderFailure
 					? error.message
 					: 'Nanocoder could not resume this thread';
-		options.store.threads.save({
+		saveThread({
 			...getThread(request),
 			runState: 'view-only',
 			viewOnlyReason: reason,
@@ -236,7 +257,7 @@ export function createThreadService(
 				mode: project.defaultMode,
 				viewOnlyReason: null,
 			};
-			options.store.threads.save(thread);
+			saveThread(thread);
 			select({projectId, threadId: thread.id});
 			return thread;
 		},
@@ -282,7 +303,8 @@ export function createThreadService(
 			const thread = getThread(request);
 			assertMutable(thread);
 			const sessionId = thread.nanocoderSessionId;
-			if (!sessionId) return options.store.threads.setTitle(patch);
+			if (!sessionId)
+				return publishThread(options.store.threads.setTitle(patch));
 			const project = getProject(thread.projectId);
 			const unchanged = () => {
 				const current = getThread(request);
@@ -312,7 +334,7 @@ export function createThreadService(
 						'AGENT_UNAVAILABLE',
 						'The project process changed',
 					);
-				return options.store.threads.setTitle({...patch, title});
+				return publishThread(options.store.threads.setTitle({...patch, title}));
 			} catch (error) {
 				return failure(error);
 			} finally {
@@ -326,7 +348,7 @@ export function createThreadService(
 				...previous,
 				archiveState: request.archived ? 'archived' : 'active',
 			} satisfies ThreadInfo;
-			options.store.threads.save(thread);
+			saveThread(thread);
 			return thread;
 		},
 		removeThread: async request => {
@@ -420,7 +442,7 @@ export function createThreadService(
 							nanocoderSessionId: session.id,
 							mode: session.mode,
 						};
-						options.store.threads.save(thread);
+						saveThread(thread);
 						prepared.set(thread.id, connection);
 					} catch (error) {
 						await options.supervisor.stop(project.id).catch(() => undefined);
@@ -456,14 +478,14 @@ export function createThreadService(
 					runState: 'running',
 					lastActivityAt: now(),
 				};
-				options.store.threads.save(thread);
+				saveThread(thread);
 				append(thread, [{type: 'user', text: request.text}]);
 				const result = await options.supervisor.prompt(
 					project.id,
 					sessionId,
 					request.text,
 				);
-				options.store.threads.save({
+				saveThread({
 					...getThread(request),
 					runState: 'ready',
 					lastActivityAt: now(),

@@ -1286,3 +1286,101 @@ test('project thread and supervisor metadata share one scoped sequence and clone
 	);
 	t.is(thread.title, 'fixture thread');
 });
+
+test('thread metadata operations publish stored changes and a distinct removal event (CHAT-03, CHAT-12, CHAT-13, CHAT-14)', async t => {
+	const {project, service, supervisor, calls} = await fixture(t);
+	const events: ProjectEvent[] = [];
+	supervisor.subscribe(event => events.push(event));
+	const created = await service.createThread({projectId: project.id});
+	const target = {projectId: project.id, threadId: created.id};
+	const renamed = await service.renameThread({
+		...target,
+		title: 'fixture renamed',
+	});
+	const archived = await service.archiveThread({...target, archived: true});
+	await service.removeThread(target);
+	t.deepEqual(
+		events.flatMap(event => (event.type === 'thread' ? [event.thread] : [])),
+		[created, renamed, archived],
+	);
+	t.deepEqual(
+		events.map(event => event.type),
+		['thread', 'thread', 'thread', 'thread-removed'],
+	);
+	t.deepEqual(
+		events.map(event => event.sequence),
+		[1, 2, 3, 4],
+	);
+	t.like(events[3], {...target, type: 'thread-removed'});
+	t.deepEqual(calls, []);
+});
+
+test('session prompt and title metadata publish in order before user content and ignore manual overrides (CHAT-04, CHAT-12)', async t => {
+	const order: string[] = [];
+	const {project, service, supervisor, notifyTitle} = await fixture(
+		t,
+		true,
+		event => {
+			if (
+				event.type === 'turn' &&
+				event.events.some(item => item.type === 'user')
+			)
+				order.push('user');
+		},
+	);
+	const metadata: ThreadInfo[] = [];
+	supervisor.subscribe(event => {
+		if (event.type === 'thread') {
+			metadata.push(event.thread);
+			order.push(`${event.thread.runState}:${event.thread.nanocoderSessionId}`);
+		}
+	});
+	const created = await service.createThread({projectId: project.id});
+	writeFileSync(
+		path.join(project.canonicalRoot, '.fake-nanocoder'),
+		'extensions',
+	);
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	connection.prompt = async sessionId => {
+		notifyTitle(sessionId, 'fixture generated');
+		return {stopReason: 'end_turn'};
+	};
+	connection.renameSession = async (_sessionId, title) => title;
+	const target = {projectId: project.id, threadId: created.id};
+	await service.promptThread({...target, text: 'fixture prompt'});
+	t.deepEqual(
+		metadata.map(row => [row.runState, row.title, row.nanocoderSessionId]),
+		[
+			['new', 'new thread', null],
+			['new', 'new thread', 'fake-session'],
+			['running', 'fixture prompt', 'fake-session'],
+			['running', 'fixture generated', 'fake-session'],
+			['ready', 'fixture generated', 'fake-session'],
+		],
+	);
+	t.true(order.indexOf('new:fake-session') < order.indexOf('user'));
+	await service.renameThread({...target, title: 'fixture manual'});
+	t.is(metadata.at(-1)?.title, 'fixture manual');
+	t.is(metadata.length, 6);
+	notifyTitle('fake-session', 'late generated');
+	t.is(metadata.length, 6);
+});
+
+test('missing-history view-only state is published without changing thread identity (CHAT-04)', async t => {
+	const {project, service, store, supervisor} = await fixture(t, true);
+	const thread = seed(project);
+	store.threads.save(thread);
+	const events: ProjectEvent[] = [];
+	supervisor.subscribe(event => events.push(event));
+	const snapshot = await service.openThread({
+		projectId: project.id,
+		threadId: thread.id,
+	});
+	t.deepEqual(
+		events.flatMap(event => (event.type === 'thread' ? [event.thread] : [])),
+		[snapshot.thread],
+	);
+	t.is(snapshot.thread.nanocoderSessionId, thread.nanocoderSessionId);
+	t.is(snapshot.thread.runState, 'view-only');
+});
