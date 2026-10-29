@@ -125,6 +125,7 @@ export interface PermissionRequestInfo {
 	id: string;
 	title: string;
 	options: PermissionOptionInfo[];
+	source?: import('@/shared/subagents').SubagentPermissionSource;
 }
 
 export interface StreamCommand {
@@ -220,6 +221,8 @@ export type TurnEvent = (
 			status?: string;
 			toolKind?: string;
 			details?: StreamToolDetails;
+			delegation?: import('@/shared/subagents').SubagentDisplay;
+			approvalOnly?: true;
 	  }
 	| {type: 'permission'; request: PermissionRequestInfo}
 	| {type: 'permission-closed'; id: string}

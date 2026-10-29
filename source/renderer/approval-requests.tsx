@@ -109,7 +109,7 @@ function PermissionCard({
 				role="alertdialog"
 				aria-modal="false"
 				aria-labelledby={`${id}-title`}
-				aria-describedby={`${id}-command ${id}-effect`}
+				aria-describedby={`${id}-command ${id}-effect${request.source ? ` ${id}-source` : ''}`}
 				tabIndex={-1}
 				onKeyDown={event => {
 					if (
@@ -139,6 +139,12 @@ function PermissionCard({
 				<p id={`${id}-effect`} className="approval-effect">
 					your choice is sent to Nanocoder; nothing is selected by default
 				</p>
+				{request.source?.kind === 'subagent' && (
+					<p id={`${id}-source`} className="approval-effect">
+						subagent approval · parent run not reported; an approved tool may
+						still fail afterwards
+					</p>
+				)}
 				<div className="gate-actions approval-key-hints">
 					{request.options.map((option, index) => {
 						const allow = option.kind.startsWith('allow');

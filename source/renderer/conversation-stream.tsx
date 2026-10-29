@@ -1,6 +1,11 @@
 import * as React from 'react';
 import {AgentMarkdown} from '@/renderer/agent-markdown';
-import type {Transcript, TranscriptItem} from '@/renderer/transcript';
+import {SubagentRunCard} from '@/renderer/subagent-run-card';
+import {
+	currentTurnStart,
+	type Transcript,
+	type TranscriptItem,
+} from '@/renderer/transcript';
 import type {StreamMetadata, StreamToolDetails} from '@/shared/ipc';
 
 function ReportedMetadata({metadata}: {metadata?: StreamMetadata}) {
@@ -80,9 +85,17 @@ function ToolDetails({details}: {details: StreamToolDetails}) {
 const StreamRow = React.memo(function StreamRow({
 	item,
 	streaming,
+	active,
+	stopping,
+	onStopTurn,
+	outcome,
 }: {
 	item: TranscriptItem;
 	streaming: boolean;
+	active: boolean;
+	stopping: boolean;
+	onStopTurn?: () => void;
+	outcome?: 'completed' | 'failed' | 'cancelled';
 }) {
 	let content: React.ReactNode;
 	switch (item.kind) {
@@ -135,6 +148,22 @@ const StreamRow = React.memo(function StreamRow({
 			);
 			break;
 		case 'tool': {
+			if (item.delegation) {
+				content = (
+					<SubagentRunCard
+						title={item.title}
+						role={item.delegation.role}
+						task={item.delegation.task}
+						status={item.status}
+						history={item.delegation.history}
+						running={active}
+						stopping={stopping}
+						outcome={item.turnOutcome ?? outcome}
+						onStopTurn={onStopTurn}
+					/>
+				);
+				break;
+			}
 			const summary = (
 				<>
 					<span
@@ -144,7 +173,9 @@ const StreamRow = React.memo(function StreamRow({
 						{glyph(item.status)}{' '}
 					</span>
 					tool <code className="stream-tool-name">{item.title}</code>:{' '}
-					{item.status.replaceAll('_', ' ')}
+					{item.approvalOnly && item.status === 'completed'
+						? 'approved · execution result not reported'
+						: item.status.replaceAll('_', ' ')}
 				</>
 			);
 			const details = item.details;
@@ -219,11 +250,11 @@ const StreamRow = React.memo(function StreamRow({
 			break;
 		case 'subagent':
 			content = (
-				<>
-					<span aria-hidden="true">⌗ </span>subagent: {item.title || 'untitled'}{' '}
-					· {item.state?.replaceAll('_', ' ') || 'state not reported'}
-					{item.description && <p>{item.description}</p>}
-				</>
+				<SubagentRunCard
+					title={item.title}
+					task={item.description}
+					status={item.state}
+				/>
 			);
 			break;
 		case 'session-message':
@@ -251,11 +282,43 @@ export function ConversationStream({
 	transcript,
 	running,
 	children,
+	onStopTurn,
+	stopping = false,
+	outcome,
 }: {
 	transcript: Transcript;
 	running: boolean;
 	children?: React.ReactNode;
+	onStopTurn?: () => Promise<void>;
+	stopping?: boolean;
+	outcome?: 'completed' | 'failed' | 'cancelled';
 }) {
+	const stop = React.useRef(onStopTurn);
+	const pending = React.useRef(false);
+	const [localStopping, setLocalStopping] = React.useState(false);
+	const [stopError, setStopError] = React.useState('');
+	React.useEffect(() => {
+		stop.current = onStopTurn;
+	}, [onStopTurn]);
+	const stopTurn = React.useCallback(() => {
+		const action = stop.current;
+		if (pending.current || !action) return;
+		pending.current = true;
+		setLocalStopping(true);
+		setStopError('');
+		void (async () => {
+			try {
+				await action();
+			} catch {
+				setStopError('could not stop the turn. try again.');
+			} finally {
+				pending.current = false;
+				setLocalStopping(false);
+			}
+		})();
+	}, []);
+	const turnStart = currentTurnStart(transcript.items);
+	const keyOccurrences = new Map<string, number>();
 	const context = transcript.context;
 	const percentage = context
 		? Math.min(
@@ -266,24 +329,33 @@ export function ConversationStream({
 	return (
 		<section className="conversation-stream">
 			<ol className="gate-transcript" aria-label="conversation">
-				{transcript.items.map((item, index) => (
-					<StreamRow
-						key={
-							'id' in item
-								? `${item.kind}:${item.id}`
-								: 'messageId' in item && item.messageId
-									? `${item.kind}:${item.messageId}:${index}`
-									: `${item.kind}:${index}`
-						}
-						item={item}
-						streaming={
-							running &&
-							item.kind === 'agent' &&
-							index === transcript.items.length - 1
-						}
-					/>
-				))}
+				{transcript.items.map((item, index) => {
+					const base =
+						'id' in item
+							? `${item.kind}:${item.id}`
+							: 'messageId' in item && item.messageId
+								? `${item.kind}:${item.messageId}:${index}`
+								: `${item.kind}:${index}`;
+					const occurrence = keyOccurrences.get(base) ?? 0;
+					keyOccurrences.set(base, occurrence + 1);
+					return (
+						<StreamRow
+							key={`${base}:${occurrence}`}
+							item={item}
+							active={running && index > turnStart}
+							outcome={index > turnStart ? outcome : undefined}
+							stopping={stopping || localStopping}
+							onStopTurn={onStopTurn ? stopTurn : undefined}
+							streaming={
+								running &&
+								item.kind === 'agent' &&
+								index === transcript.items.length - 1
+							}
+						/>
+					);
+				})}
 			</ol>
+			{stopError && <p role="alert">{stopError}</p>}
 			{transcript.mode && (
 				<p className="stream-session">reported mode: {transcript.mode}</p>
 			)}
