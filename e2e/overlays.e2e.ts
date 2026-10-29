@@ -299,6 +299,44 @@ test('palette adds opens and locates projects through the existing project contr
 	).toContainText(moved);
 });
 
+test('keyboard selection stays visible when recent projects overflow the palette', async () => {
+	const page = await app.firstWindow();
+	for (let index = 0; index < 12; index++) {
+		const folder = path.join(work, `scroll-project-${index}`);
+		mkdirSync(folder);
+		await app.evaluate(({dialog}, folder) => {
+			dialog.showOpenDialog = (async () => ({
+				canceled: false,
+				filePaths: [folder],
+			})) as typeof dialog.showOpenDialog;
+		}, folder);
+		await page.evaluate(() =>
+			(window as unknown as {desktop: DesktopApi}).desktop.addProject({}),
+		);
+	}
+	await page.reload();
+	await page.setViewportSize({width: 840, height: 700});
+	await page.getByRole('button', {name: 'command palette'}).click();
+	await page.keyboard.press('ArrowUp');
+	await expect(
+		page.getByRole('option', {name: /keyboard shortcuts/}),
+	).toHaveAttribute('aria-selected', 'true');
+	const visible = await page.evaluate(() => {
+		const option = document.querySelector(
+			'[role="option"][aria-selected="true"]',
+		);
+		const dialog = document.querySelector('dialog[open]');
+		if (!option || !dialog) return false;
+		const row = option.getBoundingClientRect();
+		const bounds = dialog.getBoundingClientRect();
+		return row.top >= bounds.top && row.bottom <= bounds.bottom;
+	});
+	expect(visible).toBe(true);
+	await expect(page.getByRole('combobox')).toBeFocused();
+	await expect(page.getByRole('combobox')).toBeInViewport({ratio: 1});
+	await page.keyboard.press('Escape');
+});
+
 test('Ctrl+K opens the palette on non-Mac platforms', async () => {
 	const page = await app.firstWindow();
 	await page.addInitScript(() => {

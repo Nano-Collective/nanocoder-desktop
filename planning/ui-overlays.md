@@ -16,6 +16,8 @@ queue. They add no IPC channels or preload capabilities.
 - The palette lists only existing actions. Unavailable actions remain visible
   with their reason and cannot run. Arrow keys include unavailable rows so their
   reasons can be read. Enter runs the selected available action.
+  With long project lists, selection scrolls into view while the search input
+  and close control stay above the scrolling results.
 - `?` opens the shortcut sheet outside text fields. Typing `?` in a message,
   command search or editable field does not open it.
 - Native modal dialogs keep the background inert. Escape closes from every

@@ -191,6 +191,13 @@ export function OverlayProvider({
 	];
 	const filtered = filterActions(commands, query);
 	const index = moveSelection(selected, 0, filtered.length);
+	const selectedId = filtered[index]?.id;
+	useLayoutEffect(() => {
+		if (kind === 'palette' && selectedId)
+			document
+				.getElementById(`palette-option-${selectedId}`)
+				?.scrollIntoView({block: 'nearest'});
+	}, [kind, selectedId]);
 	const execute = (action: PaletteAction | undefined) => {
 		if (!action || action.disabledReason) return;
 		if (action.id !== 'shortcuts') close();
