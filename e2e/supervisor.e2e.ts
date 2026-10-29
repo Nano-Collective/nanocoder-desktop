@@ -31,7 +31,7 @@ test('quit during initialize waits for the starting child to exit', async () => 
 	);
 	copyFileSync('source/main/nanocoder/fixtures/fake-nanocoder.mjs', cli);
 	const app = await electron.launch({
-		args: ['.'],
+		args: ['.', `--user-data-dir=${path.join(work, 'profile')}`],
 		env: qaEnvironment(process.env, {cliPath: cli, nodePath: process.execPath}),
 	});
 	try {
