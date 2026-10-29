@@ -11,7 +11,10 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import test, {type ExecutionContext} from 'ava';
 import {IpcFailure} from '@/main/ipc/handle-request';
-import type {ConnectOptions} from '@/main/nanocoder/acp-client';
+import {
+	type ConnectOptions,
+	NanocoderFailure,
+} from '@/main/nanocoder/acp-client';
 import {fakeEvents, fakeRuntime} from '@/main/nanocoder/fixtures/fake-project';
 import {connectProject} from '@/main/nanocoder/open-project';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
@@ -36,6 +39,9 @@ async function fixture(
 	const projectRoot = path.join(root, 'project');
 	mkdirSync(projectRoot);
 	let update: ConnectOptions['onSessionUpdate'];
+	let confirm: NonNullable<
+		Parameters<typeof createThreadService>[0]['confirmDeleteHistory']
+	> = async () => false;
 	const supervisor = new ProjectSupervisor({
 		resolveRuntime: async () => {
 			calls.push('launch');
@@ -81,6 +87,10 @@ async function fixture(
 		supervisor,
 		now: () => new Date('2026-10-30T14:00:00.000Z'),
 		onEvent,
+		confirmDeleteHistory: snapshot => {
+			calls.push('confirm-delete');
+			return confirm(snapshot);
+		},
 	});
 	return {
 		root,
@@ -89,6 +99,9 @@ async function fixture(
 		project,
 		supervisor,
 		service,
+		confirmDeletion: (callback: typeof confirm) => {
+			confirm = callback;
+		},
 		notify: (sessionId: string, text: string) => {
 			if (!update) throw new Error('No fixture connection is ready');
 			update({
@@ -483,4 +496,337 @@ test('turn completion preserves title metadata updated during the turn (CHAT-12)
 		store.threads.get(project.id, thread.id)?.title,
 		'fixture generated title',
 	);
+});
+
+test('archive and remove refuse while the thread is preparing its first session (CHAT-04, CHAT-14)', async t => {
+	const {project, service, supervisor} = await fixture(t, true);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	const entered = deferred<void>();
+	const release = deferred<void>();
+	const original = connection.newSession;
+	connection.newSession = async mode => {
+		entered.resolve();
+		await release.promise;
+		return original(mode);
+	};
+	connection.prompt = async () => ({stopReason: 'end_turn'});
+	const request = {projectId: project.id, threadId: thread.id};
+	const pending = service
+		.promptThread({...request, text: 'fixture prompt'})
+		.catch(() => undefined);
+	await entered.promise;
+	let outcomes: string[];
+	try {
+		outcomes = await Promise.all(
+			[
+				service.archiveThread({...request, archived: true}),
+				service.removeThread(request),
+			].map(work =>
+				work.then(
+					() => 'allowed',
+					(error: IpcFailure) => error.code,
+				),
+			),
+		);
+	} finally {
+		release.resolve();
+		await pending;
+	}
+	t.deepEqual(outcomes, ['BUSY', 'BUSY']);
+});
+
+test('an archived thread cannot accept a prompt (CHAT-13)', async t => {
+	const {project, service, supervisor} = await fixture(t, true);
+	const thread = await service.createThread({projectId: project.id});
+	const request = {projectId: project.id, threadId: thread.id};
+	await service.archiveThread({...request, archived: true});
+	await supervisor.ensureProcess(project);
+	let prompts = 0;
+	supervisor.getConnection(project.id).prompt = async () => {
+		prompts++;
+		return {stopReason: 'end_turn'};
+	};
+	const error = await t.throwsAsync(
+		service.promptThread({...request, text: 'fixture prompt'}),
+		{instanceOf: IpcFailure},
+	);
+	t.is((error as IpcFailure).code, 'DENIED');
+	t.is(prompts, 0);
+});
+
+test('trust revoked during session preparation prevents content and execution (CHAT-04, SEC-17)', async t => {
+	const events: ProjectEvent[] = [];
+	const {project, service, store, supervisor} = await fixture(
+		t,
+		true,
+		event => {
+			if (event.type === 'turn') events.push(event);
+		},
+	);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	const original = connection.newSession;
+	connection.newSession = async mode => {
+		const session = await original(mode);
+		store.projects.save({...project, trusted: false});
+		return session;
+	};
+	let prompts = 0;
+	connection.prompt = async () => {
+		prompts++;
+		return {stopReason: 'end_turn'};
+	};
+	const error = await t.throwsAsync(
+		service.promptThread({
+			projectId: project.id,
+			threadId: thread.id,
+			text: 'fixture prompt',
+		}),
+		{instanceOf: IpcFailure},
+	);
+	t.is((error as IpcFailure).code, 'DENIED');
+	t.is(
+		store.threads.get(project.id, thread.id)?.nanocoderSessionId,
+		'fake-session',
+	);
+	t.is(prompts, 0);
+	t.deepEqual(events, []);
+});
+
+test('failed session-ID storage stops the process before content is shown (CHAT-04, DATA-07)', async t => {
+	const events: ProjectEvent[] = [];
+	const {project, service, store, supervisor} = await fixture(
+		t,
+		true,
+		event => {
+			if (event.type === 'turn') events.push(event);
+		},
+	);
+	const thread = await service.createThread({projectId: project.id});
+	const original = store.threads.save;
+	store.threads.save = value => {
+		if (value.nanocoderSessionId)
+			throw new IpcFailure('INTERNAL', 'Fixture storage failure');
+		original(value);
+	};
+	try {
+		const error = await t.throwsAsync(
+			service.promptThread({
+				projectId: project.id,
+				threadId: thread.id,
+				text: 'fixture prompt',
+			}),
+			{instanceOf: IpcFailure},
+		);
+		t.is((error as IpcFailure).code, 'INTERNAL');
+		t.is(supervisor.getState(project.id).status, 'stopped');
+		t.is(store.threads.get(project.id, thread.id)?.nanocoderSessionId, null);
+		t.deepEqual(events, []);
+	} finally {
+		store.threads.save = original;
+	}
+});
+
+test('session ID survives the process ending immediately after session/new without showing content (CHAT-04)', async t => {
+	const events: ProjectEvent[] = [];
+	const {root, project, service, store, supervisor} = await fixture(
+		t,
+		true,
+		event => {
+			if (event.type === 'turn') events.push(event);
+		},
+	);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	const original = connection.newSession;
+	connection.newSession = async mode => {
+		const session = await original(mode);
+		await supervisor.stop(project.id);
+		return session;
+	};
+	const error = await t.throwsAsync(
+		service.promptThread({
+			projectId: project.id,
+			threadId: thread.id,
+			text: 'fixture prompt',
+		}),
+		{instanceOf: IpcFailure},
+	);
+	t.is((error as IpcFailure).code, 'AGENT_UNAVAILABLE');
+	t.is(
+		store.threads.get(project.id, thread.id)?.nanocoderSessionId,
+		'fake-session',
+	);
+	store.close();
+	const reopened = await desktopStoreFactory.open({
+		databasePath: path.join(root, 'desktop.sqlite'),
+		driver: createNodeSqliteDriver(),
+	});
+	try {
+		t.is(
+			reopened.threads.get(project.id, thread.id)?.nanocoderSessionId,
+			'fake-session',
+		);
+		t.deepEqual(events, []);
+	} finally {
+		reopened.close();
+	}
+});
+
+test('deleting history needs a separate main confirmation and cancellation starts no process (CHAT-14)', async t => {
+	const {project, service, store, calls, confirmDeletion} = await fixture(t);
+	const thread = seed(project);
+	store.threads.save(thread);
+	confirmDeletion(async snapshot => {
+		t.deepEqual(snapshot, {project, thread});
+		return false;
+	});
+	t.deepEqual(
+		await service.deleteThreadHistory({
+			projectId: project.id,
+			threadId: thread.id,
+		}),
+		{status: 'cancelled'},
+	);
+	t.deepEqual(store.threads.get(project.id, thread.id), thread);
+	t.deepEqual(calls, ['confirm-delete']);
+});
+
+test('accepted history deletion uses the saved session and removes metadata only after success (CHAT-14, DATA-07)', async t => {
+	const {project, service, store, supervisor, confirmDeletion} = await fixture(
+		t,
+		true,
+	);
+	const thread = seed(project);
+	store.threads.save(thread);
+	store.updateUiState({
+		activeProjectId: project.id,
+		activeThreadId: thread.id,
+		openThreadIds: [thread.id],
+	});
+	confirmDeletion(async () => true);
+	await supervisor.ensureProcess(project);
+	const deleted: string[] = [];
+	supervisor.getConnection(project.id).deleteSession = async sessionId => {
+		t.deepEqual(store.threads.get(project.id, thread.id), thread);
+		deleted.push(sessionId);
+	};
+	t.deepEqual(
+		await service.deleteThreadHistory({
+			projectId: project.id,
+			threadId: thread.id,
+		}),
+		{status: 'deleted'},
+	);
+	t.deepEqual(deleted, [thread.nanocoderSessionId]);
+	t.is(store.threads.get(project.id, thread.id), undefined);
+	t.is(store.getUiState().activeThreadId, null);
+	t.deepEqual(store.getUiState().openThreadIds, []);
+});
+
+test('an upstream history deletion failure preserves the desktop row (CHAT-14)', async t => {
+	const {project, service, store, supervisor, confirmDeletion} = await fixture(
+		t,
+		true,
+	);
+	const thread = seed(project);
+	store.threads.save(thread);
+	confirmDeletion(async () => true);
+	await supervisor.ensureProcess(project);
+	supervisor.getConnection(project.id).deleteSession = async () => {
+		throw new NanocoderFailure('AGENT_UNAVAILABLE', 'Fixture delete failed');
+	};
+	const error = await t.throwsAsync(
+		service.deleteThreadHistory({projectId: project.id, threadId: thread.id}),
+		{instanceOf: IpcFailure},
+	);
+	t.is((error as IpcFailure).code, 'AGENT_UNAVAILABLE');
+	t.deepEqual(store.threads.get(project.id, thread.id), thread);
+});
+
+test('history deletion refuses an unadvertised delete capability (CHAT-14)', async t => {
+	const {project, service, store, supervisor, confirmDeletion} = await fixture(
+		t,
+		true,
+	);
+	writeFileSync(
+		path.join(project.canonicalRoot, '.fake-nanocoder'),
+		'no-delete',
+	);
+	const thread = seed(project);
+	store.threads.save(thread);
+	confirmDeletion(async () => true);
+	const error = await t.throwsAsync(
+		service.deleteThreadHistory({projectId: project.id, threadId: thread.id}),
+		{instanceOf: IpcFailure},
+	);
+	t.is((error as IpcFailure).code, 'UNSUPPORTED');
+	t.deepEqual(store.threads.get(project.id, thread.id), thread);
+	const connection = supervisor.getConnection(project.id);
+	await supervisor.close();
+	t.false(
+		fakeEvents(connection.stderr.lines()).some(
+			event => event.method === 'session/delete',
+		),
+	);
+});
+
+test('a history confirmation cannot delete a changed session identity (CHAT-14)', async t => {
+	const {project, service, store, calls, confirmDeletion} = await fixture(
+		t,
+		true,
+	);
+	const thread = seed(project);
+	store.threads.save(thread);
+	const changed = {...thread, nanocoderSessionId: 'different-fixture-session'};
+	confirmDeletion(async () => {
+		store.threads.save(changed);
+		return true;
+	});
+	const error = await t.throwsAsync(
+		service.deleteThreadHistory({projectId: project.id, threadId: thread.id}),
+		{instanceOf: IpcFailure},
+	);
+	t.is((error as IpcFailure).code, 'DENIED');
+	t.deepEqual(store.threads.get(project.id, thread.id), changed);
+	t.deepEqual(calls, ['confirm-delete']);
+});
+
+test('a pending history confirmation locks its desktop row against removal (CHAT-14)', async t => {
+	const {project, service, store, confirmDeletion} = await fixture(t);
+	const thread = seed(project);
+	store.threads.save(thread);
+	const entered = deferred<void>();
+	const answer = deferred<boolean>();
+	confirmDeletion(async () => {
+		entered.resolve();
+		return answer.promise;
+	});
+	const request = {projectId: project.id, threadId: thread.id};
+	const deletion = service.deleteThreadHistory(request);
+	void deletion.catch(() => undefined);
+	const enteredOrError = await Promise.race([
+		entered.promise.then(() => 'entered'),
+		deletion.then(
+			() => 'finished',
+			() => 'failed',
+		),
+	]);
+	let removal: string;
+	try {
+		removal = await service.removeThread(request).then(
+			() => 'allowed',
+			(error: IpcFailure) => error.code,
+		);
+	} finally {
+		answer.resolve(false);
+		await deletion.catch(() => undefined);
+	}
+	t.is(enteredOrError, 'entered');
+	t.is(removal, 'BUSY');
+	t.deepEqual(store.threads.get(project.id, thread.id), thread);
 });

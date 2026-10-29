@@ -7,6 +7,7 @@ import {canonicalPath} from '@/main/paths';
 import type {DesktopStore} from '@/main/store/contracts';
 import type {
 	ProjectEvent,
+	ProjectInfo,
 	ThreadInfo,
 	ThreadRequest,
 	TurnEvent,
@@ -28,6 +29,10 @@ interface ThreadOptions {
 	>;
 	now?(): Date;
 	onEvent?(event: ProjectEvent): void;
+	confirmDeleteHistory?(snapshot: {
+		project: ProjectInfo;
+		thread: ThreadInfo;
+	}): Promise<boolean>;
 }
 
 type AsyncThreadService = {
@@ -40,7 +45,8 @@ export function createThreadService(
 	options: ThreadOptions,
 ): AsyncThreadService & {dispose(): void} {
 	const snapshots = new Map<string, {sequence: number; events: TurnEvent[]}>();
-	const pending = new Set<string>();
+	const pending = new Map<string, string>();
+	const mutations = new Set<string>();
 	const now = () => (options.now?.() ?? new Date()).toISOString();
 	const getProject = (projectId: string) => {
 		const project = options.store.projects.get(projectId);
@@ -55,6 +61,16 @@ export function createThreadService(
 		const thread = options.store.threads.get(projectId, threadId);
 		if (!thread) throw new IpcFailure('NOT_FOUND', 'Thread not found');
 		return thread;
+	};
+	const assertMutable = (thread: ThreadInfo) => {
+		const active = options.supervisor.getState(thread.projectId).activeThreadId;
+		if (
+			mutations.has(thread.id) ||
+			pending.get(thread.projectId) === thread.id ||
+			(thread.nanocoderSessionId !== null &&
+				active === thread.nanocoderSessionId)
+		)
+			throw new IpcFailure('BUSY', 'Wait for this thread to finish', true);
 	};
 	const snapshot = (request: ThreadRequest) => ({
 		thread: getThread(request),
@@ -105,6 +121,25 @@ export function createThreadService(
 		}
 		return project;
 	};
+	const removeMetadata = (request: ThreadRequest) => {
+		options.store.threads.remove(request.projectId, request.threadId);
+		snapshots.delete(request.threadId);
+		const ui = options.store.getUiState();
+		options.store.updateUiState({
+			activeThreadId:
+				ui.activeThreadId === request.threadId ? null : ui.activeThreadId,
+			openThreadIds: ui.openThreadIds.filter(id => id !== request.threadId),
+		});
+	};
+	const failure = (error: unknown): never => {
+		if (error instanceof IpcFailure) throw error;
+		if (error instanceof NanocoderFailure)
+			throw new IpcFailure(error.code, error.message);
+		throw new IpcFailure(
+			'AGENT_UNAVAILABLE',
+			'The thread request could not finish',
+		);
+	};
 	return {
 		dispose: unsubscribe,
 		listThreads: async ({projectId, archiveState}) => {
@@ -137,27 +172,78 @@ export function createThreadService(
 		getThreadSnapshot: async request => structuredClone(snapshot(request)),
 		renameThread: unavailable,
 		archiveThread: async request => {
+			const previous = getThread(request);
+			assertMutable(previous);
 			const thread = {
-				...getThread(request),
+				...previous,
 				archiveState: request.archived ? 'archived' : 'active',
 			} satisfies ThreadInfo;
 			options.store.threads.save(thread);
 			return thread;
 		},
 		removeThread: async request => {
-			getThread(request);
-			options.store.threads.remove(request.projectId, request.threadId);
-			const ui = options.store.getUiState();
-			options.store.updateUiState({
-				activeThreadId:
-					ui.activeThreadId === request.threadId ? null : ui.activeThreadId,
-				openThreadIds: ui.openThreadIds.filter(id => id !== request.threadId),
-			});
+			assertMutable(getThread(request));
+			removeMetadata(request);
 			return null;
 		},
-		deleteThreadHistory: unavailable,
+		deleteThreadHistory: async request => {
+			const thread = getThread(request);
+			assertMutable(thread);
+			const project = getProject(thread.projectId);
+			const sessionId = thread.nanocoderSessionId;
+			if (!sessionId)
+				throw new IpcFailure(
+					'UNSUPPORTED',
+					'This thread has no Nanocoder history; remove its desktop row instead',
+				);
+			const unchanged = () => {
+				const current = getThread(request);
+				const owner = getProject(thread.projectId);
+				if (
+					current.nanocoderSessionId !== sessionId ||
+					current.sessionCwd !== thread.sessionCwd ||
+					current.title !== thread.title ||
+					owner.canonicalRoot !== project.canonicalRoot ||
+					owner.sessionCwd !== project.sessionCwd
+				)
+					throw new IpcFailure(
+						'DENIED',
+						'The thread changed; confirm its history deletion again',
+					);
+				return current;
+			};
+			mutations.add(thread.id);
+			try {
+				const confirmed = await options.confirmDeleteHistory?.(
+					structuredClone({project, thread}),
+				);
+				if (confirmed !== true) return {status: 'cancelled'};
+				const owner = await validateProject(unchanged());
+				await options.supervisor.ensureProcess(owner);
+				await validateProject(unchanged());
+				const gate = options.supervisor.getCapabilityGates(owner.id).features
+					.delete;
+				if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
+				await options.supervisor
+					.getConnection(owner.id)
+					.deleteSession(sessionId);
+				unchanged();
+				removeMetadata(request);
+				return {status: 'deleted'};
+			} catch (error) {
+				return failure(error);
+			} finally {
+				mutations.delete(thread.id);
+			}
+		},
 		promptThread: async request => {
 			let thread = getThread(request);
+			assertMutable(thread);
+			if (thread.archiveState === 'archived')
+				throw new IpcFailure(
+					'DENIED',
+					'Unarchive this thread before sending a prompt',
+				);
 			if (
 				pending.has(thread.projectId) ||
 				options.supervisor.getState(thread.projectId).activeThreadId !== null
@@ -167,20 +253,36 @@ export function createThreadService(
 					'Nanocoder is already working on a turn',
 					true,
 				);
-			pending.add(thread.projectId);
+			pending.set(thread.projectId, thread.id);
 			try {
 				const project = await validateProject(thread);
 				await options.supervisor.ensureProcess(project);
+				await validateProject(getThread(request));
 				const connection = options.supervisor.getConnection(project.id);
 				if (!thread.nanocoderSessionId) {
 					const session = await connection.newSession(project.defaultMode);
-					thread = {
-						...thread,
-						nanocoderSessionId: session.id,
-						mode: session.mode,
-					};
-					options.store.threads.save(thread);
+					try {
+						thread = {
+							...getThread(request),
+							nanocoderSessionId: session.id,
+							mode: session.mode,
+						};
+						options.store.threads.save(thread);
+					} catch (error) {
+						await options.supervisor.stop(project.id).catch(() => undefined);
+						if (error instanceof IpcFailure) throw error;
+						throw new IpcFailure(
+							'INTERNAL',
+							'The session id could not be stored',
+						);
+					}
 				}
+				await validateProject(getThread(request));
+				if (options.supervisor.getConnection(project.id) !== connection)
+					throw new IpcFailure(
+						'AGENT_UNAVAILABLE',
+						'The project process changed before the prompt',
+					);
 				const sessionId = thread.nanocoderSessionId;
 				if (!sessionId)
 					throw new IpcFailure('AGENT_UNAVAILABLE', 'No session is ready');
@@ -207,13 +309,7 @@ export function createThreadService(
 				});
 				return result;
 			} catch (error) {
-				if (error instanceof IpcFailure) throw error;
-				if (error instanceof NanocoderFailure)
-					throw new IpcFailure(error.code, error.message);
-				throw new IpcFailure(
-					'AGENT_UNAVAILABLE',
-					'The thread request could not finish',
-				);
+				return failure(error);
 			} finally {
 				pending.delete(thread.projectId);
 			}
