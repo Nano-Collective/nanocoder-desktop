@@ -1,5 +1,6 @@
 import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
+import {ApprovalRequests} from '@/renderer/approval-requests';
 import {ConversationStream} from '@/renderer/conversation-stream';
 import {legacyMetadataEvent} from '@/renderer/legacy-stream';
 import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
@@ -29,7 +30,6 @@ import type {
 	ConnectResult,
 	IpcResult,
 	NanocoderRuntime,
-	PermissionRequestInfo,
 	SessionInfo,
 	TurnResult,
 } from '@/shared/ipc';
@@ -93,39 +93,6 @@ function AgentDetails({
 	);
 }
 
-function PermissionCard({
-	request,
-	onAnswer,
-}: {
-	request: PermissionRequestInfo;
-	onAnswer(id: string, optionId: string): void;
-}) {
-	return (
-		<Card variant="approval" aria-label="permission request">
-			<h2>
-				<span aria-hidden="true">▲</span> approval required
-			</h2>
-			<p>Nanocoder asks to run: {request.title}</p>
-			<div className="gate-actions">
-				{request.options.map(option => (
-					<Button
-						key={option.id}
-						variant={option.kind.startsWith('allow') ? 'allow' : 'reject'}
-						onClick={() => {
-							onAnswer(request.id, option.id);
-						}}
-					>
-						<span aria-hidden="true">
-							{option.kind.startsWith('allow') ? '✓' : '✕'}
-						</span>
-						{option.name}
-					</Button>
-				))}
-			</div>
-		</Card>
-	);
-}
-
 export function App() {
 	const [info, setInfo] = useState<AppInfo | null>(null);
 	const [runtime, setRuntime] = useState<IpcResult<NanocoderRuntime> | null>(
@@ -149,13 +116,16 @@ export function App() {
 		{},
 	);
 	const [draft, setDraft] = useState('');
-	const messageInput = useRef<HTMLInputElement>(null);
 	const [running, setRunning] = useState<Record<string, boolean>>({});
 	const [turns, setTurns] = useState<
 		Record<string, IpcResult<TurnResult> | null>
 	>({});
 	const [gates, setGates] = useState<Record<string, CapabilityGates>>({});
 	const [supervisors, setSupervisors] = useState<SupervisorIndex>({});
+	const [cancellations, setCancellations] = useState<
+		Record<string, IpcResult<null> | 'pending' | null>
+	>({});
+	const composerInput = useRef<HTMLInputElement>(null);
 	const supervisorIndex = useRef<SupervisorIndex>({});
 	const [attemptedProjectId, setAttemptedProjectId] = useState<string | null>(
 		null,
@@ -180,6 +150,7 @@ export function App() {
 	const transcript = transcripts[root] ?? emptyTranscript;
 	const sending = running[root] ?? false;
 	const turn = turns[root];
+	const cancellation = cancellations[root];
 	const selected =
 		supervisors[attemptedProjectId ?? projectControls.activeProjectId ?? ''];
 	const processState = selected?.state ?? null;
@@ -189,6 +160,17 @@ export function App() {
 		!connecting &&
 		!projectControls.pending;
 	const processBadge = acpBadge(supervisors, selected?.root ?? '');
+
+	useEffect(() => {
+		if (
+			!sending &&
+			cancellation &&
+			cancellation !== 'pending' &&
+			cancellation.ok &&
+			document.activeElement === document.body
+		)
+			composerInput.current?.focus();
+	}, [sending, cancellation]);
 
 	useEffect(() => {
 		const batcher = createStreamBatcher((root, events) =>
@@ -348,6 +330,7 @@ export function App() {
 		setDraft('');
 		setRunning(current => ({...current, [root]: true}));
 		setTurns(current => ({...current, [root]: null}));
+		setCancellations(current => ({...current, [root]: null}));
 		setTranscripts(current => ({
 			...current,
 			[root]: addUserMessage(current[root] ?? emptyTranscript, text),
@@ -373,6 +356,27 @@ export function App() {
 		setRunning(current => ({...current, [root]: false}));
 	};
 
+	const cancel = async () => {
+		if (cancellation === 'pending') return;
+		streamBatcher.current?.flush(root);
+		setCancellations(current => ({...current, [root]: 'pending'}));
+		let result: IpcResult<null>;
+		try {
+			result = await window.desktop.cancelPrompt();
+		} catch {
+			result = {
+				ok: false,
+				error: {
+					code: 'AGENT_UNAVAILABLE',
+					message: 'could not cancel the turn. try again.',
+					retryable: true,
+				},
+			};
+		}
+		streamBatcher.current?.flush(root);
+		setCancellations(current => ({...current, [root]: result}));
+	};
+
 	const shell = (
 		<AppShell
 			palette={<PaletteButton />}
@@ -393,7 +397,9 @@ export function App() {
 									? 'running'
 									: (turn && !turn.ok) || (opened && !opened.ok)
 										? 'failed'
-										: 'idle'
+										: turn?.ok && turn.value.stopReason === 'cancelled'
+											? 'interrupted'
+											: 'idle'
 						}
 					/>
 					{processBadge && <StatusBadge {...processBadge} />}
@@ -473,7 +479,7 @@ export function App() {
 						<label>
 							message
 							<input
-								ref={messageInput}
+								ref={composerInput}
 								value={draft}
 								onChange={event => setDraft(event.target.value)}
 								disabled={!accepting}
@@ -487,7 +493,7 @@ export function App() {
 							disabled={!accepting}
 							onInsert={value => {
 								setDraft(value);
-								messageInput.current?.focus();
+								composerInput.current?.focus();
 							}}
 						/>
 						<div className="gate-actions">
@@ -497,6 +503,19 @@ export function App() {
 							>
 								send
 							</Button>
+							{sending && (
+								<Button
+									variant="reject"
+									disabled={connecting || cancellation === 'pending'}
+									onClick={() => {
+										void cancel();
+									}}
+								>
+									{cancellation === 'pending'
+										? 'cancelling turn'
+										: 'cancel turn'}
+								</Button>
+							)}
 							<p id="composer-hint" className="gate-hint">
 								{!accepting
 									? 'Nanocoder is not ready. retry before sending.'
@@ -507,25 +526,36 @@ export function App() {
 											: 'ready to send'}
 							</p>
 						</div>
+						{cancellation && cancellation !== 'pending' && !cancellation.ok && (
+							<p role="alert">{cancellation.error.message}</p>
+						)}
 					</form>
 				)
 			}
 		>
 			{outcome?.status === 'connected' && (
 				<ConversationStream transcript={transcript} running={sending}>
-					{transcript.permissions.map(request => (
-						<PermissionCard
-							key={request.id}
-							request={request}
-							onAnswer={(id, optionId) => {
-								streamBatcher.current?.flush(root);
-								void window.desktop.answerPermission(id, optionId);
-							}}
-						/>
-					))}
+					<ApprovalRequests
+						key={root}
+						requests={transcript.permissions}
+						mode={outcome.session?.mode ?? 'normal'}
+						busy={sending}
+						fallbackFocus={composerInput}
+						onAnswer={(id, optionId) => {
+							streamBatcher.current?.flush(root);
+							return window.desktop.answerPermission(id, optionId);
+						}}
+					/>
 				</ConversationStream>
 			)}
-			{turn?.ok && <p role="status">turn ended: {turn.value.stopReason}</p>}
+			{turn?.ok && (
+				<p role="status">
+					{turn.value.stopReason === 'cancelled'
+						? 'turn interrupted'
+						: 'turn ended'}
+					: {turn.value.stopReason}
+				</p>
+			)}
 			{turn && !turn.ok && (
 				<Card variant="failure" role="alert">
 					<span>
@@ -554,6 +584,7 @@ export function App() {
 
 	return (
 		<OverlayProvider
+			pendingApprovalCount={transcript.permissions.length}
 			actions={[
 				...projectPalette({
 					...projectControls,

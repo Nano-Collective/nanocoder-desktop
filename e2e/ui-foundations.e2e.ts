@@ -233,6 +233,34 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	await page.getByRole('button', {name: 'send', exact: true}).click();
 	const card = page.getByRole('region', {name: 'permission request'});
 	await expect(card).toBeVisible();
+	const dialog = card.getByRole('alertdialog');
+	await expect(dialog).toBeFocused();
+	await expect(dialog).toHaveCSS('outline-width', '2px');
+	const recent = page.getByRole('region', {name: 'recent projects'});
+	const focusOrder = [
+		page.getByRole('button', {name: 'command palette', exact: true}),
+		recent.getByRole('button', {name: 'add project folder', exact: true}),
+		recent.getByRole('button', {name: 'open project', exact: true}),
+		recent.getByRole('button', {name: 'locate project', exact: true}),
+		page.getByRole('button', {name: 'open a project folder', exact: true}),
+		page.getByRole('button', {name: 'diagnostics', exact: true}),
+		card.getByRole('button', {name: 'Allow', exact: true}),
+		card.getByRole('button', {name: 'Deny', exact: true}),
+		page.getByRole('textbox', {name: 'message'}),
+		page.getByRole('button', {name: 'cancel turn', exact: true}),
+	];
+	await focusOrder[0].focus();
+	for (const [index, control] of focusOrder.entries()) {
+		if (index > 0) await page.keyboard.press('Tab');
+		await expect(control).toBeFocused();
+		await expect(control).toHaveCSS('outline-width', '2px');
+	}
+	await expect(
+		page.getByRole('button', {name: 'send', exact: true}),
+	).toBeDisabled();
+	await expect(
+		page.getByRole('textbox', {name: 'message'}),
+	).toHaveAccessibleDescription('waiting for Nanocoder to finish the turn');
 	await expect(
 		page.getByRole('status').filter({hasText: 'approval'}),
 	).toBeVisible();

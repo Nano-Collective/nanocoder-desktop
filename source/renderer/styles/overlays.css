@@ -117,6 +117,16 @@
 	pointer-events: none;
 }
 
+.overlay-approval-announcement {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
 .overlay-toast {
 	padding: var(--spacing-lg) var(--spacing-xl);
 	border: 1px solid var(--colors-stroke);

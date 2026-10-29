@@ -39,11 +39,52 @@ export function PaletteButton() {
 	);
 }
 
+function Notifications({
+	active,
+	toast,
+	error,
+	pendingApprovalCount = 0,
+}: {
+	active: boolean;
+	toast: Toast | null;
+	error: string;
+	pendingApprovalCount?: number;
+}) {
+	return (
+		<div
+			className="toast-region"
+			role="status"
+			aria-label="notification"
+			aria-live={active ? 'polite' : 'off'}
+			aria-hidden={!active}
+			aria-atomic="true"
+		>
+			<span className="overlay-approval-announcement">
+				{active && pendingApprovalCount > 0
+					? `approval required · ${pendingApprovalCount} waiting`
+					: ''}
+			</span>
+			{active && error && <p className="overlay-error">{error}</p>}
+			{active && toast && (
+				<div
+					key={toast.id}
+					className="overlay-toast"
+					data-exiting={toast.exiting}
+				>
+					<span aria-hidden="true">✓</span> {toast.message}
+				</div>
+			)}
+		</div>
+	);
+}
+
 export function OverlayProvider({
 	actions,
+	pendingApprovalCount = 0,
 	children,
 }: {
 	actions: PaletteAction[];
+	pendingApprovalCount?: number;
 	children: ReactNode;
 }) {
 	const [kind, setKind] = useState<Overlay | null>(null);
@@ -208,11 +249,6 @@ export function OverlayProvider({
 	return (
 		<OverlayContext value={{open, shortcut}}>
 			{children}
-			{themeError && (
-				<p className="overlay-error" role="alert">
-					{themeError}
-				</p>
-			)}
 			<dialog
 				ref={dialog}
 				className="overlay-dialog"
@@ -380,24 +416,14 @@ export function OverlayProvider({
 						</dl>
 					)}
 				</div>
+				<Notifications
+					active={opened}
+					toast={toast}
+					error={themeError}
+					pendingApprovalCount={pendingApprovalCount}
+				/>
 			</dialog>
-			<div
-				className="toast-region"
-				role="status"
-				aria-label="notification"
-				aria-live="polite"
-				aria-atomic="true"
-			>
-				{toast && (
-					<div
-						key={toast.id}
-						className="overlay-toast"
-						data-exiting={toast.exiting}
-					>
-						<span aria-hidden="true">✓</span> {toast.message}
-					</div>
-				)}
-			</div>
+			<Notifications active={!opened} toast={toast} error={themeError} />
 		</OverlayContext>
 	);
 }
