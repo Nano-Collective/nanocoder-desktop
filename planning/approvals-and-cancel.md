@@ -25,6 +25,8 @@ Options retain their labels and success/reject variants. Keys 1 to 9 select only
 
 One origin is retained across the request queue. Focus moves to the oldest remaining request, then returns to the original control once it is available. If that control has disappeared or remains disabled, it falls back to the composer. A busy composer is not focused until it becomes enabled. Changing project unmounts the old queue without moving focus back into it.
 
+Taking focus scrolls the whole card into view, not just its inner dialog. A token-based scroll margin keeps the border and pulse clear of the stream edge, including after earlier turns have filled the stream.
+
 Design deviation, agreed for accessibility: `.approval-key-hints .ui-key-hint` uses full-opacity muted ink rather than the design's 55% opacity. This keeps required key hints readable and avoids the known contrast conflict. `DESIGN.md` remains unchanged for the designer to resolve.
 
 ## Cancel
@@ -37,6 +39,8 @@ The temporary channel retires with `sendPrompt` and `answerPermission` when Thre
 
 ## Verification
 
-Logic and refusal work follows red, green, refactor. Main tests cover missing context, strict extra-field refusal, scoped forwarding and waiting for settlement. Built-app tests cover all offered kinds, selection-only questions, pending and non-pending cancellation, queue focus, focus return and shortcut refusals. The hand-back report records exact red/green commands and evidence.
+Logic and refusal work follows red, green, refactor. Main tests cover missing context, strict extra-field refusal, scoped forwarding and waiting for settlement. Built-app tests cover all offered kinds and exact selected IDs, selection-only questions, pending and non-pending cancellation, queue focus, focus return, shortcut refusals and repeated-turn card geometry. The hand-back report records exact red/green commands and evidence.
 
 Use fake Nanocoder only for visual QA, taking `/tmp/nc-m1-qa.lock` before the launcher. Capture both themes at 1240, 1020 and 840px, with a focused card and after answering, plus accessibility audits. Save safe captures under `.qa/wave-3/approvals/`; stop the printed launcher PID, verify port 9333 is clear, then release the lock. Known design contrast gaps remain reported, not silently changed.
+
+macOS QA recorded all twelve states, asserting `app://renderer/index.html` before each audit. Dark focused cards and every answered state had no violations. Light focused cards retained the documented title (3.88:1) and allow-label (4.35:1) contrast gaps. Full-opacity key hints measured 5.834:1 in dark and 5.295:1 in light. These known design gaps are not an AA waiver; independent security review remains required.

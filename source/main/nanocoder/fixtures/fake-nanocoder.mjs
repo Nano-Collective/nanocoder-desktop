@@ -211,6 +211,9 @@ async function runTurn(id, {sessionId}) {
 	calls.forEach((toolCallId, index) =>
 		tool(sessionId, toolCallId, {
 			status: allowed[index] ? 'completed' : 'failed',
+			...(mode === 'all-permissions' || mode === 'ask-user'
+				? {title: `selected ${answers[index].outcome.optionId}`}
+				: {}),
 		}),
 	);
 	say(

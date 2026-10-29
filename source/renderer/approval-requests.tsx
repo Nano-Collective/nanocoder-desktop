@@ -54,8 +54,13 @@ function useApprovalFocus(
 			if (
 				previous.current !== firstId ||
 				document.activeElement === document.body
-			)
-				dialogs.current.get(firstId)?.focus();
+			) {
+				const dialog = dialogs.current.get(firstId);
+				dialog?.focus({preventScroll: true});
+				dialog
+					?.closest('.ui-card--approval')
+					?.scrollIntoView({block: 'nearest'});
+			}
 		} else if (origin.current !== undefined) {
 			const target = canFocus(origin.current)
 				? origin.current

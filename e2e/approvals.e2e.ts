@@ -185,11 +185,11 @@ test('empty or modified key events never select a permission option', async () =
 });
 
 test('all offered permission kinds keep their labels and their reported outcomes', async () => {
-	for (const [choice, allowed] of [
-		['Allow once', true],
-		['Allow always', true],
-		['Reject once', false],
-		['Reject all', false],
+	for (const [choice, optionId, allowed] of [
+		['Allow once', 'allow', true],
+		['Allow always', 'allow-always', true],
+		['Reject once', 'deny', false],
+		['Reject all', 'deny-always', false],
 	] as const) {
 		await open('all-permissions');
 		await prompt();
@@ -210,6 +210,9 @@ test('all offered permission kinds keep their labels and their reported outcomes
 		await expect(page.locator('.gate-message-tool')).toContainText(
 			allowed ? 'completed' : 'failed',
 		);
+		await expect(page.locator('.gate-message-tool code')).toHaveText(
+			`selected ${optionId}`,
+		);
 		await expect(input()).toBeFocused();
 	}
 });
@@ -229,6 +232,9 @@ test('ask_user presents only Nanocoder question options and sends the selected a
 	await page.keyboard.press('2');
 	await expect(cards()).toHaveCount(0);
 	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(page.locator('.gate-message-tool code')).toHaveText(
+		'selected answer-1',
+	);
 	await expect(input()).toBeFocused();
 });
 
@@ -249,4 +255,71 @@ test('queued requests keep focus on the oldest remaining request and restore the
 	await page.keyboard.press('2');
 	await expect(cards()).toHaveCount(0);
 	await expect(origin).toBeFocused();
+});
+
+test('focused approvals stay fully visible across turns and widths in both themes', async () => {
+	await page.emulateMedia({reducedMotion: 'no-preference'});
+	await open('all-permissions');
+	for (const theme of ['dark', 'light']) {
+		for (const width of [1240, 1020, 840]) {
+			await page.setViewportSize({width, height: 900});
+			await page.evaluate(theme => {
+				document.documentElement.dataset.theme = theme;
+			}, theme);
+			await prompt();
+			await expect(dialogs()).toBeFocused();
+			await expect
+				.poll(() =>
+					page.evaluate(() =>
+						document
+							.getAnimations()
+							.filter(animation => animation instanceof CSSTransition)
+							.every(animation => animation.playState === 'finished'),
+					),
+				)
+				.toBe(true);
+			await expect(cards()).toHaveCSS('animation-name', 'approval-pulse');
+			await expect(cards()).toHaveCSS('animation-duration', '2.2s');
+			await expect(cards()).toHaveCSS(
+				'border-top-color',
+				theme === 'dark' ? 'rgb(221, 167, 60)' : 'rgb(154, 103, 0)',
+			);
+			await expect(dialogs()).toHaveCSS('outline-width', '2px');
+			for (const hint of await cards().locator('kbd').all())
+				await expect(hint).toHaveCSS('opacity', '1');
+			const geometry = await cards().evaluate(card => {
+				const rect = card.getBoundingClientRect();
+				const scroll = document
+					.querySelector('.shell-stream-scroll')
+					?.getBoundingClientRect();
+				return {
+					left: rect.left,
+					right: rect.right,
+					top: rect.top,
+					bottom: rect.bottom,
+					scrollTop: scroll?.top ?? 0,
+					scrollBottom: scroll?.bottom ?? 0,
+					overflow: document.documentElement.scrollWidth > innerWidth,
+				};
+			});
+			expect(geometry.overflow).toBe(false);
+			expect(geometry.left).toBeGreaterThanOrEqual(0);
+			expect(geometry.right).toBeLessThanOrEqual(width);
+			expect(geometry.top).toBeGreaterThanOrEqual(geometry.scrollTop);
+			expect(geometry.bottom).toBeLessThanOrEqual(geometry.scrollBottom);
+			await page.keyboard.press('4');
+			await expect(cards()).toHaveCount(0);
+			await expect(input()).toBeFocused();
+			await expect(input()).toHaveCSS('outline-width', '2px');
+			await expect(page.locator('.ui-badge--approval')).toHaveCount(0);
+		}
+	}
+	await page.emulateMedia({reducedMotion: 'reduce'});
+	await open();
+	await prompt();
+	await expect(dialogs()).toBeFocused();
+	await expect(cards()).toHaveCSS('animation-name', 'none');
+	await expect(dialogs()).toHaveCSS('transition-duration', '0s');
+	await page.keyboard.press('2');
+	await expect(input()).toBeFocused();
 });

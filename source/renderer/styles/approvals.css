@@ -9,6 +9,10 @@
 	gap: var(--spacing-xxl);
 }
 
+.approval-requests .ui-card--approval {
+	scroll-margin-block: var(--spacing-xs);
+}
+
 .approval-dialog {
 	border-radius: var(--rounded-sm);
 }
