@@ -29,6 +29,7 @@ let projectCount = 0;
 const cards = () => page.getByRole('region', {name: 'permission request'});
 const dialogs = () => page.getByRole('alertdialog');
 const input = () => page.getByRole('textbox', {name: 'message'});
+const paletteKey = process.platform === 'darwin' ? 'Meta+k' : 'Control+k';
 
 test.beforeAll(async () => {
 	mkdirSync(path.dirname(cli), {recursive: true});
@@ -322,4 +323,107 @@ test('focused approvals stay fully visible across turns and widths in both theme
 	await expect(dialogs()).toHaveCSS('transition-duration', '0s');
 	await page.keyboard.press('2');
 	await expect(input()).toBeFocused();
+});
+
+test.describe('approval and overlay focus', () => {
+	test.afterEach(async () => {
+		if (await page.locator('dialog[open]').count())
+			await page.keyboard.press('Escape');
+		if (await page.locator('.approval-dialog').count()) await cancel();
+	});
+
+	test('explicit overlays return to the exact approval control and Escape never answers', async () => {
+		await open('all-permissions');
+		await prompt();
+		await expect(dialogs()).toBeFocused();
+		const origin = cards().getByRole('button', {name: 'Allow always'});
+		await origin.focus();
+		for (const key of [paletteKey, '?']) {
+			await page.keyboard.press(key);
+			const overlay = page.locator('dialog[open]');
+			await expect(overlay).toBeVisible();
+			await expect
+				.poll(() =>
+					overlay.evaluate(dialog => dialog.contains(document.activeElement)),
+				)
+				.toBe(true);
+			if (key === paletteKey) {
+				await overlay.getByRole('combobox').fill('2');
+				await expect(page.locator('.approval-dialog')).toHaveCount(1);
+			}
+			await page.keyboard.press('Escape');
+			await expect(overlay).toHaveCount(0);
+			await expect(origin).toBeFocused();
+			await expect(cards()).toHaveCount(1);
+		}
+		await page.keyboard.press('Escape');
+		await expect(origin).toBeFocused();
+		await expect(cards()).toHaveCount(1);
+		await expect(input()).toBeDisabled();
+		await page.keyboard.press('3');
+		await expect(cards()).toHaveCount(0);
+		await expect(input()).toBeFocused();
+	});
+
+	for (const kind of ['palette', 'shortcuts'] as const) {
+		const name = kind === 'palette' ? 'command palette' : 'keyboard shortcuts';
+		const focusedControl = () =>
+			kind === 'palette'
+				? page.getByRole('combobox')
+				: page.getByRole('button', {name: 'close keyboard shortcuts'});
+
+		test(`an approval arriving during ${kind} is announced without stealing focus and takes focus after Escape`, async () => {
+			await open();
+			await input().fill('fixture approval request');
+			await input().focus();
+			await page.evaluate(kind => {
+				document
+					.querySelector<HTMLFormElement>('.gate-composer')
+					?.requestSubmit();
+				const mac = navigator.platform.startsWith('Mac');
+				document.dispatchEvent(
+					new KeyboardEvent('keydown', {
+						key: kind === 'palette' ? 'k' : '?',
+						metaKey: kind === 'palette' && mac,
+						ctrlKey: kind === 'palette' && !mac,
+						bubbles: true,
+					}),
+				);
+			}, kind);
+			await expect(page.getByRole('dialog', {name, exact: true})).toBeVisible();
+			await expect(page.locator('.approval-dialog')).toHaveCount(1);
+			await expect(focusedControl()).toBeFocused();
+			const notification = page.locator('.toast-region');
+			await expect(notification).toHaveAttribute('aria-live', 'polite');
+			await expect(notification).toContainText('approval required · 1 waiting');
+			expect(
+				await notification.evaluate(region =>
+					region.closest('dialog:modal')?.getAttribute('aria-label'),
+				),
+			).toBe(name);
+			await page.keyboard.press('Escape');
+			await expect(page.locator('dialog[open]')).toHaveCount(0);
+			await expect(dialogs()).toBeFocused();
+			await expect(cards().getByRole('button')).toHaveCount(2);
+			await page.keyboard.press('2');
+			await expect(cards()).toHaveCount(0);
+			await expect(input()).toBeFocused();
+		});
+
+		test(`cancelling approval during ${kind} defers composer focus until Escape`, async () => {
+			await open();
+			await prompt();
+			await expect(dialogs()).toBeFocused();
+			await page.keyboard.press(kind === 'palette' ? paletteKey : '?');
+			await expect(focusedControl()).toBeFocused();
+			expect(await cancel()).toEqual({ok: true, value: null});
+			await expect(page.locator('.approval-dialog')).toHaveCount(0);
+			await expect(input()).toBeEnabled();
+			await expect(focusedControl()).toBeFocused();
+			await page.keyboard.press('Escape');
+			await expect(page.locator('dialog[open]')).toHaveCount(0);
+			await expect(input()).toBeFocused();
+			await expect(page.getByText('turn interrupted: cancelled')).toBeVisible();
+		});
+	}
 });
