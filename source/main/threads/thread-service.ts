@@ -8,6 +8,7 @@ import {
 import type {ProjectSupervisor} from '@/main/nanocoder/supervisor';
 import {canonicalPath} from '@/main/paths';
 import type {DesktopStore} from '@/main/store/contracts';
+import {threadTitlePatch, validate} from '@/main/store/validation';
 import type {
 	ProjectEvent,
 	ProjectInfo,
@@ -108,7 +109,13 @@ export function createThreadService(
 			...options.store.threads.list(change.projectId, 'active'),
 			...options.store.threads.list(change.projectId, 'archived'),
 		].find(thread => thread.nanocoderSessionId === change.sessionId);
-		if (thread) options.store.threads.save({...thread, title: change.title});
+		if (thread)
+			options.store.threads.setTitle({
+				projectId: thread.projectId,
+				threadId: thread.id,
+				title: change.title,
+				manuallySet: false,
+			});
 	});
 	const validateProject = async (thread: ThreadInfo) => {
 		const project = getProject(thread.projectId);
@@ -270,7 +277,48 @@ export function createThreadService(
 			return structuredClone(snapshot(request));
 		},
 		getThreadSnapshot: async request => structuredClone(snapshot(request)),
-		renameThread: unavailable,
+		renameThread: async request => {
+			const patch = validate(threadTitlePatch, {...request, manuallySet: true});
+			const thread = getThread(request);
+			assertMutable(thread);
+			const sessionId = thread.nanocoderSessionId;
+			if (!sessionId) return options.store.threads.setTitle(patch);
+			const project = getProject(thread.projectId);
+			const unchanged = () => {
+				const current = getThread(request);
+				const owner = getProject(thread.projectId);
+				if (
+					current.nanocoderSessionId !== sessionId ||
+					current.sessionCwd !== thread.sessionCwd ||
+					owner.canonicalRoot !== project.canonicalRoot ||
+					owner.sessionCwd !== project.sessionCwd
+				)
+					throw new IpcFailure('DENIED', 'The thread session changed');
+				return current;
+			};
+			mutations.add(thread.id);
+			try {
+				const owner = await validateProject(unchanged());
+				await options.supervisor.ensureProcess(owner);
+				await validateProject(unchanged());
+				const gate = options.supervisor.getCapabilityGates(owner.id).features
+					.rename;
+				if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
+				const connection = options.supervisor.getConnection(owner.id);
+				const title = await connection.renameSession(sessionId, patch.title);
+				await validateProject(unchanged());
+				if (options.supervisor.getConnection(owner.id) !== connection)
+					throw new IpcFailure(
+						'AGENT_UNAVAILABLE',
+						'The project process changed',
+					);
+				return options.store.threads.setTitle({...patch, title});
+			} catch (error) {
+				return failure(error);
+			} finally {
+				mutations.delete(thread.id);
+			}
+		},
 		archiveThread: async request => {
 			const previous = getThread(request);
 			assertMutable(previous);
@@ -398,7 +446,11 @@ export function createThreadService(
 				thread = {
 					...thread,
 					title:
-						thread.title === 'new thread'
+						thread.title === 'new thread' &&
+						options.store.threads.getTitleManuallySet(
+							thread.projectId,
+							thread.id,
+						) === false
 							? request.text.trim().replace(/\s+/g, ' ').slice(0, 80)
 							: thread.title,
 					runState: 'running',

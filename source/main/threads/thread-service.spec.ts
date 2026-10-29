@@ -1005,3 +1005,240 @@ test('generated titles map only saved IDs in their live owning project (CHAT-12)
 		'fixture generated title',
 	);
 });
+
+test('renaming a desktop-only thread stores manual metadata without starting Nanocoder (CHAT-12)', async t => {
+	const {project, service, store, calls} = await fixture(t);
+	const thread = await service.createThread({projectId: project.id});
+	const renamed = await service.renameThread({
+		projectId: project.id,
+		threadId: thread.id,
+		title: '  fixture manual title  ',
+	});
+	t.deepEqual(renamed, {...thread, title: 'fixture manual title'});
+	t.deepEqual(store.threads.get(project.id, thread.id), renamed);
+	t.true(store.threads.getTitleManuallySet(project.id, thread.id));
+	t.deepEqual(calls, []);
+});
+
+test('a manual rename survives a first-turn process crash and a later generated title (CHAT-12)', async t => {
+	const {project, service, store, supervisor, notifyTitle, root} =
+		await fixture(t, true);
+	const thread = await service.createThread({projectId: project.id});
+	const target = {projectId: project.id, threadId: thread.id};
+	await service.renameThread({...target, title: 'fixture manual title'});
+	const modeFile = path.join(project.canonicalRoot, '.fake-nanocoder');
+	writeFileSync(modeFile, 'die-in-turn');
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	await t.throwsAsync(
+		service.promptThread({...target, text: 'fixture first turn'}),
+		{code: 'AGENT_UNAVAILABLE'},
+	);
+	t.is((await connection.exited).code, 3);
+	await supervisor.stop(project.id);
+	service.dispose();
+	store.close();
+	const reopened = await desktopStoreFactory.open({
+		databasePath: path.join(root, 'desktop.sqlite'),
+		driver: createNodeSqliteDriver(),
+	});
+	const restored = createThreadService({store: reopened, supervisor});
+	t.teardown(() => {
+		restored.dispose();
+		reopened.close();
+	});
+	t.true(reopened.threads.getTitleManuallySet(project.id, thread.id));
+	t.is(
+		reopened.threads.get(project.id, thread.id)?.title,
+		'fixture manual title',
+	);
+	writeFileSync(modeFile, 'ok');
+	await supervisor.ensureProcess(project);
+	notifyTitle('fake-session', 'late generated title');
+	const snapshot = await restored.getThreadSnapshot(target);
+	t.is(snapshot.thread.title, 'fixture manual title');
+	t.is(snapshot.thread.nanocoderSessionId, 'fake-session');
+	t.deepEqual(snapshot.events, []);
+});
+
+test('a manual title equal to the new-thread label is not replaced by first-prompt text (CHAT-12)', async t => {
+	const {project, service, supervisor} = await fixture(t, true);
+	const thread = await service.createThread({projectId: project.id});
+	const target = {projectId: project.id, threadId: thread.id};
+	await service.renameThread({...target, title: 'new thread'});
+	await supervisor.ensureProcess(project);
+	supervisor.getConnection(project.id).prompt = async () => ({
+		stopReason: 'end_turn',
+	});
+	await service.promptThread({...target, text: 'fixture first turn'});
+	t.is((await service.getThreadSnapshot(target)).thread.title, 'new thread');
+});
+
+test('renaming saved history uses its probed session and wins over generated titles (CHAT-12)', async t => {
+	const {project, service, store, supervisor, notifyTitle} = await fixture(
+		t,
+		true,
+	);
+	const thread = seed(project);
+	store.threads.save(thread);
+	writeFileSync(
+		path.join(project.canonicalRoot, '.fake-nanocoder'),
+		'extensions',
+	);
+	await supervisor.ensureProcess(project);
+	const calls: unknown[] = [];
+	supervisor.getConnection(project.id).renameSession = async (
+		sessionId,
+		title,
+	) => {
+		calls.push({sessionId, title});
+		t.false(store.threads.getTitleManuallySet(project.id, thread.id));
+		notifyTitle(sessionId, 'in-flight generated title');
+		return 'fixture renamed title';
+	};
+	const renamed = await service.renameThread({
+		projectId: project.id,
+		threadId: thread.id,
+		title: ' fixture manual title ',
+	});
+	t.deepEqual(calls, [
+		{sessionId: thread.nanocoderSessionId, title: 'fixture manual title'},
+	]);
+	t.deepEqual(renamed, {...thread, title: 'fixture renamed title'});
+	t.true(store.threads.getTitleManuallySet(project.id, thread.id));
+	notifyTitle(thread.nanocoderSessionId ?? '', 'late generated title');
+	t.deepEqual(store.threads.get(project.id, thread.id), renamed);
+});
+
+test('history rename refuses an unprobed extension without changing local metadata (CHAT-12)', async t => {
+	const {project, service, store, supervisor} = await fixture(t, true);
+	const thread = seed(project);
+	store.threads.save(thread);
+	await supervisor.ensureProcess(project);
+	let called = false;
+	supervisor.getConnection(project.id).renameSession = async () => {
+		called = true;
+		return 'unexpected title';
+	};
+	await t.throwsAsync(
+		service.renameThread({
+			projectId: project.id,
+			threadId: thread.id,
+			title: 'fixture manual title',
+		}),
+		{code: 'UNSUPPORTED'},
+	);
+	t.false(called);
+	t.deepEqual(store.threads.get(project.id, thread.id), thread);
+	t.false(store.threads.getTitleManuallySet(project.id, thread.id));
+});
+
+test('a rejected upstream rename preserves the local title and automatic flag (CHAT-12)', async t => {
+	const {project, service, store, supervisor} = await fixture(t, true);
+	const thread = seed(project);
+	store.threads.save(thread);
+	writeFileSync(
+		path.join(project.canonicalRoot, '.fake-nanocoder'),
+		'extensions',
+	);
+	await supervisor.ensureProcess(project);
+	supervisor.getConnection(project.id).renameSession = async () => {
+		throw new NanocoderFailure('AGENT_UNAVAILABLE', 'fixture rename failed');
+	};
+	await t.throwsAsync(
+		service.renameThread({
+			projectId: project.id,
+			threadId: thread.id,
+			title: 'fixture manual title',
+		}),
+		{code: 'AGENT_UNAVAILABLE'},
+	);
+	t.deepEqual(store.threads.get(project.id, thread.id), thread);
+	t.false(store.threads.getTitleManuallySet(project.id, thread.id));
+});
+
+test('a late rename answer cannot update a changed session identity (CHAT-12)', async t => {
+	const {project, service, store, supervisor} = await fixture(t, true);
+	const thread = seed(project);
+	store.threads.save(thread);
+	writeFileSync(
+		path.join(project.canonicalRoot, '.fake-nanocoder'),
+		'extensions',
+	);
+	await supervisor.ensureProcess(project);
+	const changed = {...thread, nanocoderSessionId: 'changed-fixture-session'};
+	supervisor.getConnection(project.id).renameSession = async () => {
+		store.threads.save(changed);
+		return 'fixture manual title';
+	};
+	await t.throwsAsync(
+		service.renameThread({
+			projectId: project.id,
+			threadId: thread.id,
+			title: 'fixture manual title',
+		}),
+		{code: 'DENIED'},
+	);
+	t.deepEqual(store.threads.get(project.id, thread.id), changed);
+	t.false(store.threads.getTitleManuallySet(project.id, thread.id));
+});
+
+test('a pending upstream rename locks the desktop row until its answer (CHAT-12)', async t => {
+	const {project, service, store, supervisor} = await fixture(t, true);
+	const thread = seed(project);
+	store.threads.save(thread);
+	writeFileSync(
+		path.join(project.canonicalRoot, '.fake-nanocoder'),
+		'extensions',
+	);
+	await supervisor.ensureProcess(project);
+	const entered = deferred<void>();
+	const answer = deferred<string>();
+	supervisor.getConnection(project.id).renameSession = async () => {
+		entered.resolve();
+		return answer.promise;
+	};
+	const target = {projectId: project.id, threadId: thread.id};
+	const rename = service.renameThread({
+		...target,
+		title: 'fixture manual title',
+	});
+	void rename.catch(() => undefined);
+	const state = await Promise.race([
+		entered.promise.then(() => 'entered'),
+		rename.then(
+			() => 'finished',
+			() => 'failed',
+		),
+	]);
+	let removal: string;
+	try {
+		removal = await service.removeThread(target).then(
+			() => 'allowed',
+			(error: IpcFailure) => error.code,
+		);
+	} finally {
+		answer.resolve('fixture manual title');
+		await rename.catch(() => undefined);
+	}
+	t.is(state, 'entered');
+	t.is(removal, 'BUSY');
+	t.true(store.threads.getTitleManuallySet(project.id, thread.id));
+});
+
+test('an invalid stored-history title is refused before any process starts (CHAT-12)', async t => {
+	const {project, service, store, calls} = await fixture(t, true);
+	const thread = seed(project);
+	store.threads.save(thread);
+	for (const title of ['', '   ', 't'.repeat(501)])
+		await t.throwsAsync(
+			service.renameThread({
+				projectId: project.id,
+				threadId: thread.id,
+				title,
+			}),
+			{code: 'VALIDATION'},
+		);
+	t.deepEqual(calls, []);
+	t.deepEqual(store.threads.get(project.id, thread.id), thread);
+});
