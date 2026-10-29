@@ -8,6 +8,7 @@ import {
 	type WebContents,
 } from 'electron';
 import {z} from 'zod';
+import {cancelPromptRequest} from '@/main/ipc/cancel-prompt';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
 import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
@@ -15,6 +16,7 @@ import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {disposeDesktop} from '@/main/lifecycle';
 import {untilAborted} from '@/main/nanocoder/abort';
 import {NanocoderFailure} from '@/main/nanocoder/acp-client';
+import {cancelTechnicalTurn} from '@/main/nanocoder/cancel-technical-turn';
 import {DiagnosticsExporter} from '@/main/nanocoder/diagnostics';
 import {resolveNanocoder} from '@/main/nanocoder/runtime';
 import {createLookup} from '@/main/nanocoder/runtime-lookup';
@@ -463,6 +465,12 @@ export function registerIpcHandlers(
 		CHANNELS.answerPermission,
 		z.strictObject({id: z.string().max(64), optionId: z.string().max(200)}),
 		answerPermission,
+		allowedOrigins,
+	);
+	registerHandler(
+		CHANNELS.cancelPrompt,
+		cancelPromptRequest,
+		() => cancelTechnicalTurn(supervisor, activeProjectId, session),
 		allowedOrigins,
 	);
 }

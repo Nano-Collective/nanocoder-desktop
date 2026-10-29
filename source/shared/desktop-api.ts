@@ -22,6 +22,7 @@ export interface DesktopApi extends WorkspaceApi {
 	getNanocoderRuntime(): Promise<IpcResult<NanocoderRuntime>>;
 	connectNanocoder(): Promise<IpcResult<ConnectResult>>;
 	sendPrompt(text: string): Promise<IpcResult<TurnResult>>;
+	cancelPrompt(): Promise<IpcResult<null>>;
 	answerPermission(id: string, optionId: string): Promise<IpcResult<null>>;
 	// Returns a function that stops listening.
 	onNanocoderEvent(listener: (event: TurnEvent) => void): () => void;

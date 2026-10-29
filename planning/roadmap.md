@@ -350,14 +350,14 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Build**
 
-- [ ] Permission requests with Nanocoder's own options (`CHAT-06`, `ACP-10`)
-- [ ] Cancel, including during a pending permission (`CHAT-07`, `ACP-09`)
-- [ ] `ask_user` as selectable options (`CHAT-21`)
+- [x] Permission requests with Nanocoder's own options (`CHAT-06`, `ACP-10`) ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), exact offered IDs and labels; [`permissions.spec.ts`](../source/main/nanocoder/permissions.spec.ts), main-process refusals)
+- [x] Cancel, including during a pending permission (`CHAT-07`, `ACP-09`) ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), pending and active-turn cancellation; [`cancel-technical-turn.spec.ts`](../source/main/nanocoder/cancel-technical-turn.spec.ts), strict main-owned scope)
+- [x] `ask_user` as selectable options (`CHAT-21`) ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), selection-only question and exact selected answer ID)
 
 **Results we want**
 
-- [ ] Allow once, allow always and reject all behave as Nanocoder reports
-- [ ] Cancelling while a permission is pending ends the turn as Interrupted
+- [x] Allow once, allow always and reject all behave as Nanocoder reports when offered ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), all four kinds with the fake; pinned Nanocoder offers only Allow and Deny, as recorded in [approval notes](approvals-and-cancel.md#permission-ownership))
+- [x] Cancelling while a permission is pending ends the turn as Interrupted ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), every queued permission cancelled, no tool allowed and next turn available)
 
 ### Phase 1.8: durable resume and view-only
 

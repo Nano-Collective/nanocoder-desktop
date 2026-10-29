@@ -1,0 +1,28 @@
+.approval-requests,
+.approval-dialog {
+	display: grid;
+	gap: var(--spacing-lg);
+	min-width: 0;
+}
+
+.approval-requests {
+	gap: var(--spacing-xxl);
+}
+
+.approval-requests .ui-card--approval {
+	scroll-margin-block: var(--spacing-xs);
+}
+
+.approval-dialog {
+	border-radius: var(--rounded-sm);
+}
+
+.approval-effect {
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-body-sm-font-size);
+}
+
+.approval-key-hints .ui-key-hint {
+	color: var(--colors-on-surface-muted);
+	opacity: 1;
+}
