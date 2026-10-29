@@ -1652,3 +1652,48 @@ test('opening untrusted history refuses without persisting a permanent view-only
 	t.deepEqual(store.threads.get(project.id, thread.id), thread);
 	t.deepEqual(calls, []);
 });
+
+test('resuming retains the owning thread mode rather than a later project default (DEC-31)', async t => {
+	const {project, store, service, supervisor} = await fixture(t, true);
+	const thread = seed(project, {
+		nanocoderSessionId: 'fake-session',
+		mode: 'normal',
+	});
+	store.threads.save(thread);
+	const snapshot = await service.openThread({
+		projectId: project.id,
+		threadId: thread.id,
+	});
+	t.is(snapshot.thread.mode, 'normal');
+	const connection = supervisor.getConnection(project.id);
+	await supervisor.close();
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines())
+			.filter(event => event.method === 'session/set_mode')
+			.map(event => (event.params as {modeId: string}).modeId),
+		['normal'],
+	);
+});
+
+test('first prompt retains the new thread captured mode after its project default changes (DEC-31)', async t => {
+	const {project, store, service, supervisor} = await fixture(t, true);
+	store.projects.save({...project, defaultMode: 'normal'});
+	const thread = await service.createThread({projectId: project.id});
+	store.projects.save(project);
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	connection.prompt = async () => ({stopReason: 'end_turn'});
+	await service.promptThread({
+		projectId: project.id,
+		threadId: thread.id,
+		text: 'fixture prompt',
+	});
+	t.is(store.threads.get(project.id, thread.id)?.mode, 'normal');
+	await supervisor.close();
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines())
+			.filter(event => event.method === 'session/set_mode')
+			.map(event => (event.params as {modeId: string}).modeId),
+		['normal'],
+	);
+});

@@ -211,6 +211,8 @@ export function createThreadService(
 				: [...ids.slice(-99), request.threadId],
 		});
 	};
+	const startingMode = (thread: ThreadInfo, project: ProjectInfo) =>
+		thread.mode === 'yolo' ? project.defaultMode : thread.mode;
 	const resume = async (
 		thread: ThreadInfo,
 		connection: NanocoderConnection,
@@ -220,7 +222,7 @@ export function createThreadService(
 		if (!sessionId) return;
 		const restored = await connection.resumeSession(
 			sessionId,
-			project.defaultMode,
+			startingMode(thread, project),
 		);
 		const request = {projectId: thread.projectId, threadId: thread.id};
 		const current = getThread(request);
@@ -458,7 +460,9 @@ export function createThreadService(
 				await validateProject(getThread(request));
 				const connection = options.supervisor.getConnection(project.id);
 				if (!thread.nanocoderSessionId) {
-					const session = await connection.newSession(project.defaultMode);
+					const session = await connection.newSession(
+						startingMode(thread, project),
+					);
 					try {
 						thread = {
 							...getThread(request),
