@@ -1,5 +1,6 @@
 import * as React from 'react';
 import {AgentMarkdown} from '@/renderer/agent-markdown';
+import {StreamAnnouncements} from '@/renderer/stream-announcements';
 import {SubagentRunCard} from '@/renderer/subagent-run-card';
 import {
 	currentTurnStart,
@@ -375,6 +376,11 @@ export function ConversationStream({
 					);
 				})}
 			</ol>
+			<StreamAnnouncements
+				transcript={transcript}
+				running={running}
+				outcome={outcome}
+			/>
 			{stopError && <p role="alert">{stopError}</p>}
 			{transcript.mode && (
 				<p className="stream-session">reported mode: {transcript.mode}</p>
