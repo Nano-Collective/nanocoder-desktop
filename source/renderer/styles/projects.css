@@ -293,3 +293,16 @@
 	font-size: 10px;
 	line-height: 1.8;
 }
+
+.welcome-recents > div > span {
+	flex: 1;
+	min-width: 0;
+}
+.welcome-recents small {
+	overflow-wrap: anywhere;
+	white-space: normal;
+}
+.welcome-recents .ui-button {
+	flex: none;
+	white-space: nowrap;
+}

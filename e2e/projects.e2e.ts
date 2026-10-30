@@ -479,3 +479,42 @@ test('welcome keeps runtime details quiet and keyboard inspectable before any pr
 	}
 	expect(await call('listProjects', {})).toEqual({ok: true, value: []});
 });
+
+test('long welcome recent paths give actions their full width without dropping project identity', async () => {
+	const root = path.join(
+		work,
+		'long-project-folder-for-the-welcome-recent-project-row-with-a-readable-action',
+	);
+	mkdirSync(root);
+	await add(root);
+	await page.reload();
+	const recents = page.getByRole('region', {
+		name: 'recent folders on welcome',
+		exact: true,
+	});
+	const action = recents.getByRole('button', {name: /^open recent project/});
+	const savedPath = recents.locator('small');
+	await expect(savedPath).toHaveText(root);
+	for (const theme of ['dark', 'light']) {
+		await page.evaluate(theme => {
+			document.documentElement.dataset.theme = theme;
+		}, theme);
+		for (const width of [1240, 1020, 840]) {
+			await page.setViewportSize({width, height: 900});
+			await expect(action).toHaveCSS('white-space', 'nowrap');
+			await expect(action).toHaveCSS('flex-shrink', '0');
+			await expect(savedPath).toHaveCSS('overflow-wrap', 'anywhere');
+			await expect(savedPath).toHaveCSS('white-space', 'normal');
+			expect(
+				await savedPath.evaluate(
+					element => element.scrollWidth <= element.clientWidth,
+				),
+			).toBe(true);
+			expect(
+				await action.evaluate(
+					element => element.scrollWidth <= element.clientWidth,
+				),
+			).toBe(true);
+		}
+	}
+});
