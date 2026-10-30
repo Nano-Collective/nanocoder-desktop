@@ -231,14 +231,6 @@ test('the compact shell exposes real controls and omits unused later surfaces', 
 		page.getByRole('region', {name: 'recent projects'}),
 	).toBeVisible();
 	await switcher.click();
-	const search = page.getByRole('textbox', {
-		name: 'search thread titles in this project',
-	});
-	await search.fill('no such fixture title');
-	await expect(threads.getByRole('status')).toHaveText('no matching threads');
-	await expect(threads.locator('.thread-open')).toHaveCount(0);
-	await search.fill('');
-	await expect(threads.locator('.thread-open')).toHaveCount(1);
 });
 test('keyboard controls remain reachable and visibly focused inside the stream in both themes and all widths', async () => {
 	for (const theme of ['dark', 'light']) {
@@ -285,9 +277,6 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 					),
 				),
 				rail.getByRole('button', {name: 'new thread', exact: true}),
-				rail.getByRole('textbox', {
-					name: 'search thread titles in this project',
-				}),
 				...(await rail.locator('.thread-row').all()).flatMap(thread => [
 					thread.locator('.thread-open'),
 					thread.locator('.thread-actions > summary'),

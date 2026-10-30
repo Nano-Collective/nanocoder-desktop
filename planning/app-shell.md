@@ -11,7 +11,7 @@ Visual decisions remain in [`DESIGN.md`](../DESIGN.md). The M1 workspace follows
 
 `source/renderer/app-shell.tsx` owns compact project/thread navigation, the conversation header, independently scrolling transcript, pinned composer and optional workbench/bottom slots. Ordinary React children fill the slots; no capability or authority moves into the renderer. Unused later slots mount nothing and show no placeholder.
 
-The compact project switcher retains recent-root, add and locate actions. Thread-title filtering uses only the active project's in-memory desktop metadata, with no transcript index or cross-project search. Today/earlier ordering stays last activity; archive stays separate. The selected thread reports its state in words as well as a glyph. Search resets with project scope.
+The compact project switcher retains recent-root, add and locate actions. Thread-title search remains a labelled new idea, not part of M1. Today/earlier ordering stays last activity; archive stays separate. The selected thread reports its state in words as well as a glyph.
 
 At 1240/1020/840 the sidebar is 222/204/188px. Reading content and the composer share a constrained centred column. An open workbench stays beside chat above 840px, then takes the conversation canvas at 840px and below with a back-to-chat action. Project navigation remains reachable. The optional terminal slot stays absent in M1.
 
@@ -27,6 +27,6 @@ The turn badge retains the existing derivation from pending permissions, running
 
 Pure state tests are beside the reducer. Built-app tests cover real child exit, provider errors, cancelled selection, project isolation and replay on reopen. Logic follows red, green, refactor; the hand-back report records each test's red and green run.
 
-Layout tests cover 1240, 1020, 840 and the exact 839/841 breakpoint, pinned composer, overflow, independently scrolling content and unused-slot absence in both themes. Keyboard checks retain project/thread, composer and Nanocoder approval focus assertions, with the switcher and title filter added to the actual order. Native focus and screen-reader acceptance remain separate platform QA.
+Layout tests cover 1240, 1020, 840 and the exact 839/841 breakpoint, pinned composer, overflow, independently scrolling content and unused-slot absence in both themes. Keyboard checks retain project/thread, composer and Nanocoder approval focus assertions, with the switcher added to the actual order. Native focus and screen-reader acceptance remain separate platform QA.
 
 Captures use the hidden Electron wrapper, fake Nanocoder and temporary profiles, without port 9333. All approved rendered token pairings pass AA without the old design exceptions. See [foundations](ui-foundations.md).

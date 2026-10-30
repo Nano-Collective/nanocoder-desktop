@@ -50,17 +50,7 @@ function RailAction({
 }
 
 export function ThreadRail(props: ThreadRailProps): React.ReactElement {
-	const [query, setQuery] = React.useState('');
-	const groups = threadGroups(props.projectId, props.threads, props.now).map(
-		group => ({
-			...group,
-			threads: group.threads.filter(thread =>
-				thread.title
-					.toLocaleLowerCase()
-					.includes(query.trim().toLocaleLowerCase()),
-			),
-		}),
-	);
+	const groups = threadGroups(props.projectId, props.threads, props.now);
 	const newReason = props.pending
 		? 'another thread request is pending'
 		: props.projectId
@@ -172,24 +162,10 @@ export function ThreadRail(props: ThreadRailProps): React.ReactElement {
 					＋ new
 				</Button>
 			</header>
-			<input
-				className="thread-search"
-				aria-label="search thread titles in this project"
-				placeholder="search threads…"
-				value={query}
-				onChange={event => setQuery(event.target.value)}
-			/>
-			{query.trim() && groups.every(group => group.threads.length === 0) && (
-				<p className="thread-rail-note" role="status">
-					no matching threads
-				</p>
-			)}
 			{newReason && <p className="thread-rail-note">{newReason}</p>}
-			{!query.trim() &&
-				props.projectId &&
-				groups.every(group => group.threads.length === 0) && (
-					<p className="thread-rail-note">no threads yet</p>
-				)}
+			{props.projectId && groups.every(group => group.threads.length === 0) && (
+				<p className="thread-rail-note">no threads yet</p>
+			)}
 			{groups
 				.filter(group => group.threads.length > 0)
 				.map(group =>

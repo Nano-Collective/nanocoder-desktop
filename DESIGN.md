@@ -375,7 +375,7 @@ Chat headings may step up to 16px. The centred first action uses a 26px heading.
 
 A compact full-height sidebar beside the conversation canvas. The title bar belongs to the canvas, not above the sidebar. No static session tabs, empty inspector or unfinished-feature placeholders.
 
-- Sidebar: official logo, compact project switcher, new-thread action, a title-only filter of the active project's desktop metadata, then today/earlier threads in last-activity order. Archived threads stay separate. One glyph, compact age and selected-thread state copy, without attention reordering.
+- Sidebar: official logo, compact project switcher, new-thread action, then today/earlier threads in last-activity order. Archived threads stay separate. One glyph, compact age and selected-thread state copy, without attention reordering.
 - Header: project/thread identity, distinct turn and ACP states, command palette and purposeful available actions.
 - Conversation: constrained to 740px, centred in spare space. Transcript scrolls independently. The approval shelf sits above the composer within that same column, not in scrollback.
 - Empty workspace: a centred useful first action, choose a folder. After opening a new thread, centre the draft composer until there is conversation content. Never invent prompt starters.
