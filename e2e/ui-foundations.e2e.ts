@@ -180,9 +180,7 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	await expect(open).toHaveCSS('outline-style', 'solid');
 	await expect(open).toHaveCSS('outline-width', '2px');
 	await page.keyboard.press('Enter');
-	await expect(
-		page.getByRole('region', {name: 'connected agent'}),
-	).toBeVisible();
+	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
 	const switcher = page.getByLabel('switch project', {exact: true});
 	if (!(await page.locator('.project-switcher').getAttribute('open'))) {
 		await page.locator('.project-switcher').evaluate(element => {
@@ -218,6 +216,7 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 			exact: true,
 		}),
 		palette,
+		page.getByText('runtime and setup details', {exact: true}),
 		open,
 		diagnostics,
 		input,
@@ -264,6 +263,7 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
 		page.getByRole('button', {name: 'command palette', exact: true}),
+		page.getByText('runtime and setup details', {exact: true}),
 		page.getByRole('button', {name: 'open a project folder', exact: true}),
 		page.getByRole('button', {name: 'diagnostics', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),
@@ -427,7 +427,7 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 			page.getByRole('button', {name: 'open a project folder'}),
 		).toBeEnabled();
 		await expect(
-			page.getByRole('region', {name: 'connected agent'}),
+			page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 		).toContainText(folder);
 		await page
 			.getByRole('textbox', {name: 'message'})

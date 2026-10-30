@@ -34,7 +34,7 @@ function ProcessRecovery({
 	return (
 		<Card
 			variant={failed ? 'failure' : 'default'}
-			className="nc-recovery"
+			className={`nc-recovery${state.status === 'ready' ? ' nc-recovery--ready' : ''}`}
 			aria-label="Nanocoder recovery"
 		>
 			<p role="status">

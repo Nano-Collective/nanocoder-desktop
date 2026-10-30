@@ -223,7 +223,7 @@ for (const theme of ['dark', 'light'] as const) {
 				await expect(notice).toHaveCSS('border-top-style', 'dashed');
 				await expect(notice).toHaveCSS(
 					'color',
-					theme === 'dark' ? 'rgb(151, 151, 165)' : 'rgb(92, 97, 112)',
+					theme === 'dark' ? 'rgb(168, 168, 168)' : 'rgb(79, 86, 120)',
 				);
 				await expect(notice).toContainText(
 					"nanocoder can't find this session · it may have been deleted, expired or never saved",

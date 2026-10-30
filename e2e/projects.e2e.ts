@@ -26,6 +26,7 @@ import type {
 } from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
 let app: ElectronApplication;
@@ -388,7 +389,7 @@ test('opening a recent project exposes only its own thread and restores each pro
 	await expect(input).toHaveValue('');
 	await expect(selected).not.toHaveAttribute('data-thread-id', firstThreadId);
 	await expect(
-		page.getByRole('region', {name: 'connected agent'}),
+		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 	).toContainText(second);
 	await input.fill('second project private draft');
 	await showProjects();
@@ -398,7 +399,7 @@ test('opening a recent project exposes only its own thread and restores each pro
 	await expect(input).toHaveValue('first project private draft');
 	await expect(selected).toHaveAttribute('data-thread-id', firstThreadId);
 	await expect(
-		page.getByRole('region', {name: 'connected agent'}),
+		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 	).toContainText(first);
 	await showProjects();
 	await recent
@@ -446,4 +447,35 @@ test('opening a folder through the legacy action refreshes the active recent pro
 			.getByRole('region', {name: 'recent projects'})
 			.locator('[aria-current="true"]'),
 	).toContainText('current-project');
+});
+
+test('welcome keeps runtime details quiet and keyboard inspectable before any project starts', async () => {
+	for (const theme of ['dark', 'light'] as const) {
+		await page.evaluate(theme => {
+			document.documentElement.dataset.theme = theme;
+		}, theme);
+		for (const width of [1240, 1020, 840]) {
+			await page.setViewportSize({width, height: 900});
+			await expect(
+				page.getByRole('region', {name: 'get started'}),
+			).toBeVisible();
+			const details = page.locator('.runtime-details');
+			await expect(details).not.toHaveAttribute('open');
+			const summary = details.locator('summary');
+			await summary.focus();
+			await page.keyboard.press('Tab');
+			await page.keyboard.press('Shift+Tab');
+			await expect(summary).toBeFocused();
+			await expect(summary).toHaveCSS('outline-width', '2px');
+			await page.keyboard.press('Enter');
+			await expect(details).toHaveAttribute('open');
+			await expect(
+				page.getByRole('region', {name: 'Nanocoder runtime'}),
+			).toContainText('Nanocoder 9.9.9 at');
+			await page.keyboard.press('Enter');
+			await expect(details).not.toHaveAttribute('open');
+			expect(await visibleTextContrast(page, theme)).toEqual([]);
+		}
+	}
+	expect(await call('listProjects', {})).toEqual({ok: true, value: []});
 });

@@ -70,7 +70,7 @@ async function open(folder: string | null) {
 	).toBeEnabled();
 	if (folder)
 		await expect(
-			page.getByRole('region', {name: 'connected agent'}),
+			page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 		).toContainText(folder);
 }
 
@@ -126,7 +126,7 @@ test('ACP badge stays scoped when a picker is cancelled or another project stops
 	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
 	await open(null);
 	await expect(
-		page.getByRole('region', {name: 'connected agent'}),
+		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 	).toContainText(first);
 	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
 	const second = project('scoped-b');
@@ -287,6 +287,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 					exact: true,
 				}),
 				palette,
+				page.getByText('runtime and setup details', {exact: true}),
 				open,
 				diagnostics,
 				input,

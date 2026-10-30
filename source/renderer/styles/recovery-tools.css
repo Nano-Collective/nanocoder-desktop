@@ -22,3 +22,38 @@
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 }
+
+.nc-recovery {
+	padding: 16px 18px;
+	gap: 10px;
+	font-size: 11px;
+	line-height: 1.8;
+}
+.nc-recovery--ready {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--colors-on-surface-muted);
+}
+.nc-recovery--ready .ui-button {
+	min-height: 28px;
+	font-size: 10px;
+}
+.nc-diagnostics {
+	padding: 18px 20px;
+	gap: 14px;
+	font-size: 11px;
+	line-height: 1.8;
+}
+.nc-diagnostics h2 {
+	font-size: 16px;
+	font-weight: 400;
+}
+.nc-diagnostics pre {
+	font-size: 11px;
+	line-height: 1.7;
+}

@@ -97,3 +97,9 @@ appear to target the newly selected folder. The ACP badge still follows that
 project's live supervisor events, not a saved trust flag or opening result.
 Default-mode controls and project removal remain unavailable here; their later
 phases retain the existing IPC contracts.
+
+## Approved workspace presentation (DEC-40)
+
+The first-launch canvas centres the local logo, an open-folder action and known recent-project metadata. Opening and locating call the existing project-id callbacks; unavailable folders offer locate, never an unsafe open. Native trust consent and its cancel default stay in main. Trust refusals remain visible in the canvas.
+
+Runtime paths and connected-agent/capability details live in a keyboard-native disclosure instead of preceding every conversation. Setup errors open that disclosure; version warnings stay visible outside it. The compact ready/recovery area retains explicit retry and captured-diagnostics review/export. View-only notices show metadata, the missing-history reason and desktop-only removal scope with no composer. Saved-session offers stay in their independently scoped, metadata-only list, with native import focus return unchanged.

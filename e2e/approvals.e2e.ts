@@ -69,7 +69,7 @@ async function open(mode = 'ok') {
 	}, folder);
 	await page.getByRole('button', {name: 'open a project folder'}).click();
 	await expect(
-		page.getByRole('region', {name: 'connected agent'}),
+		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 	).toContainText(folder);
 	await expect(input()).toBeEnabled();
 }

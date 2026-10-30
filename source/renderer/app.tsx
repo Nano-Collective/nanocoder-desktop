@@ -450,41 +450,105 @@ export function App() {
 				streamTools={
 					<>
 						<TrustFeedback feedback={projectControls.feedback} />
-						{info && (
-							<p className="gate-meta">
-								version {info.version}. pre-v0.1: an early build, with most
-								features still to come.
-							</p>
-						)}
-						<section className="gate-runtime" aria-label="Nanocoder runtime">
-							{runtime?.ok && (
+						{!thread && (
+							<section className="workspace-welcome" aria-label="get started">
+								<img src={logoUrl} alt="" width="56" height="56" />
+								<p className="workspace-eyebrow">
+									local-first workspace / pre-v0.1
+								</p>
+								<h2>what are you working on?</h2>
 								<p>
-									Nanocoder {runtime.value.version} at {runtime.value.cliPath},
-									on Node.js {runtime.value.nodeVersion} at{' '}
-									{runtime.value.nodePath}
+									open a project folder to start a Nanocoder thread. you’ll
+									review what can run before you trust the folder.
+								</p>
+								{runtime?.ok && (
+									<Button
+										onClick={connect}
+										disabled={connecting || projectControls.pending}
+									>
+										{connecting
+											? 'starting Nanocoder'
+											: 'open a project folder'}
+									</Button>
+								)}
+								{projectControls.projects.length > 0 && (
+									<section
+										className="welcome-recents"
+										aria-label="recent folders on welcome"
+									>
+										<h3>recent projects</h3>
+										{projectControls.projects.map(project => (
+											<div key={project.id}>
+												<span>
+													<span>{project.displayName}</span>
+													<small>{project.canonicalRoot}</small>
+												</span>
+												<Button
+													aria-label={`${project.availability === 'available' ? 'open' : 'locate'} recent project ${project.displayName}`}
+													disabled={connecting || projectControls.pending}
+													onClick={() =>
+														project.availability === 'available'
+															? projectControls.onOpen(project.id)
+															: projectControls.onLocate(project.id)
+													}
+												>
+													{project.availability === 'available'
+														? 'open'
+														: 'locate'}
+												</Button>
+											</div>
+										))}
+									</section>
+								)}
+							</section>
+						)}
+						<div className="workspace-setup">
+							{gates[projectId ?? '']?.versionPolicy.reason && (
+								<p className="workspace-setup-warning" role="status">
+									{gates[projectId ?? '']?.versionPolicy.reason}
 								</p>
 							)}
-							{runtime && !runtime.ok && (
-								<>
-									<p role="alert">{runtime.error.message}</p>
-									<Button onClick={checkRuntime}>check again</Button>
-								</>
-							)}
-							{runtime?.ok && (
-								<Button
-									onClick={connect}
-									disabled={connecting || projectControls.pending}
+							<div className="workspace-setup-actions">
+								<details
+									className="runtime-details"
+									open={runtime && !runtime.ok ? true : undefined}
 								>
-									{connecting ? 'starting Nanocoder' : 'open a project folder'}
-								</Button>
-							)}
-						</section>
-						{outcome?.status === 'connected' && (
-							<AgentDetails agent={outcome.agent} thread={thread} />
-						)}
-						{gates[projectId ?? ''] && (
-							<FeatureDetails gates={gates[projectId ?? '']} />
-						)}
+									<summary>runtime and setup details</summary>{' '}
+									<section
+										className="gate-runtime"
+										aria-label="Nanocoder runtime"
+									>
+										{runtime?.ok && (
+											<p>
+												Nanocoder {runtime.value.version} at{' '}
+												{runtime.value.cliPath}, on Node.js{' '}
+												{runtime.value.nodeVersion} at {runtime.value.nodePath}
+											</p>
+										)}
+										{runtime && !runtime.ok && (
+											<>
+												<p role="alert">{runtime.error.message}</p>
+												<Button onClick={checkRuntime}>check again</Button>
+											</>
+										)}
+									</section>
+									{outcome?.status === 'connected' && (
+										<AgentDetails agent={outcome.agent} thread={thread} />
+									)}
+									{gates[projectId ?? ''] && (
+										<FeatureDetails gates={gates[projectId ?? '']} />
+									)}
+								</details>
+								{thread && runtime?.ok && (
+									<Button
+										onClick={connect}
+										disabled={connecting || projectControls.pending}
+									>
+										open a project folder
+									</Button>
+								)}
+							</div>
+						</div>
 						<RecoveryTools
 							state={processState}
 							onRetry={async id => {
