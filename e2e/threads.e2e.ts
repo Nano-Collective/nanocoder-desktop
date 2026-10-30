@@ -399,4 +399,28 @@ test('rename uses the shared dialog and preserves keyboard focus, draft and thre
 	await expect(
 		row.getByRole('button', {name: 'rename: renamed fixture', exact: true}),
 	).toBeFocused();
+	await input.focus();
+	await input.evaluate(element =>
+		(element as HTMLTextAreaElement).setSelectionRange(2, 9),
+	);
+	await page.keyboard.press(
+		process.platform === 'darwin' ? 'Meta+k' : 'Control+k',
+	);
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	await palette.getByRole('combobox').fill('rename thread');
+	await page.keyboard.press('Enter');
+	await expect(title).toBeFocused();
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+	await expect(input).toBeFocused();
+	await expect(input).toHaveValue('retained rename draft');
+	expect(
+		await input.evaluate(element => ({
+			start: (element as HTMLTextAreaElement).selectionStart,
+			end: (element as HTMLTextAreaElement).selectionEnd,
+		})),
+	).toEqual({start: 2, end: 9});
 });

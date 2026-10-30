@@ -95,6 +95,7 @@ export function OverlayProvider({
 	const dialog = useRef<HTMLDialogElement>(null);
 	const input = useRef<HTMLInputElement>(null);
 	const returnFocus = useRef<(() => void) | null>(null);
+	const returnTarget = useRef<HTMLElement | null>(null);
 	const closingFocus = useRef<Element | null>(null);
 	const notifications = useRef<ReturnType<typeof toastQueue> | null>(null);
 	const themeChanged = useRef(false);
@@ -136,6 +137,7 @@ export function OverlayProvider({
 	const open = useCallback((next: Overlay) => {
 		if (!dialog.current?.open) {
 			const target = document.activeElement;
+			returnTarget.current = target instanceof HTMLElement ? target : null;
 			returnFocus.current = focusReturn(
 				target instanceof HTMLElement ? target : null,
 				document.querySelector<HTMLButtonElement>(
@@ -250,8 +252,9 @@ export function OverlayProvider({
 	}, [kind, selectedId]);
 	const execute = (action: PaletteAction | undefined) => {
 		if (!action || action.disabledReason) return;
+		const originalFocus = returnTarget.current;
 		if (action.id !== 'shortcuts') close();
-		runAction(action);
+		runAction(action, originalFocus ?? undefined);
 	};
 
 	return (

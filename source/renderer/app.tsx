@@ -4,6 +4,7 @@ import {ApprovalRequests} from '@/renderer/approval-requests';
 import logoUrl from '@/renderer/assets/nano-collective-avatar.png';
 import {Composer} from '@/renderer/composer';
 import {ConversationStream} from '@/renderer/conversation-stream';
+import type {FocusTarget} from '@/renderer/overlay-model';
 import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
 import {RecentProjects} from '@/renderer/recent-projects';
@@ -303,16 +304,18 @@ export function App() {
 	const cancel = async () => {
 		if (thread) await controls.cancel(thread.id);
 	};
-	const rename = (threadId: string) => {
+	const rename = (threadId: string, originalFocus?: FocusTarget) => {
 		const row = workspace.threads.find(row => row.id === threadId);
 		if (row && projectId) {
 			const active = document.activeElement;
 			renameReturn.current =
-				active instanceof HTMLElement &&
-				active !== document.body &&
-				!active.closest('dialog')
-					? active
-					: null;
+				originalFocus instanceof HTMLElement
+					? originalFocus
+					: active instanceof HTMLElement &&
+							active !== document.body &&
+							!active.closest('dialog')
+						? active
+						: null;
 			setRenaming({projectId, threadId, title: row.title});
 		}
 	};

@@ -6,7 +6,7 @@ export interface PaletteAction {
 	keywords?: string;
 	description?: string;
 	disabledReason?: string;
-	run(): void;
+	run(originalFocus?: FocusTarget): void;
 }
 
 export function filterActions(actions: PaletteAction[], query: string) {
@@ -44,9 +44,12 @@ export function moveSelection(index: number, delta: number, length: number) {
 	return (index + delta + length) % length;
 }
 
-export function runAction(action: PaletteAction | undefined) {
+export function runAction(
+	action: PaletteAction | undefined,
+	originalFocus?: FocusTarget,
+) {
 	if (!action || action.disabledReason) return false;
-	action.run();
+	action.run(originalFocus);
 	return true;
 }
 
