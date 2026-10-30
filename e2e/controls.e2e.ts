@@ -234,6 +234,44 @@ test('native yolo cancellation is the default and accepted pending yolo is never
 		expect([call.defaultId, call.cancelId]).toEqual([0, 0]);
 });
 
+test('cancelling yolo preserves an earlier pending plan and its draft through first send (DEC-31 CHAT-04)', async () => {
+	await app.evaluate(({dialog}) => {
+		dialog.showMessageBox = (async () => ({
+			response: 0,
+			checkboxChecked: false,
+		})) as typeof dialog.showMessageBox;
+	});
+	const mode = page.getByRole('combobox', {
+		name: 'mode for this thread',
+		exact: true,
+	});
+	const input = page.getByRole('textbox', {name: 'message', exact: true});
+	await input.fill('fixture plan after cancelled yolo');
+	await mode.selectOption('plan');
+	await expect(mode).toHaveValue('plan');
+	await expect(mode).toBeEnabled();
+	await mode.selectOption('yolo');
+	await expect(mode).toBeEnabled();
+	await expect(mode).toHaveValue('plan');
+	await expect(input).toHaveValue('fixture plan after cancelled yolo');
+	const before = await page.evaluate(async () => {
+		const {desktop} = window as unknown as {desktop: DesktopApi};
+		const ui = await desktop.getUiState({});
+		if (!ui.ok || !ui.value.activeProjectId) throw new Error('fixture scope');
+		return desktop.listThreads({
+			projectId: ui.value.activeProjectId,
+			archiveState: 'active',
+		});
+	});
+	expect(
+		before.ok &&
+			before.value.every(thread => thread.nanocoderSessionId === null),
+	).toBe(true);
+	await input.press('Enter');
+	await expect(input).toHaveValue('');
+	await expect(mode).toHaveValue('plan');
+});
+
 test('inactive composer controls dim, while reasons keep their rendered contrast in both themes (U.5)', async () => {
 	await page.emulateMedia({reducedMotion: 'reduce'});
 	const input = page.getByRole('textbox', {name: 'message', exact: true});

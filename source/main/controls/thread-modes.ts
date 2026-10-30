@@ -373,7 +373,6 @@ export function createThreadModes(options: ThreadModeOptions) {
 					if (!knownMode(request.mode))
 						throw new IpcFailure('DENIED', 'Choose a known mode');
 					const key = keyFor(row.projectId, row.id);
-					if (pending.get(key)?.mode !== request.mode) forgetPending(key);
 					const connection = options.getConnection(row.projectId);
 					if (connection) operations.bindConnection(lease, connection);
 					await validateRoot(lease);

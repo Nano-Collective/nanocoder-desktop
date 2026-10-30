@@ -10,6 +10,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import test, {type ExecutionContext} from 'ava';
 import {createWorkspaceControls} from '@/main/controls/workspace-controls';
+import {confirmYolo} from '@/main/controls/yolo-consent';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {fakeEvents} from '@/main/nanocoder/fixtures/fake-project';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
@@ -190,6 +191,75 @@ test('composed offers come from another owned project thread and provider succes
 		1,
 	);
 	t.is(f.store.threads.get(f.project.id, other.id)?.nanocoderSessionId, null);
+});
+
+test('native cancel/default/Escape keeps an earlier pending plan usable at first send (DEC-31 CHAT-04)', async t => {
+	const f = await fixture(t);
+	await f.controls.setThreadMode({...f.request, mode: 'plan'});
+	const saved = f.store.threads.get(f.project.id, f.thread.id);
+	const writes = f.writes.length;
+	f.confirm(() =>
+		confirmYolo({
+			project: f.project,
+			thread: f.thread,
+			ask: async options => {
+				t.is(options.defaultId, 0);
+				t.is(options.cancelId, 0);
+				return 0;
+			},
+		}),
+	);
+	t.is(
+		(await f.controls.setThreadMode({...f.request, mode: 'yolo'})).mode,
+		'plan',
+	);
+	t.is(f.launches(), 0);
+	t.is(f.confirmations(), 1);
+	t.is(f.writes.length, writes);
+	t.deepEqual(f.store.threads.get(f.project.id, f.thread.id), saved);
+	await f.threads.promptThread({
+		...f.request,
+		text: 'fixture after cancelled yolo',
+	});
+	t.is(f.rpc().filter(event => event.method === 'session/prompt').length, 1);
+	t.deepEqual(
+		f
+			.rpc()
+			.filter(event => event.method === 'session/set_mode')
+			.map(event => (event.params as {modeId: string}).modeId),
+		['plan'],
+	);
+	t.is((await f.threads.getThreadSnapshot(f.request)).thread.mode, 'plan');
+});
+
+test('a cancelled yolo selection can be selected again, confirmed and used once at first send (DEC-31)', async t => {
+	const f = await fixture(t);
+	f.confirm(async () => false);
+	t.is(
+		(await f.controls.setThreadMode({...f.request, mode: 'yolo'})).mode,
+		'normal',
+	);
+	t.is(f.launches(), 0);
+	f.confirm(async () => true);
+	t.is(
+		(await f.controls.setThreadMode({...f.request, mode: 'yolo'})).mode,
+		'yolo',
+	);
+	t.is(f.launches(), 0);
+	t.is(f.confirmations(), 2);
+	await f.threads.promptThread({
+		...f.request,
+		text: 'fixture after renewed acceptance',
+	});
+	t.deepEqual(
+		f
+			.rpc()
+			.filter(event => event.method === 'session/set_mode')
+			.map(event => (event.params as {modeId: string}).modeId),
+		['normal', 'yolo'],
+	);
+	t.is(f.rpc().filter(event => event.method === 'session/prompt').length, 1);
+	t.true(f.writes.every(thread => thread.mode !== 'yolo'));
 });
 
 test('composed config uncertainty blocks every later prompt before content, not just the first prompt (ACP-14)', async t => {

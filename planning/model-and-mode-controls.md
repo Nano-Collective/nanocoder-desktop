@@ -89,12 +89,15 @@ offers, provider changes use the confirmed model, and uncertain config changes
 block repeated prompts before content. They also prove native confirmation
 shares prompt admission, late consent is refused after invalidation, and a
 previous-epoch yolo cannot survive a repeated-prompt fast path.
+Cancelling a new yolo selection leaves any earlier pending choice untouched and
+usable at first send. Replacement occurs only after acceptance and the existing
+scope checks. A cancelled yolo can also be selected again and explicitly accepted.
 
 ## Verification and design deviation
 
-- `pnpm test:all`: 929 unit tests; formatting, types, lint, Knip and audit pass.
+- `pnpm test:all`: 931 unit tests; formatting, types, lint, Knip and audit pass.
 - `pnpm test:ava:coverage`: 96.84% lines.
-- `pnpm test:e2e`: 145 pass, including five mounted controls/composer checks.
+- `pnpm test:e2e`: 146 pass, including six mounted controls/composer checks.
 - Pinned ACP `fc01e239a80ddb2e09ca174e3c909508832d5340`: 20 pass,
   including real mode acknowledgement, provider-confirmed different model and
   resume retaining the process-current model rather than historical config.
