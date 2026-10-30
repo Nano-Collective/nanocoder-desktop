@@ -183,6 +183,12 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	await expect(
 		page.getByRole('region', {name: 'connected agent'}),
 	).toBeVisible();
+	const switcher = page.getByLabel('switch project', {exact: true});
+	if (!(await page.locator('.project-switcher').getAttribute('open'))) {
+		await page.locator('.project-switcher').evaluate(element => {
+			(element as HTMLDetailsElement).open = true;
+		});
+	}
 	const recent = page.getByRole('region', {name: 'recent projects'});
 	await expect(
 		recent.getByRole('button', {name: 'open project', exact: true}),
@@ -199,11 +205,12 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	const input = page.getByRole('textbox', {name: 'message'});
 	const send = page.getByRole('button', {name: 'send', exact: true});
 	const focusOrder = [
-		palette,
+		switcher,
 		...['add project folder', 'open project', 'locate project'].map(name =>
 			recent.getByRole('button', {name, exact: true}),
 		),
 		rail.getByRole('button', {name: 'new thread', exact: true}),
+		rail.getByRole('textbox', {name: 'search thread titles in this project'}),
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
 		page.getByRole('button', {name: 'refresh saved sessions', exact: true}),
@@ -211,6 +218,7 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 			name: 'import saved session: existing saved session',
 			exact: true,
 		}),
+		palette,
 		open,
 		diagnostics,
 		input,
@@ -244,16 +252,19 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	const dialog = card.getByRole('alertdialog');
 	await expect(dialog).toBeFocused();
 	await expect(dialog).toHaveCSS('outline-width', '2px');
+	const switcher = page.getByLabel('switch project', {exact: true});
 	const recent = page.getByRole('region', {name: 'recent projects'});
 	const rail = page.getByRole('region', {name: 'project threads'});
 	const focusOrder = [
-		page.getByRole('button', {name: 'command palette', exact: true}),
+		switcher,
 		recent.getByRole('button', {name: 'add project folder', exact: true}),
 		recent.getByRole('button', {name: 'open project', exact: true}),
 		recent.getByRole('button', {name: 'locate project', exact: true}),
 		rail.getByRole('button', {name: 'new thread', exact: true}),
+		rail.getByRole('textbox', {name: 'search thread titles in this project'}),
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
+		page.getByRole('button', {name: 'command palette', exact: true}),
 		page.getByRole('button', {name: 'open a project folder', exact: true}),
 		page.getByRole('button', {name: 'diagnostics', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),

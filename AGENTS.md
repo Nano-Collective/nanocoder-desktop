@@ -75,8 +75,8 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/subagent-run-card.tsx`, `source/renderer/styles/subagents.css` | U.7 flat reported progress, truthful fallback and the owner's whole-turn stop callback |
 | `planning/subagents.md` | Phase 1.10 source limits, SUB-05 composition contract and subagent verification gaps |
 | `source/renderer/recovery-tools.tsx` | Plain-props process recovery and captured diagnostics controls |
-| `source/renderer/app-shell.tsx`, `source/renderer/styles/app-shell.css` | U.2 grid and plain-child rail/tools slots; inspector hidden at 840px and below |
-| `source/renderer/thread-rail.tsx`, `source/renderer/thread-rail-model.ts` | Plain-prop U.3 thread groups, state glyphs and metadata actions; presentation uses `styles/threads.css` |
+| `source/renderer/app-shell.tsx`, `source/renderer/styles/app-shell.css` | Compact chronological navigation, constrained chat and optional workbench/bottom slots; open workbench owns the canvas at 840px and below |
+| `source/renderer/thread-rail.tsx`, `source/renderer/thread-rail-model.ts` | Plain-prop U.3 scoped title filter, chronological groups, state glyphs and metadata actions; presentation uses `styles/threads.css` |
 | `source/renderer/thread-recovery-notice.tsx` | Plain-prop CHAT-09 missing-history metadata/actions and explicit same-thread retry; view-only keeps the composer hidden |
 | `source/renderer/thread-composer-state.ts` | App-only draft visibility/editability projection; runState, not reason presence, distinguishes retryable and view-only |
 | `source/renderer/session-import-controller.ts`, `source/renderer/use-session-imports.ts`, `source/renderer/session-import-list.tsx` | Separately scoped metadata-only import offers, stale-result guards and plain-props native actions; no automatic selection or prompt |

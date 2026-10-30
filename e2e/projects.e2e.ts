@@ -250,6 +250,20 @@ test('workspace and existing folder actions reuse the same canonical project pro
 	});
 });
 
+async function showProjects() {
+	await expect(page.locator('.recent-projects [role="status"]')).toHaveCount(0);
+	await expect(page.locator('.project-switcher')).toBeVisible();
+	if (
+		!(await page
+			.locator('.project-switcher')
+			.evaluate(element => (element as HTMLDetailsElement).open))
+	)
+		await page.getByLabel('switch project', {exact: true}).click();
+	await expect(
+		page.getByRole('region', {name: 'recent projects'}),
+	).toBeVisible();
+}
+
 test('a recent-project action opens by id without reopening the folder picker (CHAT-02)', async () => {
 	const root = path.join(work, 'project');
 	mkdirSync(root);
@@ -257,8 +271,10 @@ test('a recent-project action opens by id without reopening the folder picker (C
 	const project = await add(root);
 	await picker(root, 0);
 	await page.reload();
+	await showProjects();
 	const recent = page.getByRole('region', {name: 'recent projects'});
 	await expect(recent).toBeVisible();
+	await showProjects();
 	await recent.getByRole('button', {name: 'open project', exact: true}).click();
 	await expect(page.getByLabel('project trust feedback')).toContainText(
 		'project ready',
@@ -282,14 +298,18 @@ test('missing recent folders explain the disabled open action and offer locate (
 	renameSync(root, moved);
 	await picker(moved);
 	await page.reload();
+	await showProjects();
 	const recent = page.getByRole('region', {name: 'recent projects'});
+	await showProjects();
 	await expect(
 		recent.getByRole('button', {name: 'open project', exact: true}),
 	).toBeDisabled();
 	await expect(recent).toContainText('folder missing');
+	await showProjects();
 	await recent
 		.getByRole('button', {name: 'locate project', exact: true})
 		.click();
+	await showProjects();
 	await expect(
 		recent.getByRole('button', {name: 'open moved', exact: true}),
 	).toBeEnabled();
@@ -301,8 +321,10 @@ test('missing recent folders explain the disabled open action and offer locate (
 
 test('cancelling the recent-project picker leaves the list unchanged and reports cancellation (CHAT-01)', async () => {
 	await picker();
+	await showProjects();
 	const recent = page.getByRole('region', {name: 'recent projects'});
 	await expect(recent).toBeVisible();
+	await showProjects();
 	await recent
 		.getByRole('button', {name: 'add project folder', exact: true})
 		.click();
@@ -353,7 +375,9 @@ test('opening a recent project exposes only its own thread and restores each pro
 	const firstThreadId = await selected.getAttribute('data-thread-id');
 	expect(firstThreadId).not.toBeNull();
 	if (!firstThreadId) throw new Error('Expected the first selected thread');
+	await showProjects();
 	const recent = page.getByRole('region', {name: 'recent projects'});
+	await showProjects();
 	await recent
 		.getByRole('button', {name: 'open second-project', exact: true})
 		.click();
@@ -367,6 +391,7 @@ test('opening a recent project exposes only its own thread and restores each pro
 		page.getByRole('region', {name: 'connected agent'}),
 	).toContainText(second);
 	await input.fill('second project private draft');
+	await showProjects();
 	await recent
 		.getByRole('button', {name: 'open first-project', exact: true})
 		.click();
@@ -375,12 +400,14 @@ test('opening a recent project exposes only its own thread and restores each pro
 	await expect(
 		page.getByRole('region', {name: 'connected agent'}),
 	).toContainText(first);
+	await showProjects();
 	await recent
 		.getByRole('button', {name: 'open second-project', exact: true})
 		.click();
 	await expect(input).toHaveValue('second project private draft');
 	await expect(selected).not.toHaveAttribute('data-thread-id', firstThreadId);
 	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await showProjects();
 	await expect(recent.locator('[aria-current="true"]')).toContainText(
 		'second-project',
 	);
@@ -391,8 +418,8 @@ test('opening a recent project exposes only its own thread and restores each pro
 	).toBeVisible();
 	await page.emulateMedia({reducedMotion: 'reduce'});
 	for (const [theme, color] of [
-		['dark', 'rgb(230, 230, 234)'],
-		['light', 'rgb(27, 33, 50)'],
+		['dark', 'rgb(230, 230, 230)'],
+		['light', 'rgb(36, 40, 59)'],
 	]) {
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
@@ -413,6 +440,7 @@ test('opening a folder through the legacy action refreshes the active recent pro
 		.getByRole('button', {name: 'open a project folder', exact: true})
 		.click();
 	await expect(page.getByRole('textbox', {name: 'message'})).toBeVisible();
+	await showProjects();
 	await expect(
 		page
 			.getByRole('region', {name: 'recent projects'})

@@ -1,90 +1,100 @@
 import * as React from 'react';
+import {Button} from '@/renderer/ui';
 
 export function AppShell({
 	title,
+	logoSrc,
+	threadTitle,
+	projectName,
 	statusBadges,
 	projectRail,
 	threadRail,
+	sidebarFooter,
 	streamTools,
 	composer,
 	palette,
+	workbench,
+	bottomPanel,
 	children,
 }: {
 	title: React.ReactNode;
+	logoSrc?: string;
+	threadTitle?: React.ReactNode;
+	projectName?: string;
 	statusBadges: React.ReactNode;
 	projectRail?: React.ReactNode;
 	threadRail?: React.ReactNode;
+	sidebarFooter?: React.ReactNode;
 	streamTools?: React.ReactNode;
 	composer?: React.ReactNode;
 	palette?: React.ReactNode;
+	workbench?: {title: string; children: React.ReactNode; onClose(): void};
+	bottomPanel?: React.ReactNode;
 	children: React.ReactNode;
 }) {
 	return (
 		<div className="app-shell">
-			<header className="shell-title-bar">
+			<aside className="shell-project-rail" aria-label="project rail">
 				<h1 className="shell-brand">
-					<img
-						className="official-logo"
-						src={
-							new URL('./assets/nano-collective-avatar.png', import.meta.url)
-								.href
-						}
-						alt=""
-					/>
+					{logoSrc && <img className="official-logo" src={logoSrc} alt="" />}
 					{title}
 				</h1>
-				<div
-					className="shell-session-tabs"
-					role="group"
-					aria-label="session tabs"
-				>
-					<span className="shell-placeholder">
-						session tabs · not built yet
-					</span>
-				</div>
-				<div className="gate-actions">{statusBadges}</div>
-				{palette ?? (
-					<span className="shell-placeholder shell-palette">
-						<kbd>⌘K</kbd> palette not built yet
-					</span>
+				<div data-shell-slot="project-rail">{projectRail}</div>
+				<div data-shell-slot="thread-rail">{threadRail}</div>
+				{sidebarFooter && (
+					<footer className="shell-sidebar-footer">{sidebarFooter}</footer>
 				)}
-			</header>
-			<div className="shell-columns">
-				<aside className="shell-project-rail" aria-label="project rail">
-					<h2 className="shell-heading">projects</h2>
-					<div data-shell-slot="project-rail">
-						{projectRail ?? (
-							<p className="shell-placeholder">project list not built yet</p>
-						)}
+			</aside>
+			<div className="shell-main-area">
+				<header className="shell-title-bar">
+					<div className="shell-identity">
+						{projectName && <p className="shell-breadcrumb">{projectName}</p>}
+						<h2>{threadTitle ?? 'your workspace'}</h2>
 					</div>
-					<div data-shell-slot="thread-rail">
-						{threadRail ?? (
-							<p className="shell-placeholder">thread list not built yet</p>
-						)}
-					</div>
-				</aside>
-				<main className="shell-stream" aria-label="conversation workspace">
-					<div className="shell-stream-scroll">
-						<div className="shell-stream-tools" data-shell-slot="stream-tools">
-							{streamTools}
+					<div className="gate-actions">{statusBadges}</div>
+					{palette}
+				</header>
+				<div className="shell-canvas" data-workbench-open={Boolean(workbench)}>
+					<main className="shell-stream" aria-label="conversation workspace">
+						<div className="shell-stream-scroll">
+							{streamTools && (
+								<div
+									className="shell-stream-tools"
+									data-shell-slot="stream-tools"
+								>
+									{streamTools}
+								</div>
+							)}
+							<div className="technical-gate">{children}</div>
 						</div>
-						<div className="technical-gate">{children}</div>
-					</div>
-					{composer && <div className="shell-composer">{composer}</div>}
-				</main>
-				<aside className="shell-inspector" aria-label="inspector">
-					<div
-						className="shell-inspector-tabs"
-						role="group"
-						aria-label="inspector tabs not built yet"
+						{composer && <div className="shell-composer">{composer}</div>}
+					</main>
+					{workbench && (
+						<aside
+							className="shell-workbench"
+							aria-label={workbench.title}
+							data-shell-slot="workbench"
+						>
+							<header className="shell-workbench-header">
+								<h2>{workbench.title}</h2>
+								<Button onClick={workbench.onClose}>
+									<span className="workbench-close-wide">close panel</span>
+									<span className="workbench-close-narrow">← back to chat</span>
+								</Button>
+							</header>
+							{workbench.children}
+						</aside>
+					)}
+				</div>
+				{bottomPanel && (
+					<section
+						className="shell-bottom-panel"
+						aria-label="project tools"
+						data-shell-slot="bottom-panel"
 					>
-						<span className="shell-placeholder">files</span>
-						<span className="shell-placeholder">review</span>
-					</div>
-					<p className="shell-placeholder">
-						files and review are not built yet
-					</p>
-				</aside>
+						{bottomPanel}
+					</section>
+				)}
 			</div>
 		</div>
 	);

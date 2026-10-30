@@ -155,3 +155,70 @@
 	color: var(--colors-on-surface);
 	overflow-wrap: anywhere;
 }
+
+.thread-rail {
+	gap: 12px;
+}
+.thread-rail-heading h2 {
+	display: none;
+}
+.thread-rail-heading .ui-button {
+	width: 100%;
+	justify-content: space-between;
+	background: var(--colors-surface-elevated);
+	font-size: 10px;
+}
+.thread-search {
+	width: 100%;
+	min-width: 0;
+	height: 31px;
+	padding: 5px 9px;
+	border: 1px solid var(--colors-stroke);
+	border-radius: 7px;
+	background: transparent;
+	color: var(--colors-on-surface);
+	font: inherit;
+}
+.thread-search::placeholder {
+	color: var(--colors-on-surface-muted);
+	opacity: 1;
+}
+.thread-row {
+	border-radius: 5px;
+}
+.thread-open {
+	min-height: 33px;
+	padding: 6px 23px 6px 5px;
+	gap: 7px;
+}
+.thread-copy {
+	min-width: 0;
+	flex: 1;
+}
+.thread-title {
+	display: block;
+	font-size: 10px;
+}
+.thread-state-label {
+	display: block;
+	font-size: 9px;
+	color: var(--colors-on-surface);
+}
+.thread-age {
+	flex: none;
+	color: var(--colors-on-surface-muted);
+	font-size: 9px;
+}
+.thread-status {
+	flex: none;
+}
+.thread-group-heading {
+	font-size: 9px;
+	font-weight: 400;
+	letter-spacing: 0;
+	text-transform: none;
+}
+.thread-actions > summary {
+	min-height: 30px;
+	padding: 5px;
+}

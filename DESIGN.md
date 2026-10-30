@@ -95,10 +95,10 @@ spacing:
   lg: 10px
   xl: 14px
   xxl: 18px
-  rail-width: 190px
-  inspector-width: 240px
-  bottom-panel-height: 164px
-  stream-padding: 18px
+  rail-width: 222px
+  inspector-width: 480px
+  bottom-panel-height: 294px
+  stream-padding: 40px
   width-wide: 1240px
   width-mid: 1020px
   width-narrow: 840px
@@ -362,8 +362,8 @@ Only locally bundled Fira Code 400, with Consolas, Menlo and monospace fallbacks
 |---|---|---|
 | `body-md` | 13px / 1.8 | Agent/user reading text and composer input. |
 | `body-sm` | 11px / 1.8 | Tool detail, reasoning, cards and notices. |
-| `tab` | 11px / 1.55 | Chrome, menu rows and toasts. |
-| `code-sm` | 11px / 1.8 | Reported code and tool output. |
+| `tab` | 11px / 1.8 | Chrome, menu rows and toasts. |
+| `code-sm` | 11px / 1.6 | Reported code and tool output. |
 | `meta` | 11px / 1.6 | Actions and supporting copy. |
 | `caption` | 10px / 1.6 | Sidebar rows, badges and composer controls. |
 | `label-section` | 9px / 1.6 | Compact sidebar group labels. |

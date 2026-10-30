@@ -14,9 +14,11 @@ import {
 	type Page,
 	test,
 } from '@playwright/test';
+import {build} from 'vite';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import type {mountShellFixture} from './qa/shell-harness';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-shell-')));
@@ -153,7 +155,7 @@ test('ACP readiness is replayed on reopening after a renderer reload', async () 
 	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
 });
 
-test('shell geometry and pinned composer follow all three widths and the exact inspector breakpoint', async () => {
+test('shell geometry and pinned composer follow all three widths without an empty inspector', async () => {
 	await open(project('layout'));
 	await page.emulateMedia({reducedMotion: 'reduce'});
 	await page.evaluate(() => {
@@ -169,12 +171,7 @@ test('shell geometry and pinned composer follow all three widths and the exact i
 			}, theme);
 			for (const width of [1240, 1020, 840, 841, 839]) {
 				await page.setViewportSize({width, height: 900});
-				const inspector = page.getByRole('complementary', {
-					name: 'inspector',
-					includeHidden: true,
-				});
-				if (width > 840) await expect(inspector).toBeVisible();
-				else await expect(inspector).toBeHidden();
+				await expect(page.locator('.shell-workbench')).toHaveCount(0);
 				const geometry = await page.evaluate(() => {
 					const measure = (selector: string) => {
 						const element = document.querySelector(selector);
@@ -188,19 +185,18 @@ test('shell geometry and pinned composer follow all three widths and the exact i
 					return {
 						rail: measure('.shell-project-rail'),
 						stream: measure('.shell-stream'),
-						inspector: measure('.shell-inspector'),
 						composer: measure('.gate-composer'),
 						scrolls: scroll.scrollHeight > scroll.clientHeight,
 						overflows: document.documentElement.scrollWidth > innerWidth,
 					};
 				});
-				expect(geometry.rail.width).toBe(190);
-				expect(geometry.stream.x).toBe(190);
-				expect(geometry.inspector.width).toBe(width > 840 ? 240 : 0);
-				expect(geometry.stream.width).toBe(
-					width - 190 - (width > 840 ? 240 : 0),
+				const railWidth = width <= 840 ? 188 : width <= 1050 ? 204 : 222;
+				expect(geometry.rail.width).toBe(railWidth);
+				expect(geometry.stream.x).toBe(railWidth);
+				expect(geometry.stream.width).toBe(width - railWidth);
+				expect(geometry.composer.bottom).toBe(
+					width <= 840 ? 883 : width <= 1050 ? 882 : 880,
 				);
-				expect(geometry.composer.bottom).toBe(882);
 				expect(geometry.scrolls).toBe(true);
 				expect(geometry.overflows).toBe(false);
 				expect(await visibleTextContrast(page, theme)).toEqual([]);
@@ -213,11 +209,9 @@ test('shell geometry and pinned composer follow all three widths and the exact i
 	}
 });
 
-test('unfinished shell regions remain static while the real thread rail exposes its named controls', async () => {
+test('the compact shell exposes real controls and omits unused later surfaces', async () => {
 	await page.setViewportSize({width: 1240, height: 900});
-	await expect(page.getByRole('banner')).toContainText(
-		'session tabs · not built yet',
-	);
+	await expect(page.getByRole('banner')).not.toContainText('not built yet');
 	await expect(
 		page.getByRole('banner').getByRole('button', {name: 'command palette'}),
 	).toBeVisible();
@@ -229,30 +223,23 @@ test('unfinished shell regions remain static while the real thread rail exposes 
 		threads.locator('.thread-open[aria-current="true"]'),
 	).toHaveCount(1);
 	await expect(
-		page.getByText('thread list not built yet', {exact: true}),
+		page.locator('.shell-workbench,.shell-bottom-panel,.shell-placeholder'),
 	).toHaveCount(0);
+	const switcher = page.getByLabel('switch project', {exact: true});
+	await switcher.click();
 	await expect(
-		page
-			.locator('[data-shell-slot="project-rail"]')
-			.getByRole('region', {name: 'recent projects'}),
+		page.getByRole('region', {name: 'recent projects'}),
 	).toBeVisible();
-	await expect(
-		page.getByText('project list not built yet', {exact: true}),
-	).toHaveCount(0);
-	const inspector = page.getByRole('complementary', {name: 'inspector'});
-	await expect(inspector).toContainText('files and review are not built yet');
-	await expect(inspector.getByRole('button')).toHaveCount(0);
-	await expect(inspector.getByRole('tab')).toHaveCount(0);
-	for (const placeholder of await page.locator('.shell-placeholder').all()) {
-		await expect(placeholder).toHaveCSS('border-style', 'dashed');
-		await expect(placeholder).toHaveCSS('opacity', '1');
-		await expect(
-			placeholder.locator('button, input, a, [tabindex="0"]'),
-		).toHaveCount(0);
-	}
-	await expect(page.locator('.shell-bottom-panel')).toHaveCount(0);
+	await switcher.click();
+	const search = page.getByRole('textbox', {
+		name: 'search thread titles in this project',
+	});
+	await search.fill('no such fixture title');
+	await expect(threads.getByRole('status')).toHaveText('no matching threads');
+	await expect(threads.locator('.thread-open')).toHaveCount(0);
+	await search.fill('');
+	await expect(threads.locator('.thread-open')).toHaveCount(1);
 });
-
 test('keyboard controls remain reachable and visibly focused inside the stream in both themes and all widths', async () => {
 	for (const theme of ['dark', 'light']) {
 		await page.evaluate(theme => {
@@ -276,6 +263,11 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				name: 'add project folder',
 				exact: true,
 			});
+			const switcher = page.getByLabel('switch project', {exact: true});
+			await page.locator('.project-switcher').evaluate(element => {
+				(element as HTMLDetailsElement).open = true;
+			});
+			await expect(recent).toBeVisible();
 			const projects = recent.getByRole('listitem');
 			expect(await projects.count()).toBeGreaterThan(0);
 			const rail = page.getByRole('region', {name: 'project threads'});
@@ -285,7 +277,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			});
 			const send = page.getByRole('button', {name: 'send', exact: true});
 			const focusOrder = [
-				palette,
+				switcher,
 				add,
 				...(await projects.all()).flatMap(project =>
 					['open', 'locate'].map(name =>
@@ -293,6 +285,9 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 					),
 				),
 				rail.getByRole('button', {name: 'new thread', exact: true}),
+				rail.getByRole('textbox', {
+					name: 'search thread titles in this project',
+				}),
 				...(await rail.locator('.thread-row').all()).flatMap(thread => [
 					thread.locator('.thread-open'),
 					thread.locator('.thread-actions > summary'),
@@ -302,6 +297,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 					name: 'import saved session: existing saved session',
 					exact: true,
 				}),
+				palette,
 				open,
 				diagnostics,
 				input,
@@ -315,7 +311,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				if (control === input) {
 					await expect(page.locator('.gate-composer')).toHaveCSS(
 						'border-color',
-						theme === 'dark' ? 'rgb(69, 155, 247)' : 'rgb(0, 0, 238)',
+						theme === 'dark' ? 'rgb(122, 162, 247)' : 'rgb(0, 0, 238)',
 					);
 					await input.fill('fixture keyboard check');
 				}
@@ -337,5 +333,88 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 			await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
 		}
+	}
+});
+
+test('the mounted workbench takes the narrow canvas and returns to the same chat draft', async () => {
+	page.setDefaultTimeout(5000);
+	const fixtureErrors: string[] = [];
+	page.on('pageerror', error => fixtureErrors.push(error.message));
+	const result = await build({
+		configFile: false,
+		logLevel: 'silent',
+		define: {'process.env.NODE_ENV': JSON.stringify('production')},
+		resolve: {alias: {'@': path.resolve('source')}},
+		build: {
+			write: false,
+			minify: false,
+			lib: {
+				entry: path.resolve('e2e/qa/shell-harness.ts'),
+				name: 'shellFixture',
+				formats: ['iife'],
+			},
+		},
+	});
+	const outputs = Array.isArray(result) ? result : [result];
+	const code = outputs
+		.flatMap(output => ('output' in output ? output.output : []))
+		.filter(chunk => chunk.type === 'chunk')
+		.map(chunk => chunk.code)
+		.join('\n');
+	await page.evaluate(code);
+	await page.evaluate(() => {
+		const state = window as unknown as {
+			shellFixture: {mountShellFixture: typeof mountShellFixture};
+			unmountShell: () => void;
+		};
+		state.unmountShell = state.shellFixture.mountShellFixture();
+	});
+	try {
+		for (const theme of ['dark', 'light']) {
+			await page.evaluate(theme => {
+				document.documentElement.dataset.theme = theme;
+			}, theme);
+			expect(
+				await page.getByRole('button', {name: 'open fixture panel'}).count(),
+				fixtureErrors.join('\n'),
+			).toBe(1);
+			for (const width of [1240, 1020, 841, 840, 839]) {
+				await page.setViewportSize({width, height: 900});
+				const opener = page.getByRole('button', {name: 'open fixture panel'});
+				await opener.focus();
+				await page.keyboard.press('Enter');
+				const panel = page.getByRole('complementary', {
+					name: 'fixture workbench',
+				});
+				await expect(panel).toBeVisible();
+				const chat = page.getByRole('main', {name: 'conversation workspace'});
+				const draft = page.getByRole('textbox', {
+					name: 'fixture draft',
+					includeHidden: true,
+				});
+				await expect(draft).toHaveValue('kept draft');
+				if (width <= 840) {
+					await expect(chat).toBeHidden();
+					const railWidth = 188;
+					expect((await panel.boundingBox())?.width).toBe(width - railWidth);
+				} else await expect(chat).toBeVisible();
+				const close = panel.getByRole('button', {
+					name: width <= 840 ? '← back to chat' : 'close panel',
+					exact: true,
+				});
+				await close.focus();
+				await expect(close).toHaveCSS('outline-width', '2px');
+				await page.keyboard.press('Enter');
+				await expect(panel).toHaveCount(0);
+				await expect(opener).toBeFocused();
+				await expect(chat).toBeVisible();
+				await expect(draft).toHaveValue('kept draft');
+				expect(await visibleTextContrast(page, theme)).toEqual([]);
+			}
+		}
+	} finally {
+		await page.evaluate(() =>
+			(window as unknown as {unmountShell(): void}).unmountShell(),
+		);
 	}
 });

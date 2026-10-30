@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
 import {ApprovalRequests} from '@/renderer/approval-requests';
+import logoUrl from '@/renderer/assets/nano-collective-avatar.png';
 import {Composer} from '@/renderer/composer';
 import {ConversationStream} from '@/renderer/conversation-stream';
 import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
@@ -362,10 +363,24 @@ export function App() {
 			]}
 		>
 			<AppShell
-				title={info?.name}
+				logoSrc={logoUrl}
+				title={info?.name ?? 'Nanocoder'}
+				threadTitle={thread?.title}
+				projectName={currentProject?.displayName}
+				sidebarFooter={
+					<>
+						<span>
+							Nanocoder{' '}
+							{agent?.version ??
+								(runtime?.ok ? runtime.value.version : 'not connected')}
+						</span>
+						<span>desktop {info?.version ?? 'pre-v0.1'}</span>
+					</>
+				}
 				palette={<PaletteButton />}
 				projectRail={
 					<RecentProjects
+						compact
 						{...projectControls}
 						pending={connecting || projectControls.pending}
 					/>
@@ -373,6 +388,7 @@ export function App() {
 				threadRail={
 					<>
 						<ThreadRail
+							key={`threads:${projectId}`}
 							projectId={projectId}
 							threads={workspace.threads}
 							activeThreadId={workspace.activeThreadId}
