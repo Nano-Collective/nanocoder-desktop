@@ -11,13 +11,22 @@ import test from 'ava';
 import {connectNanocoder, NanocoderFailure} from '@/main/nanocoder/acp-client';
 import {openProject} from '@/main/nanocoder/open-project';
 import {type TrustReason, trustDirectory} from '@/main/nanocoder/trust';
+import {createTrustPreflight} from '@/main/nanocoder/trust-preflight';
 
 const cli = process.env.NANOCODER_CLI ?? '';
-const runtime = {nodePath: process.execPath, cliPath: cli};
+let runtime = {
+	nodePath: process.execPath,
+	cliPath: cli,
+	version: '1.31.0',
+	source: 'override' as const,
+};
 const clientInfo = {name: 'nanocoder-desktop', version: '0.0.0-test'};
 const work = realpathSync.native(
 	mkdtempSync(path.join(tmpdir(), 'nd-acp-real-')),
 );
+test.before(async () => {
+	runtime = await createTrustPreflight().verify(runtime, work);
+});
 // Nanocoder keeps its config and trust list here, not in the user's home.
 const env = {
 	...process.env,
