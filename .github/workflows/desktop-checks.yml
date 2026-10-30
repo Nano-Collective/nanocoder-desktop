@@ -200,7 +200,6 @@ jobs:
         id: e2e
         shell: bash
         env:
-          NANOCODER_EXIT_CHECK_CLI: ''
           NANOCODER_CLI: ''
           NANOCODER_E2E_VISIBLE: ''
         run: |
@@ -219,7 +218,7 @@ jobs:
             },
           };
           CONFIG
-          # No real runtime/config lookup, user home or profile enters captures.
+          # Isolate runtime/config lookup and user home/profile data.
           sandbox="$RUNNER_TEMP/nanocoder-e2e"
           export HOME="$sandbox/home" USERPROFILE="$sandbox/home"
           export XDG_CONFIG_HOME="$sandbox/config" XDG_DATA_HOME="$sandbox/data"
@@ -234,6 +233,8 @@ jobs:
             pnpm test:e2e --config .qa/e2e-ci/playwright.config.ts
           fi 2>&1 | tee .qa/e2e-ci/playwright.log
 
+      # Artifacts may quote checked-in fake test source, but contain no
+      # environment dumps, home/profile files or real Nanocoder data.
       - name: Upload failed fake-fixture E2E diagnostics
         if: failure() && steps.e2e.outcome == 'failure'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
