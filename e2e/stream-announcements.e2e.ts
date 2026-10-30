@@ -10,12 +10,12 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {
 	type ElectronApplication,
-	_electron as electron,
 	expect,
 	type Page,
 	test,
 } from '@playwright/test';
 import {build} from 'vite';
+import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import type {announcementHarness} from './qa/stream-announcement-harness';
 
@@ -164,7 +164,7 @@ test('fake stream is rate-limited and one AX-visible node survives palette open/
 	});
 	await page.keyboard.press(paletteKey);
 	await expect(palette()).toBeVisible();
-	await expect(palette().getByRole('textbox')).toBeFocused();
+	await expect(palette().getByRole('combobox')).toBeFocused();
 	await expect(announcement()).toHaveText('turn started');
 	expect(await accessibleAnnouncement()).toEqual({
 		count: 1,
@@ -196,7 +196,7 @@ test('fake stream is rate-limited and one AX-visible node survives palette open/
 	await expect(announcement()).toHaveText(
 		'turn completed. response finished: fixture final answer',
 	);
-	await expect(palette().getByRole('textbox')).toBeFocused();
+	await expect(palette().getByRole('combobox')).toBeFocused();
 	expect(await accessibleAnnouncement()).toEqual({
 		count: 1,
 		text: 'turn completed. response finished: fixture final answer',
@@ -230,6 +230,8 @@ test('fake stream is rate-limited and one AX-visible node survives palette open/
 });
 
 test('unmount/remount removes the old status, cancels clocks/frames and refuses every late callback (A11Y-04/05)', async () => {
+	await page.keyboard.press(paletteKey);
+	await expect(palette()).toBeVisible();
 	const lifecycle = await page.evaluate(() => {
 		const harness = (window as unknown as HarnessWindow)
 			.streamAnnouncementFixture.announcementHarness;
@@ -272,6 +274,9 @@ test('unmount/remount removes the old status, cancels clocks/frames and refuses 
 			window as unknown as HarnessWindow
 		).streamAnnouncementFixture.announcementHarness.dispose(),
 	);
+	await expect(announcement()).toHaveCount(0);
+	await page.keyboard.press('Escape');
+	await expect(palette()).toHaveCount(0);
 });
 
 test('finished turn includes one bounded response and does not move composer focus (A11Y-04/05)', async () => {
@@ -327,7 +332,7 @@ test('approval with palette open uses its existing count, without duplicate wait
 	}, process.platform === 'darwin');
 	await expect(palette()).toBeVisible();
 	await expect(palette()).toContainText('approval required · 1 waiting');
-	await expect(palette().getByRole('textbox')).toBeFocused();
+	await expect(palette().getByRole('combobox')).toBeFocused();
 	await expect(announcement()).not.toContainText('waiting for approval');
 	expect((await accessibleAnnouncement()).count).toBe(1);
 	const state = await page.evaluate(() =>
