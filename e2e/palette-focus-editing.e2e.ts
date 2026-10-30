@@ -77,12 +77,40 @@ test.afterAll(async () => {
 	}
 });
 
-for (const method of [
+const methods = [
 	'palette Escape',
 	'palette command',
 	'shortcuts Escape',
 	'shortcuts close button',
-] as const) {
+] as const;
+
+async function closeOverlay(method: (typeof methods)[number]) {
+	await page.keyboard.press(paletteKey);
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	const search = palette.getByRole('combobox');
+	await expect(search).toBeFocused();
+	if (method.startsWith('shortcuts')) {
+		await search.pressSequentially('keyboard shortcuts');
+		await search.press('Enter');
+		const close = page.getByRole('button', {
+			name: 'close keyboard shortcuts',
+		});
+		await expect(close).toBeFocused();
+		await close.press(method.endsWith('Escape') ? 'Escape' : 'Enter');
+	} else if (method.endsWith('command')) {
+		await search.pressSequentially('switch to light theme');
+		await search.press('Enter');
+	} else {
+		await search.press('Escape');
+	}
+	await expect(page.locator('dialog[open]')).toHaveCount(0);
+	await expect(input()).toBeFocused();
+}
+
+for (const method of methods) {
 	test(`${method} restores actual composer editing, not just DOM focus (A11Y-01/02)`, async () => {
 		await input().focus();
 		await input().press('ControlOrMeta+a');
@@ -91,29 +119,7 @@ for (const method of [
 		await expect(input()).toHaveValue('before');
 		await input().press('ControlOrMeta+a');
 		await input().press('Backspace');
-		await page.keyboard.press(paletteKey);
-		const palette = page.getByRole('dialog', {
-			name: 'command palette',
-			exact: true,
-		});
-		const search = palette.getByRole('combobox');
-		await expect(search).toBeFocused();
-		if (method.startsWith('shortcuts')) {
-			await search.pressSequentially('keyboard shortcuts');
-			await search.press('Enter');
-			const close = page.getByRole('button', {
-				name: 'close keyboard shortcuts',
-			});
-			await expect(close).toBeFocused();
-			await close.press(method.endsWith('Escape') ? 'Escape' : 'Enter');
-		} else if (method.endsWith('command')) {
-			await search.pressSequentially('switch to light theme');
-			await search.press('Enter');
-		} else {
-			await search.press('Escape');
-		}
-		await expect(page.locator('dialog[open]')).toHaveCount(0);
-		await expect(input()).toBeFocused();
+		await closeOverlay(method);
 		const eventsBefore = Number(
 			await input().getAttribute('data-input-events'),
 		);
@@ -127,3 +133,58 @@ for (const method of [
 		).toBeEnabled();
 	});
 }
+
+test.describe('existing composer state', () => {
+	test.beforeAll(async () => {
+		const project = path.join(work, 'stream-project');
+		mkdirSync(project);
+		writeFileSync(path.join(project, '.fake-nanocoder'), 'streaming');
+		await app.evaluate(({dialog}, folder) => {
+			dialog.showOpenDialog = (async () => ({
+				canceled: false,
+				filePaths: [folder],
+			})) as typeof dialog.showOpenDialog;
+		}, project);
+		await page.getByRole('button', {name: 'open a project folder'}).click();
+		await expect(input()).toBeEnabled();
+		await input().fill('synthetic command fixture');
+		await input().press('Enter');
+		await expect(
+			page.getByText('turn ended: end_turn', {exact: true}),
+		).toBeVisible();
+	});
+
+	for (const method of methods) {
+		test(`${method} preserves the draft, caret and slash suggestions`, async () => {
+			await input().focus();
+			await input().press('ControlOrMeta+a');
+			await input().press('Backspace');
+			await input().pressSequentially('/re');
+			const suggestions = page.getByRole('list', {
+				name: 'available slash commands',
+			});
+			await expect(suggestions.getByRole('button')).toHaveCount(1);
+			await input().evaluate(element => {
+				(element as HTMLTextAreaElement).setSelectionRange(1, 2, 'backward');
+			});
+			const state = () =>
+				input().evaluate(element => {
+					const textarea = element as HTMLTextAreaElement;
+					return {
+						draft: textarea.value,
+						start: textarea.selectionStart,
+						end: textarea.selectionEnd,
+						direction: textarea.selectionDirection,
+					};
+				});
+			const before = await state();
+			const beforeSuggestions = await suggestions.allTextContents();
+			await closeOverlay(method);
+			expect(await state()).toEqual(before);
+			await expect(suggestions).toBeVisible();
+			expect(await suggestions.allTextContents()).toEqual(beforeSuggestions);
+			await input().pressSequentially('x');
+			await expect(input()).toHaveValue('/xe');
+		});
+	}
+});

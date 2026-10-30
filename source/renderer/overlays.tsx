@@ -150,7 +150,15 @@ export function OverlayProvider({
 
 	const close = useCallback(() => {
 		dialog.current?.close();
-		closingFocus.current = document.activeElement;
+		const active = document.activeElement;
+		closingFocus.current = active;
+		// Do not expose native-restored editor focus before close has settled.
+		if (
+			active instanceof HTMLTextAreaElement ||
+			(active instanceof HTMLInputElement && active.selectionStart !== null) ||
+			(active instanceof HTMLElement && active.isContentEditable)
+		)
+			active.blur();
 		setKind(null);
 	}, []);
 
