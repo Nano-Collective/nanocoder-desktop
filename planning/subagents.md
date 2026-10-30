@@ -41,9 +41,20 @@ metadata committed before snapshot replacement. Its additive passive
 closures. Real COMMIT failures and stale/reentrant candidates cannot replace
 the original observer. Existing lane C assertions remain unchanged.
 
+ThreadService also composes live allocation and owning terminal production
+through `commitLive` and the existing fork. Identity and safe run metadata
+commit before their user/tool batch is published. Approval-only completion
+is not success; later turns may reuse a tool ID but not its execution UUID.
+Existing passive unit/renderer assertions are not weakened.
+The optional main-owned historical outcome travels through an enum-only
+transcript field and one existing card prop. Known failed/interrupted cards
+retain their glyph and existing error token; missing/unknown stays muted.
+Previously reported completion is not styled as historical success. A built
+whole-app/child restart proof checks UUID reuse, retained failure, synthetic
+unknown outcome and no duplicate cards with the same temporary profile.
+
 This updates the historical uncomposed-module description above, not the
-`SUB-05` completion boundary. ThreadService live allocation/terminal
-production, complete app/child restart continuation, import/ambiguity
+`SUB-05` completion boundary. Complete app/child restart continuation, import/ambiguity
 integration and renderer replay/flush gates remain pending. The passive
 modules alone do not prove those behaviours. `SUB-08` and `OQ-03` remain open
 until Nanocoder exposes stable child identity, relationships, results and

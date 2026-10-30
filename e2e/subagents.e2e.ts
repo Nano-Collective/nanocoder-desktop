@@ -239,15 +239,127 @@ test.describe('fc01-shaped delegation cards', () => {
 		});
 	}
 
-	test('SUB-05 remains unwired rather than pretending cards are durable', async () => {
+	test('SUB-05 production delegations commit exact scoped execution-linked metadata without task content', async () => {
+		const {readFileSync, existsSync} = await import('node:fs');
+		await page.getByRole('button', {name: 'new thread', exact: true}).click();
+		await expect(
+			page.locator('.thread-row[data-selected="true"] .thread-title'),
+		).toHaveText('new thread');
+		const scope = await page.evaluate(async () => {
+			const {desktop} = window as unknown as {
+				desktop: import('@/shared/desktop-api').DesktopApi;
+			};
+			const ui = await desktop.getUiState({});
+			if (!ui.ok || !ui.value.activeProjectId || !ui.value.activeThreadId)
+				throw new Error('Missing the production delegation owner');
+			const scope = {
+				projectId: ui.value.activeProjectId,
+				threadId: ui.value.activeThreadId,
+			};
+			const renamed = await desktop.renameThread({
+				...scope,
+				title: 'metadata boundary fixture',
+			});
+			if (!renamed.ok) throw new Error(renamed.error.code);
+			return scope;
+		});
 		const profile = await app.evaluate(({app}) => app.getPath('userData'));
 		const db = new DatabaseSync(path.join(profile, 'desktop.sqlite'), {
 			readOnly: true,
 		});
 		try {
-			expect(
-				db.prepare('SELECT count(*) AS count FROM agent_run').get()?.count,
-			).toBe(0);
+			const before = db.prepare('SELECT * FROM agent_run ORDER BY id').all();
+			await page.evaluate(scope => {
+				const state = window as unknown as {
+					desktop: import('@/shared/desktop-api').DesktopApi;
+					metadataToolId: string | null;
+				};
+				state.metadataToolId = null;
+				const off = state.desktop.onProjectEvent(event => {
+					if (event.type !== 'turn' || event.threadId !== scope.threadId)
+						return;
+					const tool = event.events.find(
+						event => event.type === 'tool' && event.delegation,
+					);
+					if (tool?.type === 'tool') {
+						state.metadataToolId = tool.id;
+						off();
+					}
+				});
+			}, scope);
+			const privatePrompt =
+				'fixture failure metadata-boundary-private-user-content';
+			await prompt(privatePrompt);
+			await expect(page.getByRole('alertdialog')).toHaveCount(1);
+			await page
+				.getByRole('alertdialog')
+				.getByRole('button', {name: 'Allow'})
+				.click();
+			await expect(
+				page.getByText('turn ended: end_turn', {exact: true}),
+			).toBeVisible();
+			await expect(cards()).toHaveCount(1);
+			await expect(cards().last()).toContainText('failed');
+			const toolCallId = await page.evaluate(
+				() =>
+					(window as unknown as {metadataToolId: string | null}).metadataToolId,
+			);
+			expect(toolCallId).toEqual(expect.any(String));
+			const thread = db
+				.prepare('SELECT * FROM thread WHERE id=? AND project_id=?')
+				.get(scope.threadId, scope.projectId);
+			expect(thread?.nanocoder_session_id).toEqual(expect.any(String));
+			const execution = db
+				.prepare(`SELECT e.*, t.project_id FROM thread_execution_identity e
+					JOIN thread t ON t.id=e.thread_id
+					WHERE e.thread_id=? AND e.tool_call_id=?`)
+				.get(scope.threadId, toolCallId);
+			expect(execution).toMatchObject({
+				project_id: scope.projectId,
+				thread_id: scope.threadId,
+				session_id: thread?.nanocoder_session_id,
+				outcome: 'failed',
+			});
+			expect(execution?.id).toMatch(
+				/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
+			);
+			const expected = [
+				{
+					id: execution?.id,
+					thread_id: scope.threadId,
+					parent_run_id: null,
+					nanocoder_child_id: null,
+					role: 'explore',
+					status: 'failed',
+				},
+			];
+			const rows = db
+				.prepare(`SELECT a.* FROM agent_run a
+					JOIN thread_execution_identity e ON e.id=a.id
+					JOIN thread_turn_identity turn ON turn.id=e.turn_id
+					WHERE a.thread_id=?
+					ORDER BY turn.ordinal,e.ordinal`)
+				.all(scope.threadId);
+			expect(rows).toEqual(expected);
+			expect(db.prepare('SELECT * FROM agent_run ORDER BY id').all()).toEqual(
+				[...before, ...expected].sort((a, b) =>
+					String(a.id).localeCompare(String(b.id)),
+				),
+			);
+			for (const filename of ['desktop.sqlite', 'desktop.sqlite-wal']) {
+				const file = path.join(profile, filename);
+				if (!existsSync(file)) continue;
+				const bytes = readFileSync(file);
+				for (const content of [
+					privatePrompt,
+					'private fixture task',
+					'execute_bash fixture (explore)',
+					'fixture delegation settled',
+					'1.2k tokens',
+					'3 tools (read_file)',
+				])
+					expect(bytes.includes(Buffer.from(content))).toBe(false);
+			}
 		} finally {
 			db.close();
 		}

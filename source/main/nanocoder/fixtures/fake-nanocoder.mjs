@@ -77,6 +77,34 @@ const modeState = () => ({
 	).map(id => ({id, name: id})),
 });
 
+function durableDelegations(sessionId, history) {
+	const update = body => notify('session/update', {sessionId, update: body});
+	if (history)
+		update({
+			sessionUpdate: 'user_message_chunk',
+			content: {type: 'text', text: 'durable fixture private prompt'},
+		});
+	for (const [toolCallId, description] of [
+		['durable-known', 'known delegation'],
+		['durable-unknown', 'unreported delegation'],
+	]) {
+		update({
+			sessionUpdate: 'tool_call',
+			toolCallId,
+			title: `explore: ${description}`,
+			kind: 'think',
+			status: history ? 'completed' : 'in_progress',
+			rawInput: {
+				subagent_type: 'explore',
+				description,
+				prompt: 'private durable delegation arguments',
+			},
+		});
+		if (!history && toolCallId === 'durable-known')
+			tool(sessionId, toolCallId, {status: 'failed'});
+	}
+}
+
 // Replays an earlier exchange, as Nanocoder does, then answers with the mode state.
 function resume(id, {sessionId}) {
 	if (mode === 'die-in-resume') process.exit(3);
@@ -100,6 +128,11 @@ function resume(id, {sessionId}) {
 	}
 	if (mode === 'resume-fails') {
 		send({id, error: {code: -32603, message: 'Internal error'}});
+		return;
+	}
+	if (mode === 'durable-replay') {
+		durableDelegations(sessionId, true);
+		send({id, result: {modes: modeState()}});
 		return;
 	}
 	const update = body => notify('session/update', {sessionId, update: body});
@@ -331,6 +364,11 @@ async function subagentFixture(id, {sessionId, prompt}) {
 async function runTurn(id, params) {
 	const {sessionId} = params;
 	if (mode === 'die-in-turn') process.exit(3);
+	if (mode === 'durable-replay') {
+		durableDelegations(sessionId, false);
+		send({id, result: {stopReason: 'end_turn'}});
+		return;
+	}
 	if (mode === 'streaming') return streamFixture(id, sessionId);
 	if (mode === 'subagents') return subagentFixture(id, params);
 	if (mode === 'reported-usage') {

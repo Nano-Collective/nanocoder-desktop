@@ -30,6 +30,47 @@ const delegation = () =>
 		},
 	});
 
+for (const outcome of [
+	'completed',
+	'failed',
+	'interrupted',
+	'unknown',
+	undefined,
+	'unlisted',
+] as const) {
+	test(`SUB-05 historical ${outcome ?? 'missing'} outcome stays inert and never becomes success`, t => {
+		const transcript = applyEvent(emptyTranscript, {
+			type: 'tool',
+			id: 'historical',
+			status: 'completed',
+			delegation: {role: 'explore', history: true},
+			...(outcome !== undefined && {
+				history: {outcome: outcome as 'unknown'},
+			}),
+		});
+		const html = renderToStaticMarkup(
+			createElement(ConversationStream, {
+				transcript,
+				running: true,
+				onStopTurn: () => {},
+			}),
+		);
+		const expected =
+			outcome === 'failed' || outcome === 'interrupted'
+				? outcome
+				: outcome === 'completed'
+					? 'previously reported completed'
+					: 'historical outcome not reported';
+		t.true(html.includes(expected));
+		t.false(html.includes('✓'));
+		t.false(html.includes('<button'));
+		t.is(
+			html.includes('subagent-status--error'),
+			outcome === 'failed' || outcome === 'interrupted',
+		);
+	});
+}
+
 test('SUB-01 extracts only display delegation metadata and retains it on title-only progress', t => {
 	const initial = delegation();
 	t.deepEqual(initial.type === 'tool' && initial.delegation, {

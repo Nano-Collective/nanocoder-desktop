@@ -52,8 +52,10 @@ be restored safely. Full durable replay/discovery/import and the complete
 view-only notice/actions remain phase 1.8 (`CHAT-09`); mode controls remain 1.9.
 The [durable replay checkpoint](durable-replay.md) now composes atomic
 structural replay IDs and passive run metadata before prefix replacement.
-Live identity production, replay loading/flush gates and complete `SUB-05`
-acceptance remain pending. The merged 1.9 controls share the same authority.
+Live production now commits turn/execution identities and owning terminal
+metadata through the same observer and batch allocator before publication.
+Replay loading/flush gates and complete `SUB-05` acceptance remain pending.
+The merged 1.9 controls share the same authority.
 
 ## Bootstrap metadata
 

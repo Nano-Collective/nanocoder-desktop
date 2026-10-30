@@ -7,6 +7,47 @@ import {
 	emptyTranscript,
 } from '@/renderer/transcript';
 
+test('SUB-05 historical outcome patches keep only the enum and remain immutable and ordered', t => {
+	const first = applyEvent(emptyTranscript, {
+		type: 'tool',
+		id: 'history',
+		status: 'unknown',
+		history: {outcome: 'failed'},
+	});
+	const previous = first.items[0];
+	const next = applyEvent(first, {
+		type: 'tool',
+		id: 'history',
+		title: 'later title',
+	});
+	t.like(previous, {historyOutcome: 'failed'});
+	t.like(next.items[0], {historyOutcome: 'failed', title: 'later title'});
+	t.is(first.items[0], previous);
+	t.not(next.items[0], previous);
+	t.is(next.items.length, 1);
+	t.false(Object.hasOwn(previous, 'history'));
+});
+
+test('SUB-05 absent historical outcome adds no transcript field', t => {
+	const state = applyEvent(emptyTranscript, {type: 'tool', id: 'history'});
+	t.false(Object.hasOwn(state.items[0], 'historyOutcome'));
+});
+
+test('SUB-05 unknown history is explicit and unlisted outcomes cannot enter transcript state', t => {
+	const unknown = applyEvent(emptyTranscript, {
+		type: 'tool',
+		id: 'unknown',
+		history: {outcome: 'unknown'},
+	});
+	t.like(unknown.items[0], {historyOutcome: 'unknown'});
+	const unlisted = applyEvent(emptyTranscript, {
+		type: 'tool',
+		id: 'unlisted',
+		history: {outcome: 'success' as 'unknown'},
+	});
+	t.false(Object.hasOwn(unlisted.items[0], 'historyOutcome'));
+});
+
 test('title-only subagent-prefixed tool updates retain classification status content and opaque ID (CHAT-05)', t => {
 	const full = toTurnEvent({
 		sessionUpdate: 'tool_call',

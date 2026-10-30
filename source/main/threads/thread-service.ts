@@ -12,6 +12,10 @@ import type {
 } from '@/main/nanocoder/supervisor';
 import {canonicalPath} from '@/main/paths';
 import type {DesktopStore} from '@/main/store/contracts';
+import type {
+	ThreadHistory,
+	ThreadHistoryScope,
+} from '@/main/store/thread-execution-identities';
 import {
 	nanocoderSessionIdSchema,
 	threadTitlePatch,
@@ -24,6 +28,7 @@ import {
 } from '@/main/threads/project-operations';
 import {mapThreadReplay} from '@/main/threads/thread-history-mapping';
 import {createThreadHistoryObserver} from '@/main/threads/thread-history-observer';
+import {mapThreadLive} from '@/main/threads/thread-live-mapping';
 import {createThreadSequence} from '@/main/threads/thread-sequence';
 import type {
 	IpcResult,
@@ -155,6 +160,20 @@ export function createThreadService(
 		{
 			sessionId: string;
 			observer: ReturnType<typeof createThreadHistoryObserver>;
+		}
+	>();
+	const liveTurns = new Map<
+		string,
+		{
+			lease: ProjectOperationLease;
+			scope: ThreadHistoryScope;
+			turnId: string;
+			history?: ThreadHistory;
+			complete: boolean;
+			accepted: boolean;
+			observer: ReturnType<typeof createThreadHistoryObserver>;
+			failure?: IpcFailure;
+			outcome?: 'failed' | 'cancelled';
 		}
 	>();
 	const prepared = new Map<string, NanocoderConnection>();
@@ -380,22 +399,93 @@ export function createThreadService(
 		thread: ThreadInfo,
 		events: TurnEvent[],
 		result?: IpcResult<TurnResult>,
+		persist = true,
+		cancelledOwner?: ProjectOperationLease,
 	) => {
+		const live = liveTurns.get(thread.id);
+		const cancelling =
+			live &&
+			cancelledOwner === live.lease &&
+			result?.ok === true &&
+			result.value.stopReason === 'cancelled' &&
+			events.length === 0;
+		if (cancelledOwner && !cancelling)
+			throw new IpcFailure('DENIED', 'The cancelled turn changed');
+		if (live && !cancelling) projectOperations.assertCurrent(live.lease);
 		const state: Pick<ThreadSnapshot, 'sequence' | 'events' | 'result'> =
 			snapshots.get(thread.id) ?? {sequence: 0, events: []};
-		if (events.some(event => event.type === 'user')) delete state.result;
-		if (result) state.result = structuredClone(result);
-		state.events.push(...structuredClone(events));
-		state.sequence++;
-		snapshots.set(thread.id, state);
-		options.onEvent?.({
-			type: 'turn',
-			projectId: thread.projectId,
-			threadId: thread.id,
+		const allocator = createThreadSequence({
 			sequence: state.sequence,
-			events: structuredClone(events),
-			...(result && {result: structuredClone(result)}),
+			highWaterMark: live?.history?.sequence,
 		});
+		const batches = allocator.reserve(events.length);
+		let offset = 0;
+		for (const [index, batch] of batches.entries()) {
+			const chunk = events.slice(offset, offset + batch.count);
+			offset += batch.count;
+			const terminal = index === batches.length - 1 ? result : undefined;
+			if (live && !live.outcome)
+				for (const event of chunk)
+					if (
+						event.type === 'metadata' &&
+						(event.metadata.outcome === 'failed' ||
+							event.metadata.outcome === 'cancelled')
+					) {
+						live.outcome = event.metadata.outcome;
+						break;
+					}
+			if (
+				persist &&
+				live &&
+				(live.accepted || chunk.some(event => event.type === 'user')) &&
+				(terminal || chunk.some(event => ['user', 'tool'].includes(event.type)))
+			) {
+				const mapped = mapThreadLive({
+					scope: live.scope,
+					history: live.history,
+					turnId: live.turnId,
+					complete: live.complete,
+					firstSequence: batch.firstSlot,
+					highWaterMark: batch.highWaterMark,
+					events: chunk,
+					outcome: terminal
+						? terminal.ok
+							? (live.outcome ??
+								(terminal.value.stopReason === 'cancelled'
+									? 'cancelled'
+									: 'completed'))
+							: 'failed'
+						: undefined,
+				});
+				if (!cancelling) projectOperations.assertCurrent(live.lease);
+				const revision = live.observer.commitLive(
+					mapped.patch,
+					mapped.observations,
+					mapped.terminal,
+				);
+				live.history = {...mapped.history, revision};
+				live.accepted = true;
+				const previous = historyObservers.get(thread.id);
+				if (previous?.observer !== live.observer) previous?.observer.dispose();
+				historyObservers.set(thread.id, {
+					sessionId: live.scope.sessionId,
+					observer: live.observer,
+				});
+			}
+			if (chunk.some(event => event.type === 'user')) delete state.result;
+			if (terminal) state.result = structuredClone(terminal);
+			state.events.push(...structuredClone(chunk));
+			state.sequence = batch.sequence;
+			snapshots.set(thread.id, state);
+			options.onEvent?.({
+				type: 'turn',
+				projectId: thread.projectId,
+				threadId: thread.id,
+				sequence: state.sequence,
+				events: structuredClone(chunk),
+				...(terminal && {result: structuredClone(terminal)}),
+			});
+		}
 	};
 	const unsubscribe = options.supervisor.subscribe(event => {
 		if (event.type !== 'turn') return;
@@ -404,6 +494,13 @@ export function createThreadService(
 			...options.store.threads.list(event.projectId, 'archived'),
 		].find(thread => thread.nanocoderSessionId === event.threadId);
 		if (!thread) return;
+		const live = liveTurns.get(thread.id);
+		if (!live || live.failure) return;
+		try {
+			projectOperations.assertCurrent(live.lease);
+		} catch {
+			return;
+		}
 		if (
 			(pending.get(event.projectId) === thread.id &&
 				options.supervisor.getState(event.projectId).activeThreadId !==
@@ -429,7 +526,16 @@ export function createThreadService(
 			if (thread.runState !== runState)
 				saveThread({...thread, runState, lastActivityAt: now()});
 		}
-		append(thread, event.events);
+		try {
+			append(thread, event.events);
+		} catch (error) {
+			live.failure = requestFailure(error);
+			live.complete = false;
+			const cancelled = projectOperations.runCancellationStep(live.lease, () =>
+				options.supervisor.cancel(thread.projectId, live.scope.sessionId),
+			);
+			void trackOperation(thread.projectId, cancelled).catch(() => undefined);
+		}
 	});
 	const unsubscribeTitles = options.supervisor.subscribeTitles(change => {
 		const thread = [
@@ -489,6 +595,7 @@ export function createThreadService(
 		history?.observer.forgetThread(request.threadId);
 		history?.observer.dispose();
 		historyObservers.delete(request.threadId);
+		liveTurns.delete(request.threadId);
 		prepared.delete(request.threadId);
 		preparedSessions.delete(request.threadId);
 		prompted.delete(request.threadId);
@@ -886,6 +993,7 @@ export function createThreadService(
 			await Promise.allSettled([...stopped, ...tasks]);
 			for (const {observer} of historyObservers.values()) observer.dispose();
 			historyObservers.clear();
+			liveTurns.clear();
 		},
 		dispose: () => {
 			disposed = true;
@@ -898,6 +1006,7 @@ export function createThreadService(
 			permissionIds.clear();
 			for (const {observer} of historyObservers.values()) observer.dispose();
 			historyObservers.clear();
+			liveTurns.clear();
 		},
 		listThreads: async ({projectId, archiveState}) => {
 			getProject(projectId);
@@ -1323,6 +1432,32 @@ export function createThreadService(
 								'AGENT_UNAVAILABLE',
 								'The session must be prepared again',
 							);
+						projectOperations.assertCurrent(lease);
+						const historyScope = {
+							projectId: thread.projectId,
+							threadId: thread.id,
+							sessionId,
+						};
+						const previous = options.store.threadHistory.read(historyScope);
+						const observer = historyObservers.get(thread.id);
+						liveTurns.set(thread.id, {
+							lease,
+							scope: historyScope,
+							turnId: randomUUID(),
+							history: previous,
+							complete:
+								previous?.complete ??
+								preparedSessions.get(thread.id)?.source === 'new',
+							accepted: false,
+							observer:
+								observer?.sessionId === sessionId
+									? observer.observer
+									: createThreadHistoryObserver({
+											scope: historyScope,
+											history: options.store.threadHistory,
+											runs: options.store.agentRuns,
+										}),
+						});
 						thread = updateThread(thread, current => ({
 							title:
 								current.title === 'new thread' &&
@@ -1347,22 +1482,39 @@ export function createThreadService(
 							sessionId,
 							request.text,
 						);
+						const liveFailure = liveTurns.get(thread.id)?.failure;
+						if (liveFailure) throw liveFailure;
 						const current = getThread(request);
 						if (!owns(current))
 							throw new IpcFailure(
 								'AGENT_UNAVAILABLE',
 								'The thread session changed before the turn finished',
 							);
-						if (result.metadata && !signal.aborted)
+						if (
+							result.metadata &&
+							!signal.aborted &&
+							result.stopReason !== 'cancelled'
+						)
 							append(current, [{type: 'metadata', metadata: result.metadata}]);
-						if (!signal.aborted)
-							append(current, [], {
+						if (!signal.aborted) {
+							const terminal: IpcResult<TurnResult> = {
 								ok: true,
 								value: {stopReason: result.stopReason},
-							});
+							};
+							if (result.stopReason === 'cancelled')
+								await projectOperations.runCancellationStep(lease, async () => {
+									append(current, [], terminal, true, lease);
+								});
+							else append(current, [], terminal);
+						}
 						updateThread(current, () => ({
 							runState:
-								result.stopReason === 'cancelled' ? 'interrupted' : 'ready',
+								liveTurns.get(thread.id)?.outcome === 'failed'
+									? 'failed'
+									: result.stopReason === 'cancelled' ||
+											liveTurns.get(thread.id)?.outcome === 'cancelled'
+										? 'interrupted'
+										: 'ready',
 							lastActivityAt: now(),
 						}));
 						completed = {stopReason: result.stopReason};
@@ -1388,14 +1540,19 @@ export function createThreadService(
 							if (owns(current)) {
 								if (!signal.aborted) {
 									const safe = requestFailure(error);
-									append(current, [], {
+									const terminal: IpcResult<TurnResult> = {
 										ok: false,
 										error: {
 											code: safe.code,
 											message: safe.message,
 											retryable: safe.retryable,
 										},
-									});
+									};
+									try {
+										append(current, [], terminal);
+									} catch {
+										append(current, [], terminal, false);
+									}
 								}
 								updateThread(current, () => ({
 									runState: 'failed',
@@ -1405,6 +1562,12 @@ export function createThreadService(
 						}
 						return failure(error);
 					} finally {
+						const live = liveTurns.get(thread.id);
+						if (live?.lease === lease) {
+							if (historyObservers.get(thread.id)?.observer !== live.observer)
+								live.observer.dispose();
+							liveTurns.delete(thread.id);
+						}
 						finishPreparation(thread, abort, scope);
 					}
 				},

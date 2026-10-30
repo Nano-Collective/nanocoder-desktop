@@ -1,8 +1,8 @@
 # Durable replay identities
 
 Phase 1.8 checkpoint for `CHAT-08`, `ACP-06/07` and the `SUB-05` producer.
-This documents the implemented main-only replay boundary, not acceptance of
-the complete phase or live/restart/subagent workflow.
+This documents the implemented main-only live/replay boundary, not acceptance
+of the complete phase or app/child restart/subagent workflow.
 
 ## Structural proof
 
@@ -50,8 +50,9 @@ reservation without advancing it.
 Derived slots stay in main and metadata storage. The renderer receives only
 the existing batch sequence, never `firstSlot` or `highWaterMark`. Replay
 mapping derives within-batch offsets from these reserved ranges rather than
-creating another counter. Main live publication still needs to adopt the
-same bounded splitting helper during the live producer follow-up.
+creating another counter. Main live publication uses the same helper and
+splits an input larger than 10,000 events before publication. Empty terminal
+batches retain their own sequence.
 
 ## Atomic observation
 
@@ -80,8 +81,45 @@ The atomic wrapper uses an epoch and synchronous commit guard. Reentrant
 candidates, direct live forwarding during staging, disposal/removal during
 staging, older revisions and reused committed slots cannot swap in a fork.
 An increased generation does not authorise an older global derived slot.
-`commitLive` uses the same atomic path, including owning turn completion,
-but ThreadService live identity production is not composed yet.
+ThreadService live production calls `commitLive`, including owning turn
+completion. This is a separate integration from replay's `commitReplay`:
+live candidates fork the committed observer rather than starting a new one.
+
+## Live production
+
+The existing exact prompt lease owns one transient live record. A turn UUID
+is committed before accepting its user event. The first tool occurrence gets
+an execution UUID before tool publication. Title, progress and approval-only
+updates reuse it within that turn; a later turn gets a different UUID even
+when Nanocoder reuses the opaque tool ID. Ordinary tools get identities but
+do not acquire delegation rows. Permission source hints remain display only.
+
+Identity and passive run metadata commit before their corresponding event
+batch is published. Text-only chunks do not write the ledger. The same
+allocator still orders those chunks above the preceding committed slot.
+The mapper clones candidate records, so refused commits cannot mutate the
+live identity cache or the original passive observer.
+
+Only the owning terminal settles its unfinished execution metadata. Known
+completed executions survive a later turn cancellation. Explicit failed or
+cancelled turn metadata is not changed to success by a normal ACP stop.
+Approval-only completion does not prove execution success, and replay-marked
+tools cannot enter the live path.
+
+Stale or ended-owner notifications are dropped before permission/thread
+metadata changes. A refused tool commit publishes no partial tool, marks the
+ledger incomplete when storage permits, and requests cancellation through the
+existing exact-owner exception. Notification callbacks do not throw through
+the ACP reader. A refused terminal commit never publishes success or advances
+the observer; the readable prefix receives a transient failure instead.
+
+An actual cancelled result may finalise data while trust is revoked, using
+the existing `runCancellationStep` and the same prompt lease. The private
+append exception accepts only that lease, no events and an `ok/cancelled`
+terminal. It creates no general metadata/execution capability and bypasses
+neither root, epoch, saved-session nor replacement-connection checks.
+Active live records retire in prompt cleanup. Thread removal, detach and
+disposal still retire the passive per-thread owner.
 
 ## Truthful history and remaining work
 
@@ -95,12 +133,25 @@ or execution authority.
 No transcript, tool argument/result, task, permission payload, raw frame,
 stderr, prompt hash or file content enters the identity/run transaction.
 Only allowed enums and IDs persist. The optional tool history projection is
-transient.
+transient. The renderer keeps only its validated outcome enum in the ordered,
+immutable tool patch and forwards it to the existing card. Missing or unknown
+historical outcome stays muted and unreported; known failed/interrupted
+outcomes retain their word, glyph and existing error token. A known historical
+completion is labelled previously reported, without a success glyph or colour.
+Historical cards never expose live controls.
 
-Still pending: live turn/execution allocation and terminal composition;
-bounded session-specific ACP replay collection; strict optional replay
-markers and renderer epoch/16 ms flush gates; the muted word-and-glyph
-“not reported” projection; view-only/retry actions; discovery/import;
+The built-app restart proof runs a live failed and unfinished delegation,
+quits Electron, verifies the child exited, then relaunches with the same
+temporary profile and opens the saved thread. The fake resumes the exact saved
+ID with deterministic synthetic history and no transcript file. The test
+asserts unchanged execution UUIDs and safe rows, retained failure, unknown
+synthetic completion, exactly two inert cards and both-theme contrast checks.
+It also rejects a replacement `session/new` or `session/load` in that process.
+This positive proof does not complete missing-history, import or replay-gate
+acceptance.
+
+Still pending: bounded session-specific ACP replay collection; strict optional replay
+markers and renderer epoch/16 ms flush gates; view-only/retry actions; discovery/import;
 app-and-child restart continuation; PERF-03 and full phase 1.8/SUB-05
 acceptance. Existing streaming and subagent views must retain their guards.
 SUB-08/OQ-03 and the pinned 1.31 versus provisional 1.32 OQ-02 are not waived.

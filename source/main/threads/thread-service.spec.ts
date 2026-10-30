@@ -566,6 +566,534 @@ for (const path of ['open', 'recovery'] as const) {
 	});
 }
 
+test('SUB-05 live identities commit before user and tool publication without retaining task content', async t => {
+	let inspect: ((event: ProjectEvent) => void) | undefined;
+	const f = await fixture(t, true, event => inspect?.(event));
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const publishedExecutionIds: string[] = [];
+	const publishedTurnCounts: number[] = [];
+	const publishedExecutionCounts: number[] = [];
+	let publishedUsers = 0;
+	inspect = event => {
+		if (event.type !== 'turn' || event.threadId !== thread.id) return;
+		const sessionId = f.store.threads.get(
+			f.project.id,
+			thread.id,
+		)?.nanocoderSessionId;
+		if (!sessionId) throw new Error('The published turn has no saved session');
+		const history = f.store.threadHistory.read({
+			...request,
+			sessionId,
+		});
+		if (event.events.some(item => item.type === 'user')) {
+			publishedUsers++;
+			publishedTurnCounts.push(history?.turns.length ?? 0);
+		}
+		if (!event.events.some(item => item.type === 'tool')) return;
+		publishedExecutionCounts.push(history?.executions.length ?? 0);
+		const rows = f.store.agentRuns.list(f.project.id, thread.id);
+		if (rows[0]?.id !== history?.executions[0]?.id)
+			throw new Error(
+				'The published execution does not match the committed run',
+			);
+		if (rows[0]) publishedExecutionIds.push(rows[0].id);
+	};
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	connection.prompt = async sessionId => {
+		f.notifyUpdate({
+			sessionId,
+			update: {
+				sessionUpdate: 'tool_call',
+				toolCallId: 'opaque/live-delegation',
+				kind: 'think',
+				title: 'private delegated task',
+				status: 'pending',
+				rawInput: {subagent_type: 'explore', prompt: 'private arguments'},
+			},
+		});
+		for (const status of ['in_progress', 'failed'] as const)
+			f.notifyUpdate({
+				sessionId,
+				update: {
+					sessionUpdate: 'tool_call_update',
+					toolCallId: 'opaque/live-delegation',
+					title: 'private progress',
+					status,
+				},
+			});
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({...request, text: 'private accepted prompt'});
+	const scope = {...request, sessionId: 'fake-session'};
+	const history = f.store.threadHistory.read(scope);
+	t.is(publishedUsers, 1);
+	t.deepEqual(publishedTurnCounts, [1]);
+	t.deepEqual(publishedExecutionCounts, [1, 1, 1]);
+	t.is(publishedExecutionIds.length, 3);
+	t.is(new Set(publishedExecutionIds).size, 1);
+	t.like(history, {
+		complete: true,
+		turns: [{outcome: 'completed'}],
+		executions: [{toolCallId: 'opaque/live-delegation', outcome: 'failed'}],
+	});
+	t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, 'failed');
+	t.false(JSON.stringify(history).includes('private'));
+	const snapshot = await f.service.getThreadSnapshot(request);
+	t.true((history?.sequence ?? -1) > snapshot.sequence);
+	for (const privateField of [
+		'firstSlot',
+		'highWaterMark',
+		'executionId',
+		'turnId',
+	])
+		t.false(JSON.stringify(snapshot).includes(`"${privateField}":`));
+});
+
+test('SUB-05 later live turns reuse opaque tool IDs but receive different execution UUIDs', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	connection.prompt = async sessionId => {
+		f.notifyUpdate({
+			sessionId,
+			update: {
+				sessionUpdate: 'tool_call',
+				toolCallId: 'reused-provider-id',
+				kind: 'think',
+				status: 'pending',
+				title: 'delegation',
+				rawInput: {subagent_type: 'explore'},
+			},
+		});
+		f.notifyUpdate({
+			sessionId,
+			update: {
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'reused-provider-id',
+				status: 'completed',
+			},
+		});
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({...request, text: 'first private turn'});
+	const first = f.store.threadHistory.read({
+		...request,
+		sessionId: 'fake-session',
+	});
+	await f.service.promptThread({...request, text: 'second private turn'});
+	const second = f.store.threadHistory.read({
+		...request,
+		sessionId: 'fake-session',
+	});
+	t.is(first?.executions.length, 1);
+	t.is(second?.turns.length, 2);
+	t.is(second?.executions.length, 2);
+	t.is(second?.executions[0].id, first?.executions[0].id);
+	t.not(second?.executions[0].id, second?.executions[1].id);
+	t.not(second?.executions[0].turnId, second?.executions[1].turnId);
+	t.deepEqual(
+		second?.executions.map(row => row.toolCallId),
+		['reused-provider-id', 'reused-provider-id'],
+	);
+	t.deepEqual(
+		f.store.agentRuns.list(f.project.id, thread.id).map(row => row.status),
+		['completed', 'completed'],
+	);
+});
+
+test('SUB-05 live publication splits 10001 updates through the same private slot allocator without overlap or loss', async t => {
+	const batches: Array<Extract<ProjectEvent, {type: 'turn'}>> = [];
+	const f = await fixture(t, true, event => {
+		if (event.type === 'turn') batches.push(event);
+	});
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		f.notifyBatch(
+			sessionId,
+			Array.from({length: 10001}, (_, index) => ({
+				type: 'text' as const,
+				text: `piece-${index}`,
+			})),
+		);
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({...request, text: 'private prompt'});
+	t.deepEqual(
+		batches.map(batch => batch.events.length),
+		[1, 10000, 1, 0],
+	);
+	t.deepEqual(
+		batches.map(batch => batch.sequence),
+		[1, 2, 3, 4],
+	);
+	const snapshot = await f.service.getThreadSnapshot(request);
+	t.is(snapshot.events.length, 10002);
+	t.true(
+		snapshot.events
+			.slice(1)
+			.every(
+				(event, index) =>
+					event.type === 'text' && event.text === `piece-${index}`,
+			),
+	);
+	t.true(
+		(f.store.threadHistory.read({...request, sessionId: 'fake-session'})
+			?.sequence ?? -1) >
+			snapshot.sequence * 10001 - 1,
+	);
+});
+
+test('SUB-05 live approval-only completion never becomes execution success', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		f.notifyBatch(sessionId, [
+			{
+				type: 'tool',
+				id: 'approval-root',
+				status: 'pending',
+				delegation: {role: 'explore', history: false},
+			},
+		]);
+		f.notifyBatch(sessionId, [
+			{
+				type: 'tool',
+				id: 'approval-root',
+				status: 'completed',
+				approvalOnly: true,
+			},
+		]);
+		t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, 'pending');
+		t.is(
+			f.store.threadHistory.read({...request, sessionId})?.executions[0]
+				.outcome,
+			'unknown',
+		);
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({...request, text: 'private prompt'});
+	t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, 'unknown');
+	t.is(
+		f.store.threadHistory.read({...request, sessionId: 'fake-session'})
+			?.executions[0].outcome,
+		'unknown',
+	);
+});
+
+test('SUB-05 a failed live tool commit publishes no partial tool and cancels the exact owner without throwing from its notification', async t => {
+	const events: TurnEvent[] = [];
+	const f = await fixture(t, true, event => {
+		if (event.type === 'turn') events.push(...event.events);
+	});
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	const apply = f.store.threadHistory.apply;
+	let failed = false;
+	f.store.threadHistory.apply = (scope, patch) => {
+		if (patch.executions.length && !failed) {
+			failed = true;
+			throw new IpcFailure('UNAVAILABLE', 'The fixture metadata commit failed');
+		}
+		return apply(scope, patch);
+	};
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		t.notThrows(() =>
+			f.notifyBatch(sessionId, [
+				{
+					type: 'tool',
+					id: 'uncommitted-tool',
+					status: 'in_progress',
+					delegation: {role: 'explore', history: false},
+				},
+			]),
+		);
+		return {stopReason: 'end_turn'};
+	};
+	await t.throwsAsync(
+		f.service.promptThread({...request, text: 'private prompt'}),
+		{code: 'UNAVAILABLE'},
+	);
+	t.true(failed);
+	t.false(events.some(event => event.type === 'tool'));
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), []);
+	const history = f.store.threadHistory.read({
+		...request,
+		sessionId: 'fake-session',
+	});
+	t.is(history?.turns[0].outcome, 'failed');
+	t.is(history?.complete, false);
+	t.is((await f.service.getThreadSnapshot(request)).result?.ok, false);
+});
+
+test('SUB-05 live producer refuses replay-marked ordinary tools rather than accepting synthetic completion', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		f.notifyBatch(sessionId, [
+			{
+				type: 'tool',
+				id: 'synthetic-tool',
+				status: 'completed',
+				history: {outcome: 'unknown'},
+			},
+		]);
+		return {stopReason: 'end_turn'};
+	};
+	await t.throwsAsync(
+		f.service.promptThread({...request, text: 'private prompt'}),
+		{code: 'DENIED'},
+	);
+	t.deepEqual(
+		f.store.threadHistory.read({...request, sessionId: 'fake-session'})
+			?.executions,
+		[],
+	);
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), []);
+});
+
+test('SUB-05 a refused live terminal commit keeps SQL and observer state pending and never publishes success', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		f.notifyBatch(sessionId, [
+			{
+				type: 'tool',
+				id: 'pending-root',
+				status: 'in_progress',
+				delegation: {role: 'explore', history: false},
+			},
+		]);
+		return {stopReason: 'end_turn'};
+	};
+	const apply = f.store.threadHistory.apply;
+	f.store.threadHistory.apply = (scope, patch) => {
+		if (patch.turns.some(row => row.outcome !== 'unknown'))
+			throw new IpcFailure('UNAVAILABLE', 'The fixture terminal commit failed');
+		return apply(scope, patch);
+	};
+	await t.throwsAsync(
+		f.service.promptThread({...request, text: 'private prompt'}),
+		{code: 'UNAVAILABLE'},
+	);
+	t.is(
+		f.store.threadHistory.read({...request, sessionId: 'fake-session'})
+			?.turns[0].outcome,
+		'unknown',
+	);
+	t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, 'running');
+	const snapshot = await f.service.getThreadSnapshot(request);
+	t.is(snapshot.result?.ok, false);
+	t.is(snapshot.thread.runState, 'failed');
+});
+
+test('SUB-05 a recreated owner replays live committed UUIDs and retains a genuinely failed outcome', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	connection.prompt = async sessionId => {
+		f.notifyBatch(sessionId, [
+			{
+				type: 'tool',
+				id: 'failed-live-root',
+				status: 'failed',
+				delegation: {role: 'explore', history: false},
+			},
+		]);
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({
+		...request,
+		text: 'private persisted elsewhere',
+	});
+	const scope = {...request, sessionId: 'fake-session'};
+	const before = f.store.threadHistory.read(scope);
+	f.service.dispose();
+	connection.resumeSession = async id => ({
+		session: {id, mode: 'normal'},
+		history: [
+			{type: 'user', text: 'private persisted elsewhere'},
+			{
+				type: 'tool',
+				id: 'failed-live-root',
+				status: 'completed',
+				delegation: {role: 'explore', history: true},
+			},
+		],
+	});
+	const restarted = createThreadService({
+		store: f.store,
+		supervisor: f.supervisor,
+	});
+	t.teardown(() => restarted.dispose());
+	const replayed = await restarted.openThread(request);
+	const after = f.store.threadHistory.read(scope);
+	t.deepEqual(after?.turns, before?.turns);
+	t.deepEqual(after?.executions, before?.executions);
+	t.like(replayed.events[1], {
+		type: 'tool',
+		id: 'failed-live-root',
+		status: 'failed',
+		history: {outcome: 'failed'},
+	});
+	t.is(f.store.agentRuns.list(f.project.id, thread.id).length, 1);
+	t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, 'failed');
+	t.true((after?.generation ?? -1) > (before?.generation ?? -1));
+	t.true((after?.sequence ?? -1) > (before?.sequence ?? -1));
+});
+
+test('SUB-05 late tool notifications after the owning turn ends cannot create new identities or cards', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async () => ({
+		stopReason: 'end_turn',
+	});
+	await f.service.promptThread({...request, text: 'private prompt'});
+	const before = f.store.threadHistory.read({
+		...request,
+		sessionId: 'fake-session',
+	});
+	const snapshot = await f.service.getThreadSnapshot(request);
+	f.notifyBatch('fake-session', [
+		{
+			type: 'tool',
+			id: 'late-tool',
+			status: 'completed',
+			delegation: {role: 'explore', history: false},
+		},
+	]);
+	t.deepEqual(
+		f.store.threadHistory.read({...request, sessionId: 'fake-session'}),
+		before,
+	);
+	t.deepEqual(await f.service.getThreadSnapshot(request), snapshot);
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), []);
+});
+
+for (const outcome of ['failed', 'cancelled'] as const) {
+	test(`SUB-05 explicit owning ${outcome} metadata is not replaced by a normal prompt stop`, async t => {
+		const f = await fixture(t, true);
+		const thread = await f.service.createThread({projectId: f.project.id});
+		const request = {projectId: f.project.id, threadId: thread.id};
+		await f.supervisor.ensureProcess(f.project);
+		f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+			f.notifyBatch(sessionId, [
+				{
+					type: 'tool',
+					id: 'unfinished-root',
+					status: 'in_progress',
+					delegation: {role: 'explore', history: false},
+				},
+			]);
+			return {stopReason: 'end_turn', metadata: {outcome}};
+		};
+		await f.service.promptThread({...request, text: 'private prompt'});
+		const expected = outcome === 'cancelled' ? 'interrupted' : 'failed';
+		const history = f.store.threadHistory.read({
+			...request,
+			sessionId: 'fake-session',
+		});
+		t.is(history?.turns[0].outcome, expected);
+		t.is(history?.executions[0].outcome, expected);
+		t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, expected);
+		t.is(
+			(await f.service.getThreadSnapshot(request)).thread.runState,
+			expected,
+		);
+	});
+}
+
+test('SUB-05 live cancellation leaves already completed executions unchanged', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		for (const [toolCallId, status] of [
+			['finished', 'completed'],
+			['unfinished', 'in_progress'],
+		] as const)
+			f.notifyUpdate({
+				sessionId,
+				update: {
+					sessionUpdate: 'tool_call',
+					toolCallId,
+					kind: 'think',
+					status,
+					title: 'delegation',
+					rawInput: {subagent_type: 'explore'},
+				},
+			});
+		return {stopReason: 'cancelled'};
+	};
+	await f.service.promptThread({...request, text: 'private prompt'});
+	t.deepEqual(
+		f.store.threadHistory
+			.read({...request, sessionId: 'fake-session'})
+			?.executions.map(row => row.outcome),
+		['completed', 'interrupted'],
+	);
+});
+
+for (const outcome of ['cancelled', 'failed'] as const) {
+	test(`SUB-05 owning live ${outcome} terminal settles unfinished delegation metadata`, async t => {
+		const f = await fixture(t, true);
+		const thread = await f.service.createThread({projectId: f.project.id});
+		const request = {projectId: f.project.id, threadId: thread.id};
+		await f.supervisor.ensureProcess(f.project);
+		const connection = f.supervisor.getConnection(f.project.id);
+		connection.prompt = async sessionId => {
+			f.notifyUpdate({
+				sessionId,
+				update: {
+					sessionUpdate: 'tool_call',
+					toolCallId: 'unfinished-delegation',
+					kind: 'think',
+					status: 'in_progress',
+					title: 'private unfinished delegation',
+					rawInput: {subagent_type: 'explore'},
+				},
+			});
+			if (outcome === 'failed')
+				throw new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'The fixture turn failed',
+				);
+			return {stopReason: 'cancelled'};
+		};
+		const result = f.service.promptThread({...request, text: 'private prompt'});
+		if (outcome === 'failed')
+			await t.throwsAsync(result, {code: 'AGENT_UNAVAILABLE'});
+		else t.deepEqual(await result, {stopReason: 'cancelled'});
+		const expected = outcome === 'cancelled' ? 'interrupted' : 'failed';
+		const history = f.store.threadHistory.read({
+			...request,
+			sessionId: 'fake-session',
+		});
+		t.like(history, {
+			turns: [{outcome: expected}],
+			executions: [{outcome: expected}],
+		});
+		t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, expected);
+	});
+}
+
 test('SUB-05 successful resume persists structural IDs before exposing synthetic tools', async t => {
 	const f = await fixture(t, true);
 	const thread = seed(f.project, {nanocoderSessionId: 'mapped-history'});
@@ -859,6 +1387,16 @@ async function fixture(
 			return connection;
 		},
 	});
+	const listeners = new Set<(event: ProjectEvent) => void>();
+	const subscribe = supervisor.subscribe.bind(supervisor);
+	supervisor.subscribe = listener => {
+		listeners.add(listener);
+		const off = subscribe(listener);
+		return () => {
+			listeners.delete(listener);
+			off();
+		};
+	};
 	t.teardown(async () => {
 		await supervisor.close();
 		service.dispose();
@@ -904,6 +1442,24 @@ async function fixture(
 		notifyTitle: (sessionId: string, title: string) => {
 			if (!titleUpdate) throw new Error('No fixture connection is ready');
 			titleUpdate({sessionId, title});
+		},
+		notifyBatch: (sessionId: string, events: TurnEvent[]) => {
+			for (const listener of listeners)
+				listener({
+					type: 'turn',
+					projectId: project.id,
+					threadId: sessionId,
+					sequence: 1,
+					events,
+				});
+		},
+		notifyUpdate: (
+			notification: Parameters<
+				NonNullable<ConnectOptions['onSessionUpdate']>
+			>[0],
+		) => {
+			if (!update) throw new Error('No fixture connection is ready');
+			update(notification);
 		},
 		notify: (sessionId: string, text: string) => {
 			if (!update) throw new Error('No fixture connection is ready');

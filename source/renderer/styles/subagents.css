@@ -21,6 +21,10 @@
 	color: var(--colors-on-surface);
 }
 
+.subagent-status--error {
+	color: var(--colors-error);
+}
+
 .subagent-depth {
 	border: 1px solid var(--colors-stroke);
 	border-radius: var(--rounded-sm);
