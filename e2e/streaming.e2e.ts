@@ -37,6 +37,7 @@ interface Probe {
 	frameGaps: number[];
 	inputFrameMs: number[];
 	eventLoopMs: number[];
+	announcements: Array<{text: string; at: number; updates: number}>;
 	stop: boolean;
 }
 
@@ -112,9 +113,22 @@ test('100 updates per second keep ordered content and input and scroll response 
 			frameGaps: [],
 			inputFrameMs: [],
 			eventLoopMs: [],
+			announcements: [],
 			stop: false,
 		};
 		state.streamProbe = probe;
+		const region = document.querySelector(
+			'[role="status"][aria-label="stream announcements"]',
+		);
+		if (!region) throw new Error('Missing polite stream announcement region');
+		new MutationObserver(() => {
+			if (!probe.stop && region.textContent)
+				probe.announcements.push({
+					text: region.textContent,
+					at: performance.now(),
+					updates: probe.updates,
+				});
+		}).observe(region, {subtree: true, childList: true, characterData: true});
 		state.desktop.onProjectEvent(event => {
 			if (event.type !== 'turn') return;
 			for (const update of event.events) {
@@ -201,6 +215,9 @@ test('100 updates per second keep ordered content and input and scroll response 
 	await expect(
 		page.getByText('turn ended: end_turn', {exact: true}),
 	).toBeVisible();
+	await expect(
+		page.locator('[role="status"][aria-label="stream announcements"]'),
+	).toContainText('turn completed. response finished:');
 	const probe = await page.evaluate(() => {
 		const probe = (window as unknown as StreamWindow).streamProbe;
 		probe.stop = true;
@@ -218,6 +235,14 @@ test('100 updates per second keep ordered content and input and scroll response 
 		frames: probe.frameGaps.length,
 		inputSamples: probe.inputFrameMs.length,
 		scrollSamples: scrollMs.length,
+		announcementWrites: probe.announcements.length,
+		announcementElapsedMs:
+			(probe.announcements.at(-1)?.at ?? 0) - (probe.announcements[0]?.at ?? 0),
+		minAnnouncementGapMs: Math.min(
+			...probe.announcements
+				.slice(1)
+				.map((entry, index) => entry.at - probe.announcements[index].at),
+		),
 	};
 	writeFileSync(
 		path.join(evidence, 'stream-performance.json'),
@@ -225,6 +250,23 @@ test('100 updates per second keep ordered content and input and scroll response 
 	);
 	console.info('PERF-04', JSON.stringify(metrics));
 	expect(probe.updates).toBe(300);
+	expect(probe.announcements.length).toBeLessThanOrEqual(
+		Math.ceil(metrics.announcementElapsedMs / 1000) + 1,
+	);
+	expect(probe.announcements[0].text).toBe('turn started');
+	expect(metrics.minAnnouncementGapMs).toBeGreaterThanOrEqual(1000);
+	expect(
+		probe.announcements.some(entry =>
+			entry.text.startsWith('turn completed. response finished:'),
+		),
+	).toBe(true);
+	for (const entry of probe.announcements) {
+		expect(
+			entry.text === 'turn started' ||
+				entry.text.startsWith('turn completed. response finished:'),
+		).toBe(true);
+		if (entry.updates < probe.updates) expect(entry.text).toBe('turn started');
+	}
 	expect(updatesPerSecond).toBeGreaterThanOrEqual(100);
 	expect(updatesPerSecond).toBeLessThanOrEqual(115);
 	expect(metrics.frames).toBeGreaterThan(60);

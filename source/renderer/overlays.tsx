@@ -416,6 +416,7 @@ export function OverlayProvider({
 						</dl>
 					)}
 				</div>
+				<div data-stream-announcement-host="modal" />
 				<Notifications
 					active={opened}
 					toast={toast}
