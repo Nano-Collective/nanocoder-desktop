@@ -7,7 +7,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
-import {_electron as electron} from '@playwright/test';
+import {electron} from './electron';
 import {qaEnvironment} from './environment';
 
 const root = path.resolve(import.meta.dirname, '../..');
@@ -78,6 +78,16 @@ try {
 	}, project);
 	await app.firstWindow();
 	console.info('QA ready: agent-browser connect 9333 (fake Nanocoder only)');
+	console.info(
+		'QA native presentation:',
+		await app.evaluate(({app: main, BrowserWindow}) => ({
+			windows: BrowserWindow.getAllWindows().map(window => ({
+				visible: window.isVisible(),
+				focused: window.isFocused(),
+			})),
+			dock: main.dock?.isVisible() ?? false,
+		})),
+	);
 	console.info(`QA files: ${work}`);
 	console.info(`QA launcher PID: ${process.pid}`);
 	await closed;

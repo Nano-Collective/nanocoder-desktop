@@ -10,7 +10,6 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {
 	type ElectronApplication,
-	_electron as electron,
 	expect,
 	type Page,
 	test,
@@ -19,6 +18,7 @@ import {build} from 'vite';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {PermissionRequestInfo} from '@/shared/ipc';
 import type {approvalHarness} from './qa/approval-harness';
+import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 
 const work = realpathSync.native(
