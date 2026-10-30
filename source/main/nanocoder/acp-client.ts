@@ -14,11 +14,17 @@ import {
 	describeAgent,
 	type ExtensionProbes,
 } from '@/main/nanocoder/capabilities';
+import {sessionModeOptions} from '@/main/nanocoder/control-options';
 import {type Exit, launchNanocoder, waitForExit} from '@/main/nanocoder/launch';
 import {
 	ProtocolViolation,
 	protocolStream,
 } from '@/main/nanocoder/protocol-stream';
+import {
+	type ConfigOptionsObserver,
+	createSessionControls,
+	type SessionOffers,
+} from '@/main/nanocoder/session-controls';
 import {
 	type SessionTitleChange,
 	sessionTitle,
@@ -31,11 +37,14 @@ import type {
 	ConnectedAgent,
 	NanocoderMode,
 	NanocoderRuntime,
+	ProjectConfigSelect,
 	SessionInfo,
 	StreamMetadata,
 	TurnEvent,
 	TurnResult,
 } from '@/shared/ipc';
+
+export type {SessionOffers} from '@/main/nanocoder/session-controls';
 
 const INITIALIZE_TIMEOUT_MS = 60_000;
 const SHUTDOWN_GRACE_MS = 5_000;
@@ -68,6 +77,14 @@ export interface NanocoderConnection {
 	): Promise<ResumedSession>;
 	deleteSession(sessionId: string): Promise<void>;
 	renameSession(sessionId: string, title: string): Promise<string>;
+	getSessionOffers(sessionId: string): SessionOffers | undefined;
+	observeConfigOptions?(observer: ConfigOptionsObserver): () => void;
+	setMode(sessionId: string, mode: NanocoderMode): Promise<SessionInfo>;
+	setConfigOption(
+		sessionId: string,
+		configId: ProjectConfigSelect['id'],
+		value: string,
+	): Promise<SessionOffers>;
 	prompt(sessionId: string, text: string): Promise<NanocoderTurnResult>;
 	cancel(sessionId: string): Promise<void>;
 	probeExtensions(): Promise<ExtensionProbes>;
@@ -166,7 +183,15 @@ export async function connectNanocoder(
 	let replay: SessionNotification['update'][] | undefined;
 	const readySessions = new Set<string>();
 	const activePrompts = new Set<Promise<unknown>>();
+	let notificationControls:
+		| ReturnType<typeof createSessionControls>
+		| undefined;
 	let canCloseSession = false;
+	const stream = protocolStream(child.stdout, child.stdin, line => {
+		violated = true;
+		stderr.append(`[stdout] ${line}`);
+		child.kill();
+	});
 
 	const connection = client({name: options.clientInfo.name})
 		.onRequest(methods.client.session.requestPermission, ({params}) =>
@@ -188,13 +213,18 @@ export async function connectNanocoder(
 				if (params) options.onTitleChanged?.(params);
 			},
 		)
-		.connect(
-			protocolStream(child.stdout, child.stdin, line => {
-				violated = true;
-				stderr.append(`[stdout] ${line}`);
-				child.kill();
-			}),
-		);
+		.connect({
+			...stream,
+			// The SDK drops malformed config entries; authority must see the original.
+			readable: stream.readable.pipeThrough(
+				new TransformStream({
+					transform(frame, controller) {
+						notificationControls?.receiveConfigNotification(frame, !!replay);
+						controller.enqueue(frame);
+					},
+				}),
+			),
+		});
 
 	const closeQuietly = async (sessionId: string) => {
 		if (!canCloseSession) return;
@@ -205,6 +235,7 @@ export async function connectNanocoder(
 
 	let closing: Promise<void> | undefined;
 	const close = (): Promise<void> => {
+		notificationControls?.dispose();
 		closing ??= (async () => {
 			const grace = options.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
 			const terminate = () => {
@@ -235,6 +266,7 @@ export async function connectNanocoder(
 	};
 	options.signal?.addEventListener('abort', abort, {once: true});
 	void exited.then(() => options.signal?.removeEventListener('abort', abort));
+	void exited.then(() => notificationControls?.dispose());
 
 	const timeoutMs = options.initializeTimeoutMs ?? INITIALIZE_TIMEOUT_MS;
 	let timedOut = false;
@@ -295,7 +327,7 @@ export async function connectNanocoder(
 		availableModes: ReadonlyArray<{id: string}> | undefined,
 	): Promise<void> => {
 		try {
-			if (!availableModes?.some(({id}) => id === mode)) {
+			if (!sessionModeOptions(availableModes).includes(mode)) {
 				throw new NanocoderFailure(
 					'UNSUPPORTED',
 					`Nanocoder does not offer the ${mode} mode`,
@@ -315,6 +347,30 @@ export async function connectNanocoder(
 		}
 	};
 
+	const sessionControls = createSessionControls({
+		isReady: sessionId => readySessions.has(sessionId) && !closing,
+		isPrompting: () => activePrompts.size > 0,
+		setReady: (sessionId, ready) => {
+			if (ready) readySessions.add(sessionId);
+			else readySessions.delete(sessionId);
+		},
+		setMode: (sessionId, mode) =>
+			connection.agent.request(methods.agent.session.setMode, {
+				sessionId,
+				modeId: mode,
+			}),
+		setConfigOption: async (sessionId, configId, value) =>
+			(
+				await connection.agent.request(methods.agent.session.setConfigOption, {
+					sessionId,
+					configId,
+					value,
+				})
+			).configOptions,
+		failure: (code, message) => new NanocoderFailure(code, message),
+	});
+	notificationControls = sessionControls;
+
 	const newSession = async (mode: NanocoderMode): Promise<SessionInfo> => {
 		const created = await connection.agent
 			.request(methods.agent.session.new, {cwd: options.root, mcpServers: []})
@@ -325,6 +381,11 @@ export async function connectNanocoder(
 				);
 			});
 		await applyMode(created.sessionId, mode, created.modes?.availableModes);
+		sessionControls.remember(
+			created.sessionId,
+			created.modes?.availableModes,
+			created.configOptions,
+		);
 		readySessions.add(created.sessionId);
 		return {id: created.sessionId, mode};
 	};
@@ -359,6 +420,11 @@ export async function connectNanocoder(
 			replay = undefined;
 		}
 		await applyMode(sessionId, mode, resumed.modes?.availableModes);
+		sessionControls.remember(
+			sessionId,
+			resumed.modes?.availableModes,
+			resumed.configOptions,
+		);
 		readySessions.add(sessionId);
 		return {
 			session: {id: sessionId, mode},
@@ -383,13 +449,18 @@ export async function connectNanocoder(
 					'Nanocoder could not delete the session',
 				);
 			});
-		readySessions.delete(sessionId);
+		sessionControls.forget(sessionId);
 	};
 
 	const prompt = async (
 		sessionId: string,
 		text: string,
 	): Promise<NanocoderTurnResult> => {
+		if (!sessionControls.canPrompt())
+			throw new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				'Restart Nanocoder before sending after an unconfirmed model change',
+			);
 		if (!readySessions.has(sessionId) || closing) {
 			throw new NanocoderFailure(
 				'AGENT_UNAVAILABLE',
@@ -522,6 +593,10 @@ export async function connectNanocoder(
 		resumeSession,
 		deleteSession,
 		renameSession,
+		getSessionOffers: sessionControls.getSessionOffers,
+		observeConfigOptions: sessionControls.observeConfigOptions,
+		setMode: sessionControls.setMode,
+		setConfigOption: sessionControls.setConfigOption,
 		prompt,
 		cancel: sessionId =>
 			connection.agent.notify(methods.agent.session.cancel, {sessionId}),

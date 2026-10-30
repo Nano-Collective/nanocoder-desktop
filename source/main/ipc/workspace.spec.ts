@@ -10,6 +10,7 @@ import {APP_ORIGIN} from '@/main/security';
 import {
 	CHANNELS,
 	type IpcResult,
+	type ProjectControls,
 	type ProjectInfo,
 	type SupervisorState,
 	type WorkspaceMethod,
@@ -32,6 +33,13 @@ const payloads = {
 	locateProject: project,
 	removeProject: project,
 	setProjectDefaultMode: {...project, mode: 'normal'},
+	getProjectControls: project,
+	setProjectConfigOption: {
+		...project,
+		revision: threadId,
+		configId: 'model',
+		value: 'fixture-model',
+	},
 	getSupervisorState: project,
 	startProject: project,
 	stopProject: project,
@@ -153,6 +161,97 @@ test('cancelThread refuses renderer session identities and malformed scopes befo
 	t.is(calls, 0);
 	t.deepEqual(await request('cancelThread', thread), {ok: true, value: null});
 	t.is(calls, 1);
+});
+
+test('stopProject delegates to the composed lifecycle after strict validation (CHAT-17)', async t => {
+	const calls: string[] = [];
+	const stopped = {projectId, status: 'stopped'} as SupervisorState;
+	const request = registered({
+		stopProject: async id => {
+			calls.push(id);
+			return stopped;
+		},
+	} as WorkspaceServices);
+	const malformed = await request('stopProject', {...project, confirmed: true});
+	t.false(malformed.ok);
+	if (!malformed.ok) t.is(malformed.error.code, 'VALIDATION');
+	t.deepEqual(calls, []);
+	t.deepEqual(await request('stopProject', project), {
+		ok: true,
+		value: stopped,
+	});
+	t.deepEqual(calls, [projectId]);
+});
+
+test('project control schemas refuse arbitrary config authority before reaching a service (CHAT-10 ACP-14)', async t => {
+	let calls = 0;
+	const request = registered({
+		controls: {
+			setProjectConfigOption: () => {
+				calls++;
+				throw new Error('must not reach a mutation');
+			},
+		},
+	} as unknown as WorkspaceServices);
+	for (const changes of [
+		{revision: 'not-a-revision'},
+		{configId: 'credential'},
+		{configId: 'mode'},
+		{value: true},
+		{value: ''},
+		{value: 'x'.repeat(513)},
+		{value: 'model\nsuffix'},
+		{sessionId: 'renderer-session'},
+		{threadId},
+		{confirmed: true},
+		{cwd: '/renderer-root'},
+	]) {
+		const result = await request('setProjectConfigOption', {
+			...payloads.setProjectConfigOption,
+			...changes,
+		});
+		t.false(result.ok);
+		if (!result.ok) t.is(result.error.code, 'VALIDATION');
+	}
+	t.is(calls, 0);
+});
+
+test('typed project control handlers return the service snapshot unchanged (CHAT-10 ACP-14)', async t => {
+	const confirmed: ProjectControls = {
+		projectId,
+		revision: threadId,
+		modelGate: {enabled: true, reason: null},
+		configOptions: [
+			{
+				id: 'model',
+				name: 'model',
+				currentValue: 'confirmed-different-model',
+				options: [{name: 'confirmed', value: 'confirmed-different-model'}],
+			},
+		],
+	};
+	const seen: unknown[] = [];
+	const request = registered({
+		controls: {
+			getProjectControls: scope => {
+				seen.push(scope);
+				return confirmed;
+			},
+			setProjectConfigOption: payload => {
+				seen.push(payload);
+				return confirmed;
+			},
+		},
+	});
+	t.deepEqual(await request('getProjectControls', project), {
+		ok: true,
+		value: confirmed,
+	});
+	t.deepEqual(
+		await request('setProjectConfigOption', payloads.setProjectConfigOption),
+		{ok: true, value: confirmed},
+	);
+	t.deepEqual(seen, [project, payloads.setProjectConfigOption]);
 });
 
 for (const method of methods) {
@@ -312,6 +411,7 @@ test('dispatches every valid intent to the injected service', async t => {
 		supervisor: service('supervisor'),
 		threads: service('threads'),
 		diagnostics: service('diagnostics'),
+		controls: service('controls'),
 	} as unknown as WorkspaceServices;
 	const request = registered(services);
 	for (const method of methods) {

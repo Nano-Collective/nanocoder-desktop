@@ -224,7 +224,9 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 				'enter a message to send',
 			);
 			await input.fill('synthetic UI check');
-			await expect(input).toHaveAccessibleDescription('ready to send');
+			await expect(input).toHaveAccessibleDescription(
+				'⏎ send · ⇧⏎ newline · / commands',
+			);
 			await expect(send).toBeEnabled();
 		}
 	}

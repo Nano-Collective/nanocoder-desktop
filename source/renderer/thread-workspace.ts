@@ -212,6 +212,7 @@ export function createThreadWorkspace(options: {
 			);
 		},
 		rename: controller.rename,
+		setMode: controller.setMode,
 		archive: controller.archive,
 		remove: controller.remove,
 		deleteHistory: controller.deleteHistory,

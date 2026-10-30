@@ -15,6 +15,10 @@ const api: DesktopApi = {
 	removeProject: request => ipcRenderer.invoke(CHANNELS.removeProject, request),
 	setProjectDefaultMode: request =>
 		ipcRenderer.invoke(CHANNELS.setProjectDefaultMode, request),
+	getProjectControls: request =>
+		ipcRenderer.invoke(CHANNELS.getProjectControls, request),
+	setProjectConfigOption: request =>
+		ipcRenderer.invoke(CHANNELS.setProjectConfigOption, request),
 	getSupervisorState: request =>
 		ipcRenderer.invoke(CHANNELS.getSupervisorState, request),
 	startProject: request => ipcRenderer.invoke(CHANNELS.startProject, request),

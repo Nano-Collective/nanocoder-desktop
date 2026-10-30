@@ -466,6 +466,10 @@ test('CHAT-08 a well-formed Unicode new acknowledgement is saved and prompted wi
 	const connection = f.supervisor.getConnection(f.project.id);
 	const sessionId = 'session/é/\u{1F680}';
 	connection.newSession = async () => ({id: sessionId, mode: 'normal'});
+	connection.getSessionOffers = id =>
+		id === sessionId
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
 	let prompts = 0;
 	connection.prompt = async id => {
 		prompts++;
@@ -539,17 +543,22 @@ for (const path of ['open', 'recovery'] as const) {
 		const request = {projectId: f.project.id, threadId: saved.id};
 		await f.supervisor.ensureProcess(f.project);
 		const connection = f.supervisor.getConnection(f.project.id);
+		connection.getSessionOffers = id =>
+			id === sessionId
+				? {offeredModes: ['normal', 'plan'], configOptions: []}
+				: undefined;
 		connection.resumeSession = async id => {
 			t.is(id, sessionId);
 			return {session: {id, mode: 'plan'}, history: []};
 		};
-		await f.service.openThread(request);
+		t.is((await f.service.openThread(request)).thread.runState, 'ready');
 		if (path === 'recovery')
 			await f.service.restore(
 				f.project,
 				connection,
 				new AbortController().signal,
 			);
+		t.is((await f.service.getThreadSnapshot(request)).thread.runState, 'ready');
 		t.is(
 			f.store.threads.get(f.project.id, saved.id)?.nanocoderSessionId,
 			sessionId,

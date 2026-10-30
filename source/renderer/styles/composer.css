@@ -1,0 +1,100 @@
+.composer {
+	position: relative;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.composer .composer-inactive-control:disabled {
+	opacity: 0.5;
+}
+
+.composer .composer-message {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--spacing-md);
+}
+
+.composer-prompt,
+.composer .composer-pill.composer-mode {
+	color: var(--colors-primary);
+}
+
+.composer textarea {
+	box-sizing: border-box;
+	flex: 1;
+	width: 100%;
+	min-width: 0;
+	min-height: 3.5em;
+	max-height: 160px;
+	resize: vertical;
+	border: 0;
+	color: var(--colors-on-surface);
+	background: transparent;
+	font: inherit;
+}
+
+.composer textarea::placeholder {
+	color: var(--colors-on-surface-muted);
+	opacity: 1;
+}
+
+.composer .gate-hint {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.composer-control-rail {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--spacing-md);
+	min-width: 0;
+}
+
+.composer .composer-pill {
+	display: flex;
+	align-items: center;
+	gap: var(--spacing-xs);
+	min-width: 0;
+	max-width: 100%;
+	padding: var(--spacing-xs) var(--spacing-md);
+	border: 1px solid var(--colors-stroke);
+	border-radius: var(--components-composer-pill-rounded);
+	color: var(--components-composer-pill-text-color);
+	font-size: var(--components-composer-pill-font-size);
+}
+
+.composer-pill select {
+	min-width: 0;
+	max-width: 240px;
+	border: 0;
+	color: inherit;
+	background: var(--colors-surface-panel);
+	font: inherit;
+}
+
+.composer-context {
+	border-style: dashed;
+	color: var(--colors-on-surface-muted);
+}
+
+.composer-context-gauge {
+	height: var(--components-context-gauge-height);
+	overflow: hidden;
+}
+
+.composer-context-gauge > span {
+	display: block;
+	height: 100%;
+	background: var(--components-context-gauge-background-color);
+}
+
+.composer .sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	clip-path: inset(50%);
+}

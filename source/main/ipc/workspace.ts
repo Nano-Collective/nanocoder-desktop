@@ -36,6 +36,17 @@ const workspaceSchemas: {
 	locateProject: projectRequest,
 	removeProject: projectRequest,
 	setProjectDefaultMode: z.strictObject({...project, mode: defaultMode}),
+	getProjectControls: projectRequest,
+	setProjectConfigOption: z.strictObject({
+		...project,
+		revision: id,
+		configId: z.enum(['provider', 'model']),
+		value: z
+			.string()
+			.min(1)
+			.max(512)
+			.regex(/^[^\u0000-\u001f\u007f]+$/u),
+	}),
 	getSupervisorState: projectRequest,
 	startProject: projectRequest,
 	stopProject: projectRequest,
@@ -114,6 +125,10 @@ export function registerWorkspaceHandlers(
 			available(services.projects).removeProject(request),
 		setProjectDefaultMode: request =>
 			available(services.projects).setProjectDefaultMode(request),
+		getProjectControls: request =>
+			available(services.controls).getProjectControls(request),
+		setProjectConfigOption: request =>
+			available(services.controls).setProjectConfigOption(request),
 		getSupervisorState: ({projectId}) =>
 			available(services.supervisor).getState(projectId),
 		startProject: ({projectId}) => {
@@ -121,7 +136,9 @@ export function registerWorkspaceHandlers(
 			return supervisor.ensureProcess(trustedProject(projectId));
 		},
 		stopProject: ({projectId}) =>
-			available(services.supervisor).stop(projectId),
+			services.stopProject
+				? services.stopProject(projectId)
+				: available(services.supervisor).stop(projectId),
 		restartProject: ({projectId}) => {
 			if (services.restartProject) return services.restartProject(projectId);
 			const supervisor = available(services.supervisor);
