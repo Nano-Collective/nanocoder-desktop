@@ -41,11 +41,17 @@ export type ThreadService = ServiceMethods<
 // Main reviews the exact captured snapshot and asks for a destination.
 export type DiagnosticsService = ServiceMethods<'exportDiagnostics'>;
 
+export type ProjectControlService = ServiceMethods<
+	'getProjectControls' | 'setProjectConfigOption'
+>;
+
 export interface WorkspaceServices {
 	store?: DesktopStore;
 	projects?: ProjectService;
 	supervisor?: NanocoderSupervisor;
 	threads?: ThreadService;
 	diagnostics?: DiagnosticsService;
+	controls?: ProjectControlService;
+	stopProject?: (projectId: string) => Promise<SupervisorState>;
 	restartProject?: (projectId: string) => Promise<SupervisorState>;
 }

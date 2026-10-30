@@ -1,12 +1,12 @@
-import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
 import {ApprovalRequests} from '@/renderer/approval-requests';
+import {Composer} from '@/renderer/composer';
 import {ConversationStream} from '@/renderer/conversation-stream';
 import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
 import {RecentProjects} from '@/renderer/recent-projects';
 import {RecoveryTools} from '@/renderer/recovery-tools';
-import {SlashSuggestions} from '@/renderer/stream-commands';
 import {
 	acpBadge,
 	observeSupervisor,
@@ -16,8 +16,10 @@ import {threadPalette} from '@/renderer/thread-palette';
 import {ThreadRail} from '@/renderer/thread-rail';
 import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, Divider, StatusBadge} from '@/renderer/ui';
+import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
 import {useThreads} from '@/renderer/use-threads';
+import {CONFIG_UNCERTAINTY_REASON} from '@/shared/control-reasons';
 import type {
 	AppInfo,
 	CapabilityGates,
@@ -124,6 +126,7 @@ export function App() {
 		!projectControls.pending;
 	const rootBusy =
 		workspace.promptingThreadId !== null ||
+		workspace.cancellingThreadIds.length > 0 ||
 		(processState?.activeThreadId ?? null) !== null;
 	const sending =
 		thread !== null &&
@@ -138,11 +141,28 @@ export function App() {
 		thread.runState !== 'view-only' &&
 		!workspace.loading &&
 		!workspace.pending;
+	const rootControlReason = rootBusy
+		? 'stop the project turn before changing controls'
+		: !accepting
+			? 'Nanocoder is not ready'
+			: workspace.loading || workspace.pending
+				? 'another thread request is pending'
+				: null;
+	const modelControls = useProjectControls(
+		projectId,
+		rootControlReason,
+		processState?.status === 'ready',
+	);
+	const currentProject = projectControls.projects.find(
+		project => project.id === projectId,
+	);
+	const configUncertain =
+		modelControls.controls?.modelGate.reason === CONFIG_UNCERTAINTY_REASON;
 	const failed =
 		thread?.runState === 'failed' ||
 		(turn !== null && !turn.ok && thread?.runState !== 'ready');
 	const processBadge = acpBadge(supervisors, selected?.root ?? '');
-	const composerInput = useRef<HTMLInputElement>(null);
+	const composerInput = useRef<HTMLTextAreaElement>(null);
 	const [renaming, setRenaming] = useState<{
 		projectId: string;
 		threadId: string;
@@ -225,9 +245,15 @@ export function App() {
 			void projectControls.refresh();
 		}
 	};
-	const send = (event: FormEvent) => {
-		event.preventDefault();
-		if (editable && !rootBusy && draft.trim()) void controls.send();
+	const send = () => {
+		if (
+			editable &&
+			!rootBusy &&
+			!modelControls.pending &&
+			!configUncertain &&
+			draft.trim()
+		)
+			void controls.send();
 	};
 	const cancel = async () => {
 		if (thread) await controls.cancel(thread.id);
@@ -254,8 +280,9 @@ export function App() {
 		workspace.loading ||
 		workspace.pending ||
 		connecting ||
-		projectControls.pending;
-	const hint = !accepting
+		projectControls.pending ||
+		modelControls.pending;
+	const sendReason = !accepting
 		? 'Nanocoder is not ready. retry before sending.'
 		: thread?.archiveState === 'archived'
 			? 'this thread is archived; unarchive it before sending'
@@ -263,9 +290,13 @@ export function App() {
 				? 'waiting for Nanocoder to finish the turn'
 				: rootBusy
 					? 'another thread is running'
-					: draft.trim() === ''
-						? 'enter a message to send'
-						: 'ready to send';
+					: modelControls.pending
+						? 'a project control change is pending'
+						: configUncertain
+							? CONFIG_UNCERTAINTY_REASON
+							: draft.trim() === ''
+								? 'enter a message to send'
+								: null;
 
 	return (
 		<OverlayProvider
@@ -423,54 +454,49 @@ export function App() {
 					outcome?.status === 'connected' &&
 					thread &&
 					thread.runState !== 'view-only' && (
-						<form className="gate-composer" onSubmit={send}>
-							<label>
-								message
-								<input
-									ref={composerInput}
-									value={draft}
-									onChange={event => controls.setDraft(event.target.value)}
-									disabled={!editable}
-									placeholder="ask anything…"
-									aria-describedby="composer-hint"
-								/>
-							</label>
-							<SlashSuggestions
-								commands={transcript.commands ?? []}
-								draft={draft}
-								disabled={!editable}
-								onInsert={value => {
-									controls.setDraft(value);
-									composerInput.current?.focus();
-								}}
-							/>
-							<div className="gate-actions">
-								<Button
-									type="submit"
-									disabled={rootBusy || !editable || !draft.trim()}
-									aria-describedby="composer-hint"
-								>
-									send
-								</Button>
-								{sending && (
-									<Button
-										variant="reject"
-										disabled={connecting || stopping}
-										onClick={() => {
-											void cancel();
-										}}
-									>
-										{stopping ? 'cancelling turn' : 'cancel turn'}
-									</Button>
-								)}
-								<p id="composer-hint" className="gate-hint">
-									{hint}
-								</p>
-							</div>
-							{cancellation && !cancellation.ok && (
-								<p role="alert">{cancellation.error.message}</p>
-							)}
-						</form>
+						<Composer
+							draft={draft}
+							editable={editable}
+							sendReason={sendReason}
+							controlReason={
+								rootControlReason ??
+								(modelControls.pending
+									? 'a project control change is pending'
+									: null)
+							}
+							projectName={currentProject?.displayName ?? 'selected project'}
+							projectControls={modelControls.controls}
+							mode={thread.mode}
+							defaultMode={currentProject?.defaultMode ?? 'normal'}
+							modePending={thread.nanocoderSessionId === null}
+							running={sending}
+							stopping={connecting || stopping}
+							error={
+								modelControls.error ??
+								(cancellation && !cancellation.ok
+									? cancellation.error.message
+									: null)
+							}
+							commands={transcript.commands ?? []}
+							context={transcript.context}
+							inputRef={composerInput}
+							onDraft={controls.setDraft}
+							onSend={send}
+							onCancel={() => {
+								void cancel();
+							}}
+							onMode={mode => {
+								void controls.setMode(thread.id, mode);
+							}}
+							onDefault={mode => {
+								void modelControls.setDefault(mode).then(result => {
+									if (result) void projectControls.refresh();
+								});
+							}}
+							onConfig={(id, value) => {
+								void modelControls.setConfig(id, value);
+							}}
+						/>
 					)
 				}
 			>

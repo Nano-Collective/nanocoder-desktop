@@ -37,6 +37,13 @@ async function fixture(
 	enableRuntime = false,
 	onEvent?: (event: ProjectEvent) => void,
 	withLifecycle = false,
+	hooks: Pick<
+		Parameters<typeof createThreadService>[0],
+		| 'onSessionPrepared'
+		| 'beforeFirstPrompt'
+		| 'resolveLiveMode'
+		| 'validateBeforePrepare'
+	> = {},
 ) {
 	const root = realpathSync.native(
 		mkdtempSync(path.join(tmpdir(), 'nd-threads-')),
@@ -106,6 +113,7 @@ async function fixture(
 	};
 	store.projects.save(project);
 	service = createThreadService({
+		...hooks,
 		store,
 		supervisor,
 		clock,
@@ -2915,6 +2923,694 @@ test('thread metadata operations publish stored changes and a distinct removal e
 	);
 	t.like(events[3], {...target, type: 'thread-removed'});
 	t.deepEqual(calls, []);
+});
+
+test('owned hooks receive safe saved sessions and run before first prompt on the same lease', async t => {
+	const seen: string[] = [];
+	const {service, project, supervisor, store} = await fixture(
+		t,
+		true,
+		undefined,
+		false,
+		{
+			onSessionPrepared: context => {
+				service.projectOperations.assertCurrent(context.lease);
+				t.true(service.projectOperations.isBusy(project.id));
+				t.is(context.source, 'new');
+				t.is(context.connection, supervisor.getConnection(project.id));
+				t.is(context.thread.nanocoderSessionId, 'fake-session');
+				t.is(
+					store.threads.get(project.id, context.thread.id)?.nanocoderSessionId,
+					'fake-session',
+				);
+				t.true(
+					fakeEvents(context.connection.stderr.lines()).some(
+						event =>
+							event.method === 'session/set_mode' &&
+							(event.params as {modeId?: string}).modeId === 'auto-accept',
+					),
+				);
+				seen.push('prepared');
+			},
+			beforeFirstPrompt: async context => {
+				service.projectOperations.assertCurrent(context.lease);
+				await t.throwsAsync(
+					service.projectOperations.runProjectOperation(
+						project.id,
+						'controls',
+						async () => {
+							t.fail('A hook must not reacquire the project lease');
+						},
+					),
+					{code: 'BUSY'},
+				);
+				seen.push('before');
+			},
+		},
+	);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	supervisor.getConnection(project.id).prompt = async () => {
+		seen.push('prompt');
+		return {stopReason: 'end_turn'};
+	};
+	const request = {
+		projectId: project.id,
+		threadId: thread.id,
+		text: 'fixture send',
+	};
+	await service.promptThread(request);
+	await service.promptThread(request);
+	t.deepEqual(seen, ['prepared', 'before', 'prompt', 'prompt']);
+	t.false(service.projectOperations.isBusy(project.id));
+});
+
+test('a pending yolo choice dropped after safe preparation visibly refuses instead of prompting normally', async t => {
+	const events: ProjectEvent[] = [];
+	let pending: ThreadInfo['mode'] | undefined = 'yolo';
+	let validated = false;
+	const {service, project, store, supervisor} = await fixture(
+		t,
+		true,
+		event => events.push(event),
+		false,
+		{
+			resolveLiveMode: (_project, _thread, sessionId) =>
+				sessionId === null ? pending : 'normal',
+			validateBeforePrepare: () => {
+				t.is(pending, 'yolo');
+				validated = true;
+			},
+			onSessionPrepared: context => {
+				t.true(validated);
+				t.is(context.session.mode, 'normal');
+				pending = undefined;
+			},
+			beforeFirstPrompt: context => {
+				t.is(context.session.mode, 'normal');
+				t.is(context.thread.mode, 'normal');
+				if (pending === undefined)
+					throw new IpcFailure('DENIED', 'Confirm the yolo choice again');
+			},
+		},
+	);
+	store.projects.save({...project, defaultMode: 'normal'});
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	let prompts = 0;
+	supervisor.getConnection(project.id).prompt = async () => {
+		prompts++;
+		return {stopReason: 'end_turn'};
+	};
+	await t.throwsAsync(
+		service.promptThread({
+			projectId: project.id,
+			threadId: thread.id,
+			text: 'never sent',
+		}),
+		{
+			code: 'DENIED',
+			message: 'Confirm the yolo choice again',
+		},
+	);
+	t.true(validated);
+	t.is(prompts, 0);
+	t.false(events.some(event => event.type === 'turn'));
+	t.is(
+		store.threads.get(project.id, thread.id)?.nanocoderSessionId,
+		'fake-session',
+	);
+});
+
+test('the before-first-prompt hook applied mode is preserved by the fresh running-row patch', async t => {
+	let liveMode: ThreadInfo['mode'] = 'auto-accept';
+	let publishedMode: ThreadInfo['mode'] | undefined;
+	const {service, project, store, supervisor} = await fixture(
+		t,
+		true,
+		event => {
+			if (event.type === 'thread' && event.thread.runState === 'running')
+				publishedMode = event.thread.mode;
+		},
+		false,
+		{
+			resolveLiveMode: () => liveMode,
+			beforeFirstPrompt: context => {
+				service.projectOperations.assertCurrent(context.lease);
+				liveMode = 'yolo';
+			},
+		},
+	);
+	const save = store.threads.save;
+	store.threads.save = thread => {
+		t.not(thread.mode, 'yolo');
+		save(thread);
+	};
+	supervisor.subscribe(event => {
+		if (event.type === 'thread' && event.thread.runState === 'running')
+			publishedMode = event.thread.mode;
+	});
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	let sentMode: string | undefined;
+	supervisor.getConnection(project.id).prompt = async () => {
+		sentMode = liveMode;
+		return {stopReason: 'end_turn'};
+	};
+	await service.promptThread({
+		projectId: project.id,
+		threadId: thread.id,
+		text: 'fixture send',
+	});
+	t.is(sentMode, 'yolo');
+	t.is(publishedMode, 'yolo');
+	t.is(
+		(
+			await service.getThreadSnapshot({
+				projectId: project.id,
+				threadId: thread.id,
+			})
+		).thread.mode,
+		'yolo',
+	);
+	t.is(store.threads.get(project.id, thread.id)?.mode, 'auto-accept');
+});
+
+test('a failed prepared-session handoff keeps saved identity but publishes no prompt content', async t => {
+	const events: ProjectEvent[] = [];
+	const {service, project, store, supervisor} = await fixture(
+		t,
+		true,
+		event => events.push(event),
+		false,
+		{
+			onSessionPrepared: () => {
+				throw new IpcFailure('UNSUPPORTED', 'Current offers are unavailable');
+			},
+		},
+	);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	supervisor.getConnection(project.id).prompt = async () => ({
+		stopReason: 'end_turn',
+	});
+	await t.throwsAsync(
+		service.promptThread({
+			projectId: project.id,
+			threadId: thread.id,
+			text: 'never sent',
+		}),
+		{
+			code: 'UNSUPPORTED',
+			message: 'Current offers are unavailable',
+		},
+	);
+	t.is(
+		store.threads.get(project.id, thread.id)?.nanocoderSessionId,
+		'fake-session',
+	);
+	t.false(events.some(event => event.type === 'turn'));
+	t.false(service.projectOperations.isBusy(project.id));
+});
+
+test('pending choice validation refuses inside the lease before any process preparation', async t => {
+	const {service, project, supervisor, calls, store} = await fixture(
+		t,
+		true,
+		undefined,
+		false,
+		{
+			validateBeforePrepare: (lease, thread) => {
+				service.projectOperations.assertCurrent(lease);
+				t.is(thread.nanocoderSessionId, null);
+				throw new IpcFailure('DENIED', 'The pending yolo choice expired');
+			},
+		},
+	);
+	const thread = await service.createThread({projectId: project.id});
+	let preparations = 0;
+	supervisor.ensureProcess = async () => {
+		preparations++;
+		throw new IpcFailure('UNSUPPORTED', 'Preparation must not run');
+	};
+	await t.throwsAsync(
+		service.promptThread({
+			projectId: project.id,
+			threadId: thread.id,
+			text: 'never sent',
+		}),
+		{
+			code: 'DENIED',
+			message: 'The pending yolo choice expired',
+		},
+	);
+	t.is(preparations, 0);
+	t.deepEqual(calls, []);
+	t.is(store.threads.get(project.id, thread.id)?.nanocoderSessionId, null);
+});
+
+test('a failed live mode change makes the next send resume safely instead of prompting an unready session', async t => {
+	let ready = true;
+	let before = 0;
+	const sources: string[] = [];
+	const {service, project, supervisor} = await fixture(
+		t,
+		true,
+		undefined,
+		false,
+		{
+			onSessionPrepared: context => {
+				sources.push(context.source);
+			},
+			beforeFirstPrompt: () => {
+				if (++before === 1) {
+					ready = false;
+					throw new IpcFailure(
+						'AGENT_UNAVAILABLE',
+						'The requested mode failed',
+					);
+				}
+			},
+		},
+	);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	Object.assign(connection, {
+		getSessionOffers: () =>
+			ready ? {offeredModes: ['normal'], configOptions: undefined} : undefined,
+	});
+	const resume = connection.resumeSession;
+	let resumed = 0;
+	connection.resumeSession = async (...args) => {
+		resumed++;
+		const restored = await resume(...args);
+		ready = true;
+		return restored;
+	};
+	const sentReadiness: boolean[] = [];
+	connection.prompt = async () => {
+		sentReadiness.push(ready);
+		return {stopReason: 'end_turn'};
+	};
+	const request = {
+		projectId: project.id,
+		threadId: thread.id,
+		text: 'fixture send',
+	};
+	await t.throwsAsync(service.promptThread(request), {
+		code: 'AGENT_UNAVAILABLE',
+	});
+	await service.promptThread(request);
+	t.is(resumed, 1);
+	t.deepEqual(sources, ['new', 'resume']);
+	t.deepEqual(sentReadiness, [true]);
+});
+
+test('opening a cached session with missing ready offers safely resumes the same saved ID', async t => {
+	const {service, project, store, supervisor} = await fixture(t, true);
+	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+	store.threads.save(thread);
+	const request = {projectId: project.id, threadId: thread.id};
+	await service.openThread(request);
+	const connection = supervisor.getConnection(project.id);
+	let ready = false;
+	Object.assign(connection, {
+		getSessionOffers: () => (ready ? {offeredModes: ['normal']} : undefined),
+	});
+	const resume = connection.resumeSession;
+	let resumed = 0;
+	connection.resumeSession = async (id, mode) => {
+		t.is(id, 'fake-session');
+		resumed++;
+		const restored = await resume(id, mode);
+		ready = true;
+		return restored;
+	};
+	await service.openThread(request);
+	t.is(resumed, 1);
+	t.true(ready);
+	t.is(
+		store.threads.get(project.id, thread.id)?.nanocoderSessionId,
+		'fake-session',
+	);
+});
+
+test('a cleared live-mode cache forces safe normal resume before the next prompt on the same connection', async t => {
+	let liveMode: ThreadInfo['mode'] | undefined;
+	let first = true;
+	const {service, project, store, supervisor} = await fixture(
+		t,
+		true,
+		undefined,
+		false,
+		{
+			resolveLiveMode: (_project, _thread, sessionId) =>
+				sessionId ? liveMode : undefined,
+			onSessionPrepared: context => {
+				liveMode = context.session.mode;
+			},
+			beforeFirstPrompt: () => {
+				if (first) {
+					liveMode = 'yolo';
+					first = false;
+				}
+			},
+		},
+	);
+	store.projects.save({...project, defaultMode: 'normal'});
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	Object.assign(connection, {
+		getSessionOffers: () => ({offeredModes: ['normal', 'yolo']}),
+	});
+	const resume = connection.resumeSession;
+	let resumed = 0;
+	connection.resumeSession = async (...args) => {
+		resumed++;
+		return resume(...args);
+	};
+	const sentModes: Array<ThreadInfo['mode'] | undefined> = [];
+	connection.prompt = async () => {
+		sentModes.push(liveMode);
+		return {stopReason: 'end_turn'};
+	};
+	const request = {
+		projectId: project.id,
+		threadId: thread.id,
+		text: 'fixture send',
+	};
+	await service.promptThread(request);
+	liveMode = undefined;
+	await service.promptThread(request);
+	t.is(resumed, 1);
+	t.deepEqual(sentModes, ['yolo', 'normal']);
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines())
+			.filter(event => event.method === 'session/set_mode')
+			.map(event => (event.params as {modeId: string}).modeId),
+		['normal', 'normal'],
+	);
+	t.is(store.threads.get(project.id, thread.id)?.mode, 'normal');
+});
+
+test('failed preparation never marks an attempt prepared before a later safe attempt', async t => {
+	let attempt = 0;
+	const preparedAttempts: number[] = [];
+	const {service, project, supervisor} = await fixture(
+		t,
+		true,
+		undefined,
+		false,
+		{
+			validateBeforePrepare: () => {
+				attempt++;
+			},
+			onSessionPrepared: () => {
+				preparedAttempts.push(attempt);
+			},
+		},
+	);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	const create = connection.newSession;
+	let creation = 0;
+	connection.newSession = async mode => {
+		if (++creation === 1)
+			throw new IpcFailure('UNSUPPORTED', 'Safe mode was not acknowledged');
+		return create(mode);
+	};
+	connection.prompt = async () => ({stopReason: 'end_turn'});
+	const request = {
+		projectId: project.id,
+		threadId: thread.id,
+		text: 'fixture send',
+	};
+	await t.throwsAsync(service.promptThread(request), {code: 'UNSUPPORTED'});
+	t.deepEqual(preparedAttempts, []);
+	await service.promptThread(request);
+	t.is(attempt, 2);
+	t.deepEqual(preparedAttempts, [2]);
+});
+
+test('an abandoned new-session response never calls the prepared-session handoff', async t => {
+	let prepared = 0;
+	const entered = deferred<void>();
+	const release = deferred<void>();
+	t.teardown(() => release.resolve());
+	const {service, project, supervisor, store} = await fixture(
+		t,
+		true,
+		undefined,
+		false,
+		{
+			onSessionPrepared: () => {
+				prepared++;
+			},
+		},
+	);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	const create = connection.newSession;
+	connection.newSession = async mode => {
+		const session = await create(mode);
+		entered.resolve();
+		await release.promise;
+		return session;
+	};
+	const turn = service.promptThread({
+		projectId: project.id,
+		threadId: thread.id,
+		text: 'never sent',
+	});
+	const rejected = t.throwsAsync(turn, {code: 'AGENT_UNAVAILABLE'});
+	await entered.promise;
+	const detached = service.detach([project]);
+	release.resolve();
+	await Promise.all([rejected, detached]);
+	t.is(prepared, 0);
+	t.is(store.threads.get(project.id, thread.id)?.nanocoderSessionId, null);
+});
+
+for (const hook of ['prepared', 'before'] as const) {
+	test(`a connection replaced during the ${hook} hook cannot publish or prompt`, async t => {
+		let replace = () => {};
+		const {service, project, supervisor} = await fixture(
+			t,
+			true,
+			undefined,
+			false,
+			{
+				onSessionPrepared:
+					hook === 'prepared'
+						? async () => {
+								await Promise.resolve();
+								replace();
+							}
+						: undefined,
+				beforeFirstPrompt:
+					hook === 'before'
+						? async () => {
+								await Promise.resolve();
+								replace();
+							}
+						: undefined,
+			},
+		);
+		const thread = await service.createThread({projectId: project.id});
+		await supervisor.ensureProcess(project);
+		const connection = supervisor.getConnection(project.id);
+		let prompts = 0;
+		connection.prompt = async () => {
+			prompts++;
+			return {stopReason: 'end_turn'};
+		};
+		const original = supervisor.getConnection.bind(supervisor);
+		let replaced = false;
+		supervisor.getConnection = projectId => {
+			const current = original(projectId);
+			return replaced ? {...current} : current;
+		};
+		replace = () => {
+			replaced = true;
+		};
+		const request = {projectId: project.id, threadId: thread.id};
+		await t.throwsAsync(
+			service.promptThread({...request, text: 'never sent'}),
+			{code: 'AGENT_UNAVAILABLE'},
+		);
+		t.is(prompts, 0);
+		t.deepEqual((await service.getThreadSnapshot(request)).events, []);
+	});
+}
+
+test('detaching an owned hook holds BUSY until both the hook and child shutdown settle', async t => {
+	const entered = deferred<void>();
+	const release = deferred<void>();
+	const hookReturned = deferred<void>();
+	const closeEntered = deferred<void>();
+	const closeRelease = deferred<void>();
+	t.teardown(() => {
+		release.resolve();
+		closeRelease.resolve();
+	});
+	const {service, project, supervisor} = await fixture(
+		t,
+		true,
+		undefined,
+		false,
+		{
+			onSessionPrepared: async context => {
+				entered.resolve();
+				await release.promise;
+				t.true(context.lease.signal.aborted);
+				hookReturned.resolve();
+			},
+		},
+	);
+	const thread = await service.createThread({projectId: project.id});
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	const close = connection.close;
+	connection.close = async () => {
+		closeEntered.resolve();
+		await closeRelease.promise;
+		await close();
+	};
+	const request = {projectId: project.id, threadId: thread.id};
+	const turn = service.promptThread({...request, text: 'never sent'});
+	const rejected = t.throwsAsync(turn, {code: 'AGENT_UNAVAILABLE'});
+	await entered.promise;
+	const detached = service.detach([project]);
+	await closeEntered.promise;
+	release.resolve();
+	await hookReturned.promise;
+	await new Promise(resolve => setImmediate(resolve));
+	try {
+		await t.throwsAsync(
+			service.runProjectOperation(project.id, 'controls', async () => {}),
+			{code: 'BUSY'},
+		);
+	} finally {
+		closeRelease.resolve();
+		await Promise.all([detached, rejected]);
+	}
+	t.deepEqual((await service.getThreadSnapshot(request)).events, []);
+	t.false(service.projectOperations.isBusy(project.id));
+});
+
+test('opening and recovering history hand off safely without running the first-prompt hook', async t => {
+	const sources: string[] = [];
+	let before = 0;
+	const {service, project, store, supervisor} = await fixture(
+		t,
+		true,
+		undefined,
+		false,
+		{
+			onSessionPrepared: context => {
+				service.projectOperations.assertCurrent(context.lease);
+				t.is(context.thread.nanocoderSessionId, 'fake-session');
+				t.is(context.source, 'resume');
+				sources.push(context.source);
+			},
+			beforeFirstPrompt: () => {
+				before++;
+			},
+		},
+	);
+	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+	store.threads.save(thread);
+	const request = {projectId: project.id, threadId: thread.id};
+	await service.openThread(request);
+	t.deepEqual(sources, ['resume']);
+	t.is(before, 0);
+	const connection = supervisor.getConnection(project.id);
+	await service.restore(project, connection, new AbortController().signal);
+	t.deepEqual(sources, ['resume', 'resume']);
+	t.is(before, 0);
+	connection.prompt = async () => ({stopReason: 'end_turn'});
+	await service.promptThread({...request, text: 'fixture send'});
+	t.is(before, 1);
+	t.deepEqual(sources, ['resume', 'resume']);
+});
+
+test('the control connection getter shares the exact starting recovery binding with the owned lease', async t => {
+	let bound: NanocoderConnection | undefined;
+	let exposed: NanocoderConnection | undefined;
+	let supervisorRefused = false;
+	const {service, project, store, supervisor} = await fixture(
+		t,
+		true,
+		undefined,
+		true,
+		{
+			onSessionPrepared: context => {
+				if (supervisor.getState(project.id).status !== 'starting') return;
+				try {
+					supervisor.getConnection(project.id);
+				} catch {
+					supervisorRefused = true;
+				}
+				service.projectOperations.assertCurrent(context.lease);
+				bound = context.connection;
+				exposed = service.getControlConnection(project.id);
+			},
+		},
+	);
+	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+	store.threads.save(thread);
+	await service.openThread({projectId: project.id, threadId: thread.id});
+	const first = supervisor.getConnection(project.id);
+	const state = await supervisor.restart(project);
+	t.is(state.status, 'ready');
+	t.true(supervisorRefused);
+	t.truthy(bound);
+	t.not(bound, first);
+	t.is(exposed, bound);
+	t.is(
+		service.getControlConnection(project.id),
+		supervisor.getConnection(project.id),
+	);
+	t.is(service.getControlConnection(randomUUID()), undefined);
+	service.dispose();
+	t.is(service.getControlConnection(project.id), undefined);
+});
+
+test('an invalidated starting recovery cannot expose its connection while the owned hook is settling', async t => {
+	const entered = deferred<NanocoderConnection>();
+	const release = deferred<void>();
+	t.teardown(() => release.resolve());
+	const {service, project, store, supervisor} = await fixture(
+		t,
+		true,
+		undefined,
+		true,
+		{
+			onSessionPrepared: async context => {
+				if (supervisor.getState(project.id).status !== 'starting') return;
+				entered.resolve(context.connection);
+				await release.promise;
+			},
+		},
+	);
+	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+	store.threads.save(thread);
+	await service.openThread({projectId: project.id, threadId: thread.id});
+	const restarting = supervisor.restart(project);
+	const bound = await entered.promise;
+	const before = service.getControlConnection(project.id);
+	service.projectOperations.invalidate(project.id);
+	const after = service.getControlConnection(project.id);
+	release.resolve();
+	const state = await restarting;
+	t.is(before, bound);
+	t.is(after, undefined);
+	t.is(state.status, 'failed');
+	t.is(service.getControlConnection(project.id), undefined);
 });
 
 test('session prompt and title metadata publish in order before user content and ignore manual overrides (CHAT-04, CHAT-12)', async t => {

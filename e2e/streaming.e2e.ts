@@ -125,13 +125,15 @@ test('100 updates per second keep ordered content and input and scroll response 
 				probe.lastUpdate = performance.now();
 			}
 		});
-		document.querySelector('input')?.addEventListener('input', () => {
-			if (!probe.updates || probe.stop) return;
-			const started = performance.now();
-			requestAnimationFrame(() =>
-				probe.inputFrameMs.push(performance.now() - started),
-			);
-		});
+		document
+			.querySelector('textarea[placeholder="ask anything…"]')
+			?.addEventListener('input', () => {
+				if (!probe.updates || probe.stop) return;
+				const started = performance.now();
+				requestAnimationFrame(() =>
+					probe.inputFrameMs.push(performance.now() - started),
+				);
+			});
 		const channel = new MessageChannel();
 		channel.port1.onmessage = event => {
 			if (!probe.stop)
@@ -240,7 +242,14 @@ test('100 updates per second keep ordered content and input and scroll response 
 	);
 	await expect(page.locator('.stream-token-chip')).toHaveText('+400 tok');
 	await expect(
-		page.getByRole('progressbar', {name: 'reported context use'}),
+		page
+			.locator('.conversation-stream')
+			.getByRole('progressbar', {name: 'reported context use'}),
+	).toHaveAttribute('aria-valuenow', '13');
+	await expect(
+		page
+			.locator('.composer')
+			.getByRole('progressbar', {name: 'reported context use'}),
 	).toHaveAttribute('aria-valuenow', '13');
 	await expect(page.locator('.conversation-stream')).not.toContainText(
 		'synthetic-private',

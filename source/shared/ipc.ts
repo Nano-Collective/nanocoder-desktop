@@ -34,6 +34,8 @@ export const CHANNELS = {
 	locateProject: 'projects:locate',
 	removeProject: 'projects:remove',
 	setProjectDefaultMode: 'projects:set-default-mode',
+	getProjectControls: 'projects:get-controls',
+	setProjectConfigOption: 'projects:set-config-option',
 	getSupervisorState: 'supervisor:get-state',
 	startProject: 'supervisor:start',
 	stopProject: 'supervisor:stop',
@@ -292,6 +294,20 @@ export type CapabilityGate =
 	| {enabled: true; reason: null}
 	| {enabled: false; reason: string};
 
+export interface ProjectConfigSelect {
+	id: 'provider' | 'model';
+	name: string;
+	currentValue: string;
+	options: Array<{name: string; value: string}>;
+}
+
+export interface ProjectControls {
+	projectId: string;
+	revision: string;
+	configOptions: ProjectConfigSelect[];
+	modelGate: CapabilityGate;
+}
+
 export type FeatureId =
 	| 'resume'
 	| 'close'
@@ -397,6 +413,12 @@ export interface WorkspaceRequests {
 	locateProject: ProjectRequest;
 	removeProject: ProjectRequest;
 	setProjectDefaultMode: ProjectRequest & {mode: DefaultMode};
+	getProjectControls: ProjectRequest;
+	setProjectConfigOption: ProjectRequest & {
+		revision: string;
+		configId: 'provider' | 'model';
+		value: string;
+	};
 	getSupervisorState: ProjectRequest;
 	startProject: ProjectRequest;
 	stopProject: ProjectRequest;
@@ -431,6 +453,8 @@ export interface WorkspaceValues {
 	locateProject: ProjectChoiceResult;
 	removeProject: null;
 	setProjectDefaultMode: ProjectInfo;
+	getProjectControls: ProjectControls;
+	setProjectConfigOption: ProjectControls;
 	getSupervisorState: SupervisorState;
 	startProject: SupervisorState;
 	stopProject: SupervisorState;
@@ -458,6 +482,12 @@ export type WorkspaceMethod = keyof WorkspaceRequests;
 
 // Project sequences cover state changes; thread sequences cover transient chat only.
 export type ProjectEvent =
+	| {
+			type: 'project-controls';
+			projectId: string;
+			sequence: number;
+			controls: ProjectControls;
+	  }
 	| {
 			type: 'project';
 			projectId: string;

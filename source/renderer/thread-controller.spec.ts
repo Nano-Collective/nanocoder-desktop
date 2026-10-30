@@ -74,6 +74,13 @@ function fixture() {
 				title: request.title,
 			});
 		},
+		setThreadMode: async (request: WorkspaceRequests['setThreadMode']) => {
+			calls.push(['mode', request]);
+			return ok({
+				...row(request.threadId, request.projectId),
+				mode: request.mode,
+			});
+		},
 		archiveThread: async (request: ThreadRequest & {archived: boolean}) => {
 			calls.push(['archive', request]);
 			return ok({
@@ -260,6 +267,109 @@ test('metadata actions use their selected project and keep remove distinct from 
 		['delete-history', {projectId: 'project-a', threadId: 'created'}],
 		['remove', {projectId: 'project-a', threadId: 'created'}],
 	]);
+});
+
+test('mode action waits for main without optimism or a session and honours native cancellation (DEC-31 CHAT-04)', async t => {
+	const {bridge, controller, calls} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	calls.length = 0;
+	const result = deferred<IpcResult<ThreadInfo>>();
+	bridge.setThreadMode = request => {
+		calls.push(['mode', request]);
+		return result.promise;
+	};
+	const pending = controller.setMode('created', 'yolo');
+	t.true(controller.getState().pending);
+	t.is(controller.getState().threads[0]?.mode, 'normal');
+	t.false(await controller.setMode('created', 'plan'));
+	t.deepEqual(calls, [
+		['mode', {projectId: 'project-a', threadId: 'created', mode: 'yolo'}],
+	]);
+	result.resolve(ok(row('created')));
+	t.true(await pending);
+	t.is(controller.getState().threads[0]?.mode, 'normal');
+	t.false(controller.getState().pending);
+});
+
+test('newer main metadata, removal, project switches and disposal win over late mode results (CHAT-17 DEC-31)', async t => {
+	for (const change of ['metadata', 'remove', 'project', 'dispose']) {
+		const {bridge, controller, emit} = fixture();
+		await controller.selectProject('project-a');
+		await controller.create();
+		const result = deferred<IpcResult<ThreadInfo>>();
+		bridge.setThreadMode = () => result.promise;
+		const pending = controller.setMode('created', 'yolo');
+		if (change === 'metadata')
+			emit({
+				type: 'thread',
+				projectId: 'project-a',
+				sequence: 10,
+				thread: {...row('created'), mode: 'normal', title: 'fresh main row'},
+			});
+		if (change === 'remove')
+			emit({
+				type: 'thread-removed',
+				projectId: 'project-a',
+				sequence: 10,
+				threadId: 'created',
+			});
+		if (change === 'project') await controller.selectProject('project-b');
+		if (change === 'dispose') controller.dispose();
+		result.resolve(ok({...row('created'), mode: 'yolo'}));
+		t.is(await pending, change === 'metadata');
+		t.false(
+			controller.getState().threads.some(thread => thread.mode === 'yolo'),
+		);
+	}
+});
+
+test('mode refuses read-only rows and a turn in any project thread before sending IPC (CHAT-17)', async t => {
+	for (const change of [
+		'archived',
+		'view-only',
+		'running',
+		'waiting-approval',
+	] as const) {
+		const {controller, calls, emit} = fixture();
+		await controller.selectProject('project-a');
+		await controller.create();
+		calls.length = 0;
+		const blocked =
+			change === 'archived'
+				? {...row('created'), archiveState: 'archived' as const}
+				: change === 'view-only'
+					? {...row('created'), runState: change}
+					: {...row('other'), runState: change};
+		emit({
+			type: 'thread',
+			projectId: 'project-a',
+			sequence: 1,
+			thread: blocked,
+		});
+		t.false(await controller.setMode('created', 'plan'));
+		t.deepEqual(calls, []);
+	}
+});
+
+test('mode refuses a locally preparing turn and cancellation still settling (CHAT-17)', async t => {
+	const {bridge, controller, calls} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	const result = deferred<IpcResult<TurnResult>>();
+	const cancelled = deferred<IpcResult<null>>();
+	bridge.promptThread = () => result.promise;
+	bridge.cancelThread = () => cancelled.promise;
+	const prompting = controller.prompt('created', 'fixture');
+	calls.length = 0;
+	t.false(await controller.setMode('created', 'plan'));
+	const cancelling = controller.cancel('created');
+	result.resolve(ok({stopReason: 'cancelled'}));
+	await prompting;
+	t.false(await controller.setMode('created', 'plan'));
+	t.deepEqual(calls, []);
+	cancelled.resolve(ok(null));
+	await cancelling;
 });
 
 test('late action responses cannot roll back newer metadata or resurrect a removed thread (CHAT-12, CHAT-14)', async t => {

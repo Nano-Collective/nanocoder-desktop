@@ -28,6 +28,7 @@ import {canonicalPath, isInside} from '@/main/paths';
 import type {
 	CapabilityGates,
 	DiagnosticsSnapshot,
+	ProjectControls,
 	ProjectEvent,
 	ProjectInfo,
 	SupervisorState,
@@ -238,6 +239,15 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			projectId: thread.projectId,
 			sequence: this.sequence(thread.projectId),
 			thread,
+		});
+	}
+
+	publishControls(controls: ProjectControls): void {
+		this.emit({
+			type: 'project-controls',
+			projectId: controls.projectId,
+			sequence: this.sequence(controls.projectId),
+			controls,
 		});
 	}
 

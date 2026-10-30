@@ -24,7 +24,7 @@ import {
 import {connectProject} from '@/main/nanocoder/open-project';
 import {type Resolution, resolveNanocoder} from '@/main/nanocoder/runtime';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
-import type {ProjectEvent, ProjectInfo} from '@/shared/ipc';
+import type {ProjectControls, ProjectEvent, ProjectInfo} from '@/shared/ipc';
 
 const runtime = {
 	...fakeRuntime,
@@ -78,6 +78,40 @@ function nextEvent(
 }
 
 test.after.always(removeFakeProjects);
+
+test('controls publications share project metadata sequencing and clone their payload (CHAT-10)', async t => {
+	const supervisor = make();
+	t.teardown(() => supervisor.close());
+	const chosen = project();
+	const other = project();
+	const controls: ProjectControls = {
+		projectId: chosen.id,
+		revision: randomUUID(),
+		configOptions: [],
+		modelGate: {enabled: false, reason: 'available after the first message'},
+	};
+	const events: ProjectEvent[] = [];
+	supervisor.subscribe(event => events.push(event));
+	supervisor.announceProject(chosen);
+	supervisor.publishControls(controls);
+	supervisor.publishThreadRemoved(chosen.id, 'fixture-thread');
+	supervisor.publishControls({...controls, projectId: other.id});
+	t.deepEqual(
+		events.map(event => [event.type, event.sequence]),
+		[
+			['project', 1],
+			['project-controls', 2],
+			['thread-removed', 3],
+			['project-controls', 1],
+		],
+	);
+	const published = events[1];
+	t.is(published?.type, 'project-controls');
+	if (published?.type !== 'project-controls') return;
+	t.deepEqual(published.controls, controls);
+	controls.revision = randomUUID();
+	t.not(published.controls.revision, controls.revision);
+});
 
 test('the native trust confirmer receives only the main-owned canonical project root (DEC-30)', async t => {
 	const chosen = {...project('untrusted'), trusted: false};

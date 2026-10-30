@@ -375,7 +375,7 @@ test.describe('approval and overlay focus', () => {
 		const name = kind === 'palette' ? 'command palette' : 'keyboard shortcuts';
 		const focusedControl = () =>
 			kind === 'palette'
-				? page.getByRole('combobox')
+				? page.getByRole('combobox', {name: 'find a command', exact: true})
 				: page.getByRole('button', {name: 'close keyboard shortcuts'});
 
 		test(`an approval arriving during ${kind} is announced without stealing focus and takes focus after Escape`, async () => {
