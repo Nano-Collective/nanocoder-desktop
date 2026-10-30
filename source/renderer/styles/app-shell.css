@@ -86,6 +86,7 @@
 }
 .shell-canvas {
 	flex: 1;
+	overflow: hidden;
 }
 
 .shell-stream {
@@ -211,8 +212,9 @@
 }
 
 .shell-conversation-footer {
-	flex: none;
-	max-height: 72vh;
+	flex: 0 1 auto;
+	min-height: 0;
+	max-height: min(72vh, 100%);
 	overflow: auto;
 }
 .shell-approval-shelf {
