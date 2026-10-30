@@ -290,6 +290,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				open,
 				diagnostics,
 				input,
+				page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
 				send,
 			];
 			await focusOrder[0].focus();
@@ -369,6 +370,10 @@ test('the mounted workbench takes the narrow canvas and returns to the same chat
 			).toBe(1);
 			for (const width of [1240, 1020, 841, 840, 839]) {
 				await page.setViewportSize({width, height: 900});
+				const typedDraft = `typed ${theme} ${width} draft`;
+				await page
+					.getByRole('textbox', {name: 'fixture draft'})
+					.fill(typedDraft);
 				const opener = page.getByRole('button', {name: 'open fixture panel'});
 				await opener.focus();
 				await page.keyboard.press('Enter');
@@ -381,7 +386,7 @@ test('the mounted workbench takes the narrow canvas and returns to the same chat
 					name: 'fixture draft',
 					includeHidden: true,
 				});
-				await expect(draft).toHaveValue('kept draft');
+				await expect(draft).toHaveValue(typedDraft);
 				if (width <= 840) {
 					await expect(chat).toBeHidden();
 					const railWidth = 188;
@@ -397,7 +402,7 @@ test('the mounted workbench takes the narrow canvas and returns to the same chat
 				await expect(panel).toHaveCount(0);
 				await expect(opener).toBeFocused();
 				await expect(chat).toBeVisible();
-				await expect(draft).toHaveValue('kept draft');
+				await expect(draft).toHaveValue(typedDraft);
 				expect(await visibleTextContrast(page, theme)).toEqual([]);
 			}
 		}

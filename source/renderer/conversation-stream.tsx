@@ -136,11 +136,13 @@ const StreamRow = React.memo(function StreamRow({
 			break;
 		case 'thought':
 			content = (
-				<div className="stream-reasoning">
-					<span aria-hidden="true">◌ </span>
-					<span className="stream-author">reasoning</span>
+				<details className="stream-reasoning" open={streaming || undefined}>
+					<summary>
+						<span aria-hidden="true">◌ </span>reasoning
+						{streaming ? ' · in progress' : ' · finished'}
+					</summary>
 					<p>{item.text}</p>
-				</div>
+				</details>
 			);
 			break;
 		case 'turn-metadata':
@@ -199,7 +201,13 @@ const StreamRow = React.memo(function StreamRow({
 					details.locations?.length ||
 					details.input !== undefined ||
 					details.output !== undefined) ? (
-					<details>
+					<details
+						open={
+							item.status === 'failed' ||
+							item.status === 'cancelled' ||
+							undefined
+						}
+					>
 						<summary>
 							<span className="stream-disclosure" aria-hidden="true" />
 							{summary}
@@ -369,7 +377,7 @@ export function ConversationStream({
 							onStopTurn={onStopTurn ? stopTurn : undefined}
 							streaming={
 								running &&
-								item.kind === 'agent' &&
+								(item.kind === 'agent' || item.kind === 'thought') &&
 								index === transcript.items.length - 1
 							}
 						/>

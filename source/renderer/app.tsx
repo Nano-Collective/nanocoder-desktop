@@ -512,6 +512,20 @@ export function App() {
 						{workspace.error && <p role="alert">{workspace.error}</p>}
 					</>
 				}
+				approvalShelf={
+					thread && (
+						<ApprovalRequests
+							key={`${projectId}:${thread.id}`}
+							requests={transcript.permissions}
+							mode={thread.mode}
+							busy={sending}
+							fallbackFocus={composerInput}
+							onAnswer={(id, optionId) =>
+								controls.answer(thread.id, id, optionId)
+							}
+						/>
+					)
+				}
 				composer={
 					outcome?.status === 'connected' &&
 					thread &&
@@ -578,18 +592,7 @@ export function App() {
 									? 'failed'
 									: undefined
 						}
-					>
-						<ApprovalRequests
-							key={`${projectId}:${thread.id}`}
-							requests={transcript.permissions}
-							mode={thread.mode}
-							busy={sending}
-							fallbackFocus={composerInput}
-							onAnswer={(id, optionId) =>
-								controls.answer(thread.id, id, optionId)
-							}
-						/>
-					</ConversationStream>
+					/>
 				)}
 				{thread && (
 					<ThreadRecoveryNotice

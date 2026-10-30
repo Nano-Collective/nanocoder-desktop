@@ -12,6 +12,7 @@ export function AppShell({
 	sidebarFooter,
 	streamTools,
 	composer,
+	approvalShelf,
 	palette,
 	workbench,
 	bottomPanel,
@@ -27,6 +28,7 @@ export function AppShell({
 	sidebarFooter?: React.ReactNode;
 	streamTools?: React.ReactNode;
 	composer?: React.ReactNode;
+	approvalShelf?: React.ReactNode;
 	palette?: React.ReactNode;
 	workbench?: {title: string; children: React.ReactNode; onClose(): void};
 	bottomPanel?: React.ReactNode;
@@ -67,7 +69,17 @@ export function AppShell({
 							)}
 							<div className="technical-gate">{children}</div>
 						</div>
-						{composer && <div className="shell-composer">{composer}</div>}
+						<div className="shell-conversation-footer">
+							{approvalShelf && (
+								<div
+									className="shell-approval-shelf"
+									aria-label="approval shelf"
+								>
+									{approvalShelf}
+								</div>
+							)}
+							{composer && <div className="shell-composer">{composer}</div>}
+						</div>
 					</main>
 					{workbench && (
 						<aside

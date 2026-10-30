@@ -283,7 +283,7 @@ test('focused approvals stay fully visible across turns and widths in both theme
 			await expect(cards()).toHaveCSS('animation-duration', '2.2s');
 			await expect(cards()).toHaveCSS(
 				'border-top-color',
-				theme === 'dark' ? 'rgb(221, 167, 60)' : 'rgb(154, 103, 0)',
+				theme === 'dark' ? 'rgb(224, 175, 104)' : 'rgb(118, 81, 11)',
 			);
 			await expect(dialogs()).toHaveCSS('outline-width', '2px');
 			for (const hint of await cards().locator('kbd').all())
@@ -291,7 +291,7 @@ test('focused approvals stay fully visible across turns and widths in both theme
 			const geometry = await cards().evaluate(card => {
 				const rect = card.getBoundingClientRect();
 				const scroll = document
-					.querySelector('.shell-stream-scroll')
+					.querySelector('.shell-approval-shelf')
 					?.getBoundingClientRect();
 				return {
 					left: rect.left,

@@ -209,3 +209,25 @@
 		display: inline;
 	}
 }
+
+.shell-conversation-footer {
+	flex: none;
+	max-height: 72vh;
+	overflow: auto;
+}
+.shell-approval-shelf {
+	width: 100%;
+	max-width: 820px;
+	margin-inline: auto;
+	padding: 0 40px 12px;
+}
+@media (max-width: 1050px) {
+	.shell-approval-shelf {
+		padding-inline: 30px;
+	}
+}
+@media (max-width: 840px) {
+	.shell-approval-shelf {
+		padding-inline: 24px;
+	}
+}

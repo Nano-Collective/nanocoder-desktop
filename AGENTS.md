@@ -69,7 +69,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/transcript.ts`, `source/renderer/stream-batcher.ts` | Ordered immutable transcript patches and cancellable 16ms renderer batching |
 | `source/renderer/conversation-stream.tsx`, `source/renderer/agent-markdown.tsx`, `source/renderer/stream-commands.tsx` | U.4 stream rows, isolated inert Markdown and advertised-command draft suggestions |
 | `source/renderer/stream-announcements.tsx` | A11Y-04/05 clock-injected lifecycle/finished-response speech and one persistent modal-aware polite live node |
-| `source/renderer/composer.tsx`, `source/renderer/project-controls.ts`, `source/renderer/use-project-controls.ts` | Mounted plain-props multiline composer and scoped acknowledged project-control state; no renderer live-mode cache |
+| `source/renderer/composer.tsx`, `source/renderer/project-controls.ts`, `source/renderer/use-project-controls.ts` | Mounted multiline composer, native mode/default disclosure and scoped acknowledged project-control state; no renderer live-mode cache |
 | `source/shared/control-reasons.ts` | Shared refusal copy for irreversible same-process config uncertainty |
 | `planning/streaming-conversation.md` | Phase 1.6 stream semantics, metadata boundaries, performance and remaining integration seams |
 | `source/renderer/subagent-run-card.tsx`, `source/renderer/styles/subagents.css` | U.7 flat reported progress, truthful fallback and the owner's whole-turn stop callback |
@@ -86,7 +86,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/thread-workspace.ts`, `source/renderer/use-threads.ts`, `source/renderer/thread-conversations.ts` | Live scoped workspace composition, memory-only drafts and authoritative transient terminal prefixes |
 | `planning/threads.md` | Phase 1.5 ownership, legacy protection twins, selected-glyph accessibility deviation and deferred resume work |
 | `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
-| `source/renderer/approval-requests.tsx` | U.6 plain-prop approval cards, request-scoped shortcuts and queued focus return |
+| `source/renderer/approval-requests.tsx` | U.6 plain-prop composer-shelf approval cards, request-scoped shortcuts and queued focus return |
 | `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |
 | `source/renderer/recent-projects.tsx`, `source/renderer/trust-feedback.tsx` | Standalone, plain-prop project controls and trust feedback; `use-projects.ts` owns bridge calls |
 | `scripts/generate-design-tokens.mjs` | Generates committed CSS custom properties from `DESIGN.md`; the adjacent spec rejects drift |

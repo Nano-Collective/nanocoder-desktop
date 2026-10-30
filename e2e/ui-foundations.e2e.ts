@@ -221,6 +221,7 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 		open,
 		diagnostics,
 		input,
+		page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
 		send,
 	];
 	await expect(
