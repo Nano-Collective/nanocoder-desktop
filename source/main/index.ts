@@ -13,11 +13,13 @@ import {
 } from '@/main/security';
 import {desktopStoreFactory} from '@/main/store';
 import {createNodeSqliteDriver} from '@/main/store/node-sqlite';
+import {hiddenTestWindows, presentWindow} from '@/main/window-presentation';
 import {APP_NAME} from '@/shared/app-info';
 
 const devServerUrl = process.env.ELECTRON_RENDERER_URL;
 // Used by the packaged-app smoke test in CI: start, then exit.
 const smokeTest = process.argv.includes('--smoke-test');
+const hiddenWindows = hiddenTestWindows(app.isPackaged, process.argv);
 const rendererRoot = path.join(import.meta.dirname, '../renderer');
 const preloadPath = path.join(import.meta.dirname, '../preload/index.cjs');
 const allowedOrigins = devServerUrl
@@ -32,6 +34,10 @@ protocol.registerSchemesAsPrivileged([
 	},
 ]);
 app.enableSandbox();
+if (hiddenWindows && process.platform === 'darwin') {
+	app.setActivationPolicy('prohibited');
+	app.dock?.hide();
+}
 const primaryInstance = app.requestSingleInstanceLock();
 const windowRequests = createWindowRequestHandler(() => {
 	const window = BrowserWindow.getAllWindows()[0];
@@ -39,9 +45,7 @@ const windowRequests = createWindowRequestHandler(() => {
 		createWindow();
 		return;
 	}
-	if (window.isMinimized()) window.restore();
-	window.show();
-	window.focus();
+	presentWindow(window, hiddenWindows);
 });
 app.on('second-instance', windowRequests.request);
 app.on('activate', windowRequests.request);
@@ -117,8 +121,7 @@ function createWindow(): void {
 			app.exit(0);
 			return;
 		}
-		window.show();
-		window.focus();
+		presentWindow(window, hiddenWindows);
 	});
 	window.webContents.once('did-fail-load', () => {
 		if (smokeTest) {
@@ -147,12 +150,14 @@ void app
 	})
 	.catch((error: unknown) => {
 		if (windowRequests.stopped) return;
-		dialog.showErrorBox(
-			'Cannot open Nanocoder Desktop',
-			error instanceof IpcFailure
-				? error.message
-				: 'The desktop could not start',
-		);
+		if (!hiddenWindows) {
+			dialog.showErrorBox(
+				'Cannot open Nanocoder Desktop',
+				error instanceof IpcFailure
+					? error.message
+					: 'The desktop could not start',
+			);
+		}
 		app.quit();
 	});
 
