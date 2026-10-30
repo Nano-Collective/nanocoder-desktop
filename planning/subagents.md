@@ -1,7 +1,7 @@
 # Subagent projection and integration
 
 - Status: Implemented projection, pending persistence composition
-- Last updated: 2026-10-29
+- Last updated: 2026-10-30
 
 Phase 1.10 and U.7 render what Nanocoder `fc01e239a80ddb2e09ca174e3c909508832d5340` actually reports. The requirement and source map is [subagents](features/subagents.md). Visual decisions remain in [`DESIGN.md`](../DESIGN.md).
 
@@ -18,6 +18,8 @@ Cards report the root call state and literal title progress. They explicitly say
 The existing PermissionBroker and approval queue remain authoritative. The bounded `subagent:` hint and title label are display only. Answers still use the opaque main-owned request ID and an exact offered option ID. No inferred child or parent ID participates. The queue explains that the parent run is not reported and an approved tool can still fail. Inner completed announcements mean approved, not successful execution.
 
 Every live unfinished root card calls the same whole-turn cancellation callback as the composer. The accessible name explicitly includes the entire turn and all subagents. All card stops share one pending guard, capture the clicked callback synchronously, recover from rejection with one alert, and disable while the owner is cancelling. Historical, terminal and unlinked SDK cards have no stop.
+
+A sealed card never regains a stop while a later turn awaits its batched user boundary. Its old control cannot cancel the later turn. Adding cards keeps existing card nodes mounted. When a focused stop disappears, focus moves to that same named card with `tabindex=-1`, never into the tab order or onto a newly added run. Successful user cancellation keeps the composer's existing focus return. Other controls and approval focus taking/returning are unchanged (`A11Y-01`, `A11Y-02`).
 
 `settleSubagentTurn` seals unfinished live cards with the known turn outcome. Interrupted and failed outcomes survive a later user turn; a completed turn without a root result stays unknown. The App calls it after flushing the stream and checking process generation. Thread composition must call the same helper on its mapped terminal path, or provide the equivalent per-item outcome, rather than only passing the latest thread outcome.
 
