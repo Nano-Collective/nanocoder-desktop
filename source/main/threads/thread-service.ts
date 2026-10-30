@@ -84,6 +84,7 @@ type AsyncThreadService = {
 	) => Promise<Awaited<ReturnType<ThreadService[K]>>>;
 };
 type ThreadRuntimeService = AsyncThreadService & {
+	getControlConnection(projectId: string): NanocoderConnection | undefined;
 	readonly projectOperations: ReturnType<typeof createProjectOperations>;
 	runProjectOperation: ReturnType<
 		typeof createProjectOperations
@@ -114,9 +115,9 @@ export function createThreadService(
 	>();
 	const connectionBinding = (projectId: string) => {
 		const recovery = recoveringConnections.get(projectId);
+		if (recovery?.signal.aborted) return undefined;
 		if (
 			recovery &&
-			!recovery.signal.aborted &&
 			options.supervisor.getState(projectId).status === 'starting'
 		)
 			return recovery.connection;
@@ -610,6 +611,18 @@ export function createThreadService(
 		});
 	};
 	return {
+		getControlConnection: projectId => {
+			if (disposed) return undefined;
+			const active = activeLeases.get(projectId);
+			if (active) {
+				try {
+					projectOperations.assertCurrent(active.lease);
+				} catch {
+					return undefined;
+				}
+			}
+			return connectionBinding(projectId);
+		},
 		projectOperations,
 		runProjectOperation,
 		attachProject,
@@ -671,6 +684,7 @@ export function createThreadService(
 			const binding = {connection, signal};
 			recoveringConnections.set(project.id, binding);
 			const restoreOwned = async (lease: ProjectOperationLease) => {
+				binding.signal = AbortSignal.any([signal, lease.signal]);
 				restoring.set(project.id, signal);
 				try {
 					options.validateBeforePrepare?.(
