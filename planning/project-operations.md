@@ -15,6 +15,12 @@ attachment cancellation, activity and settlement tracking with preparation.
 Do not instantiate another mutex for controls. Lane A owns this composition;
 lane B injects the control dependencies below.
 
+The main-only `getControlConnection(projectId)` runtime getter uses the same
+connection binding as the authority. It can expose the owned starting recovery
+connection while the supervisor's public getter still refuses. It returns
+undefined for unavailable, invalidated active or disposed scopes. Recovery
+lookup visibility follows both the supervisor and owning lease abort signals.
+
 The constructor takes synchronous main-only metadata adapters:
 
 - `getProject(projectId)`: current canonicalRoot, sessionCwd and trust, or absent.

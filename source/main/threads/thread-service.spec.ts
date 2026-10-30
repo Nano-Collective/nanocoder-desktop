@@ -3538,6 +3538,81 @@ test('opening and recovering history hand off safely without running the first-p
 	t.deepEqual(sources, ['resume', 'resume']);
 });
 
+test('the control connection getter shares the exact starting recovery binding with the owned lease', async t => {
+	let bound: NanocoderConnection | undefined;
+	let exposed: NanocoderConnection | undefined;
+	let supervisorRefused = false;
+	const {service, project, store, supervisor} = await fixture(
+		t,
+		true,
+		undefined,
+		true,
+		{
+			onSessionPrepared: context => {
+				if (supervisor.getState(project.id).status !== 'starting') return;
+				try {
+					supervisor.getConnection(project.id);
+				} catch {
+					supervisorRefused = true;
+				}
+				service.projectOperations.assertCurrent(context.lease);
+				bound = context.connection;
+				exposed = service.getControlConnection(project.id);
+			},
+		},
+	);
+	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+	store.threads.save(thread);
+	await service.openThread({projectId: project.id, threadId: thread.id});
+	const first = supervisor.getConnection(project.id);
+	const state = await supervisor.restart(project);
+	t.is(state.status, 'ready');
+	t.true(supervisorRefused);
+	t.truthy(bound);
+	t.not(bound, first);
+	t.is(exposed, bound);
+	t.is(
+		service.getControlConnection(project.id),
+		supervisor.getConnection(project.id),
+	);
+	t.is(service.getControlConnection(randomUUID()), undefined);
+	service.dispose();
+	t.is(service.getControlConnection(project.id), undefined);
+});
+
+test('an invalidated starting recovery cannot expose its connection while the owned hook is settling', async t => {
+	const entered = deferred<NanocoderConnection>();
+	const release = deferred<void>();
+	t.teardown(() => release.resolve());
+	const {service, project, store, supervisor} = await fixture(
+		t,
+		true,
+		undefined,
+		true,
+		{
+			onSessionPrepared: async context => {
+				if (supervisor.getState(project.id).status !== 'starting') return;
+				entered.resolve(context.connection);
+				await release.promise;
+			},
+		},
+	);
+	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+	store.threads.save(thread);
+	await service.openThread({projectId: project.id, threadId: thread.id});
+	const restarting = supervisor.restart(project);
+	const bound = await entered.promise;
+	const before = service.getControlConnection(project.id);
+	service.projectOperations.invalidate(project.id);
+	const after = service.getControlConnection(project.id);
+	release.resolve();
+	const state = await restarting;
+	t.is(before, bound);
+	t.is(after, undefined);
+	t.is(state.status, 'failed');
+	t.is(service.getControlConnection(project.id), undefined);
+});
+
 test('session prompt and title metadata publish in order before user content and ignore manual overrides (CHAT-04, CHAT-12)', async t => {
 	const order: string[] = [];
 	const {project, service, supervisor, notifyTitle} = await fixture(
