@@ -293,6 +293,48 @@ test('finished turn includes one bounded response and does not move composer foc
 	});
 });
 
+test('the clipped status never creates document overflow or steals shell width in either theme (A11Y-04)', async () => {
+	await open('reported-usage');
+	await page.emulateMedia({reducedMotion: 'reduce'});
+	await page.evaluate(() => {
+		const fixture = document.createElement('div');
+		fixture.id = 'announcement-overflow-fixture';
+		fixture.style.height = '2000px';
+		document.querySelector('.technical-gate')?.append(fixture);
+	});
+	try {
+		for (const theme of ['dark', 'light']) {
+			await page.evaluate(theme => {
+				document.documentElement.dataset.theme = theme;
+			}, theme);
+			for (const width of [1240, 1020, 840, 841, 839]) {
+				await page.setViewportSize({width, height: 900});
+				const geometry = await page.evaluate(() => ({
+					html: [
+						document.documentElement.scrollWidth,
+						document.documentElement.scrollHeight,
+						document.documentElement.clientWidth,
+					],
+					body: [document.body.scrollWidth, document.body.scrollHeight],
+					stream: document
+						.querySelector('.shell-stream')
+						?.getBoundingClientRect().width,
+				}));
+				expect(geometry).toEqual({
+					html: [width, 900, width],
+					body: [width, 900],
+					stream: width - 190 - (width > 840 ? 240 : 0),
+				});
+			}
+		}
+	} finally {
+		await page.evaluate(() =>
+			document.getElementById('announcement-overflow-fixture')?.remove(),
+		);
+		await page.setViewportSize({width: 1240, height: 900});
+	}
+});
+
 test('failed turn is announced without speaking failure payloads or taking focus (A11Y-04)', async () => {
 	await open('prompt-error');
 	await input().fill('fixture failed turn');

@@ -238,9 +238,11 @@ export function StreamAnnouncements({
 		node.setAttribute('aria-relevant', 'additions text');
 		Object.assign(node.style, {
 			position: 'absolute',
+			top: '0',
+			left: '0',
 			width: '1px',
 			height: '1px',
-			margin: '-1px',
+			margin: '0',
 			overflow: 'hidden',
 			clipPath: 'inset(50%)',
 			whiteSpace: 'nowrap',
