@@ -314,9 +314,11 @@ export function OverlayProvider({
 								<input
 									ref={input}
 									role="combobox"
-									aria-expanded="true"
+									aria-expanded={filtered.length > 0}
 									aria-autocomplete="list"
-									aria-controls="palette-results"
+									aria-controls={
+										filtered.length ? 'palette-results' : undefined
+									}
 									aria-activedescendant={
 										filtered[index]
 											? `palette-option-${filtered[index].id}`
@@ -352,6 +354,7 @@ export function OverlayProvider({
 							</label>
 							<div
 								id="palette-results"
+								hidden={!filtered.length}
 								role="listbox"
 								aria-label="commands"
 								className="palette-results"
@@ -365,6 +368,7 @@ export function OverlayProvider({
 										aria-selected={position === index}
 										aria-disabled={!!action.disabledReason}
 										className="palette-option"
+										onPointerMove={() => setSelected(position)}
 										onMouseDown={event => event.preventDefault()}
 										onClick={() => execute(action)}
 										onKeyDown={event => {
@@ -426,6 +430,18 @@ export function OverlayProvider({
 								<dt>close overlay</dt>
 								<dd>
 									<kbd>Esc</kbd>
+								</dd>
+							</div>
+							<div>
+								<dt>send message / insert a newline</dt>
+								<dd>
+									<kbd>Enter / Shift+Enter</kbd>
+								</dd>
+							</div>
+							<div>
+								<dt>approval, while its request has focus</dt>
+								<dd>
+									<kbd>1–9 (offered options only)</kbd>
 								</dd>
 							</div>
 							<div>

@@ -194,6 +194,7 @@ export function App() {
 	} | null>(null);
 	const renameDialog = useRef<HTMLDialogElement>(null);
 	const renameInput = useRef<HTMLInputElement>(null);
+	const renameReturn = useRef<HTMLElement | null>(null);
 	const renameId = renaming?.threadId;
 
 	useEffect(() => {
@@ -201,7 +202,25 @@ export function App() {
 		const dialog = renameDialog.current;
 		dialog?.showModal();
 		renameInput.current?.focus();
-		return () => dialog?.close();
+		return () => {
+			const restore =
+				document.activeElement === document.body ||
+				!!dialog?.contains(document.activeElement);
+			dialog?.close();
+			if (!restore || document.querySelector('dialog[open]')) return;
+			const target = renameReturn.current;
+			renameReturn.current = null;
+			if (
+				target?.isConnected &&
+				!target.matches(':disabled') &&
+				target.checkVisibility()
+			)
+				target.focus();
+			else
+				document
+					.querySelector<HTMLButtonElement>('[aria-label="command palette"]')
+					?.focus();
+		};
 	}, [renameId]);
 
 	useEffect(() => {
@@ -286,7 +305,16 @@ export function App() {
 	};
 	const rename = (threadId: string) => {
 		const row = workspace.threads.find(row => row.id === threadId);
-		if (row && projectId) setRenaming({projectId, threadId, title: row.title});
+		if (row && projectId) {
+			const active = document.activeElement;
+			renameReturn.current =
+				active instanceof HTMLElement &&
+				active !== document.body &&
+				!active.closest('dialog')
+					? active
+					: null;
+			setRenaming({projectId, threadId, title: row.title});
+		}
 	};
 	const onNew = () => {
 		void controls.create();
@@ -702,11 +730,12 @@ export function App() {
 			{renaming && (
 				<dialog
 					ref={renameDialog}
-					className="overlay-dialog"
+					className="overlay-dialog rename-dialog"
 					aria-label="rename thread"
 					onCancel={() => setRenaming(null)}
 				>
 					<form
+						className="overlay-content"
 						onSubmit={event => {
 							event.preventDefault();
 							if (renaming.projectId !== projectId) return;
@@ -717,6 +746,11 @@ export function App() {
 								});
 						}}
 					>
+						<h2>rename thread</h2>
+						<p>
+							change this thread’s title. its conversation and project stay
+							unchanged.
+						</p>
 						<label>
 							thread title
 							<input
@@ -728,10 +762,15 @@ export function App() {
 								}
 							/>
 						</label>
-						<Button type="submit" disabled={pending || !renaming.title.trim()}>
-							save title
-						</Button>
-						<Button onClick={() => setRenaming(null)}>cancel</Button>
+						<div className="rename-dialog-actions">
+							<Button
+								type="submit"
+								disabled={pending || !renaming.title.trim()}
+							>
+								save title
+							</Button>
+							<Button onClick={() => setRenaming(null)}>cancel</Button>
+						</div>
 					</form>
 				</dialog>
 			)}
