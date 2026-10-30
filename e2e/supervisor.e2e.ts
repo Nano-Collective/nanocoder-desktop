@@ -8,7 +8,8 @@ import {
 } from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {_electron as electron, expect, test} from '@playwright/test';
+import {expect, test} from '@playwright/test';
+import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 
 test('quit during initialize waits for the starting child to exit', async () => {

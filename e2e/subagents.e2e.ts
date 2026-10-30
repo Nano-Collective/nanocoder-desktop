@@ -11,12 +11,12 @@ import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {
 	type ElectronApplication,
-	_electron as electron,
 	expect,
 	type Page,
 	test,
 } from '@playwright/test';
 import {build} from 'vite';
+import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import type {subagentHarness} from './qa/subagent-harness';
 import {visibleTextContrast} from './qa/ui-contrast';
