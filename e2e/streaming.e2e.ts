@@ -12,12 +12,12 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {
 	type ElectronApplication,
-	_electron as electron,
 	expect,
 	type Page,
 	test,
 } from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
+import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {visibleTextContrast} from './qa/ui-contrast';
 
