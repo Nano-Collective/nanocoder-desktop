@@ -1,9 +1,11 @@
+import {writeFileSync} from 'node:fs';
 import path from 'node:path';
 import test from 'ava';
 import {
 	type ConnectOptions,
 	connectNanocoder,
 	describeExit,
+	type NanocoderConnection,
 	NanocoderFailure,
 	nanocoderMessage,
 } from '@/main/nanocoder/acp-client';
@@ -39,8 +41,38 @@ const failure = (root: string, options?: Partial<ConnectOptions>) =>
 
 test.after.always(removeFakeProjects);
 
+function holdListStderr(root: string) {
+	writeFileSync(path.join(root, '.fake-hold-list-stderr'), '');
+	return () => writeFileSync(path.join(root, '.fake-release-list-stderr'), '');
+}
+
+async function waitForFakeMethod(
+	connection: NanocoderConnection,
+	method: string,
+) {
+	const {stderr} = connection;
+	const write = stderr.write;
+	try {
+		await new Promise<void>(resolve => {
+			const check = () => {
+				if (fakeEvents(stderr.lines()).some(event => event.method === method)) {
+					resolve();
+				}
+			};
+			stderr.write = chunk => {
+				write.call(stderr, chunk);
+				check();
+			};
+			check();
+		});
+	} finally {
+		stderr.write = write;
+	}
+}
+
 test('ACP-18 listing filters by the canonical connection root without session creation or loading', async t => {
 	const root = fakeProject();
+	const release = holdListStderr(root);
 	const connection = await connect(root);
 	t.teardown(() => connection.close());
 	t.deepEqual(await connection.listSessions?.(), {
@@ -53,6 +85,13 @@ test('ACP-18 listing filters by the canonical connection root without session cr
 			},
 		],
 	});
+	t.false(
+		fakeEvents(connection.stderr.lines()).some(
+			event => event.method === 'session/list',
+		),
+	);
+	release();
+	await waitForFakeMethod(connection, 'session/list');
 	t.deepEqual(
 		fakeEvents(connection.stderr.lines()).filter(event => event.method),
 		[
@@ -67,6 +106,7 @@ test('ACP-18 listing filters by the canonical connection root without session cr
 test('ACP-18 unadvertised listing refuses without a list/load/new request', async t => {
 	const connection = await connect(fakeProject('no-list'));
 	t.teardown(() => connection.close());
+	await waitForFakeMethod(connection, 'initialize');
 	t.deepEqual(
 		await rejection(connection.listSessions?.() ?? Promise.resolve()),
 		new NanocoderFailure(
@@ -84,14 +124,24 @@ test('ACP-18 unadvertised listing refuses without a list/load/new request', asyn
 
 for (const state of ['list-fails', 'closed'] as const) {
 	test(`ACP-18 ${state} listing fails safely without loading or creating a session`, async t => {
-		const connection = await connect(fakeProject(state));
+		const root = fakeProject(state);
+		const release = holdListStderr(root);
+		const connection = await connect(root);
 		t.teardown(() => connection.close());
+		await waitForFakeMethod(connection, 'initialize');
 		if (state === 'closed') await connection.close();
 		const error = await rejection(
 			connection.listSessions?.() ?? Promise.resolve(),
 		);
 		t.is(error.code, 'AGENT_UNAVAILABLE');
 		t.is(error.message, 'Nanocoder could not list saved sessions');
+		t.false(
+			fakeEvents(connection.stderr.lines()).some(
+				event => event.method === 'session/list',
+			),
+		);
+		release();
+		if (state !== 'closed') await waitForFakeMethod(connection, 'session/list');
 		t.deepEqual(
 			fakeEvents(connection.stderr.lines())
 				.filter(event => event.method)

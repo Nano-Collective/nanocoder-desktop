@@ -29,7 +29,25 @@ const replayConfig = () => [
 	},
 ];
 
-const log = event => process.stderr.write(`${JSON.stringify(event)}\n`);
+const log = event => {
+	const line = `${JSON.stringify(event)}\n`;
+	if (
+		event.method !== 'session/list' ||
+		!existsSync('.fake-hold-list-stderr')
+	) {
+		return process.stderr.write(line);
+	}
+	let flushed = false;
+	let watcher;
+	const flush = () => {
+		if (flushed || !existsSync('.fake-release-list-stderr')) return;
+		flushed = true;
+		watcher?.close();
+		process.stderr.write(line);
+	};
+	watcher = watch('.', {persistent: false}, flush);
+	flush();
+};
 const send = message =>
 	process.stdout.write(`${JSON.stringify({jsonrpc: '2.0', ...message})}\n`);
 
