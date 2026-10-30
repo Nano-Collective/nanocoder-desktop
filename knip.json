@@ -12,7 +12,6 @@
 	],
 	"project": ["source/**/*.{ts,tsx}", "e2e/**/*.ts"],
 	"ignoreBinaries": ["semgrep"],
-	"ignoreDependencies": ["@xterm/xterm"],
 	"ignoreExportsUsedInFile": {
 		"interface": true,
 		"type": true
