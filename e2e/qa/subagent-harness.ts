@@ -8,7 +8,10 @@ let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 let settle: (() => void) | undefined;
 const calls: string[] = [];
-const items: TranscriptItem[] = ['first', 'second'].map(id => ({
+const items: Extract<TranscriptItem, {kind: 'tool'}>[] = [
+	'first',
+	'second',
+].map(id => ({
 	kind: 'tool',
 	id,
 	title: `${id} • 1k tokens`,
@@ -17,7 +20,11 @@ const items: TranscriptItem[] = ['first', 'second'].map(id => ({
 }));
 
 export const subagentHarness = {
-	render(owner: string, reject = false) {
+	render(
+		owner: string,
+		reject = false,
+		stage: 'running' | 'append' | 'admitting' | 'next-turn' = 'running',
+	) {
 		if (!root) {
 			container = document.createElement('div');
 			container.id = 'subagent-stop-fixture';
@@ -27,10 +34,27 @@ export const subagentHarness = {
 			document.body.append(container);
 			root = createRoot(container);
 		}
+		const settled = items.map(item => ({
+			...item,
+			turnOutcome: 'completed' as const,
+		}));
+		const next = {...items[0]};
+		const transcript =
+			stage === 'append'
+				? [...items, {...next, id: 'third'}]
+				: stage === 'admitting'
+					? settled
+					: stage === 'next-turn'
+						? [
+								...settled,
+								{kind: 'user' as const, text: 'next fixture turn'},
+								next,
+							]
+						: items;
 		flushSync(() =>
 			root?.render(
 				createElement(ConversationStream, {
-					transcript: {items, permissions: []},
+					transcript: {items: transcript, permissions: []},
 					running: true,
 					onStopTurn: () => {
 						calls.push(owner);
