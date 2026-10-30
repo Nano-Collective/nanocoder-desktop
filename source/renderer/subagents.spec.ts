@@ -208,6 +208,37 @@ test('SUB-04 known interrupted cards keep their outcome when another turn starts
 	t.is(state.items[0], settled.items[0]);
 });
 
+for (const outcome of ['completed', 'failed', 'cancelled'] as const) {
+	test(`SUB-04 settled ${outcome} cards never regain stop while a new turn awaits its user boundary`, t => {
+		const transcript = settleSubagentTurn(
+			applyEvent(emptyTranscript, delegation()),
+			outcome,
+		);
+		const html = renderToStaticMarkup(
+			createElement(ConversationStream, {
+				transcript,
+				running: true,
+				onStopTurn: async () => {},
+			}),
+		);
+		t.false(html.includes('<button'));
+	});
+}
+
+test('A11Y-01/02 subagent cards expose a named programmatic focus fallback', t => {
+	const html = renderToStaticMarkup(
+		createElement(ConversationStream, {
+			transcript: applyEvent(emptyTranscript, delegation()),
+			running: true,
+			onStopTurn: async () => {},
+		}),
+	);
+	t.regex(
+		html,
+		/<section[^>]*aria-label="subagent run 1 of 1: explore"[^>]*tabindex="-1"/,
+	);
+});
+
 test('A11Y-03 same-name subagent landmarks have unique payload-free positions', t => {
 	const first = delegation();
 	const second = mapped({
