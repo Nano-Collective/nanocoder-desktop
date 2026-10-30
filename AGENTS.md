@@ -101,7 +101,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `e2e/store.e2e.ts` | Built-main persistence, migration backup, corruption recovery and storage refusal tests |
 | `e2e/projects.e2e.ts` | Isolated-profile project persistence, native trust, recents, relocation and trust-revocation tests |
 | `e2e/supervisor.e2e.ts` | Built-main quit while a child is still initialising, including child-exit verification |
-| `e2e/supervisor-recovery.e2e.ts` | Crash/retry, saved-history replay, crash-loop limits and reviewed diagnostics refusals |
+| `e2e/supervisor-recovery.e2e.ts` | Crash/retry, saved-history replay, both-theme CHAT-09 keyboard/native recovery actions, crash-loop limits and reviewed diagnostics refusals |
 | `e2e/streaming.e2e.ts` | Fake stream cadence, ordered rendering, input/scroll/frame response, safe resources and multi-width stream QA |
 | `e2e/replay-gates.e2e.ts` | Mounted replay success/failure refusals, editable unqueued drafts and 200-message post-replay usability timing (`PERF-03`) |
 | `e2e/subagents.e2e.ts`, `e2e/qa/subagent-harness.ts` | Fake delegation/approval/cancel, card focus and stop-owner/refusal tests; `subagents.acp.ts` checks real pinned ACP |

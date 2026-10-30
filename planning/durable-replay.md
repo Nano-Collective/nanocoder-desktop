@@ -138,8 +138,10 @@ View-only hides the composer without discarding its memory-only draft
 (`CHAT-09`). A plain-props dashed muted notice keeps the title/activity, states
 the shared main-owned missing-history reason and offers the existing
 metadata-only new/remove actions. The reason lists possible causes without
-claiming which occurred. Mounted notice verification remains pending while
-built-app launches are paused. A distinct new thread's exact prompt owner may still prepare
+claiming which occurred. Hidden-window built tests verify both-theme notice
+tokens/contrast, keyboard focus and native retry/new/remove. Explicit retry
+preserves the draft and saved ID, adding resume/set_mode but no new/load/prompt.
+Metadata-only new/remove leave ACP diagnostics unchanged. A distinct new thread's exact prompt owner may still prepare
 fresh controls; the failed thread, unowned callers and stale owners stay refused.
 
 The mounted fake test holds replay until an event-driven fixture release. It

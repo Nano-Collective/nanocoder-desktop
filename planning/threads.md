@@ -54,8 +54,10 @@ the existing composer guard hides input, while a dashed muted notice retains
 desktop title/activity and calls the existing metadata-only new/remove paths
 (`CHAT-09`). A retryable failure stays failed with its safe reason and an
 explicit action that reopens only that saved thread, without queuing its draft.
-Discovery/import and mounted verification of the new notice remain pending;
-mode controls remain 1.9.
+Built tests verify notice tokens/contrast, keyboard focus and native
+retry/new/remove in both themes. Retry resumes the exact saved ID with safe
+mode confirmation and no queued prompt; new/remove leave ACP diagnostics
+unchanged. Discovery/import remain pending; mode controls remain 1.9.
 The [durable replay checkpoint](durable-replay.md) now composes atomic
 structural replay IDs and passive run metadata before prefix replacement.
 Live production now commits turn/execution identities and owning terminal

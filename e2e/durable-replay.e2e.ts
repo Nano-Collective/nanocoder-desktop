@@ -9,13 +9,9 @@ import {
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {
-	type ElectronApplication,
-	_electron as electron,
-	expect,
-	test,
-} from '@playwright/test';
+import {type ElectronApplication, expect, test} from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
+import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {visibleTextContrast} from './qa/ui-contrast';
 

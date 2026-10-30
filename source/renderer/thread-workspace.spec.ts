@@ -193,6 +193,26 @@ test('CHAT-09 explicit retry opens only the selected saved thread and preserves 
 	t.false(calls.some(call => Array.isArray(call) && call[0] === 'prompt'));
 });
 
+test('CHAT-09 view-only metadata retains its hidden memory draft without another bridge call', async t => {
+	const {model, emit, calls} = fixture();
+	await model.selectProject('project-a');
+	model.setDraft('editable memory-only draft');
+	const before = structuredClone(calls);
+	emit({
+		type: 'thread',
+		projectId: 'project-a',
+		sequence: 1,
+		thread: {
+			...row('a'),
+			runState: 'view-only',
+			viewOnlyReason: 'missing saved history',
+		},
+	});
+	t.is(model.getState().workspace.threads[0]?.runState, 'view-only');
+	t.is(model.getState().conversation.draft, 'editable memory-only draft');
+	t.deepEqual(calls, before);
+});
+
 test('CHAT-08 replay snapshot refuses send, mode and approval without clearing an editable memory draft', async t => {
 	const {model, bridge, calls} = fixture();
 	bridge.getThreadSnapshot = async request =>

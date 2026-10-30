@@ -19,6 +19,7 @@ import type {DesktopApi} from '@/shared/desktop-api';
 import type {ProjectEvent} from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
 let root: string;
@@ -85,6 +86,208 @@ async function open(mode = 'ok'): Promise<string> {
 		if (!event) throw new Error('Missing ready state');
 		return event.projectId;
 	});
+}
+
+for (const theme of ['dark', 'light'] as const) {
+	for (const action of ['retry', 'new', 'remove'] as const) {
+		test(`CHAT-09 ${theme} keyboard ${action} keeps recovery native, scoped and unqueued`, async () => {
+			const projectId = await open('replay-gates');
+			await page.emulateMedia({reducedMotion: 'reduce'});
+			await page.evaluate(theme => {
+				document.documentElement.dataset.theme = theme;
+			}, theme);
+			const input = page.getByRole('textbox', {name: 'message', exact: true});
+			await input.fill('saved recovery fixture');
+			await input.press('Enter');
+			await expect(
+				page.getByText('turn ended: end_turn', {exact: true}),
+			).toBeVisible();
+			const before = await page.evaluate(async projectId => {
+				const {desktop} = window as unknown as {desktop: DesktopApi};
+				const ui = await desktop.getUiState({});
+				if (!ui.ok || !ui.value.activeThreadId)
+					throw new Error('Missing fixture');
+				const snapshot = await desktop.getThreadSnapshot({
+					projectId,
+					threadId: ui.value.activeThreadId,
+				});
+				if (!snapshot.ok) throw new Error(snapshot.error.code);
+				return snapshot.value;
+			}, projectId);
+			await input.fill('retained unqueued recovery draft');
+			const scope = {projectId, threadId: before.thread.id};
+			await page.evaluate(async projectId => {
+				await (window as unknown as {desktop: DesktopApi}).desktop.stopProject({
+					projectId,
+				});
+			}, projectId);
+			writeFileSync(
+				path.join(root, '.fake-nanocoder'),
+				action === 'retry' ? 'resume-fails' : 'missing-session',
+			);
+			const failed = await page.evaluate(
+				scope =>
+					(window as unknown as {desktop: DesktopApi}).desktop.openThread(
+						scope,
+					),
+				scope,
+			);
+			expect(failed.ok).toBe(true);
+			if (!failed.ok) throw new Error(failed.error.code);
+			expect(failed.value.events).toEqual(before.events);
+			expect(failed.value.result).toEqual(before.result);
+			expect(failed.value.thread.id).toBe(before.thread.id);
+			expect(failed.value.thread.nanocoderSessionId).toBe(
+				before.thread.nanocoderSessionId,
+			);
+			expect(failed.value.thread.title).toBe(before.thread.title);
+			expect(failed.value.thread.lastActivityAt).toBe(
+				before.thread.lastActivityAt,
+			);
+			const refused = await page.evaluate(
+				scope =>
+					(window as unknown as {desktop: DesktopApi}).desktop.promptThread({
+						...scope,
+						text: 'must not be sent',
+					}),
+				scope,
+			);
+			expect(refused.ok).toBe(false);
+			const notice = page.getByRole('region', {
+				name: action === 'retry' ? 'thread recovery' : 'view-only thread',
+				exact: true,
+			});
+			await expect(notice).toBeVisible();
+			await expect(notice).toContainText(before.thread.title);
+			await expect(notice.locator('time')).toHaveAttribute(
+				'datetime',
+				before.thread.lastActivityAt,
+			);
+			expect(await visibleTextContrast(page, theme)).toEqual([]);
+			const diagnostics = await page.evaluate(async projectId => {
+				const result = await (
+					window as unknown as {desktop: DesktopApi}
+				).desktop.getDiagnostics({projectId});
+				if (!result.ok) throw new Error(result.error.code);
+				return result.value.lines;
+			}, projectId);
+			if (action === 'retry') {
+				await expect(input).toBeEnabled();
+				await expect(input).toHaveValue('retained unqueued recovery draft');
+				await input.press('Enter');
+				await expect(input).toHaveValue('retained unqueued recovery draft');
+				await expect(
+					page.getByRole('button', {name: 'send', exact: true}),
+				).toBeDisabled();
+				await page.evaluate(async projectId => {
+					await (
+						window as unknown as {desktop: DesktopApi}
+					).desktop.stopProject({
+						projectId,
+					});
+				}, projectId);
+				writeFileSync(path.join(root, '.fake-nanocoder'), 'ok');
+				const retry = notice.getByRole('button', {name: 'retry this thread'});
+				await retry.focus();
+				await expect(retry).toBeFocused();
+				await expect(retry).toHaveCSS('outline-width', '2px');
+				await retry.press('Enter');
+				await expect(notice).toHaveCount(0);
+				await expect(input).toBeEnabled();
+				await expect(input).toHaveValue('retained unqueued recovery draft');
+				const after = await page.evaluate(async scope => {
+					const {desktop} = window as unknown as {desktop: DesktopApi};
+					const result = await desktop.getThreadSnapshot(scope);
+					if (!result.ok) throw new Error(result.error.code);
+					const diagnostics = await desktop.getDiagnostics({
+						projectId: scope.projectId,
+					});
+					if (!diagnostics.ok) throw new Error(diagnostics.error.code);
+					return {thread: result.value.thread, lines: diagnostics.value.lines};
+				}, scope);
+				expect(after.thread.id).toBe(before.thread.id);
+				expect(after.thread.nanocoderSessionId).toBe(
+					before.thread.nanocoderSessionId,
+				);
+				const count = (lines: string[], method: string) =>
+					lines.filter(line => line === `{"method":"session/${method}"}`)
+						.length;
+				for (const method of ['resume', 'set_mode'])
+					expect(count(after.lines, method)).toBe(
+						count(diagnostics, method) + 1,
+					);
+				for (const method of ['new', 'load', 'prompt'])
+					expect(count(after.lines, method)).toBe(count(diagnostics, method));
+			} else {
+				await expect(input).toHaveCount(0);
+				await expect(notice).toHaveCSS('border-top-style', 'dashed');
+				await expect(notice).toHaveCSS(
+					'color',
+					theme === 'dark' ? 'rgb(151, 151, 165)' : 'rgb(92, 97, 112)',
+				);
+				await expect(notice).toContainText(
+					"nanocoder can't find this session · it may have been deleted, expired or never saved",
+				);
+				const button = notice.getByRole('button', {
+					name:
+						action === 'new'
+							? 'start a new thread in this project'
+							: 'remove from desktop',
+					exact: true,
+				});
+				await button.focus();
+				await expect(button).toBeFocused();
+				await expect(button).toHaveCSS('outline-width', '2px');
+				await button.press('Enter');
+				await expect(notice).toHaveCount(0);
+				const after = await page.evaluate(async scope => {
+					const {desktop} = window as unknown as {desktop: DesktopApi};
+					const rows = await desktop.listThreads({
+						projectId: scope.projectId,
+						archiveState: 'active',
+					});
+					const diagnostics = await desktop.getDiagnostics({
+						projectId: scope.projectId,
+					});
+					if (!rows.ok || !diagnostics.ok)
+						throw new Error('Missing fixture state');
+					return {threads: rows.value, lines: diagnostics.value.lines};
+				}, scope);
+				expect(after.lines).toEqual(diagnostics);
+				if (action === 'new') {
+					expect(after.threads.find(row => row.id === scope.threadId)).toEqual(
+						failed.value.thread,
+					);
+					const created = after.threads.filter(
+						row => row.id !== scope.threadId,
+					);
+					expect(created).toHaveLength(1);
+					expect(created[0].nanocoderSessionId).toBeNull();
+					expect(created[0].runState).toBe('new');
+				} else {
+					expect(after.threads.some(row => row.id === scope.threadId)).toBe(
+						false,
+					);
+					const removed = await page.evaluate(
+						scope =>
+							(
+								window as unknown as {desktop: DesktopApi}
+							).desktop.getThreadSnapshot(scope),
+						scope,
+					);
+					expect(removed).toMatchObject({
+						ok: false,
+						error: {code: 'NOT_FOUND'},
+					});
+				}
+			}
+			expect(
+				await app.evaluate(({BrowserWindow}) =>
+					BrowserWindow.getAllWindows().some(window => window.isVisible()),
+				),
+			).toBe(false);
+		});
+	}
 }
 
 test('a crashed turn disables the composer and keyboard retry resumes without resending it', async () => {
@@ -333,7 +536,20 @@ test('failed resume preserves the visible failed turn and cannot accept another 
 	await expect(recovery).toContainText('no longer has this session');
 	await expect(
 		page.getByRole('textbox', {name: 'message', exact: true}),
-	).toBeDisabled();
+	).toHaveCount(0);
+	const notice = page.getByRole('region', {name: 'view-only thread'});
+	await expect(notice).toContainText(
+		"nanocoder can't find this session · it may have been deleted, expired or never saved",
+	);
+	await expect(
+		notice.getByRole('button', {
+			name: 'start a new thread in this project',
+			exact: true,
+		}),
+	).toBeEnabled();
+	await expect(
+		notice.getByRole('button', {name: 'remove from desktop', exact: true}),
+	).toBeEnabled();
 	await expect(
 		page
 			.locator('.gate-message-user .stream-plain')

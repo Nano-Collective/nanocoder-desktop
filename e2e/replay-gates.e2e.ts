@@ -8,15 +8,15 @@ import {
 } from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
-import {_electron as electron, expect, test} from '@playwright/test';
+import {expect, test} from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {IpcResult, SupervisorState, ThreadReplay} from '@/shared/ipc';
+import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 
 const restoring =
 	'restoring saved history; sending and controls will be available when it finishes';
-const failed =
-	'saved history could not be restored; retry this thread before sending';
+const failed = 'Nanocoder could not resume the session';
 const missing =
 	"nanocoder can't find this session · it may have been deleted, expired or never saved";
 interface GateWindow {
@@ -32,7 +32,7 @@ interface GateWindow {
 }
 
 for (const outcome of ['complete', 'fail', 'missing'] as const) {
-	test(`CHAT-08 PERF-03 mounted replay ${outcome} gates controls and ${outcome === 'missing' ? 'disables the retained draft' : 'keeps the draft editable without queuing'}`, async () => {
+	test(`CHAT-08 PERF-03 mounted replay ${outcome} gates controls and ${outcome === 'missing' ? 'hides the retained draft' : 'keeps the draft editable without queuing'}`, async () => {
 		const root = path.resolve(import.meta.dirname, '..');
 		const work = realpathSync.native(
 			mkdtempSync(path.join(tmpdir(), 'nd-replay-gates-')),
@@ -240,20 +240,33 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 				outcome === 'complete' ? 'ready' : 'failed',
 			);
 			if (outcome !== 'complete') {
-				await expect(page.locator('.gate-composer')).toContainText(
-					outcome === 'missing' ? missing : failed,
-				);
 				if (outcome === 'missing') {
-					await expect(input).toBeDisabled();
-					await expect(input).toHaveValue('editable memory-only draft');
+					const notice = page.getByRole('region', {name: 'view-only thread'});
+					await expect(notice).toContainText(missing);
+					await expect(input).toHaveCount(0);
+					await expect(send).toHaveCount(0);
+					await expect(mode).toHaveCount(0);
+					await expect(
+						notice.getByRole('button', {
+							name: 'start a new thread in this project',
+							exact: true,
+						}),
+					).toBeEnabled();
+					await expect(
+						notice.getByRole('button', {
+							name: 'remove from desktop',
+							exact: true,
+						}),
+					).toBeEnabled();
 				} else {
+					await expect(page.locator('.gate-composer')).toContainText(failed);
 					await expect(input).toBeEnabled();
 					await input.fill('draft after replay failure');
 					await input.press('Enter');
 					await expect(input).toHaveValue('draft after replay failure');
+					await expect(send).toBeDisabled();
+					await expect(mode).toBeDisabled();
 				}
-				await expect(send).toBeDisabled();
-				await expect(mode).toBeDisabled();
 				await expect(
 					page.locator('select[aria-label^="model for every thread"]:enabled'),
 				).toHaveCount(0);
@@ -310,7 +323,7 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 				expect(after.thread.title).toBe(before.thread.title);
 				expect(after.thread.lastActivityAt).toBe(before.thread.lastActivityAt);
 				expect(after.thread.viewOnlyReason).toBe(
-					outcome === 'missing' ? missing : null,
+					outcome === 'missing' ? missing : failed,
 				);
 				await expect(
 					page
@@ -388,17 +401,22 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 				metrics.eventLoopMs,
 			])
 				expect(response).toBeLessThanOrEqual(100);
-			await mode.selectOption('plan');
-			await expect(mode).toHaveValue('plan');
-			await model.selectOption('confirmed');
-			await expect(model).toHaveValue('confirmed');
-			await send.click();
-			await expect(input).toHaveValue('');
-			await expect(
-				page.getByText('turn ended: end_turn', {exact: true}),
-			).toBeVisible();
+			await test.step('apply an actual post-replay mode and model', async () => {
+				await mode.selectOption('plan');
+				await expect(mode).toHaveValue('plan');
+				await model.selectOption('confirmed');
+				await expect(model).toHaveValue('confirmed');
+			});
+			await test.step('send the retained draft only after explicit click', async () => {
+				await send.click();
+				await expect(input).toHaveValue('');
+				await expect(
+					page.getByText('turn ended: end_turn', {exact: true}),
+				).toBeVisible();
+			});
 		} finally {
-			await app.close();
+			await test.step('settle and close the owned Electron process', () =>
+				app.close());
 			rmSync(work, {recursive: true, force: true});
 		}
 	});
