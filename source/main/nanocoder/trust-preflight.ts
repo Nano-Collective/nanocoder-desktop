@@ -1,10 +1,15 @@
-import {mkdir, mkdtemp, rm, stat} from 'node:fs/promises';
+import {mkdir, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {PROTOCOL_VERSION} from '@agentclientprotocol/sdk';
 import {NanocoderFailure} from '@/main/nanocoder/acp-client';
 import {type SupervisorClock, systemClock} from '@/main/nanocoder/clock';
-import {launchNanocoder, waitForExit} from '@/main/nanocoder/launch';
+import {
+	bindLaunchIdentity,
+	captureLaunchIdentity,
+	launchNanocoder,
+	waitForExit,
+} from '@/main/nanocoder/launch';
 import {StderrRing} from '@/main/nanocoder/stderr-ring';
 import {canonicalPath, isInside} from '@/main/paths';
 
@@ -20,46 +25,41 @@ const refused = () =>
 		'Could not verify the Nanocoder 1.31.x ACP directory trust check. Use a trust-check development build through NANOCODER_DESKTOP_CLI, or upgrade to 1.32.0 when released.',
 	);
 
-async function identity(runtime: Runtime) {
-	const paths = await Promise.all(
-		[runtime.cliPath, runtime.nodePath].map(file => canonicalPath(file)),
-	);
-	const files = await Promise.all(
-		paths.map(file => stat(file, {bigint: true})),
-	);
-	if (files.some(file => !file.isFile())) throw refused();
-	return {
-		key: JSON.stringify([...paths, runtime.version]),
-		fingerprint: JSON.stringify(
-			files.map(file =>
-				[file.dev, file.ino, file.size, file.mtimeNs].map(String),
-			),
-		),
-	};
+function identity(runtime: Runtime) {
+	try {
+		return captureLaunchIdentity(runtime);
+	} catch {
+		throw refused();
+	}
 }
 
 export function createTrustPreflight(
-	options: {clock?: SupervisorClock; launch?: typeof launchNanocoder} = {},
+	options: {
+		clock?: SupervisorClock;
+		launch?: typeof launchNanocoder;
+		remove?: typeof rm;
+	} = {},
 ) {
 	const clock = options.clock ?? systemClock;
 	const launch = options.launch ?? launchNanocoder;
+	const remove = options.remove ?? rm;
 	const cache = new Map<string, {fingerprint: string; accepted: boolean}>();
 	return {
-		async verify(
-			runtime: Runtime,
+		async verify<T extends Runtime>(
+			runtime: T,
 			projectRoot: string,
 			signal?: AbortSignal,
-		): Promise<void> {
+		): Promise<T> {
 			signal?.throwIfAborted();
+			const before = identity(runtime);
+			const cached = cache.get(before.key);
+			if (cached?.fingerprint === before.fingerprint) {
+				if (!cached.accepted) throw refused();
+				return bindLaunchIdentity(runtime, before);
+			}
 			const temporary: string[] = [];
+			let accepted = false;
 			try {
-				const before = await identity(runtime);
-				const cached = cache.get(before.key);
-				if (cached?.fingerprint === before.fingerprint) {
-					signal?.throwIfAborted();
-					if (!cached.accepted) throw refused();
-					return;
-				}
 				const rawRoot = await mkdtemp(
 					path.join(tmpdir(), 'nd-trust-check-root-'),
 				);
@@ -88,7 +88,12 @@ export function createTrustPreflight(
 					env.SystemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT;
 				await Promise.all([mkdir(config), mkdir(data)]);
 				signal?.throwIfAborted();
-				const child = launch(runtime, ['--acp'], root, env);
+				const child = launch(
+					bindLaunchIdentity(runtime, before),
+					['--acp'],
+					root,
+					env,
+				);
 				const exited = waitForExit(child);
 				const ring = new StderrRing({homeDir: home});
 				let timedOut = false;
@@ -113,7 +118,6 @@ export function createTrustPreflight(
 					terminate();
 				}, 5000);
 				signal?.addEventListener('abort', terminate, {once: true});
-				let accepted = false;
 				try {
 					signal?.throwIfAborted();
 					const writing = new Promise<void>(resolve => {
@@ -150,25 +154,24 @@ export function createTrustPreflight(
 					cancelTimer();
 					signal?.removeEventListener('abort', terminate);
 					terminate();
+					await exited;
 				}
-				signal?.throwIfAborted();
-				const after = await identity(runtime);
-				if (
-					after.key !== before.key ||
-					after.fingerprint !== before.fingerprint
-				)
-					throw refused();
-				if (cache.size >= 32) cache.clear();
-				cache.set(before.key, {fingerprint: before.fingerprint, accepted});
-				if (!accepted) throw refused();
 			} catch {
 				signal?.throwIfAborted();
 				throw refused();
 			} finally {
 				await Promise.all(
-					temporary.map(file => rm(file, {recursive: true, force: true})),
+					temporary.map(file => remove(file, {recursive: true, force: true})),
 				);
 			}
+			signal?.throwIfAborted();
+			const after = identity(runtime);
+			if (after.key !== before.key || after.fingerprint !== before.fingerprint)
+				throw refused();
+			if (cache.size >= 32) cache.clear();
+			cache.set(before.key, {fingerprint: before.fingerprint, accepted});
+			if (!accepted) throw refused();
+			return bindLaunchIdentity(runtime, before);
 		},
 	};
 }

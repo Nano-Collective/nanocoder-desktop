@@ -56,15 +56,16 @@ export async function connectProject(
 		await options.beforeLaunch?.();
 		options.signal?.throwIfAborted();
 		if (provisional && version)
-			await trustPreflight.verify(
+			return trustPreflight.verify(
 				{...options.runtime, version},
 				options.root,
 				options.signal,
 			);
+		return options.runtime;
 	};
 	const connect = async () => {
-		await beforeLaunch();
-		const connection = await connectNanocoder(options);
+		const runtime = await beforeLaunch();
+		const connection = await connectNanocoder({...options, runtime});
 		if (
 			requiresTrustPreflight(connection.agent.version) &&
 			(!provisional ||
@@ -90,8 +91,8 @@ export async function connectProject(
 			: await confirmation;
 		if (!confirmed) return {status: 'untrusted', message: error.message};
 		options.signal?.throwIfAborted();
-		await beforeLaunch();
-		await trustDirectory(options);
+		const runtime = await beforeLaunch();
+		await trustDirectory({...options, runtime});
 		// A second refusal is reported, not asked about again.
 		return connect();
 	}

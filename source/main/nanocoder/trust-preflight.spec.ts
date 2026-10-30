@@ -9,6 +9,7 @@ import {
 	utimesSync,
 	writeFileSync,
 } from 'node:fs';
+import {rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import test, {type ExecutionContext} from 'ava';
@@ -16,7 +17,11 @@ import {FakeClock} from '@/main/nanocoder/fixtures/fake-clock';
 import {launchNanocoder} from '@/main/nanocoder/launch';
 import {createTrustPreflight} from '@/main/nanocoder/trust-preflight';
 
-function fixture(t: ExecutionContext, behaviour = 'refuse') {
+function fixture(
+	t: ExecutionContext,
+	behaviour = 'refuse',
+	options: Parameters<typeof createTrustPreflight>[0] = {},
+) {
 	const work = realpathSync.native(
 		mkdtempSync(path.join(tmpdir(), 'nd-preflight-test-')),
 	);
@@ -38,6 +43,7 @@ function fixture(t: ExecutionContext, behaviour = 'refuse') {
 		started = resolve;
 	});
 	const preflight = createTrustPreflight({
+		...options,
 		clock,
 		launch: (runtime, args, root, env) => {
 			launches.push({root, env: env ?? {}, args});
@@ -64,6 +70,23 @@ function fixture(t: ExecutionContext, behaviour = 'refuse') {
 		},
 	};
 }
+
+test('a CLI swapped during awaited cleanup cannot carry a successful verdict into a project launch (ACP-20)', async t => {
+	let swapped = false;
+	const f = fixture(t, 'refuse', {
+		remove: async (file, options) => {
+			if (!swapped) {
+				swapped = true;
+				f.change('published');
+			}
+			await rm(file, options);
+		},
+	});
+	await t.throwsAsync(f.verify(), {code: 'UNSUPPORTED'});
+	t.true(swapped);
+	t.is(f.launches.length, 1);
+	t.false(existsSync(f.launches[0].root));
+});
 
 test('an exact not-trusted refusal passes, uses only isolated state and removes both temporary roots (ACP-20)', async t => {
 	const previous = process.env.NANOCODER_TRUST_DIRECTORY;
