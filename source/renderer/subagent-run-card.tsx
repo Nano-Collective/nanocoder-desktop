@@ -29,6 +29,15 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 	outcome?: 'completed' | 'failed' | 'cancelled';
 	onStopTurn?: () => void;
 }) {
+	const card = React.useRef<HTMLElement>(null);
+	const stopButton = React.useCallback((button: HTMLButtonElement | null) => {
+		if (!button) return;
+		return () => {
+			if (document.activeElement === button && card.current?.isConnected) {
+				card.current.focus({preventScroll: true});
+			}
+		};
+	}, []);
 	const unfinished = status === 'pending' || status === 'in_progress';
 	const state = history
 		? historyOutcome === 'failed' || historyOutcome === 'interrupted'
@@ -48,13 +57,15 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 							? (subagentLabel(status.replaceAll('_', ' '), 80) ??
 								'state not reported')
 							: 'state not reported';
-	const canStop = running && !history && unfinished && onStopTurn;
+	const canStop = running && !history && !outcome && unfinished && onStopTurn;
 	const name = subagentLabel(role, 160) ?? 'subagent';
 	const progress = subagentLabel(title);
 	return (
 		<section
+			ref={card}
 			className="subagent-run-card"
 			aria-label={`subagent run ${position} of ${total}: ${name}`}
+			tabIndex={-1}
 		>
 			<header>
 				<span className="subagent-task">
@@ -83,6 +94,7 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 				<span>elapsed not reported</span>
 				{canStop && (
 					<Button
+						ref={stopButton}
 						variant="reject"
 						disabled={stopping}
 						aria-label={`stop turn: ${name}; stops the entire turn and all subagents`}

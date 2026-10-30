@@ -210,23 +210,31 @@ test.describe('fc01-shaped delegation cards', () => {
 			await page.evaluate(theme => {
 				document.documentElement.dataset.theme = theme;
 			}, theme);
+			const previousCards = await cards().count();
 			await prompt('fixture no approval');
+			await expect(cards()).toHaveCount(previousCards + 1);
+			const runningCard = cards().nth(previousCards);
+			await expect(runningCard).toContainText('3 tools (read_file)');
+			const runningStop = runningCard.getByRole('button', {
+				name: /stop turn:.*entire turn and all subagents/,
+			});
+			await expect(runningStop).toBeEnabled();
 			await page.emulateMedia({reducedMotion: 'reduce'});
 			for (const width of [1240, 1020, 840]) {
 				await page.setViewportSize({width, height: 900});
-				await stop().focus();
-				await expect(stop()).toBeFocused();
-				await expect(stop()).toHaveCSS('outline-width', '2px');
-				const box = await cards().last().boundingBox();
+				await runningStop.focus();
+				await expect(runningStop).toBeFocused();
+				await expect(runningStop).toHaveCSS('outline-width', '2px');
+				const box = await runningCard.boundingBox();
 				expect(box?.width).toBeGreaterThan(200);
 				expect(
-					await cards()
-						.last()
-						.evaluate(element => element.scrollWidth <= element.clientWidth),
+					await runningCard.evaluate(
+						element => element.scrollWidth <= element.clientWidth,
+					),
 				).toBe(true);
 				expect(await visibleTextContrast(page, theme)).toEqual([]);
 			}
-			await stop().press('Enter');
+			await runningStop.press('Enter');
 			await expect(
 				page.getByText('turn interrupted: cancelled', {exact: true}),
 			).toBeVisible();
@@ -463,5 +471,140 @@ test.describe('passive card stop owner', () => {
 		await expect(
 			page.locator('#subagent-stop-fixture button').first(),
 		).toBeEnabled();
+	});
+
+	test('adding a card retains existing card nodes and the focused stop (A11Y-01/02)', async () => {
+		await page.evaluate(() =>
+			(
+				window as unknown as HarnessWindow
+			).subagentFixture.subagentHarness.render('original-owner'),
+		);
+		const cards = page.locator('#subagent-stop-fixture .subagent-run-card');
+		await expect(cards).toHaveCount(2);
+		const original = await cards.elementHandles();
+		const focusedStop = cards.nth(1).getByRole('button');
+		await focusedStop.focus();
+		await expect(focusedStop).toBeFocused();
+		await page.evaluate(() =>
+			(
+				window as unknown as HarnessWindow
+			).subagentFixture.subagentHarness.render(
+				'original-owner',
+				false,
+				'append',
+			),
+		);
+		await expect(cards).toHaveCount(3);
+		for (const [index, element] of original.entries()) {
+			expect(
+				await element.evaluate(
+					(node, index) =>
+						node.isConnected &&
+						node ===
+							document.querySelectorAll(
+								'#subagent-stop-fixture .subagent-run-card',
+							)[index],
+					index,
+				),
+			).toBe(true);
+		}
+		await expect(focusedStop).toBeFocused();
+	});
+
+	for (const activation of ['click', 'Enter'] as const) {
+		test(`a settled card cannot ${activation} the new turn's stop while awaiting its user boundary (SUB-04 A11Y-02)`, async () => {
+			await page.evaluate(() =>
+				(
+					window as unknown as HarnessWindow
+				).subagentFixture.subagentHarness.render('previous-owner'),
+			);
+			const card = page
+				.locator('#subagent-stop-fixture .subagent-run-card')
+				.nth(1);
+			const button = await card.getByRole('button').elementHandle();
+			if (!button) throw new Error('Missing live fixture stop');
+			await button.focus();
+			await page.evaluate(() =>
+				(
+					window as unknown as HarnessWindow
+				).subagentFixture.subagentHarness.render(
+					'current-owner',
+					false,
+					'admitting',
+				),
+			);
+			if (activation === 'click')
+				await button.evaluate(node => {
+					if (node instanceof HTMLButtonElement) node.click();
+				});
+			else await page.keyboard.press('Enter');
+			expect(
+				await page.evaluate(() =>
+					(
+						window as unknown as HarnessWindow
+					).subagentFixture.subagentHarness.calls(),
+				),
+			).toEqual([]);
+			await expect(card.getByRole('button')).toHaveCount(0);
+			await expect(card).toBeFocused();
+		});
+	}
+
+	test('a focused stop yields to its same named card when its turn ends and another card arrives (A11Y-01/02)', async () => {
+		await page.evaluate(() =>
+			(
+				window as unknown as HarnessWindow
+			).subagentFixture.subagentHarness.render('previous-owner'),
+		);
+		const cards = page.locator('#subagent-stop-fixture .subagent-run-card');
+		const card = cards.nth(1);
+		const original = await card.elementHandle();
+		await card.getByRole('button').focus();
+		await expect(card.getByRole('button')).toBeFocused();
+		await page.evaluate(() =>
+			(
+				window as unknown as HarnessWindow
+			).subagentFixture.subagentHarness.render(
+				'current-owner',
+				false,
+				'next-turn',
+			),
+		);
+		await expect(cards).toHaveCount(3);
+		expect(
+			await original?.evaluate(
+				node =>
+					node.isConnected &&
+					node ===
+						document.querySelectorAll(
+							'#subagent-stop-fixture .subagent-run-card',
+						)[1],
+			),
+		).toBe(true);
+		await expect(card.getByRole('button')).toHaveCount(0);
+		await expect(card).toHaveAccessibleName('subagent run 2 of 3: explore');
+		await expect(card).toBeFocused();
+		await expect(cards.last().getByRole('button')).toBeEnabled();
+	});
+
+	test('settling a card never takes focus from another control (A11Y-02)', async () => {
+		await page.evaluate(() =>
+			(
+				window as unknown as HarnessWindow
+			).subagentFixture.subagentHarness.render('previous-owner'),
+		);
+		const composer = page.getByRole('textbox', {name: 'message', exact: true});
+		await composer.focus();
+		await expect(composer).toBeFocused();
+		await page.evaluate(() =>
+			(
+				window as unknown as HarnessWindow
+			).subagentFixture.subagentHarness.render(
+				'current-owner',
+				false,
+				'next-turn',
+			),
+		);
+		await expect(composer).toBeFocused();
 	});
 });

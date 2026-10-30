@@ -199,7 +199,8 @@ export function App() {
 		if (
 			!sending &&
 			cancellation?.ok &&
-			document.activeElement === document.body
+			(document.activeElement === document.body ||
+				document.activeElement?.matches('.subagent-run-card'))
 		)
 			composerInput.current?.focus();
 	}, [sending, cancellation]);
