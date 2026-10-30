@@ -291,7 +291,7 @@ test('focused approvals stay fully visible across turns and widths in both theme
 			const geometry = await cards().evaluate(card => {
 				const rect = card.getBoundingClientRect();
 				const scroll = document
-					.querySelector('.shell-approval-shelf')
+					.querySelector('.shell-conversation-footer')
 					?.getBoundingClientRect();
 				return {
 					left: rect.left,
@@ -300,12 +300,15 @@ test('focused approvals stay fully visible across turns and widths in both theme
 					bottom: rect.bottom,
 					scrollTop: scroll?.top ?? 0,
 					scrollBottom: scroll?.bottom ?? 0,
+					windowHeight: innerHeight,
 					overflow: document.documentElement.scrollWidth > innerWidth,
 				};
 			});
 			expect(geometry.overflow).toBe(false);
 			expect(geometry.left).toBeGreaterThanOrEqual(0);
 			expect(geometry.right).toBeLessThanOrEqual(width);
+			expect(geometry.top).toBeGreaterThanOrEqual(0);
+			expect(geometry.bottom).toBeLessThanOrEqual(geometry.windowHeight);
 			expect(geometry.top).toBeGreaterThanOrEqual(geometry.scrollTop);
 			expect(geometry.bottom).toBeLessThanOrEqual(geometry.scrollBottom);
 			await page.keyboard.press('4');
