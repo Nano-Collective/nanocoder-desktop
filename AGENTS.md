@@ -54,6 +54,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/controls/`, `planning/model-and-mode-controls.md` | Shared-authority model offers, memory-only pending/live modes, cancel-default native yolo consent and owned hooks; preserve their wiring in phase 1.8 composition |
 | `source/main/nanocoder/control-options.ts`, `source/main/nanocoder/session-controls.ts` | Bounded known offers, acknowledgement-gated modes and process-wide config uncertainty |
 | `source/main/nanocoder/trust.ts` | Reads Nanocoder's trust refusals and runs the short trust launch (`DEC-30`) |
+| `source/main/nanocoder/trust-preflight.ts` | Isolated fail-closed ACP trust-check admission for provisional 1.31.x overrides, with identity-keyed memory-only verdicts |
 | `source/main/nanocoder/open-project.ts` | Connects, asks before trusting a folder, then opens or resumes a session in the starting mode |
 | `source/main/nanocoder/protocol-stream.ts` | Reads stdout as ACP only; anything else ends the connection |
 | `source/main/nanocoder/stderr-ring.ts` | Bounded, redacted, in-memory ring for Nanocoder's stderr |

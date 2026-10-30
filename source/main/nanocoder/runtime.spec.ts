@@ -28,7 +28,7 @@ function tempDir(): string {
 
 function makePackage(
 	root: string,
-	{name = '@nanocollective/nanocoder', version = '1.31.0'} = {},
+	{name = '@nanocollective/nanocoder', version = '1.32.0'} = {},
 ): string {
 	mkdirSync(path.join(root, 'dist'), {recursive: true});
 	const cli = path.join(root, 'dist', 'cli.js');
@@ -49,6 +49,37 @@ function makeFile(file: string, content = ''): string {
 }
 
 const symlinkTest = process.platform === 'win32' ? test.skip : test;
+
+symlinkTest(
+	'discovered 1.31.x is refused before even a Node version probe (ACP-04 ACP-20)',
+	async t => {
+		const prefix = tempDir();
+		const cli = makePackage(path.join(prefix, 'nanocoder'), {
+			version: '1.31.0',
+		});
+		mkdirSync(path.join(prefix, 'bin'));
+		symlinkSync(cli, path.join(prefix, 'bin', 'nanocoder'));
+		let probes = 0;
+		const result = await resolveNanocoder({
+			env: {
+				PATH: path.join(prefix, 'bin'),
+				NANOCODER_DESKTOP_NODE: process.execPath,
+			},
+			platform: process.platform,
+			untrustedRoots: [],
+			readNodeVersion: async () => {
+				probes++;
+				return 'v22.0.0';
+			},
+		});
+		t.false(result.ok);
+		if (!result.ok) {
+			t.is(result.code, 'UNSUPPORTED');
+			t.regex(result.message, /1\.31.*NANOCODER_DESKTOP_CLI.*trust/);
+		}
+		t.is(probes, 0);
+	},
+);
 
 test.after.always(() => {
 	for (const dir of temps) rmSync(dir, {recursive: true, force: true});
@@ -75,7 +106,7 @@ symlinkTest('resolves an npm global install linked from PATH', async t => {
 	t.true(result.ok);
 	if (result.ok) {
 		t.is(result.runtime.cliPath, cli);
-		t.is(result.runtime.version, '1.31.0');
+		t.is(result.runtime.version, '1.32.0');
 		t.is(result.runtime.source, 'path');
 		t.is(result.runtime.nodePath, realpathSync(process.execPath));
 		t.regex(result.runtime.nodeVersion, /^v\d+\./);

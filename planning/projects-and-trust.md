@@ -68,8 +68,12 @@ The status command, fingerprint-bound grant and fingerprint versioning remain
 blocked on [nanocoder#1899](https://github.com/Nano-Collective/nanocoder/issues/1899).
 See [the trust integration notes](acp-integration.md#directory-trust).
 
-The supervisor's provisional minimum stays `1.32.0`. A development ACP build that
-reports `1.31.0` does not establish compatibility with a published accepted version.
+The provisional minimum is `1.31.0` for an explicit `NANOCODER_DESKTOP_CLI`
+override only, with an isolated, fail-closed ACP directory-trust preflight before
+any selected-project launch. Published npm 1.31.0 remains unsupported. The check
+neither grants trust nor replaces selected-project consent. Raise the minimum to
+`1.32.0` when released and verify the artefact; `DEC-12` and `OQ-02` remain open.
+See the [version policy](acp-integration.md#provisional-prototype-policy-phase-14).
 
 ## Renderer integration
 

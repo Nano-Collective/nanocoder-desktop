@@ -6,7 +6,17 @@ import {
 	NanocoderFailure,
 } from '@/main/nanocoder/acp-client';
 import {type TrustRefusal, trustDirectory} from '@/main/nanocoder/trust';
-import type {NanocoderMode, SessionInfo, TurnEvent} from '@/shared/ipc';
+import {createTrustPreflight} from '@/main/nanocoder/trust-preflight';
+import {
+	requiresTrustPreflight,
+	versionPolicy,
+} from '@/main/nanocoder/version-policy';
+import type {
+	NanocoderMode,
+	NanocoderRuntime,
+	SessionInfo,
+	TurnEvent,
+} from '@/shared/ipc';
 
 export type OpenOutcome =
 	| {
@@ -19,17 +29,55 @@ export type OpenOutcome =
 	| {status: 'untrusted'; message: string};
 
 interface ProjectOptions extends ConnectOptions {
+	runtime: ConnectOptions['runtime'] &
+		Partial<Pick<NanocoderRuntime, 'source' | 'version'>>;
 	confirmTrust: (refusal: TrustRefusal) => Promise<boolean>;
 	beforeLaunch?: () => Promise<void>;
 }
 
+const trustPreflight = createTrustPreflight();
+
 export async function connectProject(
 	options: ProjectOptions,
 ): Promise<NanocoderConnection | {status: 'untrusted'; message: string}> {
-	const connect = async () => {
+	const version = options.runtime.version;
+	const provisional = requiresTrustPreflight(version ?? null);
+	const reason = versionPolicy(version ?? null).reason;
+	if (
+		version &&
+		(versionPolicy(version).status === 'refused' ||
+			(provisional && options.runtime.source !== 'override'))
+	)
+		throw new NanocoderFailure(
+			'UNSUPPORTED',
+			reason ?? 'Nanocoder requires a verified development override',
+		);
+	const beforeLaunch = async () => {
 		await options.beforeLaunch?.();
 		options.signal?.throwIfAborted();
-		return connectNanocoder(options);
+		if (provisional && version)
+			await trustPreflight.verify(
+				{...options.runtime, version},
+				options.root,
+				options.signal,
+			);
+	};
+	const connect = async () => {
+		await beforeLaunch();
+		const connection = await connectNanocoder(options);
+		if (
+			requiresTrustPreflight(connection.agent.version) &&
+			(!provisional ||
+				options.runtime.source !== 'override' ||
+				connection.agent.version !== version)
+		) {
+			await connection.close();
+			throw new NanocoderFailure(
+				'UNSUPPORTED',
+				'Nanocoder 1.31.x requires matching override version metadata and a verified ACP directory trust check',
+			);
+		}
+		return connection;
 	};
 	try {
 		return await connect();
@@ -42,7 +90,7 @@ export async function connectProject(
 			: await confirmation;
 		if (!confirmed) return {status: 'untrusted', message: error.message};
 		options.signal?.throwIfAborted();
-		await options.beforeLaunch?.();
+		await beforeLaunch();
 		await trustDirectory(options);
 		// A second refusal is reported, not asked about again.
 		return connect();

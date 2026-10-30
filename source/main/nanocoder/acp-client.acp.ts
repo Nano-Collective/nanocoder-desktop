@@ -13,7 +13,12 @@ import {openProject} from '@/main/nanocoder/open-project';
 import {type TrustReason, trustDirectory} from '@/main/nanocoder/trust';
 
 const cli = process.env.NANOCODER_CLI ?? '';
-const runtime = {nodePath: process.execPath, cliPath: cli};
+const runtime = {
+	nodePath: process.execPath,
+	cliPath: cli,
+	version: '1.31.0',
+	source: 'override' as const,
+};
 const clientInfo = {name: 'nanocoder-desktop', version: '0.0.0-test'};
 const work = realpathSync.native(
 	mkdtempSync(path.join(tmpdir(), 'nd-acp-real-')),

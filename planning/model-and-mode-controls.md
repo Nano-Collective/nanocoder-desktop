@@ -110,7 +110,9 @@ scope checks. A cancelled yolo can also be selected again and explicitly accepte
   including real mode acknowledgement, provider-confirmed different model and
   resume retaining the process-current model rather than historical config.
   These low-level protocol tests bypass desktop discovery. The pinned CLI
-  reports 1.31.0, below the unchanged desktop minimum of 1.32.0.
+  reported 1.31.0, below the then-current desktop minimum of 1.32.0. The later
+  [provisional version policy](acp-integration.md#provisional-prototype-policy-phase-14)
+  admits verified development overrides only, not published npm 1.31.0.
 - Locked fake-app QA covers dark/light at 1240, 1020 and 840px, keyboard focus,
   project-wide accessible names, explicit default, cancel-default yolo and
   readable drafts with disabled controls during an approval-held turn.
