@@ -242,7 +242,11 @@ export function createProjectOperations(options: ProjectOperationOptions) {
 			),
 		runMetadataOperation: <T>(
 			projectId: string,
-			kind: 'archive-thread' | 'remove-thread' | 'rename-unsaved-thread',
+			kind:
+				| 'archive-thread'
+				| 'remove-thread'
+				| 'rename-unsaved-thread'
+				| 'import-session',
 			work: (lease: MetadataOperationLease) => Promise<T>,
 			scope: OperationScope = {},
 		): Promise<T> =>

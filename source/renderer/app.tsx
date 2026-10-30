@@ -7,6 +7,7 @@ import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
 import {RecentProjects} from '@/renderer/recent-projects';
 import {RecoveryTools} from '@/renderer/recovery-tools';
+import {SessionImportList} from '@/renderer/session-import-list';
 import {
 	acpBadge,
 	observeSupervisor,
@@ -20,6 +21,7 @@ import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, Divider, StatusBadge} from '@/renderer/ui';
 import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
+import {useSessionImports} from '@/renderer/use-session-imports';
 import {useThreads} from '@/renderer/use-threads';
 import {CONFIG_UNCERTAINTY_REASON} from '@/shared/control-reasons';
 import type {
@@ -112,6 +114,12 @@ export function App() {
 	const processState = selected?.state ?? null;
 	const controls = useThreads(projectId, processState?.status === 'ready');
 	const {workspace, conversation} = controls;
+	const sessionImports = useSessionImports(
+		projectId,
+		processState?.status === 'ready' &&
+			processState.gates?.features.list.enabled === true,
+		workspace.threads,
+	);
 	const thread =
 		workspace.threads.find(row => row.id === workspace.activeThreadId) ?? null;
 	const {transcript, draft, turn, cancellation} = conversation;
@@ -363,28 +371,47 @@ export function App() {
 					/>
 				}
 				threadRail={
-					<ThreadRail
-						projectId={projectId}
-						threads={workspace.threads}
-						activeThreadId={workspace.activeThreadId}
-						pending={pending}
-						now={new Date()}
-						renameDisabledReason={renameDisabledReason}
-						deleteHistoryDisabledReason={deleteHistoryDisabledReason}
-						onNew={onNew}
-						onOpen={id => {
-							setRenaming(null);
-							void controls.open(id);
-						}}
-						onRename={rename}
-						onArchive={onArchive}
-						onRemove={id => {
-							void controls.remove(id);
-						}}
-						onDeleteHistory={id => {
-							void controls.deleteHistory(id);
-						}}
-					/>
+					<>
+						<ThreadRail
+							projectId={projectId}
+							threads={workspace.threads}
+							activeThreadId={workspace.activeThreadId}
+							pending={pending}
+							now={new Date()}
+							renameDisabledReason={renameDisabledReason}
+							deleteHistoryDisabledReason={deleteHistoryDisabledReason}
+							onNew={onNew}
+							onOpen={id => {
+								setRenaming(null);
+								void controls.open(id);
+							}}
+							onRename={rename}
+							onArchive={onArchive}
+							onRemove={id => {
+								void controls.remove(id);
+							}}
+							onDeleteHistory={id => {
+								void controls.deleteHistory(id);
+							}}
+						/>
+						<SessionImportList
+							key={projectId}
+							{...sessionImports}
+							active={sessionImports.ready}
+							disabledReason={
+								rootBusy
+									? 'stop the project turn before importing'
+									: (replayReason ??
+										(!accepting
+											? 'Nanocoder is not ready'
+											: pending
+												? 'another thread request is pending'
+												: undefined))
+							}
+							onRefresh={sessionImports.refresh}
+							onImport={sessionImports.importSession}
+						/>
+					</>
 				}
 				statusBadges={
 					<div className="gate-actions">

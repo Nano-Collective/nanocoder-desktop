@@ -39,6 +39,68 @@ const failure = (root: string, options?: Partial<ConnectOptions>) =>
 
 test.after.always(removeFakeProjects);
 
+test('ACP-18 listing filters by the canonical connection root without session creation or loading', async t => {
+	const root = fakeProject();
+	const connection = await connect(root);
+	t.teardown(() => connection.close());
+	t.deepEqual(await connection.listSessions?.(), {
+		sessions: [
+			{
+				sessionId: 'discovered-session',
+				cwd: root,
+				title: 'existing saved session',
+				updatedAt: '2026-10-29T12:00:00.000Z',
+			},
+		],
+	});
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines()).filter(event => event.method),
+		[
+			fakeEvents(connection.stderr.lines()).find(
+				event => event.method === 'initialize',
+			),
+			{method: 'session/list', params: {cwd: root}},
+		],
+	);
+});
+
+test('ACP-18 unadvertised listing refuses without a list/load/new request', async t => {
+	const connection = await connect(fakeProject('no-list'));
+	t.teardown(() => connection.close());
+	t.deepEqual(
+		await rejection(connection.listSessions?.() ?? Promise.resolve()),
+		new NanocoderFailure(
+			'UNSUPPORTED',
+			'This version of Nanocoder cannot list saved sessions',
+		),
+	);
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines())
+			.filter(event => event.method)
+			.map(event => event.method),
+		['initialize'],
+	);
+});
+
+for (const state of ['list-fails', 'closed'] as const) {
+	test(`ACP-18 ${state} listing fails safely without loading or creating a session`, async t => {
+		const connection = await connect(fakeProject(state));
+		t.teardown(() => connection.close());
+		if (state === 'closed') await connection.close();
+		const error = await rejection(
+			connection.listSessions?.() ?? Promise.resolve(),
+		);
+		t.is(error.code, 'AGENT_UNAVAILABLE');
+		t.is(error.message, 'Nanocoder could not list saved sessions');
+		t.deepEqual(
+			fakeEvents(connection.stderr.lines())
+				.filter(event => event.method)
+				.map(event => event.method),
+			state === 'closed' ? ['initialize'] : ['initialize', 'session/list'],
+		);
+	});
+}
+
 test('ACP-14 replay cleanup preserves closing config display without restoring control authority', async t => {
 	let displayed = 0;
 	const published: string[] = [];

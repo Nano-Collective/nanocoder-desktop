@@ -5,6 +5,8 @@ import {
 	realpathSync,
 	renameSync,
 	rmSync,
+	symlinkSync,
+	unlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -32,6 +34,600 @@ import type {
 	TurnEvent,
 } from '@/shared/ipc';
 import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
+
+const discoveryRow = (cwd: string, sessionId = 'discovered-session') => ({
+	sessionId,
+	cwd,
+	title: 'saved import candidate',
+	updatedAt: '2026-10-29T12:00:00.000Z',
+});
+
+async function discoveryFixture(t: ExecutionContext, mode?: string) {
+	const f = await fixture(t, true);
+	if (mode)
+		writeFileSync(path.join(f.project.canonicalRoot, '.fake-nanocoder'), mode);
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	const drained = deferred<void>();
+	const write = connection.stderr.write;
+	const check = () => {
+		if (
+			fakeEvents(connection.stderr.lines()).some(
+				e => e.method === 'timeline/list',
+			)
+		)
+			drained.resolve();
+	};
+	connection.stderr.write = chunk => {
+		write.call(connection.stderr, chunk);
+		check();
+	};
+	check();
+	try {
+		await drained.promise;
+	} finally {
+		connection.stderr.write = write;
+	}
+	return {...f, connection};
+}
+
+async function importableFixture(
+	t: ExecutionContext,
+	sessionId = 'fake-session',
+	mode?: string,
+) {
+	const f = await discoveryFixture(t, mode);
+	f.connection.listSessions = async () => ({
+		sessions: [
+			{
+				...discoveryRow(f.project.canonicalRoot, sessionId),
+				mode: 'yolo',
+				content: 'must not become imported metadata',
+			},
+		],
+	});
+	t.is(
+		(await f.service.discoverSessions({projectId: f.project.id}))[0]?.id,
+		sessionId,
+	);
+	return f;
+}
+
+test('ACP-18 import uses the same metadata authority without launch, consent, auto-open, prompt or selection', async t => {
+	const f = await importableFixture(t);
+	f.store.projects.save({...f.project, trusted: false});
+	const calls = structuredClone(f.calls);
+	const diagnostics = f.connection.stderr.lines();
+	const ui = f.store.getUiState();
+	const kinds: string[] = [];
+	const metadata = f.service.projectOperations.runMetadataOperation;
+	f.service.projectOperations.runMetadataOperation = (
+		id,
+		kind,
+		work,
+		scope,
+	) => {
+		kinds.push(kind);
+		return metadata(id, kind, work, scope);
+	};
+	const imported = await f.service.importSession({
+		projectId: f.project.id,
+		sessionId: 'fake-session',
+	});
+	t.deepEqual(imported, {
+		id: imported.id,
+		projectId: f.project.id,
+		nanocoderSessionId: 'fake-session',
+		title: 'saved import candidate',
+		archiveState: 'active',
+		runState: 'ready',
+		lastActivityAt: '2026-10-29T12:00:00.000Z',
+		sessionCwd: f.project.canonicalRoot,
+		mode: 'auto-accept',
+		viewOnlyReason: null,
+	});
+	t.deepEqual(kinds, ['import-session']);
+	t.deepEqual(f.store.threads.get(f.project.id, imported.id), imported);
+	t.false(f.store.threads.getTitleManuallySet(f.project.id, imported.id));
+	t.deepEqual(f.calls, calls);
+	t.deepEqual(f.connection.stderr.lines(), diagnostics);
+	t.deepEqual(f.store.getUiState(), ui);
+});
+
+for (const mode of ['normal', 'auto-accept', 'plan', 'architect'] as const) {
+	test(`ACP-18 DEC-31 imported ${mode} default resumes and confirms that mode before the first explicit prompt`, async t => {
+		const f = await importableFixture(t, 'fake-session', 'reported-usage');
+		f.store.projects.save({...f.project, defaultMode: mode});
+		const imported = await f.service.importSession({
+			projectId: f.project.id,
+			sessionId: 'fake-session',
+		});
+		t.is(imported.mode, mode);
+		const scope = {projectId: f.project.id, threadId: imported.id};
+		const opened = await f.service.openThread(scope);
+		t.is(opened.thread.nanocoderSessionId, 'fake-session');
+		t.is(opened.thread.mode, mode);
+		const requests = () =>
+			fakeEvents(f.connection.stderr.lines()).filter(
+				e => typeof e.method === 'string' && e.method.startsWith('session/'),
+			);
+		t.deepEqual(requests(), [
+			{
+				method: 'session/resume',
+				params: {
+					sessionId: 'fake-session',
+					cwd: f.project.canonicalRoot,
+					mcpServers: [],
+				},
+			},
+			{
+				method: 'session/set_mode',
+				params: {sessionId: 'fake-session', modeId: mode},
+			},
+		]);
+		await f.service.promptThread({...scope, text: 'explicit imported prompt'});
+		t.deepEqual(
+			requests().map(e => e.method),
+			['session/resume', 'session/set_mode', 'session/prompt'],
+		);
+	});
+}
+
+test('ACP-18 same-owner reimport is a true no-op, including archived state, manual title, activity and publication', async t => {
+	const f = await importableFixture(t);
+	const known = seed(f.project, {
+		nanocoderSessionId: 'fake-session',
+		archiveState: 'archived',
+		title: 'manual saved title',
+		mode: 'plan',
+	});
+	f.store.threads.save(known);
+	f.store.threads.setTitle({
+		projectId: known.projectId,
+		threadId: known.id,
+		title: known.title,
+		manuallySet: true,
+	});
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), []);
+	const scope = {projectId: known.projectId, threadId: known.id};
+	const before = await f.service.getThreadSnapshot(scope);
+	const ui = f.store.getUiState();
+	const diagnostics = f.connection.stderr.lines();
+	const events: ProjectEvent[] = [];
+	t.teardown(f.supervisor.subscribe(event => events.push(event)));
+	const save = f.store.threads.save;
+	let writes = 0;
+	f.store.threads.save = row => {
+		writes++;
+		save(row);
+	};
+	t.deepEqual(
+		await f.service.importSession({
+			projectId: known.projectId,
+			sessionId: 'fake-session',
+		}),
+		known,
+	);
+	t.is(writes, 0);
+	t.deepEqual(events, []);
+	t.deepEqual(await f.service.getThreadSnapshot(scope), before);
+	t.true(f.store.threads.getTitleManuallySet(known.projectId, known.id));
+	t.deepEqual(f.store.getUiState(), ui);
+	t.deepEqual(f.connection.stderr.lines(), diagnostics);
+});
+
+test('ACP-18 cross-owner import refuses without leaking a title or rewriting either owner', async t => {
+	const f = await importableFixture(t);
+	const otherRoot = path.join(f.root, 'other-project');
+	mkdirSync(otherRoot);
+	const other = {
+		...f.project,
+		id: randomUUID(),
+		canonicalRoot: otherRoot,
+		sessionCwd: otherRoot,
+	};
+	f.store.projects.save(other);
+	const known = seed(other, {
+		nanocoderSessionId: 'fake-session',
+		title: 'private foreign title',
+	});
+	f.store.threads.save(known);
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), []);
+	const error = await t.throwsAsync(
+		f.service.importSession({
+			projectId: f.project.id,
+			sessionId: 'fake-session',
+		}),
+		{code: 'DENIED'},
+	);
+	t.false(error?.message.includes(known.title));
+	t.deepEqual(f.store.threads.get(other.id, known.id), known);
+	t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+});
+
+test('ACP-18 direct import validates the shared opaque ID before ownership lookup, cache or writes', async t => {
+	const f = await fixture(t);
+	let lookedUp = 0;
+	f.store.threads.getBySessionId = () => {
+		lookedUp++;
+		return undefined;
+	};
+	for (const sessionId of [
+		'',
+		' ',
+		'\uD800',
+		'é'.repeat(101),
+		'session\u202e',
+	]) {
+		await t.throwsAsync(
+			f.service.importSession({projectId: f.project.id, sessionId}),
+			{code: 'VALIDATION'},
+		);
+	}
+	t.is(lookedUp, 0);
+	t.deepEqual(f.calls, []);
+	t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+});
+
+test('ACP-18 import requires current cached proof and cannot use an arbitrary or failed-refresh ID', async t => {
+	const f = await importableFixture(t);
+	await t.throwsAsync(
+		f.service.importSession({projectId: f.project.id, sessionId: 'arbitrary'}),
+		{code: 'DENIED'},
+	);
+	f.connection.listSessions = async () => {
+		throw new Error('private failure');
+	};
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), []);
+	await t.throwsAsync(
+		f.service.importSession({
+			projectId: f.project.id,
+			sessionId: 'fake-session',
+		}),
+		{code: 'UNAVAILABLE'},
+	);
+	t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+});
+
+for (const change of ['outside', 'missing'] as const) {
+	test(`ACP-18 import revalidates the originally listed cwd after its symlink becomes ${change}`, async t => {
+		const f = await discoveryFixture(t);
+		const alias = path.join(f.root, 'reported-cwd');
+		symlinkSync(f.project.canonicalRoot, alias, 'junction');
+		f.connection.listSessions = async () => ({
+			sessions: [discoveryRow(alias, 'fake-session')],
+		});
+		t.is(
+			(await f.service.discoverSessions({projectId: f.project.id})).length,
+			1,
+		);
+		unlinkSync(alias);
+		if (change === 'outside') symlinkSync(f.root, alias, 'junction');
+		const diagnostics = f.connection.stderr.lines();
+		await t.throwsAsync(
+			f.service.importSession({
+				projectId: f.project.id,
+				sessionId: 'fake-session',
+			}),
+			{code: change === 'outside' ? 'OUTSIDE_ROOT' : 'DENIED'},
+		);
+		t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+		t.deepEqual(f.connection.stderr.lines(), diagnostics);
+	});
+}
+
+test('ACP-18 import and execution share the same project slot in both directions', async t => {
+	const f = await importableFixture(t);
+	const held = deferred<void>();
+	const active = f.service.runProjectOperation(
+		f.project.id,
+		'mode',
+		async () => held.promise,
+	);
+	try {
+		await t.throwsAsync(
+			f.service.importSession({
+				projectId: f.project.id,
+				sessionId: 'fake-session',
+			}),
+			{code: 'BUSY'},
+		);
+	} finally {
+		held.resolve();
+		await active;
+	}
+	const importing = f.service.importSession({
+		projectId: f.project.id,
+		sessionId: 'fake-session',
+	});
+	await t.throwsAsync(
+		f.service.runProjectOperation(f.project.id, 'mode', async () => {
+			t.fail('Execution entered an import metadata lease');
+		}),
+		{code: 'BUSY'},
+	);
+	await importing;
+});
+
+for (const reset of [
+	'detach',
+	'dispose',
+	'replace',
+	'root',
+	'cwd',
+	'latest',
+] as const) {
+	test(`ACP-18 ${reset} invalidates completed import proof without writing a row`, async t => {
+		const f = await importableFixture(t);
+		if (reset === 'detach') await f.service.detach([f.project]);
+		if (reset === 'dispose') f.service.dispose();
+		if (reset === 'replace') {
+			await f.supervisor.stop(f.project.id);
+			await f.supervisor.ensureProcess(f.project);
+		}
+		if (reset === 'root' || reset === 'cwd') {
+			const changed = path.join(f.project.canonicalRoot, 'changed');
+			mkdirSync(changed);
+			if (reset === 'root')
+				f.store.projects.save({
+					...f.project,
+					canonicalRoot: changed,
+					sessionCwd: changed,
+				});
+			else {
+				const get = f.store.projects.get;
+				f.store.projects.get = id => {
+					const project = get(id);
+					return project?.id === f.project.id
+						? {...project, sessionCwd: changed}
+						: project;
+				};
+			}
+		}
+		if (reset === 'latest') {
+			f.connection.listSessions = async () => ({
+				sessions: [discoveryRow(f.project.canonicalRoot, 'latest')],
+			});
+			t.is(
+				(await f.service.discoverSessions({projectId: f.project.id}))[0]?.id,
+				'latest',
+			);
+		}
+		await t.throwsAsync(
+			f.service.importSession({
+				projectId: f.project.id,
+				sessionId: 'fake-session',
+			}),
+			{
+				code:
+					reset === 'dispose'
+						? 'AGENT_UNAVAILABLE'
+						: reset === 'latest'
+							? 'DENIED'
+							: 'UNAVAILABLE',
+			},
+		);
+		t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+	});
+}
+
+test('ACP-18 concurrent cross-project imports cannot steal the globally unique saved session key', async t => {
+	const f = await importableFixture(t);
+	const otherRoot = path.join(f.root, 'other-project');
+	mkdirSync(otherRoot);
+	const other = {
+		...f.project,
+		id: randomUUID(),
+		canonicalRoot: otherRoot,
+		sessionCwd: otherRoot,
+	};
+	f.store.projects.save(other);
+	await f.supervisor.ensureProcess(other);
+	const connection = f.supervisor.getConnection(other.id);
+	connection.listSessions = async () => ({
+		sessions: [discoveryRow(otherRoot, 'fake-session')],
+	});
+	t.is((await f.service.discoverSessions({projectId: other.id})).length, 1);
+	const results = await Promise.allSettled(
+		[f.project, other].map(project =>
+			f.service.importSession({
+				projectId: project.id,
+				sessionId: 'fake-session',
+			}),
+		),
+	);
+	t.is(results.filter(result => result.status === 'fulfilled').length, 1);
+	const rejected = results.find(result => result.status === 'rejected');
+	t.true(
+		rejected?.status === 'rejected' && rejected.reason instanceof IpcFailure,
+	);
+	if (rejected?.status === 'rejected') t.is(rejected.reason.code, 'DENIED');
+	t.is(
+		[f.project, other].flatMap(project =>
+			f.store.threads.list(project.id, 'active'),
+		).length,
+		1,
+	);
+});
+
+test('ACP-18 missing discovery activity uses the local clock for metadata, not an invented remote time', async t => {
+	const f = await discoveryFixture(t);
+	f.connection.listSessions = async () => ({
+		sessions: [
+			{
+				sessionId: 'fake-session',
+				cwd: f.project.canonicalRoot,
+				title: '<strong>plain metadata title</strong>',
+			},
+		],
+	});
+	const listed = await f.service.discoverSessions({projectId: f.project.id});
+	t.is(listed[0]?.lastActivityAt, null);
+	const imported = await f.service.importSession({
+		projectId: f.project.id,
+		sessionId: 'fake-session',
+	});
+	t.is(imported.lastActivityAt, '2026-10-30T14:00:00.000Z');
+	t.is(imported.title, '<strong>plain metadata title</strong>');
+});
+
+test('ACP-18 offline discovery is an empty read without launch, consent or known-thread changes', async t => {
+	const f = await fixture(t);
+	const known = seed(f.project, {nanocoderSessionId: 'known'});
+	f.store.threads.save(known);
+	const ui = f.store.getUiState();
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), []);
+	t.deepEqual(f.calls, []);
+	t.deepEqual(f.store.threads.get(f.project.id, known.id), known);
+	t.deepEqual(f.store.getUiState(), ui);
+});
+
+test('ACP-18 ready mixed-root discovery projects only unknown exact native roots and never persists or selects', async t => {
+	const f = await discoveryFixture(t);
+	const known = seed(f.project, {nanocoderSessionId: 'known'});
+	f.store.threads.save(known);
+	const foreign = path.join(f.root, 'foreign');
+	const nested = path.join(f.project.canonicalRoot, 'nested');
+	const outside = path.join(f.project.canonicalRoot, 'outside');
+	for (const dir of [foreign, nested]) mkdirSync(dir);
+	symlinkSync(foreign, outside, 'junction');
+	const caseAlias = path.join(f.root, 'PROJECT');
+	let caseResolves = false;
+	try {
+		caseResolves = realpathSync.native(caseAlias) === f.project.canonicalRoot;
+	} catch {}
+	const privateRow = (cwd: string, id: string) => ({
+		sessionId: id,
+		cwd,
+		get title(): string {
+			t.fail('Foreign title reached service projection');
+			throw new Error('private title');
+		},
+	});
+	f.connection.listSessions = async () => ({
+		sessions: [
+			discoveryRow(f.project.canonicalRoot),
+			discoveryRow(f.project.canonicalRoot, 'known'),
+			discoveryRow(caseAlias, 'case-alias'),
+			privateRow(foreign, 'foreign'),
+			privateRow(nested, 'nested'),
+			privateRow(outside, 'outside-symlink'),
+		],
+	});
+	const calls = structuredClone(f.calls);
+	const diagnostics = f.connection.stderr.lines();
+	const ui = f.store.getUiState();
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), [
+		...(caseResolves
+			? [
+					{
+						id: 'case-alias',
+						title: 'saved import candidate',
+						sessionCwd: f.project.canonicalRoot,
+						lastActivityAt: '2026-10-29T12:00:00.000Z',
+					},
+				]
+			: []),
+		{
+			id: 'discovered-session',
+			title: 'saved import candidate',
+			sessionCwd: f.project.canonicalRoot,
+			lastActivityAt: '2026-10-29T12:00:00.000Z',
+		},
+	]);
+	t.deepEqual(f.calls, calls);
+	t.deepEqual(f.connection.stderr.lines(), diagnostics);
+	t.deepEqual(f.store.threads.list(f.project.id, 'active'), [known]);
+	t.deepEqual(f.store.getUiState(), ui);
+});
+
+for (const unavailable of [
+	'no-list',
+	'missing-adapter',
+	'list-fails',
+] as const) {
+	test(`ACP-18 ${unavailable} discovery returns empty without launch or thread changes`, async t => {
+		const f = await discoveryFixture(t, unavailable);
+		const known = seed(f.project, {nanocoderSessionId: 'known'});
+		f.store.threads.save(known);
+		if (unavailable === 'missing-adapter') delete f.connection.listSessions;
+		const calls = structuredClone(f.calls);
+		const beforeMethods = fakeEvents(f.connection.stderr.lines())
+			.filter(event => event.method)
+			.map(event => event.method);
+		t.deepEqual(
+			await f.service.discoverSessions({projectId: f.project.id}),
+			[],
+		);
+		t.deepEqual(f.store.threads.get(f.project.id, known.id), known);
+		t.deepEqual(f.calls, calls);
+		const methods = fakeEvents(f.connection.stderr.lines())
+			.filter(event => event.method)
+			.map(event => event.method);
+		t.deepEqual(methods, [
+			...beforeMethods,
+			...(unavailable === 'list-fails' ? ['session/list'] : []),
+		]);
+	});
+}
+
+test('ACP-18 reordered discovery cannot publish an older response or erase a later failure', async t => {
+	const f = await discoveryFixture(t);
+	const entered = deferred<void>();
+	const pending = deferred<unknown>();
+	f.connection.listSessions = async () => {
+		entered.resolve();
+		return pending.promise;
+	};
+	const first = f.service.discoverSessions({projectId: f.project.id});
+	await Promise.race([
+		entered.promise,
+		first.then(() => {
+			throw new Error('Discovery did not request the ready connection');
+		}),
+	]);
+	f.connection.listSessions = async () => ({
+		sessions: [discoveryRow(f.project.canonicalRoot, 'newest')],
+	});
+	t.is(
+		(await f.service.discoverSessions({projectId: f.project.id}))[0]?.id,
+		'newest',
+	);
+	pending.resolve({sessions: [discoveryRow(f.project.canonicalRoot, 'old')]});
+	t.deepEqual(await first, []);
+	f.connection.listSessions = async () => {
+		throw new Error('private list failure');
+	};
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), []);
+});
+
+for (const teardown of ['detach', 'dispose', 'replace'] as const) {
+	test(`ACP-18 ${teardown} invalidates an in-flight discovery without late projection or writes`, async t => {
+		const f = await discoveryFixture(t);
+		const entered = deferred<void>();
+		const pending = deferred<unknown>();
+		f.connection.listSessions = async () => {
+			entered.resolve();
+			return pending.promise;
+		};
+		const first = f.service.discoverSessions({projectId: f.project.id});
+		await Promise.race([
+			entered.promise,
+			first.then(() => {
+				throw new Error('Discovery did not request the ready connection');
+			}),
+		]);
+		if (teardown === 'detach') await f.service.detach([f.project]);
+		if (teardown === 'dispose') f.service.dispose();
+		if (teardown === 'replace') {
+			await f.supervisor.stop(f.project.id);
+			await f.supervisor.ensureProcess(f.project);
+		}
+		pending.resolve({sessions: [discoveryRow(f.project.canonicalRoot)]});
+		t.deepEqual(await first, []);
+		t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+	});
+}
 
 for (const source of ['open', 'recovery'] as const) {
 	for (const code of ['NOT_FOUND', 'AGENT_UNAVAILABLE'] as const) {

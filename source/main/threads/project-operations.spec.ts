@@ -570,6 +570,33 @@ test('a released scope abort cannot invalidate a replacement owner', async t => 
 	});
 });
 
+test('ACP-18 import metadata leases use the same slot and cannot acquire execution authority', async t => {
+	const {operations, projects} = fixture();
+	required(projects, 'project').trusted = false;
+	await operations.runMetadataOperation(
+		'project',
+		'import-session',
+		async lease => {
+			operations.assertMetadataCurrent(lease);
+			// @ts-expect-error Import metadata cannot acquire execution authority.
+			throwsCode(t, () => operations.assertCurrent(lease), 'DENIED');
+			// @ts-expect-error Import metadata cannot bind an ACP session.
+			throwsCode(t, () => operations.bindSession(lease, 'saved'), 'DENIED');
+			await rejectsCode(
+				t,
+				// @ts-expect-error Import metadata cannot execute an ACP step.
+				operations.runOwnedStep(lease, async () => t.fail('No ACP authority')),
+				'DENIED',
+			);
+			await rejectsCode(
+				t,
+				operations.runProjectOperation('project', 'mode', async () => {}),
+				'BUSY',
+			);
+		},
+	);
+});
+
 test('CHAT-17 metadata-only reservations share the execution slot in both directions', async t => {
 	const {operations, projects} = fixture();
 	await operations.runMetadataOperation(

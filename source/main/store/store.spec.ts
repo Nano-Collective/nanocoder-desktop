@@ -34,6 +34,47 @@ import {
 } from '@/main/threads/thread-history-observer';
 import type {ProjectInfo, ThreadInfo} from '@/shared/ipc';
 
+test('ACP-18 main-only session lookup finds its exact owner without changing archived/manual metadata', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const owner = project(f.root);
+	const otherRoot = path.join(f.root, 'other-project');
+	mkdirSync(otherRoot);
+	const other = project(otherRoot);
+	store.projects.save(owner);
+	store.projects.save(other);
+	const sessionId = 'session/é/\u{1F680}';
+	const foreignSessionId = randomUUID();
+	const saved = thread(owner, {
+		nanocoderSessionId: sessionId,
+		archiveState: 'archived',
+		title: 'manual title',
+	});
+	const foreign = thread(other, {nanocoderSessionId: foreignSessionId});
+	const unsaved = thread(owner, {nanocoderSessionId: null});
+	for (const row of [saved, foreign, unsaved]) store.threads.save(row);
+	store.threads.setTitle({
+		projectId: owner.id,
+		threadId: saved.id,
+		title: saved.title,
+		manuallySet: true,
+	});
+	t.deepEqual(store.threads.getBySessionId(sessionId), saved);
+	t.deepEqual(store.threads.getBySessionId(foreignSessionId), foreign);
+	t.is(store.threads.getBySessionId('unknown-session'), undefined);
+	t.is(store.threads.getBySessionId(` ${sessionId}`), undefined);
+	t.deepEqual(store.threads.get(owner.id, saved.id), saved);
+	t.true(store.threads.getTitleManuallySet(owner.id, saved.id));
+});
+
+test('ACP-18 main-only session lookup refuses malformed opaque identities without normalising them', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	for (const id of ['', '   ', 'session\n', 'é'.repeat(101), '\uD800']) {
+		t.throws(() => store.threads.getBySessionId(id), {code: 'VALIDATION'});
+	}
+});
+
 for (const action of ['insert', 'update'] as const) {
 	for (const kind of ['high', 'low', 'bytes', 'control'] as const) {
 		test(`CHAT-08 durable session ${action} refuses ${kind} identity before any write`, async t => {

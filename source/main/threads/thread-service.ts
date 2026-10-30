@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import type {ThreadService} from '@/main/ipc/workspace-services';
+import {untilAborted} from '@/main/nanocoder/abort';
 import {
 	type NanocoderConnection,
 	NanocoderFailure,
@@ -26,11 +27,16 @@ import {
 	type MetadataOperationLease,
 	type ProjectOperationLease,
 } from '@/main/threads/project-operations';
+import {
+	type DiscoveredSessionProof,
+	sessionDiscovery,
+} from '@/main/threads/session-discovery';
 import {mapThreadReplay} from '@/main/threads/thread-history-mapping';
 import {createThreadHistoryObserver} from '@/main/threads/thread-history-observer';
 import {mapThreadLive} from '@/main/threads/thread-live-mapping';
 import {createThreadSequence} from '@/main/threads/thread-sequence';
 import type {
+	DiscoveredSession,
 	IpcResult,
 	NanocoderMode,
 	ProjectEvent,
@@ -130,6 +136,14 @@ class PreparationCancelled extends IpcFailure {
 	}
 }
 
+interface DiscoverySnapshot {
+	connection: NanocoderConnection;
+	canonicalRoot: string;
+	sessionCwd: string;
+	signal: AbortSignal;
+	candidates: Map<string, DiscoveredSessionProof>;
+}
+
 export function createThreadService(
 	options: ThreadOptions,
 ): ThreadRuntimeService {
@@ -215,6 +229,7 @@ export function createThreadService(
 	>();
 	const restoring = new Map<string, AbortSignal>();
 	const operations = new Map<string, Set<Promise<unknown>>>();
+	const discoveries = new Map<string, DiscoverySnapshot>();
 	let attachment = new AbortController();
 	let disposed = false;
 	const finishPreparation = (
@@ -353,6 +368,32 @@ export function createThreadService(
 		const project = options.store.projects.get(projectId);
 		if (!project) throw new IpcFailure('NOT_FOUND', 'Project not found');
 		return project;
+	};
+	const currentDiscovery = (
+		projectId: string,
+		discovery: DiscoverySnapshot,
+	): boolean => {
+		if (
+			disposed ||
+			discovery.signal.aborted ||
+			discovery.signal !== attachment.signal ||
+			discoveries.get(projectId) !== discovery
+		)
+			return false;
+		try {
+			const project = getProject(projectId);
+			return (
+				project.canonicalRoot === discovery.canonicalRoot &&
+				project.sessionCwd === discovery.sessionCwd &&
+				project.sessionCwd === project.canonicalRoot &&
+				discovery.connection.agent.root === project.canonicalRoot &&
+				options.supervisor.getState(projectId).status === 'ready' &&
+				options.supervisor.getConnection(projectId) === discovery.connection &&
+				options.supervisor.getCapabilityGates(projectId).features.list.enabled
+			);
+		} catch {
+			return false;
+		}
 	};
 	const attachProject = (projectId: string) => {
 		getProject(projectId);
@@ -583,6 +624,12 @@ export function createThreadService(
 		});
 	};
 	const unsubscribe = options.supervisor.subscribe(event => {
+		if (event.type === 'supervisor') {
+			const discovery = discoveries.get(event.projectId);
+			if (discovery && !currentDiscovery(event.projectId, discovery))
+				discoveries.delete(event.projectId);
+			return;
+		}
 		if (event.type !== 'turn') return;
 		const thread = [
 			...options.store.threads.list(event.projectId, 'active'),
@@ -1090,6 +1137,7 @@ export function createThreadService(
 			}
 		},
 		detach: async projects => {
+			discoveries.clear();
 			const tasks = [...operations.values()].flatMap(values => [...values]);
 			const ids = new Set([
 				...pending.keys(),
@@ -1142,6 +1190,7 @@ export function createThreadService(
 		},
 		dispose: () => {
 			disposed = true;
+			discoveries.clear();
 			projectOperations.dispose();
 			attachment.abort(
 				new IpcFailure('AGENT_UNAVAILABLE', 'The thread service stopped'),
@@ -1810,7 +1859,133 @@ export function createThreadService(
 				return null;
 			});
 		},
-		discoverSessions: unavailable,
-		importSession: unavailable,
+		discoverSessions: async ({projectId}) => {
+			const project = getProject(projectId);
+			return operation(projectId, async signal => {
+				discoveries.delete(projectId);
+				let discovery: DiscoverySnapshot | undefined;
+				try {
+					if (
+						project.sessionCwd !== project.canonicalRoot ||
+						options.supervisor.getState(projectId).status !== 'ready' ||
+						!options.supervisor.getCapabilityGates(projectId).features.list
+							.enabled
+					)
+						return [];
+					const connection = options.supervisor.getConnection(projectId);
+					if (
+						!connection.listSessions ||
+						connection.agent.root !== project.canonicalRoot
+					)
+						return [];
+					discovery = {
+						connection,
+						canonicalRoot: project.canonicalRoot,
+						sessionCwd: project.sessionCwd,
+						signal,
+						candidates: new Map(),
+					};
+					discoveries.set(projectId, discovery);
+					const response = await untilAborted(
+						connection.listSessions(),
+						signal,
+					);
+					const candidates = await untilAborted(
+						sessionDiscovery(response, project.canonicalRoot),
+						signal,
+					);
+					if (!currentDiscovery(projectId, discovery)) return [];
+					const visible: DiscoveredSession[] = [];
+					for (const candidate of candidates) {
+						const owner = options.store.threads.getBySessionId(
+							candidate.session.id,
+						);
+						if (owner && owner.projectId !== projectId) continue;
+						discovery.candidates.set(candidate.session.id, candidate);
+						if (!owner) visible.push(candidate.session);
+					}
+					return structuredClone(visible);
+				} catch {
+					if (discovery && discoveries.get(projectId) === discovery)
+						discoveries.delete(projectId);
+					return [];
+				}
+			}).catch(() => []);
+		},
+		importSession: async ({projectId, sessionId: input}) => {
+			const sessionId = validate(nanocoderSessionIdSchema, input);
+			getProject(projectId);
+			return runMetadataOperation(projectId, 'import-session', async lease => {
+				const existingOwner = () => {
+					const existing = options.store.threads.getBySessionId(sessionId);
+					if (existing && existing.projectId !== projectId)
+						throw new IpcFailure(
+							'DENIED',
+							'This saved session belongs to another project',
+						);
+					return existing;
+				};
+				existingOwner();
+				const discovery = discoveries.get(projectId);
+				if (!discovery || !currentDiscovery(projectId, discovery))
+					throw new IpcFailure(
+						'UNAVAILABLE',
+						'Refresh saved sessions before importing',
+					);
+				const candidate = discovery.candidates.get(sessionId);
+				if (!candidate)
+					throw new IpcFailure(
+						'DENIED',
+						'This saved session is not available for this project',
+					);
+				let root: string;
+				let cwd: string;
+				try {
+					[root, cwd] = await Promise.all([
+						canonicalPath(discovery.canonicalRoot),
+						canonicalPath(candidate.reportedCwd),
+					]);
+				} catch {
+					if (discoveries.get(projectId) === discovery)
+						discoveries.delete(projectId);
+					throw new IpcFailure(
+						'DENIED',
+						'The saved session folder is no longer available',
+					);
+				}
+				if (root !== discovery.canonicalRoot || cwd !== root) {
+					if (discoveries.get(projectId) === discovery)
+						discoveries.delete(projectId);
+					throw new IpcFailure(
+						'OUTSIDE_ROOT',
+						'The saved session folder changed',
+					);
+				}
+				projectOperations.assertMetadataCurrent(lease);
+				if (
+					!currentDiscovery(projectId, discovery) ||
+					discovery.candidates.get(sessionId) !== candidate
+				)
+					throw new IpcFailure(
+						'UNAVAILABLE',
+						'Refresh saved sessions before importing',
+					);
+				const existing = existingOwner();
+				if (existing) return structuredClone(existing);
+				const project = getProject(projectId);
+				return saveThread({
+					id: randomUUID(),
+					projectId,
+					nanocoderSessionId: sessionId,
+					title: candidate.session.title,
+					archiveState: 'active',
+					runState: 'ready',
+					lastActivityAt: candidate.session.lastActivityAt ?? now(),
+					sessionCwd: root,
+					mode: project.defaultMode,
+					viewOnlyReason: null,
+				});
+			});
+		},
 	};
 }

@@ -46,6 +46,7 @@ export interface ThreadRepository {
 		archiveState: ThreadInfo['archiveState'],
 	): ThreadInfo[];
 	get(projectId: string, threadId: string): ThreadInfo | undefined;
+	getBySessionId(sessionId: string): ThreadInfo | undefined;
 	getTitleManuallySet(projectId: string, threadId: string): boolean | undefined;
 	setTitle(input: {
 		projectId: string;

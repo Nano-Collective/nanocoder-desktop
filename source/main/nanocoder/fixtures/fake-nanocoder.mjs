@@ -51,7 +51,7 @@ const results = {
 						providers: {},
 						sessionCapabilities: {
 							...(mode === 'no-close' ? {} : {close: {}}),
-							list: {},
+							...(mode === 'no-list' ? {} : {list: {}}),
 							...(mode === 'no-delete' ? {} : {delete: {}}),
 							...(mode === 'no-resume' ? {} : {resume: {}}),
 						},
@@ -79,6 +79,22 @@ const results = {
 							: 'fake-session',
 					modes: modeState(),
 					...(mode === 'replay-gates' && {configOptions: replayConfig()}),
+				},
+	'session/list': () =>
+		mode === 'list-fails'
+			? undefined
+			: {
+					sessions: [
+						{
+							sessionId: 'discovered-session',
+							cwd: process.cwd(),
+							title:
+								mode === 'session-discovery'
+									? '<script>saved fixture</script>'
+									: 'existing saved session',
+							updatedAt: '2026-10-29T12:00:00.000Z',
+						},
+					],
 				},
 	'session/set_mode': () => (mode === 'mode-fails' ? undefined : {}),
 	'session/close': () => ({}),
@@ -123,13 +139,15 @@ function durableDelegations(sessionId, history) {
 // Replays an earlier exchange, as Nanocoder does, then answers with the mode state.
 async function resume(id, {sessionId}) {
 	if (mode === 'die-in-resume') process.exit(3);
-	const knownSession = scopedSessions
-		? typeof sessionId === 'string' &&
-			sessionId.startsWith(`${sessionPrefix}-`) &&
-			/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
-				sessionId.slice(sessionPrefix.length + 1),
-			)
-		: sessionId === 'fake-session';
+	const knownSession =
+		(mode === 'session-discovery' && sessionId === 'discovered-session') ||
+		(scopedSessions
+			? typeof sessionId === 'string' &&
+				sessionId.startsWith(`${sessionPrefix}-`) &&
+				/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+					sessionId.slice(sessionPrefix.length + 1),
+				)
+			: sessionId === 'fake-session');
 	if (!knownSession || mode === 'missing-session') {
 		send({
 			id,
@@ -484,7 +502,7 @@ async function runTurn(id, params) {
 	}
 	if (mode === 'streaming') return streamFixture(id, sessionId);
 	if (mode === 'subagents') return subagentFixture(id, params);
-	if (mode === 'reported-usage') {
+	if (mode === 'reported-usage' || mode === 'session-discovery') {
 		say(sessionId, 'Reported usage fixture.');
 		send({
 			id,

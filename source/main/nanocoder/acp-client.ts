@@ -70,6 +70,7 @@ export interface NanocoderConnection {
 	readonly agent: ConnectedAgent;
 	readonly stderr: StderrRing;
 	readonly exited: Promise<Exit>;
+	listSessions?(): Promise<unknown>;
 	newSession(mode: NanocoderMode): Promise<SessionInfo>;
 	resumeSession(
 		sessionId: string,
@@ -495,6 +496,25 @@ export async function connectNanocoder(
 		};
 	};
 
+	const listSessions = async (): Promise<unknown> => {
+		const failed = () =>
+			new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				'Nanocoder could not list saved sessions',
+			);
+		if (disposed) throw failed();
+		if (!agent.capabilities.sessions.list)
+			throw new NanocoderFailure(
+				'UNSUPPORTED',
+				'This version of Nanocoder cannot list saved sessions',
+			);
+		return connection.agent
+			.request(methods.agent.session.list, {cwd: options.root})
+			.catch(() => {
+				throw failed();
+			});
+	};
+
 	const deleteSession = async (sessionId: string): Promise<void> => {
 		if (!agent.capabilities.sessions.delete) {
 			throw new NanocoderFailure(
@@ -650,6 +670,7 @@ export async function connectNanocoder(
 		agent,
 		stderr,
 		exited,
+		listSessions,
 		newSession,
 		resumeSession,
 		deleteSession,
