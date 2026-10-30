@@ -63,9 +63,9 @@ export function ThreadRecoveryNotice({
 			)}
 			{missing && (
 				<p className="thread-recovery-note">
-					composer hidden. only thread metadata remains here, not Nanocoder’s
-					saved conversation. removing desktop metadata does not delete
-					Nanocoder history.
+					composer hidden. saved history is unavailable from Nanocoder. any
+					messages still shown are held in memory in this window only. removing
+					desktop metadata does not delete Nanocoder history.
 				</p>
 			)}
 		</Card>
