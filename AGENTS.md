@@ -37,6 +37,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/store/node-sqlite.ts` | `node:sqlite` adapter and online backup; library errors never expose SQL inputs |
 | `source/main/store/migrations/` | Numbered, transactional schema upgrades, with a backup before upgrading an existing database |
 | `source/main/store/migrations/003-manual-thread-titles.ts` | Main-only boolean for durable manual-title precedence; existing titles are conservatively protected (`CHAT-12`) |
+| `source/main/store/migrations/004-thread-execution-identities.ts`, `source/main/store/thread-execution-identities.ts` | Main-only bounded structural turn/execution identities, revision guards and atomic safe run metadata commits |
 | `source/main/store/repositories.ts` | Project/thread metadata only, scoped queries, canonical paths and cascade removal |
 | `source/main/store/validation.ts` | Allowlisted metadata schemas, including the settings/UI patches shared with IPC |
 | `source/main/nanocoder/supervisor-contracts.ts` | Main-only per-project supervisor interface |
@@ -59,6 +60,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/turn-events.ts`, `source/main/nanocoder/turn-metadata.ts` | Normalises SDK stream updates and allowlisted vendor metadata without adding capabilities |
 | `source/main/nanocoder/subagent-display.ts`, `source/shared/subagents.ts` | Bounded display-only delegation and permission source hints, never routing or answer authority |
 | `source/main/store/agent-runs.ts`, `source/main/nanocoder/subagent-runs.ts` | Passive metadata-only repository and lifecycle consumer; application composition awaits phase 1.8 identity/replay |
+| `source/main/threads/thread-history-observer.ts` | Disposable replay observation, exact identity/epoch checks and post-commit-only observer activation; ThreadService composition remains pending |
 | `source/renderer/transcript.ts`, `source/renderer/stream-batcher.ts` | Ordered immutable transcript patches and cancellable 16ms renderer batching |
 | `source/renderer/conversation-stream.tsx`, `source/renderer/agent-markdown.tsx`, `source/renderer/stream-commands.tsx` | U.4 stream rows, isolated inert Markdown and advertised-command draft suggestions |
 | `planning/streaming-conversation.md` | Phase 1.6 stream semantics, metadata boundaries, performance and remaining integration seams |

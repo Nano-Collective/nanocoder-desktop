@@ -1,3 +1,5 @@
+import type {AgentRunRepository} from '@/main/store/agent-runs';
+import type {ThreadHistoryRepository} from '@/main/store/thread-execution-identities';
 import type {
 	DesktopSettings,
 	ProjectInfo,
@@ -62,6 +64,8 @@ export interface DesktopStore {
 	updateUiState(patch: UiStatePatch): UiState;
 	projects: ProjectRepository;
 	threads: ThreadRepository;
+	threadHistory: ThreadHistoryRepository;
+	agentRuns: AgentRunRepository;
 	close(): void;
 }
 

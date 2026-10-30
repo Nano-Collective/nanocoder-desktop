@@ -32,6 +32,156 @@ import type {
 	TurnEvent,
 } from '@/shared/ipc';
 
+for (const kind of ['high', 'low'] as const) {
+	test(`CHAT-08 a new session acknowledgement refuses ${kind} surrogate before storing or prompting`, async t => {
+		const events: ProjectEvent[] = [];
+		let prepared = 0;
+		const f = await fixture(
+			t,
+			true,
+			event => {
+				if (event.type === 'turn') events.push(event);
+			},
+			false,
+			{
+				onSessionPrepared: () => {
+					prepared++;
+				},
+			},
+		);
+		const saved = await f.service.createThread({projectId: f.project.id});
+		await f.supervisor.ensureProcess(f.project);
+		const connection = f.supervisor.getConnection(f.project.id);
+		connection.newSession = async () => ({
+			id: kind === 'high' ? 'session\uD800' : 'session\uDFFF',
+			mode: 'normal',
+		});
+		let prompts = 0;
+		connection.prompt = async () => {
+			prompts++;
+			return {stopReason: 'end_turn'};
+		};
+		const error: unknown = await f.service
+			.promptThread({
+				projectId: f.project.id,
+				threadId: saved.id,
+				text: 'never sent',
+			})
+			.then(
+				() => undefined,
+				(error: unknown) => error,
+			);
+		t.is(f.store.threads.get(f.project.id, saved.id)?.nanocoderSessionId, null);
+		t.true(error instanceof IpcFailure);
+		if (error instanceof IpcFailure) {
+			t.is(error.code, 'VALIDATION');
+			t.is(error.message, 'Invalid desktop metadata');
+		}
+		t.is(prompts, 0);
+		t.is(prepared, 0);
+		t.deepEqual(events, []);
+		t.is(f.supervisor.getState(f.project.id).status, 'stopped');
+	});
+}
+
+test('CHAT-08 a well-formed Unicode new acknowledgement is saved and prompted without changing its identity', async t => {
+	const f = await fixture(t, true);
+	const saved = await f.service.createThread({projectId: f.project.id});
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	const sessionId = 'session/é/\u{1F680}';
+	connection.newSession = async () => ({id: sessionId, mode: 'normal'});
+	let prompts = 0;
+	connection.prompt = async id => {
+		prompts++;
+		t.is(id, sessionId);
+		t.is(
+			f.store.threads.get(f.project.id, saved.id)?.nanocoderSessionId,
+			sessionId,
+		);
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({
+		projectId: f.project.id,
+		threadId: saved.id,
+		text: 'fixture prompt',
+	});
+	t.is(prompts, 1);
+	t.is(
+		f.store.threads.get(f.project.id, saved.id)?.nanocoderSessionId,
+		sessionId,
+	);
+});
+
+for (const path of ['open', 'recovery'] as const) {
+	for (const kind of ['high', 'low', 'mismatched'] as const) {
+		test(`CHAT-08 ${path} refuses a ${kind} resumed acknowledgement before mode history or hooks change`, async t => {
+			let prepared = 0;
+			const f = await fixture(t, true, undefined, false, {
+				onSessionPrepared: () => {
+					prepared++;
+				},
+			});
+			const saved = seed(f.project, {nanocoderSessionId: 'fake-session'});
+			f.store.threads.save(saved);
+			const request = {projectId: f.project.id, threadId: saved.id};
+			await f.supervisor.ensureProcess(f.project);
+			if (path === 'recovery') await f.service.openThread(request);
+			const before = await f.service.getThreadSnapshot(request);
+			const beforePrepared = prepared;
+			const connection = f.supervisor.getConnection(f.project.id);
+			const id = {
+				high: 'session\uD800',
+				low: 'session\uDFFF',
+				mismatched: 'different-session',
+			}[kind];
+			connection.resumeSession = async () => ({
+				session: {id, mode: 'plan'},
+				history: [{type: 'text', text: 'refused replay fixture'}],
+			});
+			await t.throwsAsync(
+				path === 'open'
+					? f.service.openThread(request)
+					: f.service.restore(
+							f.project,
+							connection,
+							new AbortController().signal,
+						),
+				{code: kind === 'mismatched' ? 'DENIED' : 'VALIDATION'},
+			);
+			const after = await f.service.getThreadSnapshot(request);
+			t.is(after.thread.nanocoderSessionId, 'fake-session');
+			t.is(after.thread.mode, before.thread.mode);
+			t.deepEqual(after.events, before.events);
+			t.is(prepared, beforePrepared);
+		});
+	}
+	test(`CHAT-08 ${path} keeps a well-formed Unicode resumed identity exact`, async t => {
+		const f = await fixture(t, true);
+		const sessionId = 'session/é/\u{1F680}';
+		const saved = seed(f.project, {nanocoderSessionId: sessionId});
+		f.store.threads.save(saved);
+		const request = {projectId: f.project.id, threadId: saved.id};
+		await f.supervisor.ensureProcess(f.project);
+		const connection = f.supervisor.getConnection(f.project.id);
+		connection.resumeSession = async id => {
+			t.is(id, sessionId);
+			return {session: {id, mode: 'plan'}, history: []};
+		};
+		await f.service.openThread(request);
+		if (path === 'recovery')
+			await f.service.restore(
+				f.project,
+				connection,
+				new AbortController().signal,
+			);
+		t.is(
+			f.store.threads.get(f.project.id, saved.id)?.nanocoderSessionId,
+			sessionId,
+		);
+	});
+}
+
 async function fixture(
 	t: ExecutionContext,
 	enableRuntime = false,

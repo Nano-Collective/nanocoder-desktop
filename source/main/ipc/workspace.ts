@@ -5,6 +5,7 @@ import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {
 	defaultMode,
 	mode,
+	nanocoderSessionIdSchema,
 	settingsPatch,
 	uiPatch,
 } from '@/main/store/validation';
@@ -70,7 +71,7 @@ const workspaceSchemas: {
 	discoverSessions: projectRequest,
 	importSession: z.strictObject({
 		...project,
-		sessionId: z.string().min(1).max(200),
+		sessionId: nanocoderSessionIdSchema,
 	}),
 };
 

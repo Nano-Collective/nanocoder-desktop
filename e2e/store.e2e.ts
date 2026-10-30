@@ -256,7 +256,7 @@ test('the built main process persists settings and UI state under userData', asy
 			readOnly: true,
 		});
 		try {
-			expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(3);
+			expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(4);
 			expect(db.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal');
 		} finally {
 			db.close();

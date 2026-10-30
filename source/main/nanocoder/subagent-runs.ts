@@ -41,6 +41,8 @@ const contextSchema = z.strictObject({
 	replayCommitted: z.boolean().optional(),
 });
 
+export {contextSchema as subagentRunContextSchema};
+
 const endSchema = contextSchema.pick({
 	projectId: true,
 	threadId: true,

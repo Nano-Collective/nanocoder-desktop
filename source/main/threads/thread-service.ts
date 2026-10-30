@@ -13,7 +13,11 @@ import type {
 } from '@/main/nanocoder/supervisor';
 import {canonicalPath} from '@/main/paths';
 import type {DesktopStore} from '@/main/store/contracts';
-import {threadTitlePatch, validate} from '@/main/store/validation';
+import {
+	nanocoderSessionIdSchema,
+	threadTitlePatch,
+	validate,
+} from '@/main/store/validation';
 import {
 	createProjectOperations,
 	type ProjectOperationLease,
@@ -38,6 +42,12 @@ export interface OwnedSessionContext {
 	session: SessionInfo;
 	source: 'new' | 'resume';
 	requestedMode: NanocoderMode;
+}
+
+function assertResumedIdentity(expected: string, session: SessionInfo): void {
+	const id = validate(nanocoderSessionIdSchema, session.id);
+	if (id !== expected)
+		throw new IpcFailure('DENIED', 'The resumed session changed');
 }
 
 interface ThreadOptions {
@@ -561,6 +571,7 @@ export function createThreadService(
 			connection.resumeSession(sessionId, startingMode(thread, project)),
 		);
 		signal.throwIfAborted();
+		assertResumedIdentity(sessionId, restored.session);
 		const request = {projectId: thread.projectId, threadId: thread.id};
 		const current = getThread(request);
 		if (current.nanocoderSessionId !== sessionId)
@@ -699,6 +710,7 @@ export function createThreadService(
 							startingMode(thread, project),
 						),
 					);
+					assertResumedIdentity(thread.nanocoderSessionId, restored.session);
 					const fresh = await check();
 					const acknowledged = updateThread(fresh, () => ({
 						mode: restored.session.mode,
@@ -876,7 +888,7 @@ export function createThreadService(
 					if (signal.aborted) return failure(signal.reason);
 					if (
 						error instanceof IpcFailure &&
-						['DENIED', 'BUSY'].includes(error.code)
+						['DENIED', 'BUSY', 'VALIDATION'].includes(error.code)
 					)
 						return failure(error);
 					viewOnly(request, error);
@@ -1088,11 +1100,15 @@ export function createThreadService(
 							);
 							signal.throwIfAborted();
 							try {
+								const sessionId = validate(
+									nanocoderSessionIdSchema,
+									session.id,
+								);
 								thread = updateThread(thread, () => ({
-									nanocoderSessionId: session.id,
+									nanocoderSessionId: sessionId,
 									mode: session.mode,
 								}));
-								projectOperations.bindSession(lease, session.id);
+								projectOperations.bindSession(lease, sessionId);
 							} catch (error) {
 								await options.supervisor
 									.stop(project.id)

@@ -1,6 +1,16 @@
 import path from 'node:path';
 import {z} from 'zod';
 import {IpcFailure} from '@/main/ipc/handle-request';
+import {subagentLabel} from '@/shared/subagents';
+
+// SQLite replaces unpaired surrogates instead of preserving opaque IDs.
+export const boundedIdentity = (maxBytes: number) =>
+	z
+		.string()
+		.refine(
+			value => !!subagentLabel(value, maxBytes) && !/\p{Cs}/u.test(value),
+		);
+export const nanocoderSessionIdSchema = boundedIdentity(200);
 
 export const mode = z.enum([
 	'normal',
@@ -65,7 +75,7 @@ export const projectSchema = z.strictObject({
 export const threadSchema = z.strictObject({
 	id,
 	projectId: id,
-	nanocoderSessionId: z.string().min(1).max(200).nullable(),
+	nanocoderSessionId: nanocoderSessionIdSchema.nullable(),
 	title: z.string().min(1).max(500),
 	archiveState: z.enum(['active', 'archived']),
 	runState: z.enum([
