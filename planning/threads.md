@@ -48,9 +48,50 @@ shows the actual resume/mode reason and refuses prompts. Other thread metadata
 and the initialised ACP process remain usable. Explicit stop-and-reopen retries
 the same history, never `session/new`. Automatic recovery starts from an
 already-crashed process and remains unavailable if that saved history cannot
-be restored safely. Full durable replay/discovery/import and the complete
-view-only notice/actions remain phase 1.8 (`CHAT-09`); mode controls remain 1.9.
-Passive subagent metadata modules remain uncomposed (`SUB-05`).
+be restored safely. Phase 1.8 now distinguishes missing history from retryable
+resume/mode/capability failures. Only actual `NOT_FOUND` becomes view-only:
+the existing composer guard hides input, while a dashed muted notice retains
+desktop title/activity and calls the existing metadata-only new/remove paths
+(`CHAT-09`). A retryable failure stays failed with its safe reason and an
+explicit action that reopens only that saved thread, without queuing its draft.
+Built tests verify notice tokens/contrast, keyboard focus and native
+retry/new/remove in both themes. Retry resumes the exact saved ID with safe
+mode confirmation and no queued prompt; new/remove leave ACP diagnostics
+unchanged. Discovery/import use the metadata flow below; model and mode
+controls retain their separately owned phase 1.9 hooks.
+
+### Saved-session discovery and import
+
+`ACP-18` and `DEC-34` use the already-ready, advertised connection only.
+`session/list` sends the canonical root as `cwd`; main's bounded parser admits
+native exact-root paths only, never nested projects or foreign titles.
+The pinned build's exact normalised-string filter can omit aliases; empty or
+failed discovery is not evidence that a known thread's history is missing.
+See the source and path rationale in
+[`acp-integration.md`](acp-integration.md#session-discovery-and-identity).
+
+An import uses the same metadata authority as archive/remove, validates the
+shared opaque ID before lookups and revalidates the original offered path.
+Global session ownership refuses another project without disclosing its
+title. With a current verified offer, re-import returns a same-project row
+unchanged, even when archived or manually renamed. A new imported row takes
+the project's non-`yolo` default and stores allowlisted metadata only.
+Import never launches, asks for trust, copies history, selects a thread,
+resumes or sends a draft. Opening explicitly later resumes that exact ID and
+sets its safe mode before prompting is possible.
+
+The rail's separate plain-props list uses native buttons and plain-text
+titles/activity. Its A-owned scoped controller ignores late discovery/import
+results after project changes, offline transitions or disposal. Thread
+publications filter known IDs locally without another discovery or automatic
+open. Both-theme built keyboard checks cover focus return, retained unqueued
+drafts, metadata-only IPC, explicit resume and cross-project ownership.
+The [durable replay checkpoint](durable-replay.md) now composes atomic
+structural replay IDs and passive run metadata before prefix replacement.
+Live production now commits turn/execution identities and owning terminal
+metadata through the same observer and batch allocator before publication.
+Replay loading/flush gates are implemented. Complete `SUB-05` acceptance remains pending.
+The merged 1.9 controls share the same authority.
 
 ## Bootstrap metadata
 

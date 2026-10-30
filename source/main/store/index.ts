@@ -1,5 +1,6 @@
 import {realpathSync, statSync} from 'node:fs';
 import {IpcFailure} from '@/main/ipc/handle-request';
+import {agentRunRepository} from '@/main/store/agent-runs';
 import type {
 	DesktopStore,
 	DesktopStoreFactory,
@@ -18,6 +19,7 @@ import {
 	reserveBackupPath,
 } from '@/main/store/paths';
 import {repositories} from '@/main/store/repositories';
+import {threadHistoryRepository} from '@/main/store/thread-execution-identities';
 import {
 	settingsSchema,
 	uiPatch,
@@ -71,6 +73,8 @@ function createStore(database: SqlDatabase): DesktopStore {
 	let closed = false;
 	return {
 		...repositories(database),
+		threadHistory: threadHistoryRepository(database),
+		agentRuns: agentRunRepository(database),
 		getSettings,
 		updateSettings: patch =>
 			transaction(database, () => {

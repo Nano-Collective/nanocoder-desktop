@@ -28,24 +28,26 @@ export interface AgentRunRepository {
 	save(projectId: string, row: AgentRunMetadata): void;
 }
 
+const id = z.uuid();
+export const agentRunMetadataSchema = z.strictObject({
+	id,
+	threadId: id,
+	parentRunId: z.null(),
+	nanocoderChildId: z.null(),
+	role: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/),
+	status: z.enum([
+		'pending',
+		'running',
+		'completed',
+		'failed',
+		'interrupted',
+		'unknown',
+	]),
+});
+
 // Composition waits for phase 1.8's main-owned replay identity.
 export function agentRunRepository(database: SqlDatabase): AgentRunRepository {
-	const id = z.uuid();
-	const schema = z.strictObject({
-		id,
-		threadId: id,
-		parentRunId: z.null(),
-		nanocoderChildId: z.null(),
-		role: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/),
-		status: z.enum([
-			'pending',
-			'running',
-			'completed',
-			'failed',
-			'interrupted',
-			'unknown',
-		]),
-	});
+	const schema = agentRunMetadataSchema;
 	const fromRow = (row: Record<string, SqlValue>): AgentRunMetadata =>
 		validate(schema, {
 			id: row.id,

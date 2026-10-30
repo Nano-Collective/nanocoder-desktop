@@ -176,3 +176,166 @@ test('SUB-05 stale generation, wrong scope, child-only packets and removed threa
 		),
 	);
 });
+
+function staging(source: Map<string, AgentRunMetadata>) {
+	const rows = new Map(
+		[...source].map(([id, row]) => [id, structuredClone(row)]),
+	);
+	let reads = 0;
+	let writes = 0;
+	const repository: AgentRunRepository = {
+		get: (_projectId, threadId, id) => {
+			reads++;
+			const row = rows.get(id);
+			return row?.threadId === threadId ? structuredClone(row) : undefined;
+		},
+		list: (_projectId, threadId) => {
+			reads++;
+			return structuredClone(
+				[...rows.values()].filter(row => row.threadId === threadId),
+			);
+		},
+		save: (_projectId, row) => {
+			writes++;
+			rows.set(row.id, structuredClone(row));
+		},
+	};
+	return {repository, rows, counts: () => ({reads, writes})};
+}
+
+test('SUB-05 forking is passive and a staged update changes neither original rows nor its seen watermark', t => {
+	const f = fixture();
+	t.true(f.observer.observe(f.context, f.tool));
+	const before = structuredClone([...f.rows]);
+	const stage = staging(f.rows);
+	const fork = f.observer.fork(stage.repository);
+	t.deepEqual(stage.counts(), {reads: 0, writes: 0});
+	t.deepEqual([...f.rows], before);
+	t.false(fork.observe(f.context, f.tool));
+	t.true(
+		fork.observe({...f.context, sequence: 2}, {...f.tool, status: 'failed'}),
+	);
+	t.is(stage.rows.get(f.context.executionId)?.status, 'failed');
+	t.deepEqual([...f.rows], before);
+	fork.dispose();
+	t.true(
+		f.observer.observe(
+			{...f.context, sequence: 2},
+			{...f.tool, status: 'completed'},
+		),
+	);
+	t.is(f.rows.get(f.context.executionId)?.status, 'completed');
+});
+
+for (const field of ['generations', 'ended', 'removed', 'disposed'] as const) {
+	test(`SUB-05 discarding a fork leaves the original ${field} state unchanged`, t => {
+		const f = fixture();
+		t.true(f.observer.observe(f.context, f.tool));
+		const before = structuredClone([...f.rows]);
+		const stage = staging(f.rows);
+		const fork = f.observer.fork(stage.repository);
+		const {projectId, threadId, sessionId, turnId, generation} = f.context;
+		if (field === 'generations')
+			t.true(fork.observe({...f.context, generation: 3, sequence: 2}, f.tool));
+		else if (field === 'ended')
+			t.true(
+				fork.endTurn(
+					{projectId, threadId, sessionId, turnId, generation, sequence: 3},
+					'cancelled',
+				),
+			);
+		else if (field === 'removed') fork.forgetThread(threadId);
+		else fork.dispose();
+		t.deepEqual([...f.rows], before);
+		t.true(
+			f.observer.observe({...f.context, generation: 2, sequence: 2}, f.tool),
+		);
+		if (field === 'ended')
+			t.true(
+				f.observer.endTurn(
+					{projectId, threadId, sessionId, turnId, generation: 2, sequence: 3},
+					'failed',
+				),
+			);
+		fork.dispose();
+	});
+}
+
+for (const inherited of [
+	'seen',
+	'generations',
+	'ended',
+	'removed',
+	'disposed',
+] as const) {
+	test(`SUB-05 a fork inherits the original ${inherited} refusal without sharing mutable memory`, t => {
+		const f = fixture();
+		t.true(f.observer.observe({...f.context, generation: 3}, f.tool));
+		if (inherited === 'ended') {
+			const {projectId, threadId, sessionId, turnId} = f.context;
+			t.true(
+				f.observer.endTurn(
+					{projectId, threadId, sessionId, turnId, generation: 3, sequence: 2},
+					'cancelled',
+				),
+			);
+		} else if (inherited === 'removed')
+			f.observer.forgetThread(f.context.threadId);
+		else if (inherited === 'disposed') f.observer.dispose();
+		const stage = staging(f.rows);
+		const fork = f.observer.fork(stage.repository);
+		t.deepEqual(stage.counts(), {reads: 0, writes: 0});
+		const context =
+			inherited === 'seen'
+				? {...f.context, generation: 3}
+				: inherited === 'generations'
+					? {
+							...f.context,
+							sequence: 4,
+							generation: 2,
+							executionId: randomUUID(),
+							turnId: randomUUID(),
+						}
+					: {...f.context, generation: 4, sequence: 4};
+		t.false(fork.observe(context, f.tool));
+		t.is(stage.counts().writes, 0);
+		fork.dispose();
+	});
+}
+
+test('SUB-05 two forks keep separate watermarks and a throwing stage cannot change the original', t => {
+	const f = fixture();
+	t.true(f.observer.observe(f.context, f.tool));
+	const one = staging(f.rows);
+	const two = staging(f.rows);
+	const first = f.observer.fork(one.repository);
+	const second = f.observer.fork(two.repository);
+	t.true(
+		first.observe(
+			{...f.context, sequence: 2, generation: 3},
+			{...f.tool, status: 'failed'},
+		),
+	);
+	t.true(
+		second.observe(
+			{...f.context, sequence: 2, generation: 2},
+			{...f.tool, status: 'completed'},
+		),
+	);
+	t.is(one.rows.get(f.context.executionId)?.status, 'failed');
+	t.is(two.rows.get(f.context.executionId)?.status, 'completed');
+	t.is(f.rows.get(f.context.executionId)?.status, 'running');
+	const bad = f.observer.fork({
+		...two.repository,
+		save: () => {
+			throw new Error('synthetic stage failure');
+		},
+	});
+	t.throws(() => bad.observe({...f.context, sequence: 3}, f.tool), {
+		message: 'synthetic stage failure',
+	});
+	t.true(f.observer.observe({...f.context, sequence: 2}, f.tool));
+	first.dispose();
+	second.dispose();
+	bad.dispose();
+});

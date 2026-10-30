@@ -169,6 +169,7 @@ const StreamRow = React.memo(function StreamRow({
 						task={item.delegation.task}
 						status={item.status}
 						history={item.delegation.history}
+						historyOutcome={item.historyOutcome}
 						running={active}
 						stopping={stopping}
 						outcome={item.turnOutcome ?? outcome}

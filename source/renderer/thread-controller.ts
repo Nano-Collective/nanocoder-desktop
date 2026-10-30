@@ -34,6 +34,7 @@ export interface ThreadControllerState {
 	promptingThreadId: string | null;
 	cancellingThreadIds: string[];
 	error: string | null;
+	replay?: Record<string, 'replaying' | 'failed'>;
 }
 
 export function createThreadController(options: {
@@ -86,6 +87,7 @@ export function createThreadController(options: {
 			disposed ||
 			!projectId ||
 			state.loading ||
+			(kind !== 'cancel' && state.replay?.[threadId] !== undefined) ||
 			commands.has(key) ||
 			!state.threads.some(
 				thread => thread.id === threadId && thread.projectId === projectId,
@@ -145,6 +147,11 @@ export function createThreadController(options: {
 			threads: state.threads.filter(row => row.id !== threadId),
 			activeThreadId:
 				state.activeThreadId === threadId ? null : state.activeThreadId,
+			...(state.replay && {
+				replay: Object.fromEntries(
+					Object.entries(state.replay).filter(([id]) => id !== threadId),
+				),
+			}),
 		});
 		if (existed) options.onRemoved?.(threadId);
 	};
@@ -195,6 +202,13 @@ export function createThreadController(options: {
 	const stream = createThreadStream({
 		onSnapshot: snapshot => options.onSnapshot?.(snapshot),
 		onTurn: event => options.onTurn?.(event),
+		onReplay: (threadId, phase) => {
+			if (!state.threads.some(thread => thread.id === threadId)) return;
+			const replay = {...state.replay};
+			if (phase === 'complete') delete replay[threadId];
+			else replay[threadId] = phase === 'failed' ? 'failed' : 'replaying';
+			update({replay});
+		},
 		onGap: (threadId, token) => {
 			void readGap(threadId, token);
 		},
@@ -276,6 +290,7 @@ export function createThreadController(options: {
 			pending: false,
 			...commandState(),
 			error: null,
+			...(state.replay && {replay: {}}),
 		});
 		if (!projectId) return;
 		try {
@@ -369,6 +384,8 @@ export function createThreadController(options: {
 				selected.runState === 'view-only' ||
 				state.promptingThreadId !== null ||
 				state.cancellingThreadIds.length > 0 ||
+				state.replay?.[threadId] !== undefined ||
+				Object.values(state.replay ?? {}).includes('replaying') ||
 				state.threads.some(
 					thread =>
 						thread.runState === 'running' ||

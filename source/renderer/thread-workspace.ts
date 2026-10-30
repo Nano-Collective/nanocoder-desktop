@@ -175,7 +175,8 @@ export function createThreadWorkspace(options: {
 				!threadId ||
 				workspace.pending ||
 				workspace.loading ||
-				workspace.promptingThreadId
+				workspace.promptingThreadId ||
+				workspace.replay?.[threadId] !== undefined
 			)
 				return null;
 			const ticket = conversations.beginTurn(threadId);

@@ -10,6 +10,7 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 	total,
 	status,
 	history = false,
+	historyOutcome,
 	running = false,
 	stopping = false,
 	outcome,
@@ -22,6 +23,7 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 	total: number;
 	status?: string | null;
 	history?: boolean;
+	historyOutcome?: unknown;
 	running?: boolean;
 	stopping?: boolean;
 	outcome?: 'completed' | 'failed' | 'cancelled';
@@ -38,7 +40,11 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 	}, []);
 	const unfinished = status === 'pending' || status === 'in_progress';
 	const state = history
-		? 'historical outcome not reported'
+		? historyOutcome === 'failed' || historyOutcome === 'interrupted'
+			? historyOutcome
+			: historyOutcome === 'completed'
+				? 'previously reported completed'
+				: 'historical outcome not reported'
 		: unfinished && outcome === 'cancelled'
 			? 'interrupted'
 			: unfinished && outcome === 'failed'
@@ -67,11 +73,17 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 					{subagentLabel(task) ?? name}
 				</span>
 				<span className="subagent-depth">depth not reported · limit 2</span>
-				<span>
+				<span
+					className={
+						history && (state === 'failed' || state === 'interrupted')
+							? 'subagent-status--error'
+							: undefined
+					}
+				>
 					<span aria-hidden="true">
 						{state === 'completed'
 							? '✓'
-							: state === 'failed'
+							: state === 'failed' || (history && state === 'interrupted')
 								? '✕'
 								: state === 'running'
 									? '◐'

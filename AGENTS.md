@@ -37,6 +37,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/store/node-sqlite.ts` | `node:sqlite` adapter and online backup; library errors never expose SQL inputs |
 | `source/main/store/migrations/` | Numbered, transactional schema upgrades, with a backup before upgrading an existing database |
 | `source/main/store/migrations/003-manual-thread-titles.ts` | Main-only boolean for durable manual-title precedence; existing titles are conservatively protected (`CHAT-12`) |
+| `source/main/store/migrations/004-thread-execution-identities.ts`, `source/main/store/thread-execution-identities.ts` | Main-only bounded structural turn/execution identities, revision guards and atomic safe run metadata commits |
 | `source/main/store/repositories.ts` | Project/thread metadata only, scoped queries, canonical paths and cascade removal |
 | `source/main/store/validation.ts` | Allowlisted metadata schemas, including the settings/UI patches shared with IPC |
 | `source/main/nanocoder/supervisor-contracts.ts` | Main-only per-project supervisor interface |
@@ -49,8 +50,9 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/launch.ts` | Starts Nanocoder with an argument array and no shell |
 | `source/main/nanocoder/acp-client.ts` | Starts `nanocoder --acp` in the project root, sends `initialize`, and opens or resumes sessions with their mode set |
 | `source/main/nanocoder/session-title.ts` | Bounded, allowlisted parsing for main-only Nanocoder title notifications |
+| `source/main/threads/session-discovery.ts`, `source/main/nanocoder/session-discovery.acp.ts` | Bounded native exact-root saved-session discovery and pinned real-ACP listing/resume proof (`ACP-18`, `DEC-34`) |
 | `source/main/threads/thread-service.ts` | Metadata-first threads, mapped transient events, main-only activity/recovery/detach adapters and separately confirmed history deletion |
-| `source/main/threads/project-operations.ts`, `planning/project-operations.md` | Shared main-only leases, ThreadService preparation/prompt/recovery hooks, live-mode projection and detach settlement barriers |
+| `source/main/threads/project-operations.ts`, `planning/project-operations.md` | Shared branded execution/metadata/confirmation leases, owned thread mutations, active-turn exceptions and preparation/recovery/detach settlement barriers |
 | `source/main/controls/`, `planning/model-and-mode-controls.md` | Shared-authority model offers, memory-only pending/live modes, cancel-default native yolo consent and owned hooks; preserve their wiring in phase 1.8 composition |
 | `source/main/nanocoder/control-options.ts`, `source/main/nanocoder/session-controls.ts` | Bounded known offers, acknowledgement-gated modes and process-wide config uncertainty |
 | `source/main/nanocoder/trust.ts` | Reads Nanocoder's trust refusals and runs the short trust launch (`DEC-30`) |
@@ -61,7 +63,9 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/permissions.ts` | Holds each permission request until the user answers; only an option Nanocoder offered counts |
 | `source/main/nanocoder/turn-events.ts`, `source/main/nanocoder/turn-metadata.ts` | Normalises SDK stream updates and allowlisted vendor metadata without adding capabilities |
 | `source/main/nanocoder/subagent-display.ts`, `source/shared/subagents.ts` | Bounded display-only delegation and permission source hints, never routing or answer authority |
-| `source/main/store/agent-runs.ts`, `source/main/nanocoder/subagent-runs.ts` | Passive metadata-only repository and lifecycle consumer; application composition awaits phase 1.8 identity/replay |
+| `source/main/store/agent-runs.ts`, `source/main/nanocoder/subagent-runs.ts` | Metadata-only repository and forkable passive observer; ThreadService owns atomic live/replay association |
+| `source/main/threads/thread-history-observer.ts` | Scoped atomic live/replay observation, disposable staging, strict slot/epoch guards and post-commit-only observer activation |
+| `source/main/threads/thread-history-mapping.ts`, `source/main/threads/thread-live-mapping.ts`, `source/main/threads/thread-sequence.ts`, `planning/durable-replay.md` | Structural replay and live identities through one main-only batch allocator, bounded session replay and opaque readiness gates |
 | `source/renderer/transcript.ts`, `source/renderer/stream-batcher.ts` | Ordered immutable transcript patches and cancellable 16ms renderer batching |
 | `source/renderer/conversation-stream.tsx`, `source/renderer/agent-markdown.tsx`, `source/renderer/stream-commands.tsx` | U.4 stream rows, isolated inert Markdown and advertised-command draft suggestions |
 | `source/renderer/stream-announcements.tsx` | A11Y-04/05 clock-injected lifecycle/finished-response speech and one persistent modal-aware polite live node |
@@ -73,6 +77,9 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/recovery-tools.tsx` | Plain-props process recovery and captured diagnostics controls |
 | `source/renderer/app-shell.tsx`, `source/renderer/styles/app-shell.css` | U.2 grid and plain-child rail/tools slots; inspector hidden at 840px and below |
 | `source/renderer/thread-rail.tsx`, `source/renderer/thread-rail-model.ts` | Plain-prop U.3 thread groups, state glyphs and metadata actions; presentation uses `styles/threads.css` |
+| `source/renderer/thread-recovery-notice.tsx` | Plain-prop CHAT-09 missing-history metadata/actions and explicit same-thread retry; view-only keeps the composer hidden |
+| `source/renderer/thread-composer-state.ts` | App-only draft visibility/editability projection; runState, not reason presence, distinguishes retryable and view-only |
+| `source/renderer/session-import-controller.ts`, `source/renderer/use-session-imports.ts`, `source/renderer/session-import-list.tsx` | Separately scoped metadata-only import offers, stale-result guards and plain-props native actions; no automatic selection or prompt |
 | `source/renderer/thread-palette.ts` | New, rename and archive palette commands sharing the rail's callbacks and refusal policy |
 | `source/renderer/thread-controller.ts` | Scoped thread metadata, snapshot/open bridge calls, isolated project/chat sequences and stale async/disposal guards |
 | `source/renderer/thread-stream.ts` | Per-thread transient sequence guards, snapshot-prefix replacement and buffered live delivery; separate from project metadata sequencing |
@@ -92,13 +99,17 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/capabilities.ts` | Records `initialize` capabilities and builds feature gates with reasons; extensions need safe probes |
 | `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp`, a scripted model provider and test helpers, including the setup shared by the `*.acp.ts` tests |
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
+| `source/shared/thread-replay.ts` | Strict optional display-only replay markers and readiness refusal copy; epochs never enter a request or authorise an action |
 | `source/preload/index.ts` | The `window.desktop` bridge |
 | `e2e/*.e2e.ts` | Playwright tests against the built app |
 | `e2e/store.e2e.ts` | Built-main persistence, migration backup, corruption recovery and storage refusal tests |
 | `e2e/projects.e2e.ts` | Isolated-profile project persistence, native trust, recents, relocation and trust-revocation tests |
 | `e2e/supervisor.e2e.ts` | Built-main quit while a child is still initialising, including child-exit verification |
-| `e2e/supervisor-recovery.e2e.ts` | Crash/retry, saved-history replay, crash-loop limits and reviewed diagnostics refusals |
+| `e2e/supervisor-recovery.e2e.ts` | Crash/retry, saved-history replay, both-theme CHAT-09 keyboard/native recovery actions, crash-loop limits and reviewed diagnostics refusals |
 | `e2e/streaming.e2e.ts` | Fake stream cadence, ordered rendering, input/scroll/frame response, safe resources and multi-width stream QA |
+| `e2e/replay-gates.e2e.ts` | Mounted replay success/failure refusals, editable unqueued drafts and 200-message post-replay usability timing (`PERF-03`) |
+| `e2e/session-import.e2e.ts` | Both-theme keyboard saved-session import, no ACP/selection/draft side effects, explicit same-session resume and project ownership |
+| `e2e/session-import-focus.e2e.ts`, `e2e/qa/session-import-focus-harness.ts` | Mounted pending-import composer/scope focus guards and preserved keyboard-only return in both themes |
 | `e2e/stream-announcements.e2e.ts`, `e2e/qa/stream-announcement-harness.ts` | Isolated fake-clock speech, accessibility-tree/modal-host checks and lifecycle/approval focus checks |
 | `e2e/subagents.e2e.ts`, `e2e/qa/subagent-harness.ts` | Fake delegation/approval/cancel, card focus and stop-owner/refusal tests; `subagents.acp.ts` checks real pinned ACP |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |

@@ -365,13 +365,13 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 - [ ] Resume through `session/resume` with full replay (`CHAT-08`, `ACP-06`, `ACP-07`)
 - [ ] View-only threads with a reason and recovery actions (`CHAT-09`, `ACP-19`)
-- [ ] Session discovery and import with client-side path matching (`ACP-18`)
+- [ ] Session discovery and import with native exact-root matching (`ACP-18`, `DEC-34`)
 
 **Results we want**
 
 - [ ] A thread continues with its context after the app and Nanocoder restart
 - [ ] A thread whose session file was deleted opens view-only and says why
-- [ ] Sessions started from a subdirectory with the CLI are found and offered for import
+- [ ] Exact-root CLI sessions are offered for explicit import by an already-ready connection; nested folders are intentionally excluded because they may have a separate configuration or trust scope (`DEC-34`). Listing is best-effort and may omit path aliases.
 
 ### Phase 1.9: controls and the one-root-turn rule
 
@@ -395,7 +395,7 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 - [x] Subagent approvals carry bounded display attribution in the existing queue (`SUB-03`), without guessing a parent from a shared name; approved is not successful ([`permissions.spec.ts`](../source/main/nanocoder/permissions.spec.ts), [`subagents.acp.ts`](../source/main/nanocoder/subagents.acp.ts))
 - [x] Stop cancels the entire turn and says so (`SUB-04`), including all pending permissions; known interrupted/failed display outcomes remain on their cards ([`subagents.e2e.ts`](../e2e/subagents.e2e.ts))
 - [x] Informational bounds and safe tool-card fallback when child details are missing (`SUB-06`, `SUB-07`), without a fabricated tree or child action ([implementation](subagents.md))
-- [ ] `agent_run` rows per actual run (`SUB-05`): tested passive repository/consumer only, not composed; stable main-owned turn/run identity and committed replay await phase 1.8 ([integration contract](subagents.md#sub-05-remains-pending))
+- [ ] `agent_run` rows per actual run (`SUB-05`): phase 1.8 composes stable main-owned live/replay identities and atomic safe run metadata commits, with a fake whole-app/child restart proof. Independent full phase 1.8/SUB-05 acceptance remains pending ([implementation and limits](subagents.md#sub-05-remains-pending), [replay and renderer gates](durable-replay.md)).
 
 **Results we want**
 

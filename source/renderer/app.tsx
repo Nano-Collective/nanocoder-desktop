@@ -7,17 +7,21 @@ import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
 import {RecentProjects} from '@/renderer/recent-projects';
 import {RecoveryTools} from '@/renderer/recovery-tools';
+import {SessionImportList} from '@/renderer/session-import-list';
 import {
 	acpBadge,
 	observeSupervisor,
 	type SupervisorIndex,
 } from '@/renderer/supervisor-state';
+import {threadComposerState} from '@/renderer/thread-composer-state';
 import {threadPalette} from '@/renderer/thread-palette';
 import {ThreadRail} from '@/renderer/thread-rail';
+import {ThreadRecoveryNotice} from '@/renderer/thread-recovery-notice';
 import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, Divider, StatusBadge} from '@/renderer/ui';
 import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
+import {useSessionImports} from '@/renderer/use-session-imports';
 import {useThreads} from '@/renderer/use-threads';
 import {CONFIG_UNCERTAINTY_REASON} from '@/shared/control-reasons';
 import type {
@@ -29,6 +33,7 @@ import type {
 	NanocoderRuntime,
 	ThreadInfo,
 } from '@/shared/ipc';
+import {REPLAY_FAILURE_REASON, REPLAY_REASON} from '@/shared/thread-replay';
 
 function FeatureDetails({gates}: {gates: CapabilityGates}) {
 	return (
@@ -109,6 +114,12 @@ export function App() {
 	const processState = selected?.state ?? null;
 	const controls = useThreads(projectId, processState?.status === 'ready');
 	const {workspace, conversation} = controls;
+	const sessionImports = useSessionImports(
+		projectId,
+		processState?.status === 'ready' &&
+			processState.gates?.features.list.enabled === true,
+		workspace.threads,
+	);
 	const thread =
 		workspace.threads.find(row => row.id === workspace.activeThreadId) ?? null;
 	const {transcript, draft, turn, cancellation} = conversation;
@@ -135,19 +146,31 @@ export function App() {
 				thread.nanocoderSessionId === processState?.activeThreadId));
 	const stopping =
 		thread !== null && workspace.cancellingThreadIds.includes(thread.id);
-	const editable =
-		accepting &&
-		thread?.archiveState === 'active' &&
-		thread.runState !== 'view-only' &&
-		!workspace.loading &&
-		!workspace.pending;
-	const rootControlReason = rootBusy
-		? 'stop the project turn before changing controls'
-		: !accepting
-			? 'Nanocoder is not ready'
-			: workspace.loading || workspace.pending
-				? 'another thread request is pending'
+	const activeReplay = workspace.replay?.[thread?.id ?? ''];
+	const replayReason =
+		activeReplay === 'failed'
+			? (thread?.viewOnlyReason ?? REPLAY_FAILURE_REASON)
+			: Object.values(workspace.replay ?? {}).includes('replaying')
+				? processState?.status === 'failed'
+					? REPLAY_FAILURE_REASON
+					: REPLAY_REASON
 				: null;
+	const composerState = threadComposerState({
+		thread,
+		accepting,
+		replay: activeReplay,
+		pending: workspace.loading || workspace.pending,
+	});
+	const editable = composerState.editable;
+	const rootControlReason =
+		replayReason ??
+		(rootBusy
+			? 'stop the project turn before changing controls'
+			: !accepting
+				? 'Nanocoder is not ready'
+				: workspace.loading || workspace.pending
+					? 'another thread request is pending'
+					: null);
 	const modelControls = useProjectControls(
 		projectId,
 		rootControlReason,
@@ -249,6 +272,7 @@ export function App() {
 	const send = () => {
 		if (
 			editable &&
+			!replayReason &&
 			!rootBusy &&
 			!modelControls.pending &&
 			!configUncertain &&
@@ -283,21 +307,23 @@ export function App() {
 		connecting ||
 		projectControls.pending ||
 		modelControls.pending;
-	const sendReason = !accepting
-		? 'Nanocoder is not ready. retry before sending.'
-		: thread?.archiveState === 'archived'
-			? 'this thread is archived; unarchive it before sending'
-			: sending
-				? 'waiting for Nanocoder to finish the turn'
-				: rootBusy
-					? 'another thread is running'
-					: modelControls.pending
-						? 'a project control change is pending'
-						: configUncertain
-							? CONFIG_UNCERTAINTY_REASON
-							: draft.trim() === ''
-								? 'enter a message to send'
-								: null;
+	const sendReason =
+		replayReason ??
+		(!accepting
+			? 'Nanocoder is not ready. retry before sending.'
+			: thread?.archiveState === 'archived'
+				? 'this thread is archived; unarchive it before sending'
+				: sending
+					? 'waiting for Nanocoder to finish the turn'
+					: rootBusy
+						? 'another thread is running'
+						: modelControls.pending
+							? 'a project control change is pending'
+							: configUncertain
+								? CONFIG_UNCERTAINTY_REASON
+								: draft.trim() === ''
+									? 'enter a message to send'
+									: null);
 
 	return (
 		<OverlayProvider
@@ -345,28 +371,47 @@ export function App() {
 					/>
 				}
 				threadRail={
-					<ThreadRail
-						projectId={projectId}
-						threads={workspace.threads}
-						activeThreadId={workspace.activeThreadId}
-						pending={pending}
-						now={new Date()}
-						renameDisabledReason={renameDisabledReason}
-						deleteHistoryDisabledReason={deleteHistoryDisabledReason}
-						onNew={onNew}
-						onOpen={id => {
-							setRenaming(null);
-							void controls.open(id);
-						}}
-						onRename={rename}
-						onArchive={onArchive}
-						onRemove={id => {
-							void controls.remove(id);
-						}}
-						onDeleteHistory={id => {
-							void controls.deleteHistory(id);
-						}}
-					/>
+					<>
+						<ThreadRail
+							projectId={projectId}
+							threads={workspace.threads}
+							activeThreadId={workspace.activeThreadId}
+							pending={pending}
+							now={new Date()}
+							renameDisabledReason={renameDisabledReason}
+							deleteHistoryDisabledReason={deleteHistoryDisabledReason}
+							onNew={onNew}
+							onOpen={id => {
+								setRenaming(null);
+								void controls.open(id);
+							}}
+							onRename={rename}
+							onArchive={onArchive}
+							onRemove={id => {
+								void controls.remove(id);
+							}}
+							onDeleteHistory={id => {
+								void controls.deleteHistory(id);
+							}}
+						/>
+						<SessionImportList
+							key={projectId}
+							{...sessionImports}
+							active={sessionImports.ready}
+							disabledReason={
+								rootBusy
+									? 'stop the project turn before importing'
+									: (replayReason ??
+										(!accepting
+											? 'Nanocoder is not ready'
+											: pending
+												? 'another thread request is pending'
+												: undefined))
+							}
+							onRefresh={sessionImports.refresh}
+							onImport={sessionImports.importSession}
+						/>
+					</>
 				}
 				statusBadges={
 					<div className="gate-actions">
@@ -454,7 +499,7 @@ export function App() {
 				composer={
 					outcome?.status === 'connected' &&
 					thread &&
-					thread.runState !== 'view-only' && (
+					composerState.visible && (
 						<Composer
 							draft={draft}
 							editable={editable}
@@ -530,14 +575,14 @@ export function App() {
 						/>
 					</ConversationStream>
 				)}
-				{thread?.runState === 'view-only' && (
-					<Card aria-label="view-only thread">
-						<p>{thread.viewOnlyReason}</p>
-						<Button onClick={onNew}>start a new thread in this project</Button>
-						<Button onClick={() => void controls.remove(thread.id)}>
-							remove from desktop
-						</Button>
-					</Card>
+				{thread && (
+					<ThreadRecoveryNotice
+						thread={thread}
+						pending={workspace.pending}
+						onRetry={() => void controls.open(thread.id)}
+						onNew={onNew}
+						onRemove={() => void controls.remove(thread.id)}
+					/>
 				)}
 				{turn?.ok && (
 					<p role="status">

@@ -8,6 +8,7 @@ import type {
 	ThreadRepository,
 } from '@/main/store/contracts';
 import {
+	nanocoderSessionIdSchema,
 	projectSchema,
 	threadSchema,
 	threadTitlePatch,
@@ -123,6 +124,13 @@ export function repositories(database: SqlDatabase): {
 		},
 	};
 	const threads: ThreadRepository = {
+		getBySessionId: sessionId => {
+			const id = validate(nanocoderSessionIdSchema, sessionId);
+			const row = database
+				.prepare('SELECT * FROM thread WHERE nanocoder_session_id = ?')
+				.get(id);
+			return row && threadFrom(row);
+		},
 		setTitle: input => {
 			const patch = validate(threadTitlePatch, input);
 			database

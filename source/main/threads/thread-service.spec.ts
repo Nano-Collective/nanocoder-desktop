@@ -5,6 +5,8 @@ import {
 	realpathSync,
 	renameSync,
 	rmSync,
+	symlinkSync,
+	unlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -31,6 +33,2295 @@ import type {
 	ThreadInfo,
 	TurnEvent,
 } from '@/shared/ipc';
+import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
+
+const discoveryRow = (cwd: string, sessionId = 'discovered-session') => ({
+	sessionId,
+	cwd,
+	title: 'saved import candidate',
+	updatedAt: '2026-10-29T12:00:00.000Z',
+});
+
+async function discoveryFixture(t: ExecutionContext, mode?: string) {
+	const f = await fixture(t, true);
+	if (mode)
+		writeFileSync(path.join(f.project.canonicalRoot, '.fake-nanocoder'), mode);
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	const drained = deferred<void>();
+	const write = connection.stderr.write;
+	const check = () => {
+		if (
+			fakeEvents(connection.stderr.lines()).some(
+				e => e.method === 'timeline/list',
+			)
+		)
+			drained.resolve();
+	};
+	connection.stderr.write = chunk => {
+		write.call(connection.stderr, chunk);
+		check();
+	};
+	check();
+	try {
+		await drained.promise;
+	} finally {
+		connection.stderr.write = write;
+	}
+	return {...f, connection};
+}
+
+async function importableFixture(
+	t: ExecutionContext,
+	sessionId = 'fake-session',
+	mode?: string,
+) {
+	const f = await discoveryFixture(t, mode);
+	f.connection.listSessions = async () => ({
+		sessions: [
+			{
+				...discoveryRow(f.project.canonicalRoot, sessionId),
+				mode: 'yolo',
+				content: 'must not become imported metadata',
+			},
+		],
+	});
+	t.is(
+		(await f.service.discoverSessions({projectId: f.project.id}))[0]?.id,
+		sessionId,
+	);
+	return f;
+}
+
+test('ACP-18 import uses the same metadata authority without launch, consent, auto-open, prompt or selection', async t => {
+	const f = await importableFixture(t);
+	f.store.projects.save({...f.project, trusted: false});
+	const calls = structuredClone(f.calls);
+	const diagnostics = f.connection.stderr.lines();
+	const ui = f.store.getUiState();
+	const kinds: string[] = [];
+	const metadata = f.service.projectOperations.runMetadataOperation;
+	f.service.projectOperations.runMetadataOperation = (
+		id,
+		kind,
+		work,
+		scope,
+	) => {
+		kinds.push(kind);
+		return metadata(id, kind, work, scope);
+	};
+	const imported = await f.service.importSession({
+		projectId: f.project.id,
+		sessionId: 'fake-session',
+	});
+	t.deepEqual(imported, {
+		id: imported.id,
+		projectId: f.project.id,
+		nanocoderSessionId: 'fake-session',
+		title: 'saved import candidate',
+		archiveState: 'active',
+		runState: 'ready',
+		lastActivityAt: '2026-10-29T12:00:00.000Z',
+		sessionCwd: f.project.canonicalRoot,
+		mode: 'auto-accept',
+		viewOnlyReason: null,
+	});
+	t.deepEqual(kinds, ['import-session']);
+	t.deepEqual(f.store.threads.get(f.project.id, imported.id), imported);
+	t.false(f.store.threads.getTitleManuallySet(f.project.id, imported.id));
+	t.deepEqual(f.calls, calls);
+	t.deepEqual(f.connection.stderr.lines(), diagnostics);
+	t.deepEqual(f.store.getUiState(), ui);
+});
+
+for (const mode of ['normal', 'auto-accept', 'plan', 'architect'] as const) {
+	test(`ACP-18 DEC-31 imported ${mode} default resumes and confirms that mode before the first explicit prompt`, async t => {
+		const f = await importableFixture(t, 'fake-session', 'reported-usage');
+		f.store.projects.save({...f.project, defaultMode: mode});
+		const imported = await f.service.importSession({
+			projectId: f.project.id,
+			sessionId: 'fake-session',
+		});
+		t.is(imported.mode, mode);
+		const scope = {projectId: f.project.id, threadId: imported.id};
+		const opened = await f.service.openThread(scope);
+		t.is(opened.thread.nanocoderSessionId, 'fake-session');
+		t.is(opened.thread.mode, mode);
+		const requests = () =>
+			fakeEvents(f.connection.stderr.lines()).filter(
+				e => typeof e.method === 'string' && e.method.startsWith('session/'),
+			);
+		t.deepEqual(requests(), [
+			{
+				method: 'session/resume',
+				params: {
+					sessionId: 'fake-session',
+					cwd: f.project.canonicalRoot,
+					mcpServers: [],
+				},
+			},
+			{
+				method: 'session/set_mode',
+				params: {sessionId: 'fake-session', modeId: mode},
+			},
+		]);
+		await f.service.promptThread({...scope, text: 'explicit imported prompt'});
+		t.deepEqual(
+			requests().map(e => e.method),
+			['session/resume', 'session/set_mode', 'session/prompt'],
+		);
+	});
+}
+
+test('ACP-18 same-owner reimport is a true no-op, including archived state, manual title, activity and publication', async t => {
+	const f = await importableFixture(t);
+	const known = seed(f.project, {
+		nanocoderSessionId: 'fake-session',
+		archiveState: 'archived',
+		title: 'manual saved title',
+		mode: 'plan',
+	});
+	f.store.threads.save(known);
+	f.store.threads.setTitle({
+		projectId: known.projectId,
+		threadId: known.id,
+		title: known.title,
+		manuallySet: true,
+	});
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), []);
+	const scope = {projectId: known.projectId, threadId: known.id};
+	const before = await f.service.getThreadSnapshot(scope);
+	const ui = f.store.getUiState();
+	const diagnostics = f.connection.stderr.lines();
+	const events: ProjectEvent[] = [];
+	t.teardown(f.supervisor.subscribe(event => events.push(event)));
+	const save = f.store.threads.save;
+	let writes = 0;
+	f.store.threads.save = row => {
+		writes++;
+		save(row);
+	};
+	t.deepEqual(
+		await f.service.importSession({
+			projectId: known.projectId,
+			sessionId: 'fake-session',
+		}),
+		known,
+	);
+	t.is(writes, 0);
+	t.deepEqual(events, []);
+	t.deepEqual(await f.service.getThreadSnapshot(scope), before);
+	t.true(f.store.threads.getTitleManuallySet(known.projectId, known.id));
+	t.deepEqual(f.store.getUiState(), ui);
+	t.deepEqual(f.connection.stderr.lines(), diagnostics);
+});
+
+test('ACP-18 cross-owner import refuses without leaking a title or rewriting either owner', async t => {
+	const f = await importableFixture(t);
+	const otherRoot = path.join(f.root, 'other-project');
+	mkdirSync(otherRoot);
+	const other = {
+		...f.project,
+		id: randomUUID(),
+		canonicalRoot: otherRoot,
+		sessionCwd: otherRoot,
+	};
+	f.store.projects.save(other);
+	const known = seed(other, {
+		nanocoderSessionId: 'fake-session',
+		title: 'private foreign title',
+	});
+	f.store.threads.save(known);
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), []);
+	const error = await t.throwsAsync(
+		f.service.importSession({
+			projectId: f.project.id,
+			sessionId: 'fake-session',
+		}),
+		{code: 'DENIED'},
+	);
+	t.false(error?.message.includes(known.title));
+	t.deepEqual(f.store.threads.get(other.id, known.id), known);
+	t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+});
+
+test('ACP-18 direct import validates the shared opaque ID before ownership lookup, cache or writes', async t => {
+	const f = await fixture(t);
+	let lookedUp = 0;
+	f.store.threads.getBySessionId = () => {
+		lookedUp++;
+		return undefined;
+	};
+	for (const sessionId of [
+		'',
+		' ',
+		'\uD800',
+		'é'.repeat(101),
+		'session\u202e',
+	]) {
+		await t.throwsAsync(
+			f.service.importSession({projectId: f.project.id, sessionId}),
+			{code: 'VALIDATION'},
+		);
+	}
+	t.is(lookedUp, 0);
+	t.deepEqual(f.calls, []);
+	t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+});
+
+test('ACP-18 import requires current cached proof and cannot use an arbitrary or failed-refresh ID', async t => {
+	const f = await importableFixture(t);
+	await t.throwsAsync(
+		f.service.importSession({projectId: f.project.id, sessionId: 'arbitrary'}),
+		{code: 'DENIED'},
+	);
+	f.connection.listSessions = async () => {
+		throw new Error('private failure');
+	};
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), []);
+	await t.throwsAsync(
+		f.service.importSession({
+			projectId: f.project.id,
+			sessionId: 'fake-session',
+		}),
+		{code: 'UNAVAILABLE'},
+	);
+	t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+});
+
+for (const change of ['outside', 'missing'] as const) {
+	test(`ACP-18 import revalidates the originally listed cwd after its symlink becomes ${change}`, async t => {
+		const f = await discoveryFixture(t);
+		const alias = path.join(f.root, 'reported-cwd');
+		symlinkSync(f.project.canonicalRoot, alias, 'junction');
+		f.connection.listSessions = async () => ({
+			sessions: [discoveryRow(alias, 'fake-session')],
+		});
+		t.is(
+			(await f.service.discoverSessions({projectId: f.project.id})).length,
+			1,
+		);
+		unlinkSync(alias);
+		if (change === 'outside') symlinkSync(f.root, alias, 'junction');
+		const diagnostics = f.connection.stderr.lines();
+		await t.throwsAsync(
+			f.service.importSession({
+				projectId: f.project.id,
+				sessionId: 'fake-session',
+			}),
+			{code: change === 'outside' ? 'OUTSIDE_ROOT' : 'DENIED'},
+		);
+		t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+		t.deepEqual(f.connection.stderr.lines(), diagnostics);
+	});
+}
+
+test('ACP-18 import and execution share the same project slot in both directions', async t => {
+	const f = await importableFixture(t);
+	const held = deferred<void>();
+	const active = f.service.runProjectOperation(
+		f.project.id,
+		'mode',
+		async () => held.promise,
+	);
+	try {
+		await t.throwsAsync(
+			f.service.importSession({
+				projectId: f.project.id,
+				sessionId: 'fake-session',
+			}),
+			{code: 'BUSY'},
+		);
+	} finally {
+		held.resolve();
+		await active;
+	}
+	const importing = f.service.importSession({
+		projectId: f.project.id,
+		sessionId: 'fake-session',
+	});
+	await t.throwsAsync(
+		f.service.runProjectOperation(f.project.id, 'mode', async () => {
+			t.fail('Execution entered an import metadata lease');
+		}),
+		{code: 'BUSY'},
+	);
+	await importing;
+});
+
+for (const reset of [
+	'detach',
+	'dispose',
+	'replace',
+	'root',
+	'cwd',
+	'latest',
+] as const) {
+	test(`ACP-18 ${reset} invalidates completed import proof without writing a row`, async t => {
+		const f = await importableFixture(t);
+		if (reset === 'detach') await f.service.detach([f.project]);
+		if (reset === 'dispose') f.service.dispose();
+		if (reset === 'replace') {
+			await f.supervisor.stop(f.project.id);
+			await f.supervisor.ensureProcess(f.project);
+		}
+		if (reset === 'root' || reset === 'cwd') {
+			const changed = path.join(f.project.canonicalRoot, 'changed');
+			mkdirSync(changed);
+			if (reset === 'root')
+				f.store.projects.save({
+					...f.project,
+					canonicalRoot: changed,
+					sessionCwd: changed,
+				});
+			else {
+				const get = f.store.projects.get;
+				f.store.projects.get = id => {
+					const project = get(id);
+					return project?.id === f.project.id
+						? {...project, sessionCwd: changed}
+						: project;
+				};
+			}
+		}
+		if (reset === 'latest') {
+			f.connection.listSessions = async () => ({
+				sessions: [discoveryRow(f.project.canonicalRoot, 'latest')],
+			});
+			t.is(
+				(await f.service.discoverSessions({projectId: f.project.id}))[0]?.id,
+				'latest',
+			);
+		}
+		await t.throwsAsync(
+			f.service.importSession({
+				projectId: f.project.id,
+				sessionId: 'fake-session',
+			}),
+			{
+				code:
+					reset === 'dispose'
+						? 'AGENT_UNAVAILABLE'
+						: reset === 'latest'
+							? 'DENIED'
+							: 'UNAVAILABLE',
+			},
+		);
+		t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+	});
+}
+
+test('ACP-18 concurrent cross-project imports cannot steal the globally unique saved session key', async t => {
+	const f = await importableFixture(t);
+	const otherRoot = path.join(f.root, 'other-project');
+	mkdirSync(otherRoot);
+	const other = {
+		...f.project,
+		id: randomUUID(),
+		canonicalRoot: otherRoot,
+		sessionCwd: otherRoot,
+	};
+	f.store.projects.save(other);
+	await f.supervisor.ensureProcess(other);
+	const connection = f.supervisor.getConnection(other.id);
+	connection.listSessions = async () => ({
+		sessions: [discoveryRow(otherRoot, 'fake-session')],
+	});
+	t.is((await f.service.discoverSessions({projectId: other.id})).length, 1);
+	const results = await Promise.allSettled(
+		[f.project, other].map(project =>
+			f.service.importSession({
+				projectId: project.id,
+				sessionId: 'fake-session',
+			}),
+		),
+	);
+	t.is(results.filter(result => result.status === 'fulfilled').length, 1);
+	const rejected = results.find(result => result.status === 'rejected');
+	t.true(
+		rejected?.status === 'rejected' && rejected.reason instanceof IpcFailure,
+	);
+	if (rejected?.status === 'rejected') t.is(rejected.reason.code, 'DENIED');
+	t.is(
+		[f.project, other].flatMap(project =>
+			f.store.threads.list(project.id, 'active'),
+		).length,
+		1,
+	);
+});
+
+test('ACP-18 missing discovery activity uses the local clock for metadata, not an invented remote time', async t => {
+	const f = await discoveryFixture(t);
+	f.connection.listSessions = async () => ({
+		sessions: [
+			{
+				sessionId: 'fake-session',
+				cwd: f.project.canonicalRoot,
+				title: '<strong>plain metadata title</strong>',
+			},
+		],
+	});
+	const listed = await f.service.discoverSessions({projectId: f.project.id});
+	t.is(listed[0]?.lastActivityAt, null);
+	const imported = await f.service.importSession({
+		projectId: f.project.id,
+		sessionId: 'fake-session',
+	});
+	t.is(imported.lastActivityAt, '2026-10-30T14:00:00.000Z');
+	t.is(imported.title, '<strong>plain metadata title</strong>');
+});
+
+test('ACP-18 offline discovery is an empty read without launch, consent or known-thread changes', async t => {
+	const f = await fixture(t);
+	const known = seed(f.project, {nanocoderSessionId: 'known'});
+	f.store.threads.save(known);
+	const ui = f.store.getUiState();
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), []);
+	t.deepEqual(f.calls, []);
+	t.deepEqual(f.store.threads.get(f.project.id, known.id), known);
+	t.deepEqual(f.store.getUiState(), ui);
+});
+
+test('ACP-18 ready mixed-root discovery projects only unknown exact native roots and never persists or selects', async t => {
+	const f = await discoveryFixture(t);
+	const known = seed(f.project, {nanocoderSessionId: 'known'});
+	f.store.threads.save(known);
+	const foreign = path.join(f.root, 'foreign');
+	const nested = path.join(f.project.canonicalRoot, 'nested');
+	const outside = path.join(f.project.canonicalRoot, 'outside');
+	for (const dir of [foreign, nested]) mkdirSync(dir);
+	symlinkSync(foreign, outside, 'junction');
+	const caseAlias = path.join(f.root, 'PROJECT');
+	let caseResolves = false;
+	try {
+		caseResolves = realpathSync.native(caseAlias) === f.project.canonicalRoot;
+	} catch {}
+	const privateRow = (cwd: string, id: string) => ({
+		sessionId: id,
+		cwd,
+		get title(): string {
+			t.fail('Foreign title reached service projection');
+			throw new Error('private title');
+		},
+	});
+	f.connection.listSessions = async () => ({
+		sessions: [
+			discoveryRow(f.project.canonicalRoot),
+			discoveryRow(f.project.canonicalRoot, 'known'),
+			discoveryRow(caseAlias, 'case-alias'),
+			privateRow(foreign, 'foreign'),
+			privateRow(nested, 'nested'),
+			privateRow(outside, 'outside-symlink'),
+		],
+	});
+	const calls = structuredClone(f.calls);
+	const diagnostics = f.connection.stderr.lines();
+	const ui = f.store.getUiState();
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), [
+		...(caseResolves
+			? [
+					{
+						id: 'case-alias',
+						title: 'saved import candidate',
+						sessionCwd: f.project.canonicalRoot,
+						lastActivityAt: '2026-10-29T12:00:00.000Z',
+					},
+				]
+			: []),
+		{
+			id: 'discovered-session',
+			title: 'saved import candidate',
+			sessionCwd: f.project.canonicalRoot,
+			lastActivityAt: '2026-10-29T12:00:00.000Z',
+		},
+	]);
+	t.deepEqual(f.calls, calls);
+	t.deepEqual(f.connection.stderr.lines(), diagnostics);
+	t.deepEqual(f.store.threads.list(f.project.id, 'active'), [known]);
+	t.deepEqual(f.store.getUiState(), ui);
+});
+
+for (const unavailable of [
+	'no-list',
+	'missing-adapter',
+	'list-fails',
+] as const) {
+	test(`ACP-18 ${unavailable} discovery returns empty without launch or thread changes`, async t => {
+		const f = await discoveryFixture(t, unavailable);
+		const known = seed(f.project, {nanocoderSessionId: 'known'});
+		f.store.threads.save(known);
+		if (unavailable === 'missing-adapter') delete f.connection.listSessions;
+		const calls = structuredClone(f.calls);
+		const beforeMethods = fakeEvents(f.connection.stderr.lines())
+			.filter(event => event.method)
+			.map(event => event.method);
+		t.deepEqual(
+			await f.service.discoverSessions({projectId: f.project.id}),
+			[],
+		);
+		t.deepEqual(f.store.threads.get(f.project.id, known.id), known);
+		t.deepEqual(f.calls, calls);
+		const methods = fakeEvents(f.connection.stderr.lines())
+			.filter(event => event.method)
+			.map(event => event.method);
+		t.deepEqual(methods, [
+			...beforeMethods,
+			...(unavailable === 'list-fails' ? ['session/list'] : []),
+		]);
+	});
+}
+
+test('ACP-18 reordered discovery cannot publish an older response or erase a later failure', async t => {
+	const f = await discoveryFixture(t);
+	const entered = deferred<void>();
+	const pending = deferred<unknown>();
+	f.connection.listSessions = async () => {
+		entered.resolve();
+		return pending.promise;
+	};
+	const first = f.service.discoverSessions({projectId: f.project.id});
+	await Promise.race([
+		entered.promise,
+		first.then(() => {
+			throw new Error('Discovery did not request the ready connection');
+		}),
+	]);
+	f.connection.listSessions = async () => ({
+		sessions: [discoveryRow(f.project.canonicalRoot, 'newest')],
+	});
+	t.is(
+		(await f.service.discoverSessions({projectId: f.project.id}))[0]?.id,
+		'newest',
+	);
+	pending.resolve({sessions: [discoveryRow(f.project.canonicalRoot, 'old')]});
+	t.deepEqual(await first, []);
+	f.connection.listSessions = async () => {
+		throw new Error('private list failure');
+	};
+	t.deepEqual(await f.service.discoverSessions({projectId: f.project.id}), []);
+});
+
+for (const teardown of ['detach', 'dispose', 'replace'] as const) {
+	test(`ACP-18 ${teardown} invalidates an in-flight discovery without late projection or writes`, async t => {
+		const f = await discoveryFixture(t);
+		const entered = deferred<void>();
+		const pending = deferred<unknown>();
+		f.connection.listSessions = async () => {
+			entered.resolve();
+			return pending.promise;
+		};
+		const first = f.service.discoverSessions({projectId: f.project.id});
+		await Promise.race([
+			entered.promise,
+			first.then(() => {
+				throw new Error('Discovery did not request the ready connection');
+			}),
+		]);
+		if (teardown === 'detach') await f.service.detach([f.project]);
+		if (teardown === 'dispose') f.service.dispose();
+		if (teardown === 'replace') {
+			await f.supervisor.stop(f.project.id);
+			await f.supervisor.ensureProcess(f.project);
+		}
+		pending.resolve({sessions: [discoveryRow(f.project.canonicalRoot)]});
+		t.deepEqual(await first, []);
+		t.deepEqual(f.store.threads.list(f.project.id, 'active'), []);
+	});
+}
+
+for (const source of ['open', 'recovery'] as const) {
+	for (const code of ['NOT_FOUND', 'AGENT_UNAVAILABLE'] as const) {
+		test(`CHAT-09 ${source} ${code} classifies resume failure without changing metadata or readable history`, async t => {
+			const f = await fixture(t, true);
+			const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+			f.store.threads.save(thread);
+			const request = {projectId: f.project.id, threadId: thread.id};
+			f.store.threads.setTitle({
+				...request,
+				title: 'manual history fixture',
+				manuallySet: true,
+			});
+			const before = await f.service.openThread(request);
+			const scope = {...request, sessionId: 'fake-session'};
+			const sql = f.store.threadHistory.read(scope);
+			const runs = f.store.agentRuns.list(f.project.id, thread.id);
+			if (source === 'open') {
+				await f.supervisor.stop(f.project.id);
+				writeFileSync(
+					path.join(f.project.canonicalRoot, '.fake-nanocoder'),
+					code === 'NOT_FOUND' ? 'missing-session' : 'resume-fails',
+				);
+				await f.service.openThread(request);
+			} else {
+				const connection = f.supervisor.getConnection(f.project.id);
+				connection.resumeSession = async () => {
+					throw new NanocoderFailure(code, 'safe fixture resume refusal');
+				};
+				await t.throwsAsync(
+					f.service.restore(
+						f.project,
+						connection,
+						new AbortController().signal,
+					),
+				);
+			}
+			const after = await f.service.getThreadSnapshot(request);
+			t.is(
+				after.thread.runState,
+				code === 'NOT_FOUND' ? 'view-only' : 'failed',
+			);
+			t.is(
+				after.thread.viewOnlyReason,
+				code === 'NOT_FOUND'
+					? REPLAY_MISSING_REASON
+					: source === 'open'
+						? 'Nanocoder could not resume the session'
+						: 'safe fixture resume refusal',
+			);
+			t.is(after.thread.id, before.thread.id);
+			t.is(after.thread.nanocoderSessionId, before.thread.nanocoderSessionId);
+			t.is(after.thread.title, before.thread.title);
+			t.is(after.thread.lastActivityAt, before.thread.lastActivityAt);
+			t.true(f.store.threads.getTitleManuallySet(f.project.id, thread.id));
+			t.deepEqual(after.events, before.events);
+			t.deepEqual(after.result, before.result);
+			t.deepEqual(f.store.threadHistory.read(scope), sql);
+			t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), runs);
+			t.true(after.replaying);
+			await t.throwsAsync(
+				f.service.promptThread({...request, text: 'must remain unqueued'}),
+				{code: 'UNAVAILABLE'},
+			);
+		});
+	}
+}
+
+for (const kind of ['mode', 'config'] as const) {
+	test(`CHAT-08 failed replay refuses shared ${kind} work before any control callback`, async t => {
+		const f = await fixture(t, true);
+		const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+		f.store.threads.save(thread);
+		f.store.threadHistory.apply = () => {
+			throw new IpcFailure('AGENT_UNAVAILABLE', 'fixture commit refusal');
+		};
+		await f.service.openThread({projectId: f.project.id, threadId: thread.id});
+		let changes = 0;
+		const result = await f.service
+			.runProjectOperation(f.project.id, kind, async () => {
+				changes++;
+				return null;
+			})
+			.then(
+				() => 'accepted',
+				(error: unknown) =>
+					error instanceof IpcFailure ? error.code : 'unknown',
+			);
+		t.is(result, 'UNAVAILABLE');
+		t.is(changes, 0);
+	});
+}
+
+test('CHAT-08 failed replay keeps controls hidden except inside a distinct new-thread prompt owner', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	f.store.threadHistory.apply = () => {
+		throw new IpcFailure('AGENT_UNAVAILABLE', 'fixture commit refusal');
+	};
+	await f.service.openThread({projectId: f.project.id, threadId: thread.id});
+	const next = await f.service.createThread({projectId: f.project.id});
+	t.is(f.service.getControlConnection(f.project.id), undefined);
+	await f.service.runProjectOperation(
+		f.project.id,
+		'prompt',
+		async () => {
+			t.is(f.service.getControlConnection(f.project.id), undefined);
+		},
+		{threadId: thread.id},
+	);
+	await t.throwsAsync(
+		f.service.promptThread({
+			projectId: f.project.id,
+			threadId: thread.id,
+			text: 'must not enter the failed session',
+		}),
+		{code: 'UNAVAILABLE'},
+	);
+	await f.service
+		.runProjectOperation(
+			f.project.id,
+			'prompt',
+			async lease => {
+				f.service.projectOperations.assertCurrent(lease);
+				t.is(
+					f.service.getControlConnection(f.project.id),
+					f.supervisor.getConnection(f.project.id),
+				);
+				f.service.projectOperations.invalidate(f.project.id);
+				t.is(f.service.getControlConnection(f.project.id), undefined);
+			},
+			{threadId: next.id},
+		)
+		.catch(error => {
+			if (!(error instanceof IpcFailure) || error.code !== 'AGENT_UNAVAILABLE')
+				throw error;
+		});
+	t.is(f.service.getControlConnection(f.project.id), undefined);
+	const failed = await f.service.getThreadSnapshot({
+		projectId: f.project.id,
+		threadId: thread.id,
+	});
+	t.true(failed.replaying);
+	t.is(failed.thread.nanocoderSessionId, 'fake-session');
+	t.deepEqual(failed.events, []);
+});
+
+test('CHAT-08 a recreated owner recovers the stored sequence floor before publishing begin', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.service.openThread(request);
+	const scope = {...request, sessionId: 'fake-session'};
+	const before = f.store.threadHistory.read(scope);
+	if (!before) throw new Error('Missing first committed history');
+	f.service.dispose();
+	const packets: ProjectEvent[] = [];
+	const restarted = createThreadService({
+		store: f.store,
+		supervisor: f.supervisor,
+		onEvent: event => packets.push(event),
+	});
+	t.teardown(() => restarted.dispose());
+	const snapshot = await restarted.openThread(request);
+	const floor = Math.floor(before.sequence / 10001);
+	assertReplayMarkers(
+		t,
+		packets,
+		thread,
+		[
+			['begin', floor + 1],
+			['complete', floor + 3],
+		],
+		snapshot.replayEpoch,
+	);
+	t.is(snapshot.sequence, floor + 3);
+	const after = f.store.threadHistory.read(scope);
+	t.deepEqual(after?.turns, before.turns);
+	t.deepEqual(after?.executions, before.executions);
+});
+
+test('CHAT-08 a fresh marker never reuses a stored slot on an exact batch boundary', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const scope = {...request, sessionId: 'fake-session'};
+	await f.service.openThread(request);
+	const before = f.store.threadHistory.read(scope);
+	if (!before) throw new Error('Missing committed fixture history');
+	const boundary = 5 * 10001;
+	f.store.threadHistory.apply(scope, {
+		expectedRevision: before.revision,
+		source: 'live',
+		generation: before.generation,
+		sequence: boundary,
+		complete: before.complete,
+		turns: [],
+		executions: [],
+		agentRuns: [],
+	});
+	t.is(f.store.threadHistory.read(scope)?.sequence, boundary);
+	f.service.dispose();
+	const packets: ProjectEvent[] = [];
+	const restarted = createThreadService({
+		store: f.store,
+		supervisor: f.supervisor,
+		onEvent: event => packets.push(event),
+	});
+	t.teardown(() => restarted.dispose());
+	const snapshot = await restarted.openThread(request);
+	const floor = Math.floor(boundary / 10001);
+	assertReplayMarkers(
+		t,
+		packets,
+		thread,
+		[
+			['begin', floor + 1],
+			['complete', floor + 3],
+		],
+		snapshot.replayEpoch,
+	);
+	t.true((packets[0]?.sequence ?? 0) * 10001 > boundary);
+	t.deepEqual(f.store.threadHistory.read(scope)?.turns, before.turns);
+	t.deepEqual(f.store.threadHistory.read(scope)?.executions, before.executions);
+});
+
+test('CHAT-08 failed commit publishes only failed, keeps the gate closed and retries the same ID with a fresh epoch', async t => {
+	const packets: ProjectEvent[] = [];
+	const f = await fixture(t, true, event => packets.push(event));
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const scope = {...request, sessionId: 'fake-session'};
+	const apply = f.store.threadHistory.apply.bind(f.store.threadHistory);
+	f.store.threadHistory.apply = () => {
+		throw new IpcFailure('AGENT_UNAVAILABLE', 'fixture commit refused');
+	};
+	const failed = await f.service.openThread(request);
+	assertReplayMarkers(
+		t,
+		packets,
+		thread,
+		[
+			['begin', 1],
+			['failed', 2],
+		],
+		failed.replayEpoch,
+	);
+	t.true(failed.replaying);
+	t.deepEqual(failed.events, []);
+	t.is(f.store.threadHistory.read(scope), undefined);
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), []);
+	t.is(f.service.getControlConnection(f.project.id), undefined);
+	f.store.threadHistory.apply = apply;
+	const retried = await f.service.openThread(request);
+	assertReplayMarkers(
+		t,
+		packets.slice(2),
+		thread,
+		[
+			['begin', 3],
+			['complete', 5],
+		],
+		retried.replayEpoch,
+	);
+	t.not(retried.replayEpoch, failed.replayEpoch);
+	t.false(retried.replaying);
+	t.is(retried.thread.nanocoderSessionId, 'fake-session');
+	t.is(retried.thread.runState, 'ready');
+	t.truthy(f.store.threadHistory.read(scope));
+	t.truthy(f.service.getControlConnection(f.project.id));
+	const methods = fakeEvents(
+		f.supervisor.getConnection(f.project.id).stderr.lines(),
+	).map(event => event.method);
+	t.is(methods.filter(method => method === 'session/resume').length, 2);
+	t.false(methods.includes('session/new'));
+	t.false(methods.includes('session/prompt'));
+});
+
+test('CHAT-08 cancelling a replay handoff preserves interrupted rather than inventing a failed turn', async t => {
+	const entered = deferred<void>();
+	const release = deferred<void>();
+	const f = await fixture(t, true, undefined, false, {
+		onSessionPrepared: async () => {
+			entered.resolve();
+			await release.promise;
+		},
+	});
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const turning = f.service.promptThread({...request, text: 'not sent'});
+	await entered.promise;
+	const cancelled = f.service.cancelThread(request);
+	release.resolve();
+	await cancelled;
+	t.deepEqual(await turning, {stopReason: 'cancelled'});
+	const snapshot = await f.service.getThreadSnapshot(request);
+	t.is(snapshot.thread.runState, 'interrupted');
+	t.deepEqual(snapshot.events, []);
+	t.false(f.calls.some(call => call.startsWith('prompt')));
+});
+
+test('CHAT-08 opaque replay boundaries surround commit before ready publication', async t => {
+	const stages: string[] = [];
+	const markers: Extract<ProjectEvent, {type: 'turn'}>[] = [];
+	const f = await fixture(t, true, event => {
+		if (event.type === 'turn' && event.replay) {
+			markers.push(event);
+			stages.push(event.replay.phase);
+		}
+	});
+	const thread = seed(f.project, {
+		nanocoderSessionId: 'fake-session',
+		runState: 'interrupted',
+	});
+	f.store.threads.save(thread);
+	const apply = f.store.threadHistory.apply.bind(f.store.threadHistory);
+	f.store.threadHistory.apply = (...args) => {
+		const revision = apply(...args);
+		stages.push('commit');
+		return revision;
+	};
+	const unsubscribe = f.supervisor.subscribe(event => {
+		if (
+			event.type === 'thread' &&
+			event.thread.id === thread.id &&
+			event.thread.runState === 'ready'
+		)
+			stages.push('ready');
+	});
+	t.teardown(unsubscribe);
+	const snapshot = await f.service.openThread({
+		projectId: f.project.id,
+		threadId: thread.id,
+	});
+	t.deepEqual(stages, ['begin', 'commit', 'complete', 'ready']);
+	t.is(markers[0].replay?.epoch, markers[1].replay?.epoch);
+	t.is(snapshot.replayEpoch, markers[0].replay?.epoch);
+	t.false(snapshot.replaying);
+	t.deepEqual(
+		markers.map(event => event.events),
+		[[], []],
+	);
+	t.true(markers.every(event => event.result === undefined));
+});
+
+test('CHAT-08 ready publication follows the committed replay prefix', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {
+		nanocoderSessionId: 'fake-session',
+		runState: 'interrupted',
+	});
+	f.store.threads.save(thread);
+	const stages: string[] = [];
+	const apply = f.store.threadHistory.apply.bind(f.store.threadHistory);
+	f.store.threadHistory.apply = (...args) => {
+		const revision = apply(...args);
+		stages.push('commit');
+		return revision;
+	};
+	const unsubscribe = f.supervisor.subscribe(event => {
+		if (
+			event.type === 'thread' &&
+			event.thread.id === thread.id &&
+			event.thread.runState === 'ready'
+		)
+			stages.push('ready');
+	});
+	t.teardown(unsubscribe);
+	await f.service.openThread({projectId: f.project.id, threadId: thread.id});
+	t.deepEqual(stages, ['commit', 'ready']);
+});
+
+for (const control of ['mode', 'config'] as const) {
+	for (const action of [
+		'archive',
+		'remove',
+		'rename-unsaved',
+		'rename-saved',
+		'delete-history',
+	] as const) {
+		test(`CHAT-17 ${action} refuses the shared ${control} owner before metadata consent or ACP work`, async t => {
+			const f = await fixture(t, true);
+			const thread = seed(f.project, {
+				nanocoderSessionId: action === 'rename-unsaved' ? null : 'saved',
+			});
+			f.store.threads.save(thread);
+			const held = deferred<void>();
+			const owner = f.service.runProjectOperation(
+				f.project.id,
+				`set-${control}`,
+				() => held.promise,
+			);
+			const request = {projectId: f.project.id, threadId: thread.id};
+			try {
+				const mutation =
+					action === 'archive'
+						? f.service.archiveThread({...request, archived: true})
+						: action === 'remove'
+							? f.service.removeThread(request)
+							: action.startsWith('rename')
+								? f.service.renameThread({...request, title: 'not saved'})
+								: f.service.deleteThreadHistory(request);
+				await t.throwsAsync(mutation, {instanceOf: IpcFailure, code: 'BUSY'});
+				t.deepEqual(f.store.threads.get(f.project.id, thread.id), thread);
+				t.deepEqual(f.calls, []);
+			} finally {
+				held.resolve();
+				await owner;
+			}
+		});
+	}
+}
+
+for (const action of ['archive', 'remove', 'rename-unsaved'] as const) {
+	test(`CHAT-17 ${action} reserves before its synchronous metadata write and refuses reentrant controls`, async t => {
+		const f = await fixture(t, true);
+		const thread = seed(f.project, {nanocoderSessionId: null});
+		f.store.threads.save(thread);
+		let controlsStarted = 0;
+		const attempts: Promise<string>[] = [];
+		const compete = () => {
+			attempts.push(
+				f.service
+					.runProjectOperation(f.project.id, 'set-mode', async () => {
+						controlsStarted++;
+					})
+					.then(
+						() => 'allowed',
+						(error: IpcFailure) => error.code,
+					),
+			);
+		};
+		const save = f.store.threads.save.bind(f.store.threads);
+		const remove = f.store.threads.remove.bind(f.store.threads);
+		const setTitle = f.store.threads.setTitle.bind(f.store.threads);
+		f.store.threads.save = value => {
+			compete();
+			return save(value);
+		};
+		f.store.threads.remove = (projectId, threadId) => {
+			compete();
+			return remove(projectId, threadId);
+		};
+		f.store.threads.setTitle = value => {
+			compete();
+			return setTitle(value);
+		};
+		const request = {projectId: f.project.id, threadId: thread.id};
+		if (action === 'archive')
+			await f.service.archiveThread({...request, archived: true});
+		else if (action === 'remove')
+			t.is(await f.service.removeThread(request), null);
+		else await f.service.renameThread({...request, title: 'saved offline'});
+		t.deepEqual(await Promise.all(attempts), ['BUSY']);
+		t.is(controlsStarted, 0);
+		t.deepEqual(f.calls, []);
+	});
+}
+
+for (const action of ['archive', 'remove', 'rename-unsaved'] as const) {
+	test(`CHAT-17 ${action} preserves untrusted offline metadata without preparing Nanocoder`, async t => {
+		let hooks = 0;
+		const f = await fixture(t, false, undefined, false, {
+			validateBeforePrepare: () => {
+				hooks++;
+			},
+			onSessionPrepared: () => {
+				hooks++;
+			},
+		});
+		const thread = seed(f.project, {nanocoderSessionId: null});
+		f.store.threads.save(thread);
+		renameSync(f.project.canonicalRoot, `${f.project.canonicalRoot}-offline`);
+		const request = {projectId: f.project.id, threadId: thread.id};
+		if (action === 'archive')
+			t.is(
+				(await f.service.archiveThread({...request, archived: true}))
+					.archiveState,
+				'archived',
+			);
+		else if (action === 'remove') {
+			t.is(await f.service.removeThread(request), null);
+			t.is(f.store.threads.get(f.project.id, thread.id), undefined);
+		} else
+			t.is(
+				(await f.service.renameThread({...request, title: 'offline title'}))
+					.title,
+				'offline title',
+			);
+		t.deepEqual(f.calls, []);
+		t.is(hooks, 0);
+	});
+}
+
+for (const kind of ['high', 'low'] as const) {
+	test(`CHAT-08 a new session acknowledgement refuses ${kind} surrogate before storing or prompting`, async t => {
+		const events: ProjectEvent[] = [];
+		let prepared = 0;
+		const f = await fixture(
+			t,
+			true,
+			event => {
+				if (event.type === 'turn') events.push(event);
+			},
+			false,
+			{
+				onSessionPrepared: () => {
+					prepared++;
+				},
+			},
+		);
+		const saved = await f.service.createThread({projectId: f.project.id});
+		await f.supervisor.ensureProcess(f.project);
+		const connection = f.supervisor.getConnection(f.project.id);
+		connection.newSession = async () => ({
+			id: kind === 'high' ? 'session\uD800' : 'session\uDFFF',
+			mode: 'normal',
+		});
+		let prompts = 0;
+		connection.prompt = async () => {
+			prompts++;
+			return {stopReason: 'end_turn'};
+		};
+		const error: unknown = await f.service
+			.promptThread({
+				projectId: f.project.id,
+				threadId: saved.id,
+				text: 'never sent',
+			})
+			.then(
+				() => undefined,
+				(error: unknown) => error,
+			);
+		t.is(f.store.threads.get(f.project.id, saved.id)?.nanocoderSessionId, null);
+		t.true(error instanceof IpcFailure);
+		if (error instanceof IpcFailure) {
+			t.is(error.code, 'VALIDATION');
+			t.is(error.message, 'Invalid desktop metadata');
+		}
+		t.is(prompts, 0);
+		t.is(prepared, 0);
+		t.deepEqual(events, []);
+		t.is(f.supervisor.getState(f.project.id).status, 'stopped');
+	});
+}
+
+test('CHAT-17 cancellation retains the active prompt slot until the cancel acknowledgement settles', async t => {
+	const f = await waitingThread(t);
+	const entered = deferred<void>();
+	const release = deferred<void>();
+	const original = f.supervisor.cancel.bind(f.supervisor);
+	f.supervisor.cancel = async (...args) => {
+		await original(...args);
+		entered.resolve();
+		await release.promise;
+	};
+	const cancelling = f.service.cancelThread(f.target);
+	try {
+		await entered.promise;
+		await t.throwsAsync(
+			f.service.runProjectOperation(f.project.id, 'set-mode', async () => {}),
+			{instanceOf: IpcFailure, code: 'BUSY'},
+		);
+		await t.throwsAsync(
+			f.service.archiveThread({...f.target, archived: true}),
+			{
+				instanceOf: IpcFailure,
+				code: 'BUSY',
+			},
+		);
+		await t.throwsAsync(f.service.removeThread(f.target), {
+			instanceOf: IpcFailure,
+			code: 'BUSY',
+		});
+	} finally {
+		release.resolve();
+		await cancelling;
+	}
+	t.deepEqual(await f.turn, {stopReason: 'cancelled'});
+});
+
+for (const upstream of [false, true]) {
+	test(`CHAT-17 ${upstream ? 'history deletion' : 'desktop removal'} invalidates its exact scope without losing completed removal`, async t => {
+		const f = await fixture(t, true);
+		const thread = seed(f.project);
+		f.store.threads.save(thread);
+		const invalidated: string[] = [];
+		const invalidate = f.service.projectOperations.invalidateThread;
+		f.service.projectOperations.invalidateThread = (
+			projectId,
+			threadId,
+			stop,
+		) => {
+			invalidated.push(`${projectId}/${threadId}`);
+			invalidate(projectId, threadId, stop);
+		};
+		const request = {projectId: f.project.id, threadId: thread.id};
+		if (upstream) {
+			f.confirmDeletion(async () => true);
+			await f.supervisor.ensureProcess(f.project);
+			f.supervisor.getConnection(f.project.id).deleteSession = async () => {};
+			t.deepEqual(await f.service.deleteThreadHistory(request), {
+				status: 'deleted',
+			});
+		} else t.is(await f.service.removeThread(request), null);
+		t.deepEqual(invalidated, [`${f.project.id}/${thread.id}`]);
+		t.is(f.store.threads.get(f.project.id, thread.id), undefined);
+		t.false(f.service.projectOperations.isBusy(f.project.id));
+	});
+}
+
+test('CHAT-17 a pending history dialog cannot block active permission and cancel exceptions in another project', async t => {
+	const f = await waitingThread(t, true);
+	const otherRoot = path.join(f.root, 'other');
+	mkdirSync(otherRoot);
+	const other = {
+		...f.project,
+		id: randomUUID(),
+		canonicalRoot: otherRoot,
+		sessionCwd: otherRoot,
+		trusted: false,
+	};
+	f.store.projects.save(other);
+	const thread = seed(other);
+	f.store.threads.save(thread);
+	const entered = deferred<void>();
+	const answer = deferred<boolean>();
+	f.confirmDeletion(() => {
+		entered.resolve();
+		return answer.promise;
+	});
+	const deletion = f.service.deleteThreadHistory({
+		projectId: other.id,
+		threadId: thread.id,
+	});
+	try {
+		await entered.promise;
+		for (const attempt of [
+			() => f.service.deleteThreadHistory(f.target),
+			() => f.service.archiveThread({...f.target, archived: true}),
+			() => f.service.removeThread(f.target),
+		])
+			await t.throwsAsync(attempt(), {instanceOf: IpcFailure, code: 'BUSY'});
+		t.is(
+			await f.service.answerThreadPermission({
+				...f.target,
+				requestId: f.requests[0].id,
+				optionId: 'allow',
+			}),
+			null,
+		);
+		t.is(await f.service.cancelThread(f.target), null);
+		t.deepEqual(await f.turn, {stopReason: 'cancelled'});
+		t.deepEqual(f.calls, ['launch', 'confirm-delete']);
+	} finally {
+		answer.resolve(false);
+		await deletion;
+	}
+	t.deepEqual(await deletion, {status: 'cancelled'});
+});
+
+test('CHAT-17 declining history deletion keeps cancellation truthful after an automatic title changes', async t => {
+	const f = await fixture(t);
+	const thread = seed(f.project);
+	f.store.threads.save(thread);
+	f.confirmDeletion(async () => {
+		f.store.threads.setTitle({
+			projectId: f.project.id,
+			threadId: thread.id,
+			title: 'updated while the dialog was open',
+			manuallySet: false,
+		});
+		return false;
+	});
+	t.deepEqual(
+		await f.service.deleteThreadHistory({
+			projectId: f.project.id,
+			threadId: thread.id,
+		}),
+		{status: 'cancelled'},
+	);
+	t.deepEqual(f.calls, ['confirm-delete']);
+});
+
+test('CHAT-17 preparation cancellation holds the slot through both the pending hook and child-stop settlement', async t => {
+	const entered = deferred<void>();
+	const releaseHook = deferred<void>();
+	const f = await fixture(t, true, undefined, false, {
+		beforeFirstPrompt: async () => {
+			entered.resolve();
+			await releaseHook.promise;
+		},
+	});
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const target = {projectId: f.project.id, threadId: thread.id};
+	const turn = f.service.promptThread({...target, text: 'not sent'});
+	void turn.catch(() => undefined);
+	await entered.promise;
+	const stopped = deferred<void>();
+	const releaseStop = deferred<void>();
+	const stop = f.supervisor.stop.bind(f.supervisor);
+	f.supervisor.stop = async id => {
+		const state = await stop(id);
+		stopped.resolve();
+		await releaseStop.promise;
+		return state;
+	};
+	const cancellation = f.service.cancelThread(target);
+	try {
+		await stopped.promise;
+		for (const attempt of [
+			() =>
+				f.service.runProjectOperation(
+					f.project.id,
+					'set-config',
+					async () => {},
+				),
+			() => f.service.archiveThread({...target, archived: true}),
+			() => f.service.removeThread(target),
+		])
+			await t.throwsAsync(attempt(), {instanceOf: IpcFailure, code: 'BUSY'});
+	} finally {
+		releaseHook.resolve();
+		releaseStop.resolve();
+		await cancellation;
+		f.supervisor.stop = stop;
+	}
+	t.deepEqual(await turn, {stopReason: 'cancelled'});
+});
+
+test('CHAT-17 a control lease cannot stand in for an active permission or cancellation owner', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'saved'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const original = f.supervisor.getState.bind(f.supervisor);
+	f.supervisor.getState = id => ({...original(id), activeThreadId: 'saved'});
+	let answered = 0;
+	let cancelled = 0;
+	f.supervisor.answerPermission = () => {
+		answered++;
+		return true;
+	};
+	f.supervisor.cancel = async () => {
+		cancelled++;
+	};
+	await f.service.runProjectOperation(
+		f.project.id,
+		'set-mode',
+		async () => {
+			await t.throwsAsync(
+				f.service.answerThreadPermission({
+					...request,
+					requestId: 'offered',
+					optionId: 'allow',
+				}),
+				{instanceOf: IpcFailure, code: 'DENIED'},
+			);
+			t.is(await f.service.cancelThread(request), null);
+		},
+		{threadId: thread.id},
+	);
+	t.is(answered, 0);
+	t.is(cancelled, 0);
+	t.deepEqual(f.calls, []);
+});
+
+for (const change of ['epoch', 'connection'] as const) {
+	test(`CHAT-17 a changed ${change} cannot grant an active permission`, async t => {
+		const f = await waitingThread(t);
+		const original = f.supervisor.getConnection.bind(f.supervisor);
+		if (change === 'epoch')
+			f.service.projectOperations.invalidate(f.project.id);
+		else {
+			const replacement = {...f.connection};
+			f.supervisor.getConnection = () => replacement;
+		}
+		let answered = 0;
+		const answer = f.supervisor.answerPermission.bind(f.supervisor);
+		f.supervisor.answerPermission = (...args) => {
+			answered++;
+			return answer(...args);
+		};
+		try {
+			await t.throwsAsync(
+				f.service.answerThreadPermission({
+					...f.target,
+					requestId: f.requests[0].id,
+					optionId: 'allow',
+				}),
+				{instanceOf: IpcFailure, code: 'AGENT_UNAVAILABLE'},
+			);
+			t.is(answered, 0);
+		} finally {
+			f.supervisor.getConnection = original;
+		}
+	});
+}
+
+test('CHAT-08 a well-formed Unicode new acknowledgement is saved and prompted without changing its identity', async t => {
+	const f = await fixture(t, true);
+	const saved = await f.service.createThread({projectId: f.project.id});
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	const sessionId = 'session/é/\u{1F680}';
+	connection.newSession = async () => ({id: sessionId, mode: 'normal'});
+	connection.getSessionOffers = id =>
+		id === sessionId
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
+	let prompts = 0;
+	connection.prompt = async id => {
+		prompts++;
+		t.is(id, sessionId);
+		t.is(
+			f.store.threads.get(f.project.id, saved.id)?.nanocoderSessionId,
+			sessionId,
+		);
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({
+		projectId: f.project.id,
+		threadId: saved.id,
+		text: 'fixture prompt',
+	});
+	t.is(prompts, 1);
+	t.is(
+		f.store.threads.get(f.project.id, saved.id)?.nanocoderSessionId,
+		sessionId,
+	);
+});
+
+for (const path of ['open', 'recovery'] as const) {
+	for (const kind of ['high', 'low', 'mismatched'] as const) {
+		test(`CHAT-08 ${path} refuses a ${kind} resumed acknowledgement before mode history or hooks change`, async t => {
+			let prepared = 0;
+			const f = await fixture(t, true, undefined, false, {
+				onSessionPrepared: () => {
+					prepared++;
+				},
+			});
+			const saved = seed(f.project, {nanocoderSessionId: 'fake-session'});
+			f.store.threads.save(saved);
+			const request = {projectId: f.project.id, threadId: saved.id};
+			await f.supervisor.ensureProcess(f.project);
+			if (path === 'recovery') await f.service.openThread(request);
+			const before = await f.service.getThreadSnapshot(request);
+			const beforePrepared = prepared;
+			const connection = f.supervisor.getConnection(f.project.id);
+			const id = {
+				high: 'session\uD800',
+				low: 'session\uDFFF',
+				mismatched: 'different-session',
+			}[kind];
+			connection.resumeSession = async () => ({
+				session: {id, mode: 'plan'},
+				history: [{type: 'text', text: 'refused replay fixture'}],
+			});
+			await t.throwsAsync(
+				path === 'open'
+					? f.service.openThread(request)
+					: f.service.restore(
+							f.project,
+							connection,
+							new AbortController().signal,
+						),
+				{code: kind === 'mismatched' ? 'DENIED' : 'VALIDATION'},
+			);
+			const after = await f.service.getThreadSnapshot(request);
+			t.is(after.thread.nanocoderSessionId, 'fake-session');
+			t.is(after.thread.mode, before.thread.mode);
+			t.deepEqual(after.events, before.events);
+			t.is(prepared, beforePrepared);
+		});
+	}
+	test(`CHAT-08 ${path} keeps a well-formed Unicode resumed identity exact`, async t => {
+		const f = await fixture(t, true);
+		const sessionId = 'session/é/\u{1F680}';
+		const saved = seed(f.project, {nanocoderSessionId: sessionId});
+		f.store.threads.save(saved);
+		const request = {projectId: f.project.id, threadId: saved.id};
+		await f.supervisor.ensureProcess(f.project);
+		const connection = f.supervisor.getConnection(f.project.id);
+		connection.getSessionOffers = id =>
+			id === sessionId
+				? {offeredModes: ['normal', 'plan'], configOptions: []}
+				: undefined;
+		connection.resumeSession = async id => {
+			t.is(id, sessionId);
+			return {session: {id, mode: 'plan'}, history: []};
+		};
+		t.is((await f.service.openThread(request)).thread.runState, 'ready');
+		if (path === 'recovery')
+			await f.service.restore(
+				f.project,
+				connection,
+				new AbortController().signal,
+			);
+		t.is((await f.service.getThreadSnapshot(request)).thread.runState, 'ready');
+		t.is(
+			f.store.threads.get(f.project.id, saved.id)?.nanocoderSessionId,
+			sessionId,
+		);
+	});
+}
+
+test('SUB-05 live identities commit before user and tool publication without retaining task content', async t => {
+	let inspect: ((event: ProjectEvent) => void) | undefined;
+	const f = await fixture(t, true, event => inspect?.(event));
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const publishedExecutionIds: string[] = [];
+	const publishedTurnCounts: number[] = [];
+	const publishedExecutionCounts: number[] = [];
+	let publishedUsers = 0;
+	inspect = event => {
+		if (event.type !== 'turn' || event.threadId !== thread.id) return;
+		const sessionId = f.store.threads.get(
+			f.project.id,
+			thread.id,
+		)?.nanocoderSessionId;
+		if (!sessionId) throw new Error('The published turn has no saved session');
+		const history = f.store.threadHistory.read({
+			...request,
+			sessionId,
+		});
+		if (event.events.some(item => item.type === 'user')) {
+			publishedUsers++;
+			publishedTurnCounts.push(history?.turns.length ?? 0);
+		}
+		if (!event.events.some(item => item.type === 'tool')) return;
+		publishedExecutionCounts.push(history?.executions.length ?? 0);
+		const rows = f.store.agentRuns.list(f.project.id, thread.id);
+		if (rows[0]?.id !== history?.executions[0]?.id)
+			throw new Error(
+				'The published execution does not match the committed run',
+			);
+		if (rows[0]) publishedExecutionIds.push(rows[0].id);
+	};
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	connection.prompt = async sessionId => {
+		f.notifyUpdate({
+			sessionId,
+			update: {
+				sessionUpdate: 'tool_call',
+				toolCallId: 'opaque/live-delegation',
+				kind: 'think',
+				title: 'private delegated task',
+				status: 'pending',
+				rawInput: {subagent_type: 'explore', prompt: 'private arguments'},
+			},
+		});
+		for (const status of ['in_progress', 'failed'] as const)
+			f.notifyUpdate({
+				sessionId,
+				update: {
+					sessionUpdate: 'tool_call_update',
+					toolCallId: 'opaque/live-delegation',
+					title: 'private progress',
+					status,
+				},
+			});
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({...request, text: 'private accepted prompt'});
+	const scope = {...request, sessionId: 'fake-session'};
+	const history = f.store.threadHistory.read(scope);
+	t.is(publishedUsers, 1);
+	t.deepEqual(publishedTurnCounts, [1]);
+	t.deepEqual(publishedExecutionCounts, [1, 1, 1]);
+	t.is(publishedExecutionIds.length, 3);
+	t.is(new Set(publishedExecutionIds).size, 1);
+	t.like(history, {
+		complete: true,
+		turns: [{outcome: 'completed'}],
+		executions: [{toolCallId: 'opaque/live-delegation', outcome: 'failed'}],
+	});
+	t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, 'failed');
+	t.false(JSON.stringify(history).includes('private'));
+	const snapshot = await f.service.getThreadSnapshot(request);
+	t.true((history?.sequence ?? -1) > snapshot.sequence);
+	for (const privateField of [
+		'firstSlot',
+		'highWaterMark',
+		'executionId',
+		'turnId',
+	])
+		t.false(JSON.stringify(snapshot).includes(`"${privateField}":`));
+});
+
+test('SUB-05 later live turns reuse opaque tool IDs but receive different execution UUIDs', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	connection.prompt = async sessionId => {
+		f.notifyUpdate({
+			sessionId,
+			update: {
+				sessionUpdate: 'tool_call',
+				toolCallId: 'reused-provider-id',
+				kind: 'think',
+				status: 'pending',
+				title: 'delegation',
+				rawInput: {subagent_type: 'explore'},
+			},
+		});
+		f.notifyUpdate({
+			sessionId,
+			update: {
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'reused-provider-id',
+				status: 'completed',
+			},
+		});
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({...request, text: 'first private turn'});
+	const first = f.store.threadHistory.read({
+		...request,
+		sessionId: 'fake-session',
+	});
+	await f.service.promptThread({...request, text: 'second private turn'});
+	const second = f.store.threadHistory.read({
+		...request,
+		sessionId: 'fake-session',
+	});
+	t.is(first?.executions.length, 1);
+	t.is(second?.turns.length, 2);
+	t.is(second?.executions.length, 2);
+	t.is(second?.executions[0].id, first?.executions[0].id);
+	t.not(second?.executions[0].id, second?.executions[1].id);
+	t.not(second?.executions[0].turnId, second?.executions[1].turnId);
+	t.deepEqual(
+		second?.executions.map(row => row.toolCallId),
+		['reused-provider-id', 'reused-provider-id'],
+	);
+	t.deepEqual(
+		f.store.agentRuns.list(f.project.id, thread.id).map(row => row.status),
+		['completed', 'completed'],
+	);
+});
+
+test('SUB-05 live publication splits 10001 updates through the same private slot allocator without overlap or loss', async t => {
+	const batches: Array<Extract<ProjectEvent, {type: 'turn'}>> = [];
+	const f = await fixture(t, true, event => {
+		if (event.type === 'turn') batches.push(event);
+	});
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		f.notifyBatch(
+			sessionId,
+			Array.from({length: 10001}, (_, index) => ({
+				type: 'text' as const,
+				text: `piece-${index}`,
+			})),
+		);
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({...request, text: 'private prompt'});
+	t.deepEqual(
+		batches.map(batch => batch.events.length),
+		[1, 10000, 1, 0],
+	);
+	t.deepEqual(
+		batches.map(batch => batch.sequence),
+		[1, 2, 3, 4],
+	);
+	const snapshot = await f.service.getThreadSnapshot(request);
+	t.is(snapshot.events.length, 10002);
+	t.true(
+		snapshot.events
+			.slice(1)
+			.every(
+				(event, index) =>
+					event.type === 'text' && event.text === `piece-${index}`,
+			),
+	);
+	t.true(
+		(f.store.threadHistory.read({...request, sessionId: 'fake-session'})
+			?.sequence ?? -1) >
+			snapshot.sequence * 10001 - 1,
+	);
+});
+
+test('SUB-05 live approval-only completion never becomes execution success', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		f.notifyBatch(sessionId, [
+			{
+				type: 'tool',
+				id: 'approval-root',
+				status: 'pending',
+				delegation: {role: 'explore', history: false},
+			},
+		]);
+		f.notifyBatch(sessionId, [
+			{
+				type: 'tool',
+				id: 'approval-root',
+				status: 'completed',
+				approvalOnly: true,
+			},
+		]);
+		t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, 'pending');
+		t.is(
+			f.store.threadHistory.read({...request, sessionId})?.executions[0]
+				.outcome,
+			'unknown',
+		);
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({...request, text: 'private prompt'});
+	t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, 'unknown');
+	t.is(
+		f.store.threadHistory.read({...request, sessionId: 'fake-session'})
+			?.executions[0].outcome,
+		'unknown',
+	);
+});
+
+test('SUB-05 a failed live tool commit publishes no partial tool and cancels the exact owner without throwing from its notification', async t => {
+	const events: TurnEvent[] = [];
+	const f = await fixture(t, true, event => {
+		if (event.type === 'turn') events.push(...event.events);
+	});
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	const apply = f.store.threadHistory.apply;
+	let failed = false;
+	f.store.threadHistory.apply = (scope, patch) => {
+		if (patch.executions.length && !failed) {
+			failed = true;
+			throw new IpcFailure('UNAVAILABLE', 'The fixture metadata commit failed');
+		}
+		return apply(scope, patch);
+	};
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		t.notThrows(() =>
+			f.notifyBatch(sessionId, [
+				{
+					type: 'tool',
+					id: 'uncommitted-tool',
+					status: 'in_progress',
+					delegation: {role: 'explore', history: false},
+				},
+			]),
+		);
+		return {stopReason: 'end_turn'};
+	};
+	await t.throwsAsync(
+		f.service.promptThread({...request, text: 'private prompt'}),
+		{code: 'UNAVAILABLE'},
+	);
+	t.true(failed);
+	t.false(events.some(event => event.type === 'tool'));
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), []);
+	const history = f.store.threadHistory.read({
+		...request,
+		sessionId: 'fake-session',
+	});
+	t.is(history?.turns[0].outcome, 'failed');
+	t.is(history?.complete, false);
+	t.is((await f.service.getThreadSnapshot(request)).result?.ok, false);
+});
+
+test('SUB-05 live producer refuses replay-marked ordinary tools rather than accepting synthetic completion', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		f.notifyBatch(sessionId, [
+			{
+				type: 'tool',
+				id: 'synthetic-tool',
+				status: 'completed',
+				history: {outcome: 'unknown'},
+			},
+		]);
+		return {stopReason: 'end_turn'};
+	};
+	await t.throwsAsync(
+		f.service.promptThread({...request, text: 'private prompt'}),
+		{code: 'DENIED'},
+	);
+	t.deepEqual(
+		f.store.threadHistory.read({...request, sessionId: 'fake-session'})
+			?.executions,
+		[],
+	);
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), []);
+});
+
+test('SUB-05 a refused live terminal commit keeps SQL and observer state pending and never publishes success', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		f.notifyBatch(sessionId, [
+			{
+				type: 'tool',
+				id: 'pending-root',
+				status: 'in_progress',
+				delegation: {role: 'explore', history: false},
+			},
+		]);
+		return {stopReason: 'end_turn'};
+	};
+	const apply = f.store.threadHistory.apply;
+	f.store.threadHistory.apply = (scope, patch) => {
+		if (patch.turns.some(row => row.outcome !== 'unknown'))
+			throw new IpcFailure('UNAVAILABLE', 'The fixture terminal commit failed');
+		return apply(scope, patch);
+	};
+	await t.throwsAsync(
+		f.service.promptThread({...request, text: 'private prompt'}),
+		{code: 'UNAVAILABLE'},
+	);
+	t.is(
+		f.store.threadHistory.read({...request, sessionId: 'fake-session'})
+			?.turns[0].outcome,
+		'unknown',
+	);
+	t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, 'running');
+	const snapshot = await f.service.getThreadSnapshot(request);
+	t.is(snapshot.result?.ok, false);
+	t.is(snapshot.thread.runState, 'failed');
+});
+
+test('SUB-05 a recreated owner replays live committed UUIDs and retains a genuinely failed outcome', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	connection.prompt = async sessionId => {
+		f.notifyBatch(sessionId, [
+			{
+				type: 'tool',
+				id: 'failed-live-root',
+				status: 'failed',
+				delegation: {role: 'explore', history: false},
+			},
+		]);
+		return {stopReason: 'end_turn'};
+	};
+	await f.service.promptThread({
+		...request,
+		text: 'private persisted elsewhere',
+	});
+	const scope = {...request, sessionId: 'fake-session'};
+	const before = f.store.threadHistory.read(scope);
+	f.service.dispose();
+	connection.resumeSession = async id => ({
+		session: {id, mode: 'normal'},
+		history: [
+			{type: 'user', text: 'private persisted elsewhere'},
+			{
+				type: 'tool',
+				id: 'failed-live-root',
+				status: 'completed',
+				delegation: {role: 'explore', history: true},
+			},
+		],
+	});
+	const restarted = createThreadService({
+		store: f.store,
+		supervisor: f.supervisor,
+	});
+	t.teardown(() => restarted.dispose());
+	const replayed = await restarted.openThread(request);
+	const after = f.store.threadHistory.read(scope);
+	t.deepEqual(after?.turns, before?.turns);
+	t.deepEqual(after?.executions, before?.executions);
+	t.like(replayed.events[1], {
+		type: 'tool',
+		id: 'failed-live-root',
+		status: 'failed',
+		history: {outcome: 'failed'},
+	});
+	t.is(f.store.agentRuns.list(f.project.id, thread.id).length, 1);
+	t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, 'failed');
+	t.true((after?.generation ?? -1) > (before?.generation ?? -1));
+	t.true((after?.sequence ?? -1) > (before?.sequence ?? -1));
+});
+
+test('SUB-05 late tool notifications after the owning turn ends cannot create new identities or cards', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async () => ({
+		stopReason: 'end_turn',
+	});
+	await f.service.promptThread({...request, text: 'private prompt'});
+	const before = f.store.threadHistory.read({
+		...request,
+		sessionId: 'fake-session',
+	});
+	const snapshot = await f.service.getThreadSnapshot(request);
+	f.notifyBatch('fake-session', [
+		{
+			type: 'tool',
+			id: 'late-tool',
+			status: 'completed',
+			delegation: {role: 'explore', history: false},
+		},
+	]);
+	t.deepEqual(
+		f.store.threadHistory.read({...request, sessionId: 'fake-session'}),
+		before,
+	);
+	t.deepEqual(await f.service.getThreadSnapshot(request), snapshot);
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), []);
+});
+
+for (const outcome of ['failed', 'cancelled'] as const) {
+	test(`SUB-05 explicit owning ${outcome} metadata is not replaced by a normal prompt stop`, async t => {
+		const f = await fixture(t, true);
+		const thread = await f.service.createThread({projectId: f.project.id});
+		const request = {projectId: f.project.id, threadId: thread.id};
+		await f.supervisor.ensureProcess(f.project);
+		f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+			f.notifyBatch(sessionId, [
+				{
+					type: 'tool',
+					id: 'unfinished-root',
+					status: 'in_progress',
+					delegation: {role: 'explore', history: false},
+				},
+			]);
+			return {stopReason: 'end_turn', metadata: {outcome}};
+		};
+		await f.service.promptThread({...request, text: 'private prompt'});
+		const expected = outcome === 'cancelled' ? 'interrupted' : 'failed';
+		const history = f.store.threadHistory.read({
+			...request,
+			sessionId: 'fake-session',
+		});
+		t.is(history?.turns[0].outcome, expected);
+		t.is(history?.executions[0].outcome, expected);
+		t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, expected);
+		t.is(
+			(await f.service.getThreadSnapshot(request)).thread.runState,
+			expected,
+		);
+	});
+}
+
+test('SUB-05 live cancellation leaves already completed executions unchanged', async t => {
+	const f = await fixture(t, true);
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.supervisor.ensureProcess(f.project);
+	f.supervisor.getConnection(f.project.id).prompt = async sessionId => {
+		for (const [toolCallId, status] of [
+			['finished', 'completed'],
+			['unfinished', 'in_progress'],
+		] as const)
+			f.notifyUpdate({
+				sessionId,
+				update: {
+					sessionUpdate: 'tool_call',
+					toolCallId,
+					kind: 'think',
+					status,
+					title: 'delegation',
+					rawInput: {subagent_type: 'explore'},
+				},
+			});
+		return {stopReason: 'cancelled'};
+	};
+	await f.service.promptThread({...request, text: 'private prompt'});
+	t.deepEqual(
+		f.store.threadHistory
+			.read({...request, sessionId: 'fake-session'})
+			?.executions.map(row => row.outcome),
+		['completed', 'interrupted'],
+	);
+});
+
+for (const outcome of ['cancelled', 'failed'] as const) {
+	test(`SUB-05 owning live ${outcome} terminal settles unfinished delegation metadata`, async t => {
+		const f = await fixture(t, true);
+		const thread = await f.service.createThread({projectId: f.project.id});
+		const request = {projectId: f.project.id, threadId: thread.id};
+		await f.supervisor.ensureProcess(f.project);
+		const connection = f.supervisor.getConnection(f.project.id);
+		connection.prompt = async sessionId => {
+			f.notifyUpdate({
+				sessionId,
+				update: {
+					sessionUpdate: 'tool_call',
+					toolCallId: 'unfinished-delegation',
+					kind: 'think',
+					status: 'in_progress',
+					title: 'private unfinished delegation',
+					rawInput: {subagent_type: 'explore'},
+				},
+			});
+			if (outcome === 'failed')
+				throw new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'The fixture turn failed',
+				);
+			return {stopReason: 'cancelled'};
+		};
+		const result = f.service.promptThread({...request, text: 'private prompt'});
+		if (outcome === 'failed')
+			await t.throwsAsync(result, {code: 'AGENT_UNAVAILABLE'});
+		else t.deepEqual(await result, {stopReason: 'cancelled'});
+		const expected = outcome === 'cancelled' ? 'interrupted' : 'failed';
+		const history = f.store.threadHistory.read({
+			...request,
+			sessionId: 'fake-session',
+		});
+		t.like(history, {
+			turns: [{outcome: expected}],
+			executions: [{outcome: expected}],
+		});
+		t.is(f.store.agentRuns.list(f.project.id, thread.id)[0]?.status, expected);
+	});
+}
+
+test('SUB-05 successful resume persists structural IDs before exposing synthetic tools', async t => {
+	const packets: ProjectEvent[] = [];
+	const f = await fixture(t, true, event => packets.push(event));
+	const thread = seed(f.project, {nanocoderSessionId: 'mapped-history'});
+	f.store.threads.save(thread);
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	connection.getSessionOffers = id =>
+		id === 'mapped-history'
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
+	connection.resumeSession = async id => ({
+		session: {id, mode: 'normal'},
+		history: [
+			{type: 'user', text: 'synthetic private prompt'},
+			{
+				type: 'tool',
+				id: 'opaque/delegation',
+				title: 'synthetic private task',
+				status: 'completed',
+				delegation: {role: 'explore', history: true},
+			},
+		],
+	});
+	const opened = await f.service.openThread({
+		projectId: f.project.id,
+		threadId: thread.id,
+	});
+	t.is(opened.thread.runState, 'ready');
+	const history = f.store.threadHistory.read({
+		projectId: f.project.id,
+		threadId: thread.id,
+		sessionId: 'mapped-history',
+	});
+	t.truthy(history, 'successful replay must commit its structural ledger');
+	t.is(history?.turns.length, 1);
+	t.is(history?.executions.length, 1);
+	t.is(history?.executions[0].toolCallId, 'opaque/delegation');
+	t.is(opened.sequence, 3);
+	assertReplayMarkers(
+		t,
+		packets,
+		thread,
+		[
+			['begin', 1],
+			['complete', 3],
+		],
+		opened.replayEpoch,
+	);
+	t.true((history?.sequence ?? -1) > opened.sequence);
+	for (const privateField of [
+		'firstSlot',
+		'highWaterMark',
+		'executionId',
+		'turnId',
+	])
+		t.false(JSON.stringify(opened).includes(`"${privateField}":`));
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), [
+		{
+			id: history?.executions[0].id,
+			threadId: thread.id,
+			parentRunId: null,
+			nanocoderChildId: null,
+			role: 'explore',
+			status: 'unknown',
+		},
+	]);
+});
+
+test('SUB-05 recreated ThreadService reuses committed UUIDs and recovers the private replay slot base', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'recreated-history'});
+	f.store.threads.save(thread);
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	let resumes = 0;
+	connection.getSessionOffers = id =>
+		id === 'recreated-history'
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
+	connection.resumeSession = async id => {
+		t.is(id, 'recreated-history');
+		resumes++;
+		return {
+			session: {id, mode: 'normal'},
+			history: [
+				{type: 'user', text: 'private restart fixture'},
+				{
+					type: 'tool',
+					id: 'stable/restarted-call',
+					status: 'completed',
+					delegation: {role: 'explore', history: true},
+				},
+			],
+		};
+	};
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const scope = {...request, sessionId: 'recreated-history'};
+	const first = await f.service.openThread(request);
+	const before = f.store.threadHistory.read(scope);
+	f.service.dispose();
+	const packets: ProjectEvent[] = [];
+	const restarted = createThreadService({
+		store: f.store,
+		supervisor: f.supervisor,
+		onEvent: event => packets.push(event),
+	});
+	t.teardown(() => restarted.dispose());
+	const second = await restarted.openThread(request);
+	const after = f.store.threadHistory.read(scope);
+	t.is(resumes, 2);
+	t.truthy(before);
+	const floor = Math.floor((before?.sequence ?? 0) / 10_001);
+	t.is(second.sequence, floor + 3);
+	assertReplayMarkers(
+		t,
+		packets,
+		second.thread,
+		[
+			['begin', floor + 1],
+			['complete', floor + 3],
+		],
+		second.replayEpoch,
+	);
+	t.true((after?.sequence ?? -1) > (before?.sequence ?? -1));
+	t.deepEqual(after?.turns, before?.turns);
+	t.deepEqual(after?.executions, before?.executions);
+	t.is(f.store.agentRuns.list(f.project.id, thread.id).length, 1);
+	t.deepEqual(second.events, first.events);
+});
+
+test('SUB-05 replayed synthetic completion is inert and not a reported success', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'inert-history'});
+	f.store.threads.save(thread);
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	connection.getSessionOffers = id =>
+		id === 'inert-history'
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
+	connection.resumeSession = async id => ({
+		session: {id, mode: 'normal'},
+		history: [
+			{type: 'user', text: 'synthetic fixture'},
+			{type: 'tool', id: 'opaque/tool', status: 'completed'},
+		],
+	});
+	const opened = await f.service.openThread({
+		projectId: f.project.id,
+		threadId: thread.id,
+	});
+	t.like(
+		opened.events.find(event => event.type === 'tool'),
+		{
+			history: {outcome: 'unknown'},
+		},
+	);
+});
+
+test('SUB-05 failed staged replay preserves the old SQL and readable prefix then retries the same saved ID', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'atomic-history'});
+	f.store.threads.save(thread);
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	let ready = true;
+	let resumes = 0;
+	connection.getSessionOffers = id =>
+		ready && id === 'atomic-history'
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
+	connection.resumeSession = async id => {
+		t.is(id, 'atomic-history');
+		resumes++;
+		ready = true;
+		return {
+			session: {id, mode: 'normal'},
+			history: [
+				{type: 'user', text: `private replay ${resumes}`},
+				{
+					type: 'tool',
+					id: 'stable/tool',
+					status: 'completed',
+					delegation: {role: 'explore', history: true},
+				},
+			],
+		};
+	};
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const initial = await f.service.openThread(request);
+	const scope = {...request, sessionId: 'atomic-history'};
+	const history = f.store.threadHistory.read(scope);
+	const rows = f.store.agentRuns.list(f.project.id, thread.id);
+	const apply = f.store.threadHistory.apply;
+	let staged = 0;
+	f.store.threadHistory.apply = (_scope, patch) => {
+		staged = patch.agentRuns.length;
+		throw new IpcFailure('INTERNAL', 'Synthetic identity commit failure');
+	};
+	ready = false;
+	const failed = await f.service.openThread(request);
+	t.deepEqual(failed.events, initial.events);
+	t.is(failed.thread.nanocoderSessionId, 'atomic-history');
+	t.is(staged, 1);
+	t.deepEqual(f.store.threadHistory.read(scope), history);
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), rows);
+	f.store.threadHistory.apply = apply;
+	const retried = await f.service.openThread(request);
+	t.is(retried.thread.runState, 'ready');
+	t.is(resumes, 3);
+	t.is(retried.thread.nanocoderSessionId, 'atomic-history');
+	t.like(retried.events[0], {type: 'user', text: 'private replay 3'});
+	t.deepEqual(
+		f.store.threadHistory.read(scope)?.executions.map(row => row.id),
+		history?.executions.map(row => row.id),
+	);
+});
+
+test('SUB-05 failed structural read clears cached preparation before retrying the same history', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const initial = await f.service.openThread(request);
+	const connection = f.supervisor.getConnection(f.project.id);
+	let ready = false;
+	let resumes = 0;
+	connection.getSessionOffers = id =>
+		ready && id === 'fake-session'
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
+	const original = connection.resumeSession;
+	connection.resumeSession = async (...args) => {
+		resumes++;
+		ready = true;
+		return original(...args);
+	};
+	const read = f.store.threadHistory.read;
+	let fail = true;
+	f.store.threadHistory.read = scope => {
+		if (fail) {
+			fail = false;
+			throw new IpcFailure('INTERNAL', 'Synthetic identity read failure');
+		}
+		return read(scope);
+	};
+	const failed = await f.service.openThread(request);
+	t.deepEqual(failed.events, initial.events);
+	const retried = await f.service.openThread(request);
+	t.is(retried.thread.runState, 'ready');
+	t.is(retried.thread.nanocoderSessionId, 'fake-session');
+	t.is(resumes, 2);
+	f.store.threadHistory.read = read;
+});
 
 async function fixture(
 	t: ExecutionContext,
@@ -94,6 +2385,16 @@ async function fixture(
 			return connection;
 		},
 	});
+	const listeners = new Set<(event: ProjectEvent) => void>();
+	const subscribe = supervisor.subscribe.bind(supervisor);
+	supervisor.subscribe = listener => {
+		listeners.add(listener);
+		const off = subscribe(listener);
+		return () => {
+			listeners.delete(listener);
+			off();
+		};
+	};
 	t.teardown(async () => {
 		await supervisor.close();
 		service.dispose();
@@ -140,6 +2441,24 @@ async function fixture(
 			if (!titleUpdate) throw new Error('No fixture connection is ready');
 			titleUpdate({sessionId, title});
 		},
+		notifyBatch: (sessionId: string, events: TurnEvent[]) => {
+			for (const listener of listeners)
+				listener({
+					type: 'turn',
+					projectId: project.id,
+					threadId: sessionId,
+					sequence: 1,
+					events,
+				});
+		},
+		notifyUpdate: (
+			notification: Parameters<
+				NonNullable<ConnectOptions['onSessionUpdate']>
+			>[0],
+		) => {
+			if (!update) throw new Error('No fixture connection is ready');
+			update(notification);
+		},
 		notify: (sessionId: string, text: string) => {
 			if (!update) throw new Error('No fixture connection is ready');
 			update({
@@ -170,6 +2489,35 @@ function nextFailure(supervisor: ProjectSupervisor) {
 		}
 	});
 	return failed.promise;
+}
+
+function assertReplayMarkers(
+	t: ExecutionContext,
+	events: ProjectEvent[],
+	thread: Pick<ThreadInfo, 'id' | 'projectId'>,
+	markers: Array<['begin' | 'complete' | 'failed', number]>,
+	expectedEpoch?: string,
+) {
+	const first = events[0];
+	const epoch = first?.type === 'turn' ? first.replay?.epoch : undefined;
+	if (markers.length) {
+		t.regex(
+			epoch ?? '',
+			/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+		);
+		if (expectedEpoch !== undefined) t.is(epoch, expectedEpoch);
+	}
+	t.deepEqual(
+		events,
+		markers.map(([phase, sequence]) => ({
+			type: 'turn',
+			projectId: thread.projectId,
+			threadId: thread.id,
+			sequence,
+			events: [],
+			replay: {epoch, phase},
+		})),
+	);
 }
 
 function seed(
@@ -255,7 +2603,10 @@ for (const mode of [
 		await supervisor.stop(project.id);
 		writeFileSync(path.join(project.canonicalRoot, '.fake-nanocoder'), mode);
 		const unavailable = await service.openThread(request);
-		t.is(unavailable.thread.runState, 'view-only');
+		t.is(
+			unavailable.thread.runState,
+			mode === 'missing-session' ? 'view-only' : 'failed',
+		);
 		t.truthy(unavailable.thread.viewOnlyReason);
 		if (mode === 'resume-fails')
 			t.is(
@@ -476,10 +2827,13 @@ test('thread recovery remains starting through slow mode confirmation and detach
 				event.method === 'session/new' || event.method === 'session/prompt',
 		),
 	);
-	t.deepEqual(
-		mapped.slice(before).filter(event => event.type === 'turn'),
-		[],
-	);
+	const previous = mapped
+		.slice(0, before)
+		.filter(event => event.type === 'turn')
+		.at(-1);
+	assertReplayMarkers(t, mapped.slice(before), thread, [
+		['begin', (previous?.sequence ?? 0) + 1],
+	]);
 	t.false(service.activity(project.id).preparing);
 });
 
@@ -612,6 +2966,58 @@ test('ordinary history open refuses a located root before launch or former-cwd r
 	t.deepEqual(await service.getThreadSnapshot(request), before);
 	t.is(calls.filter(call => call === 'launch').length, 1);
 	t.is(supervisor.getState(project.id).status, 'stopped');
+});
+
+test('ACP-10 renderer detach drops cancelled approval payloads from retained snapshots before reopen', async t => {
+	const {
+		project,
+		service,
+		store,
+		supervisor,
+		connection,
+		target,
+		requests,
+		turn,
+	} = await waitingThread(t, true);
+	const before = await service.getThreadSnapshot(target);
+	t.is(before.events.filter(event => event.type === 'permission').length, 2);
+	const scope = {...target, sessionId: 'fake-session'};
+	const history = store.threadHistory.read(scope);
+	await service.detach([project]);
+	await turn;
+	t.is(supervisor.getState(project.id).status, 'stopped');
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines()).filter(event => event.answer),
+		[{answer: {outcome: 'cancelled'}}],
+	);
+	const after = await service.getThreadSnapshot(target);
+	t.deepEqual(
+		after.events,
+		before.events.filter(
+			event =>
+				event.type !== 'permission' && event.type !== 'permission-closed',
+		),
+	);
+	t.is(after.sequence, before.sequence);
+	t.is(after.result, undefined);
+	t.deepEqual(store.threadHistory.read(scope), history);
+	for (const request of requests)
+		await t.throwsAsync(
+			service.answerThreadPermission({
+				...target,
+				requestId: request.id,
+				optionId: 'allow',
+			}),
+			{instanceOf: IpcFailure, code: 'DENIED'},
+		);
+	const reopened = await service.openThread(target);
+	t.is(reopened.thread.nanocoderSessionId, 'fake-session');
+	t.false(
+		reopened.events.some(
+			event =>
+				event.type === 'permission' || event.type === 'permission-closed',
+		),
+	);
 });
 
 test('a restarted waiting thread is interrupted with no synthetic terminal, launch or surviving approval authority (CHAT-03, ACP-10)', async t => {
@@ -784,7 +3190,19 @@ test('thread recovery uses the supplied starting connection and replaces its map
 	t.is(snapshot.result, undefined);
 	t.is(snapshot.thread.mode, 'normal');
 	t.is(snapshot.thread.nanocoderSessionId, 'fake-session');
-	t.is(snapshot.sequence, before.sequence + 1);
+	t.is(snapshot.sequence, before.sequence + 3);
+	assertReplayMarkers(
+		t,
+		mapped.filter(
+			event => event.type === 'turn' && event.sequence > before.sequence,
+		),
+		thread,
+		[
+			['begin', before.sequence + 1],
+			['complete', before.sequence + 3],
+		],
+		snapshot.replayEpoch,
+	);
 	t.true(
 		snapshot.events.some(
 			event => event.type === 'user' && event.text === 'Earlier question',
@@ -1315,7 +3733,10 @@ test('detached turn response metadata cannot publish into a later renderer attac
 });
 
 test('resumed metadata remains part of the owned in-memory snapshot prefix (CHAT-19, CHAT-04)', async t => {
-	const {service, supervisor, store, project} = await fixture(t, true);
+	const packets: ProjectEvent[] = [];
+	const {service, supervisor, store, project} = await fixture(t, true, event =>
+		packets.push(event),
+	);
 	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
 	store.threads.save(thread);
 	await supervisor.ensureProcess(project);
@@ -1334,7 +3755,17 @@ test('resumed metadata remains part of the owned in-memory snapshot prefix (CHAT
 		threadId: thread.id,
 	});
 	t.deepEqual(snapshot.events.at(-1), metadata);
-	t.is(snapshot.sequence, 1);
+	t.is(snapshot.sequence, 3);
+	assertReplayMarkers(
+		t,
+		packets,
+		thread,
+		[
+			['begin', 1],
+			['complete', 3],
+		],
+		snapshot.replayEpoch,
+	);
 });
 
 test('removed desktop metadata also forgets the remembered recovery session without resuming it (CHAT-14, ACP-13)', async t => {
@@ -1475,11 +3906,19 @@ test('thread recovery refuses a located root or mismatched supplied connection b
 
 test('thread recovery refuses already-aborted and late-aborted mode results without replacing history (ACP-13)', async t => {
 	for (const late of [false, true]) {
-		const {service, supervisor, store, project} = await fixture(t, true);
+		const packets: ProjectEvent[] = [];
+		const {service, supervisor, store, project} = await fixture(
+			t,
+			true,
+			event => packets.push(event),
+		);
 		const thread = seed(project, {nanocoderSessionId: 'fake-session'});
 		store.threads.save(thread);
 		const request = {projectId: project.id, threadId: thread.id};
 		const before = await service.openThread(request);
+		const identityScope = {...request, sessionId: 'fake-session'};
+		const history = store.threadHistory.read(identityScope);
+		const runs = store.agentRuns.list(project.id, thread.id);
 		const connection = supervisor.getConnection(project.id);
 		const entered = deferred<void>();
 		const release = deferred<void>();
@@ -1500,7 +3939,27 @@ test('thread recovery refuses already-aborted and late-aborted mode results with
 		}
 		release.resolve();
 		await rejected;
-		t.deepEqual(await service.getThreadSnapshot(request), before);
+		const after = await service.getThreadSnapshot(request);
+		t.deepEqual(after, {
+			...before,
+			...(late && {
+				sequence: before.sequence + 1,
+				replayEpoch: after.replayEpoch,
+				replaying: true,
+			}),
+		});
+		assertReplayMarkers(
+			t,
+			packets.filter(
+				event => event.type === 'turn' && event.sequence > before.sequence,
+			),
+			thread,
+			late ? [['begin', before.sequence + 1]] : [],
+			late ? after.replayEpoch : undefined,
+		);
+		if (late) t.not(after.replayEpoch, before.replayEpoch);
+		t.deepEqual(store.threadHistory.read(identityScope), history);
+		t.deepEqual(store.agentRuns.list(project.id, thread.id), runs);
 		t.false(service.activity(project.id).preparing);
 	}
 });
@@ -2281,8 +4740,19 @@ for (const action of ['rename', 'delete'] as const) {
 			code: 'AGENT_UNAVAILABLE',
 		});
 		await entered.promise;
-		await service.detach([project]);
+		let detached = false;
+		const detaching = service.detach([project]).then(() => {
+			detached = true;
+		});
+		await Promise.resolve();
+		await Promise.resolve();
+		t.false(detached);
+		await t.throwsAsync(
+			service.runProjectOperation(project.id, 'set-mode', async () => {}),
+			{instanceOf: IpcFailure, code: 'BUSY'},
+		);
 		answer.resolve();
+		await detaching;
 		await rejected;
 		t.deepEqual(store.threads.get(project.id, thread.id), thread);
 		t.false(store.threads.getTitleManuallySet(project.id, thread.id));
@@ -2310,6 +4780,53 @@ test('deleting history needs a separate main confirmation and cancellation start
 	);
 	t.deepEqual(store.threads.get(project.id, thread.id), thread);
 	t.deepEqual(calls, ['confirm-delete']);
+});
+
+test('CHAT-17 an open history dialog blocks project mutations but leaves metadata readable and shutdown non-blocking', async t => {
+	const f = await fixture(t);
+	const thread = seed(f.project);
+	const peer = seed(f.project, {nanocoderSessionId: null});
+	f.store.threads.save(thread);
+	f.store.threads.save(peer);
+	const entered = deferred<void>();
+	const answer = deferred<boolean>();
+	f.confirmDeletion(() => {
+		entered.resolve();
+		return answer.promise;
+	});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const peerRequest = {...request, threadId: peer.id};
+	const deletion = f.service.deleteThreadHistory(request);
+	const refused = t.throwsAsync(deletion, {code: 'AGENT_UNAVAILABLE'});
+	await entered.promise;
+	for (const attempt of [
+		() =>
+			f.service.runProjectOperation(f.project.id, 'set-mode', async () => {}),
+		() =>
+			f.service.runProjectOperation(f.project.id, 'set-config', async () => {}),
+		() => f.service.archiveThread({...peerRequest, archived: true}),
+		() => f.service.removeThread(peerRequest),
+		() => f.service.renameThread({...peerRequest, title: 'not saved'}),
+		() => f.service.promptThread({...peerRequest, text: 'not sent'}),
+	]) {
+		await t.throwsAsync(attempt(), {instanceOf: IpcFailure, code: 'BUSY'});
+	}
+	t.is((await f.service.getThreadSnapshot(request)).thread.id, thread.id);
+	t.is(
+		(
+			await f.service.listThreads({
+				projectId: f.project.id,
+				archiveState: 'active',
+			})
+		).length,
+		2,
+	);
+	await f.service.detach([f.project]);
+	await refused;
+	t.deepEqual(f.calls, ['confirm-delete']);
+	answer.resolve(true);
+	t.deepEqual(f.store.threads.get(f.project.id, thread.id), thread);
+	t.deepEqual(f.calls, ['confirm-delete']);
 });
 
 test('accepted history deletion uses the saved session and removes metadata only after success (CHAT-14, DATA-07)', async t => {
@@ -2487,10 +5004,7 @@ test('opening a missing Nanocoder session keeps its ID and shows unable-to-resum
 	t.is(snapshot.thread.nanocoderSessionId, thread.nanocoderSessionId);
 	t.is(snapshot.thread.title, thread.title);
 	t.is(snapshot.thread.runState, 'view-only');
-	t.regex(
-		snapshot.thread.viewOnlyReason ?? '',
-		/Nanocoder has no saved history/,
-	);
+	t.is(snapshot.thread.viewOnlyReason, REPLAY_MISSING_REASON);
 	t.deepEqual(snapshot.events, []);
 	t.deepEqual(store.threads.get(project.id, thread.id), snapshot.thread);
 });
@@ -2523,10 +5037,20 @@ test('opening a stored session delegates replay and never restores yolo (CHAT-04
 			type: 'tool',
 			id: 'old_call',
 			title: 'execute_bash: echo old',
-			status: 'completed',
+			status: 'unknown',
+			history: {outcome: 'unknown'},
 		},
 	]);
-	t.deepEqual(events, []);
+	assertReplayMarkers(
+		t,
+		events,
+		thread,
+		[
+			['begin', 1],
+			['complete', 3],
+		],
+		snapshot.replayEpoch,
+	);
 	const connection = supervisor.getConnection(project.id);
 	await supervisor.close();
 	const modes = fakeEvents(connection.stderr.lines())

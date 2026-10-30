@@ -19,6 +19,7 @@ import {
 } from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {ProjectEvent} from '@/shared/ipc';
+import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 
@@ -539,7 +540,7 @@ test('a missing cached session stays view-only until the user explicitly starts 
 	await page.locator('.thread-open[aria-current="true"]').click();
 	await expect(
 		page.getByRole('region', {name: 'view-only thread'}),
-	).toContainText('Nanocoder has no saved history for this thread');
+	).toContainText(REPLAY_MISSING_REASON);
 	await expect(page.getByLabel('Message')).toHaveCount(0);
 	const stoppedMissing = await page.evaluate(
 		projectId =>

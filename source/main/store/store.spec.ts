@@ -27,7 +27,93 @@ import {
 } from '@/main/store/migrations';
 import {createNodeSqliteDriver} from '@/main/store/node-sqlite';
 import {repositories} from '@/main/store/repositories';
+import type {ThreadHistoryPatch} from '@/main/store/thread-execution-identities';
+import {
+	createThreadHistoryObserver,
+	type ReplayObservation,
+} from '@/main/threads/thread-history-observer';
 import type {ProjectInfo, ThreadInfo} from '@/shared/ipc';
+
+test('ACP-18 main-only session lookup finds its exact owner without changing archived/manual metadata', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const owner = project(f.root);
+	const otherRoot = path.join(f.root, 'other-project');
+	mkdirSync(otherRoot);
+	const other = project(otherRoot);
+	store.projects.save(owner);
+	store.projects.save(other);
+	const sessionId = 'session/é/\u{1F680}';
+	const foreignSessionId = randomUUID();
+	const saved = thread(owner, {
+		nanocoderSessionId: sessionId,
+		archiveState: 'archived',
+		title: 'manual title',
+	});
+	const foreign = thread(other, {nanocoderSessionId: foreignSessionId});
+	const unsaved = thread(owner, {nanocoderSessionId: null});
+	for (const row of [saved, foreign, unsaved]) store.threads.save(row);
+	store.threads.setTitle({
+		projectId: owner.id,
+		threadId: saved.id,
+		title: saved.title,
+		manuallySet: true,
+	});
+	t.deepEqual(store.threads.getBySessionId(sessionId), saved);
+	t.deepEqual(store.threads.getBySessionId(foreignSessionId), foreign);
+	t.is(store.threads.getBySessionId('unknown-session'), undefined);
+	t.is(store.threads.getBySessionId(` ${sessionId}`), undefined);
+	t.deepEqual(store.threads.get(owner.id, saved.id), saved);
+	t.true(store.threads.getTitleManuallySet(owner.id, saved.id));
+});
+
+test('ACP-18 main-only session lookup refuses malformed opaque identities without normalising them', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	for (const id of ['', '   ', 'session\n', 'é'.repeat(101), '\uD800']) {
+		t.throws(() => store.threads.getBySessionId(id), {code: 'VALIDATION'});
+	}
+});
+
+for (const action of ['insert', 'update'] as const) {
+	for (const kind of ['high', 'low', 'bytes', 'control'] as const) {
+		test(`CHAT-08 durable session ${action} refuses ${kind} identity before any write`, async t => {
+			const f = fixture(t);
+			const store = await f.open();
+			const owner = project(f.root);
+			store.projects.save(owner);
+			const before = thread(owner);
+			if (action === 'update') store.threads.save(before);
+			const invalid = {
+				high: 'session\uD800',
+				low: 'session\uDFFF',
+				bytes: 'é'.repeat(101),
+				control: 'session\u202e',
+			}[kind];
+			const error = t.throws(
+				() => store.threads.save({...before, nanocoderSessionId: invalid}),
+				{code: 'VALIDATION'},
+			);
+			t.is(error?.message, 'Invalid desktop metadata');
+			t.deepEqual(
+				store.threads.get(owner.id, before.id),
+				action === 'update' ? before : undefined,
+			);
+		});
+	}
+}
+
+test('CHAT-08 well-formed Unicode saved session metadata round-trips exactly', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const owner = project(f.root);
+	const saved = thread(owner, {nanocoderSessionId: 'session/é/\u{1F680}'});
+	store.projects.save(owner);
+	store.threads.save(saved);
+	t.deepEqual(store.threads.get(owner.id, saved.id), saved);
+	store.close();
+	t.deepEqual((await f.open()).threads.get(owner.id, saved.id), saved);
+});
 
 function fixture(t: ExecutionContext) {
 	const root = realpathSync.native(
@@ -82,6 +168,119 @@ function thread(
 		viewOnlyReason: null,
 		...overrides,
 	};
+}
+
+for (const restart of ['close', 'SIGKILL'] as const) {
+	test(`CHAT-08 SUB-05 the main store retains one atomic replay identity/run commit after ${restart}`, async t => {
+		const f = fixture(t);
+		const store = await f.open();
+		const owner = project(f.root);
+		const sessionId = randomUUID();
+		const saved = thread(owner, {nanocoderSessionId: sessionId});
+		store.projects.save(owner);
+		store.threads.save(saved);
+		const scope = {projectId: owner.id, threadId: saved.id, sessionId};
+		const turnId = randomUUID();
+		const executionId = randomUUID();
+		const patch: Omit<ThreadHistoryPatch, 'source' | 'agentRuns'> = {
+			expectedRevision: null,
+			generation: 1,
+			sequence: 1,
+			complete: true,
+			turns: [{id: turnId, ordinal: 0, outcome: 'unknown'}],
+			executions: [
+				{
+					id: executionId,
+					turnId,
+					toolCallId: 'safe-tool',
+					ordinal: 0,
+					outcome: 'unknown',
+				},
+			],
+		};
+		const entry: ReplayObservation = {
+			context: {
+				...scope,
+				turnId,
+				executionId,
+				toolCallId: 'safe-tool',
+				generation: 1,
+				sequence: 1,
+				source: 'replay',
+				terminalEvidence: 'replay-synthetic',
+				replayEpoch: randomUUID(),
+				replayCommitted: true,
+			},
+			tool: {
+				type: 'tool',
+				id: 'safe-tool',
+				status: 'completed',
+				delegation: {
+					role: 'explore',
+					history: true,
+					task: 'forbidden-task-sentinel',
+				},
+				details: {input: 'forbidden-input-sentinel'},
+			},
+		};
+		if (restart === 'close') {
+			const observer = createThreadHistoryObserver({
+				scope,
+				history: store.threadHistory,
+				runs: store.agentRuns,
+			});
+			t.is(observer.commitReplay(patch, [entry]), 1);
+			observer.dispose();
+			store.close();
+		} else {
+			store.close();
+			const script = `
+				const {desktopStoreFactory} = await import(${JSON.stringify(new URL('./index.ts', import.meta.url).href)});
+				const {createNodeSqliteDriver} = await import(${JSON.stringify(new URL('./node-sqlite.ts', import.meta.url).href)});
+				const {createThreadHistoryObserver} = await import(${JSON.stringify(new URL('../threads/thread-history-observer.ts', import.meta.url).href)});
+				const [filename, encoded] = process.argv.slice(1);
+				const {scope, patch, entry} = JSON.parse(encoded);
+				const store = await desktopStoreFactory.open({databasePath: filename, driver: createNodeSqliteDriver()});
+				const observer = createThreadHistoryObserver({scope, history: store.threadHistory, runs: store.agentRuns});
+				observer.commitReplay(patch, [entry]);
+				process.kill(process.pid, 'SIGKILL');
+			`;
+			const crashed = spawnSync(
+				process.execPath,
+				[
+					'--import=tsx',
+					'--input-type=module',
+					'-e',
+					script,
+					f.filename,
+					JSON.stringify({scope, patch, entry}),
+				],
+				{stdio: 'ignore', timeout: 10000},
+			);
+			t.is(crashed.error, undefined);
+			t.is(crashed.signal, 'SIGKILL');
+			t.true(readdirSync(f.root).includes('desktop.sqlite-wal'));
+		}
+		const reopened = await f.open();
+		t.deepEqual(reopened.threadHistory.read(scope), {
+			revision: 1,
+			generation: 1,
+			sequence: 1,
+			complete: true,
+			turns: patch.turns,
+			executions: patch.executions,
+		});
+		t.deepEqual(reopened.agentRuns.list(scope.projectId, scope.threadId), [
+			{
+				id: executionId,
+				threadId: saved.id,
+				parentRunId: null,
+				nanocoderChildId: null,
+				role: 'explore',
+				status: 'unknown',
+			},
+		]);
+	});
 }
 
 test('opening a store reconciles only orphaned running and waiting rows, preserving all other metadata and manual titles (CHAT-03, DATA-07)', async t => {
@@ -196,13 +395,13 @@ for (const version of [1, 2] as const)
 		store.close();
 		const upgraded = f.driver.open(f.filename);
 		try {
-			t.is(schemaVersion(upgraded), 3);
+			t.is(schemaVersion(upgraded), migrations.length);
 			t.deepEqual(
 				upgraded
 					.prepare('SELECT version FROM schema_migration ORDER BY version')
 					.all()
 					.map(row => row.version),
-				[1, 2, 3],
+				migrations.map(migration => migration.version),
 			);
 		} finally {
 			upgraded.close();
@@ -254,7 +453,7 @@ test('empty database runs every numbered migration and persists the version', as
 			.prepare('SELECT version FROM schema_migration ORDER BY version')
 			.all()
 			.map(row => row.version),
-		[1, 2, 3],
+		migrations.map(migration => migration.version),
 	);
 	t.false(readdirSync(f.root).some(name => name.includes('.backup-')));
 	if (process.platform !== 'win32')
@@ -346,6 +545,43 @@ test('title metadata refuses cross-project targets and non-allowlisted fields (C
 	t.false(store.threads.getTitleManuallySet(owner.id, saved.id));
 });
 
+test('CHAT-08 current schema independently pins version four, migration ids and the exact metadata tables', async t => {
+	const f = fixture(t);
+	(await f.open()).close();
+	const db = f.driver.open(f.filename);
+	t.teardown(() => db.close());
+	t.is(db.prepare('PRAGMA user_version').get()?.user_version, 4);
+	t.deepEqual(
+		db
+			.prepare('SELECT version FROM schema_migration ORDER BY version')
+			.all()
+			.map(row => row.version),
+		[1, 2, 3, 4],
+	);
+	t.deepEqual(
+		db
+			.prepare(
+				"SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name",
+			)
+			.all()
+			.map(row => row.name),
+		[
+			'agent_run',
+			'browser_tab',
+			'project',
+			'schema_migration',
+			'setting',
+			'terminal_session',
+			'thread',
+			'thread_execution_identity',
+			'thread_history',
+			'thread_turn_identity',
+			'turn_summary',
+			'ui_state',
+		],
+	);
+});
+
 test('all migrated tables are introspected and have no content-bearing column', async t => {
 	const f = fixture(t);
 	(await f.open()).close();
@@ -354,7 +590,7 @@ test('all migrated tables are introspected and have no content-bearing column', 
 	const tables = db
 		.prepare("SELECT name FROM sqlite_schema WHERE type = 'table'")
 		.all();
-	t.is(tables.length, 9);
+	t.is(tables.length, 12);
 	let columns = 0;
 	for (const table of tables) {
 		const fields = db
@@ -962,13 +1198,13 @@ test('concurrent opens recheck the migration version under the write lock', asyn
 	});
 	const db = f.driver.open(f.filename);
 	t.teardown(() => db.close());
-	t.is(schemaVersion(db), 3);
+	t.is(schemaVersion(db), migrations.length);
 	t.deepEqual(
 		db
 			.prepare('SELECT version FROM schema_migration ORDER BY version')
 			.all()
 			.map(row => row.version),
-		[1, 2, 3],
+		migrations.map(migration => migration.version),
 	);
 });
 

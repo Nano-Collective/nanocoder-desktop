@@ -221,6 +221,9 @@ export type TurnEvent = (
 			details?: StreamToolDetails;
 			delegation?: import('@/shared/subagents').SubagentDisplay;
 			approvalOnly?: true;
+			history?: {
+				outcome: 'unknown' | 'completed' | 'failed' | 'interrupted';
+			};
 	  }
 	| {type: 'permission'; request: PermissionRequestInfo}
 	| {type: 'permission-closed'; id: string}
@@ -383,8 +386,14 @@ export interface ThreadSnapshot {
 	thread: ThreadInfo;
 	sequence: number;
 	replaying: boolean;
+	replayEpoch?: string;
 	events: TurnEvent[];
 	result?: IpcResult<TurnResult>;
+}
+
+export interface ThreadReplay {
+	epoch: string;
+	phase: 'begin' | 'complete' | 'failed';
 }
 
 export interface DiscoveredSession {
@@ -521,4 +530,5 @@ export type ProjectEvent =
 			sequence: number;
 			events: TurnEvent[];
 			result?: IpcResult<TurnResult>;
+			replay?: ThreadReplay;
 	  };

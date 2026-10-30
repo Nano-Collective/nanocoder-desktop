@@ -26,6 +26,31 @@ export type SubagentTurnEndContext = Pick<
 	'projectId' | 'threadId' | 'sessionId' | 'turnId' | 'sequence' | 'generation'
 >;
 
+export interface SubagentRunObserver {
+	observe(
+		context: SubagentRunContext,
+		tool: Extract<TurnEvent, {type: 'tool'}>,
+	): boolean;
+	endTurn(
+		context: SubagentTurnEndContext,
+		outcome: 'completed' | 'failed' | 'cancelled',
+	): boolean;
+	forgetThread(threadId: string): void;
+	dispose(): void;
+	fork(repository: AgentRunRepository): SubagentRunObserver;
+}
+
+interface ObserverMemory {
+	seen: Map<
+		string,
+		{scope: string; turn: string; generation: number; sequence: number}
+	>;
+	generations: Map<string, number>;
+	removed: Set<string>;
+	ended: Set<string>;
+	disposed: boolean;
+}
+
 const contextSchema = z.strictObject({
 	projectId: z.uuid(),
 	threadId: z.uuid(),
@@ -40,6 +65,8 @@ const contextSchema = z.strictObject({
 	replayEpoch: z.uuid().optional(),
 	replayCommitted: z.boolean().optional(),
 });
+
+export {contextSchema as subagentRunContextSchema};
 
 const endSchema = contextSchema.pick({
 	projectId: true,
@@ -83,16 +110,36 @@ function statusFor(
 }
 
 // Passive only: the owner must finish mapping replay before marking it committed.
-export function createSubagentRunObserver(repository: AgentRunRepository) {
-	const seen = new Map<
-		string,
-		{scope: string; turn: string; generation: number; sequence: number}
-	>();
-	const generations = new Map<string, number>();
-	const removed = new Set<string>();
-	const ended = new Set<string>();
-	let disposed = false;
+export function createSubagentRunObserver(
+	repository: AgentRunRepository,
+): SubagentRunObserver {
+	return createObserver(repository);
+}
+
+function createObserver(
+	repository: AgentRunRepository,
+	memory?: ObserverMemory,
+): SubagentRunObserver {
+	const seen =
+		memory?.seen ??
+		new Map<
+			string,
+			{scope: string; turn: string; generation: number; sequence: number}
+		>();
+	const generations = memory?.generations ?? new Map<string, number>();
+	const removed = memory?.removed ?? new Set<string>();
+	const ended = memory?.ended ?? new Set<string>();
+	let disposed = memory?.disposed ?? false;
 	return {
+		fork(nextRepository) {
+			return createObserver(nextRepository, {
+				seen: new Map([...seen].map(([id, last]) => [id, {...last}])),
+				generations: new Map(generations),
+				removed: new Set(removed),
+				ended: new Set(ended),
+				disposed,
+			});
+		},
 		observe(
 			input: SubagentRunContext,
 			tool: Extract<TurnEvent, {type: 'tool'}>,

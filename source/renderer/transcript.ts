@@ -21,6 +21,7 @@ export type TranscriptItem = (
 			details?: StreamToolDetails;
 			delegation?: import('@/shared/subagents').SubagentDisplay;
 			approvalOnly?: true;
+			historyOutcome?: 'unknown' | 'completed' | 'failed' | 'interrupted';
 			turnOutcome?: 'completed' | 'failed' | 'cancelled';
 	  }
 	| {kind: 'plan'; id: string | null; content: StreamPlan}
@@ -167,11 +168,22 @@ function applyContent(transcript: Transcript, event: TurnEvent): Transcript {
 						(event.status === 'pending' || event.status === 'in_progress')
 					)
 						return known;
+					const reported = event.history?.outcome;
+					const historyOutcome =
+						reported === 'unknown' ||
+						reported === 'completed' ||
+						reported === 'failed' ||
+						reported === 'interrupted'
+							? reported
+							: event.history === undefined
+								? known?.historyOutcome
+								: undefined;
 					return {
 						kind: 'tool',
 						id: event.id,
 						title: event.title ?? known?.title ?? event.id,
 						status: event.status ?? known?.status ?? 'pending',
+						...(historyOutcome ? {historyOutcome} : {}),
 						...(known?.turnOutcome ? {turnOutcome: known.turnOutcome} : {}),
 						...(event.toolKind || known?.toolKind
 							? {toolKind: event.toolKind ?? known?.toolKind}
