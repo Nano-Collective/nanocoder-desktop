@@ -221,6 +221,9 @@ export type TurnEvent = (
 			details?: StreamToolDetails;
 			delegation?: import('@/shared/subagents').SubagentDisplay;
 			approvalOnly?: true;
+			history?: {
+				outcome: 'unknown' | 'completed' | 'failed' | 'interrupted';
+			};
 	  }
 	| {type: 'permission'; request: PermissionRequestInfo}
 	| {type: 'permission-closed'; id: string}

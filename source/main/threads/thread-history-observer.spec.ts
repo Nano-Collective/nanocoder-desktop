@@ -12,6 +12,393 @@ import {
 	type ReplayObservation,
 } from '@/main/threads/thread-history-observer';
 
+test('SUB-05 replay commit refuses reentrant replacement before a second candidate can swap the observer', t => {
+	const f = threadHistoryFixture(t);
+	const runs = agentRunRepository(f.database);
+	let reenter = true;
+	let observer!: ReturnType<typeof createThreadHistoryObserver>;
+	observer = createThreadHistoryObserver({
+		scope: f.scope,
+		runs,
+		history: {
+			read: f.repository.read,
+			apply: (scope, patch) => {
+				if (reenter) {
+					reenter = false;
+					t.throws(
+						() =>
+							observer.commitReplay({...f.patch, sequence: 2}, [
+								observation(f, 1, 2),
+							]),
+						{code: 'DENIED'},
+					);
+				}
+				return f.repository.apply(scope, patch);
+			},
+		},
+	});
+	t.teardown(() => observer.dispose());
+	t.is(observer.commitReplay(f.patch, [observation(f)]), 1);
+	t.is(f.repository.read(f.scope)?.revision, 1);
+});
+
+for (const invalidation of ['removed', 'disposed'] as const) {
+	test(`SUB-05 ${invalidation} replay staging cannot commit or activate its stale candidate`, t => {
+		const f = threadHistoryFixture(t);
+		const runs = agentRunRepository(f.database);
+		let observer!: ReturnType<typeof createThreadHistoryObserver>;
+		observer = createThreadHistoryObserver({
+			scope: f.scope,
+			history: f.repository,
+			runs: {
+				...runs,
+				get: (...args) => {
+					if (invalidation === 'removed')
+						observer.forgetThread(f.scope.threadId);
+					else observer.dispose();
+					return runs.get(...args);
+				},
+			},
+		});
+		t.teardown(() => observer.dispose());
+		t.throws(() => observer.commitReplay(f.patch, [observation(f)]), {
+			code: 'DENIED',
+		});
+		t.is(f.repository.read(f.scope), undefined);
+		t.deepEqual(runs.list(f.scope.projectId, f.scope.threadId), []);
+	});
+}
+
+test('SUB-05 staged replay does not permit a direct live update to mutate its original observer', t => {
+	const f = threadHistoryFixture(t);
+	const runs = agentRunRepository(f.database);
+	let observer!: ReturnType<typeof createThreadHistoryObserver>;
+	let probe = false;
+	let probing = false;
+	const entry = observation(f);
+	const live = {
+		...entry.context,
+		source: 'live' as const,
+		terminalEvidence: 'live' as const,
+		replayEpoch: undefined,
+		replayCommitted: undefined,
+	};
+	const tool = {
+		...entry.tool,
+		status: 'in_progress',
+		delegation: {role: 'explore', history: false},
+	};
+	observer = createThreadHistoryObserver({
+		scope: f.scope,
+		history: f.repository,
+		runs: {
+			...runs,
+			get: (...args) => {
+				if (probe && !probing) {
+					probing = true;
+					t.false(
+						observer.observe(
+							{...live, sequence: 2},
+							{...tool, status: 'failed'},
+						),
+					);
+					probing = false;
+				}
+				return runs.get(...args);
+			},
+		},
+	});
+	t.teardown(() => observer.dispose());
+	t.true(observer.observe(live, tool));
+	probe = true;
+	observer.commitReplay({...f.patch, generation: 2, sequence: 3}, [
+		observation(f, 2, 3),
+	]);
+	t.is(
+		runs.get(f.scope.projectId, f.scope.threadId, live.executionId)?.status,
+		'unknown',
+	);
+});
+
+function liveObservation(
+	f: ReturnType<typeof threadHistoryFixture>,
+	generation = 1,
+	sequence = 1,
+): ReplayObservation {
+	const entry = observation(f, generation, sequence);
+	return {
+		context: {
+			...entry.context,
+			source: 'live',
+			terminalEvidence: 'live',
+			replayEpoch: undefined,
+			replayCommitted: undefined,
+		},
+		tool: {
+			...entry.tool,
+			status: 'in_progress',
+			delegation: {role: 'explore', history: false},
+		},
+	};
+}
+
+for (const source of ['live', 'replay'] as const) {
+	test(`SUB-05 a newer ${source} generation cannot recycle an older committed observation slot`, t => {
+		const f = threadHistoryFixture(t);
+		const observer = createThreadHistoryObserver({
+			scope: f.scope,
+			history: f.repository,
+			runs: agentRunRepository(f.database),
+		});
+		t.teardown(() => observer.dispose());
+		observer.commitLive({...f.patch, sequence: 10}, [liveObservation(f)]);
+		const before = f.repository.read(f.scope);
+		const entry =
+			source === 'live' ? liveObservation(f, 2, 5) : observation(f, 2, 5);
+		t.throws(
+			() =>
+				source === 'live'
+					? observer.commitLive(
+							{...f.patch, expectedRevision: 1, generation: 2, sequence: 12},
+							[entry],
+						)
+					: observer.commitReplay(
+							{...f.patch, expectedRevision: 1, generation: 2, sequence: 12},
+							[entry],
+						),
+			{code: 'DENIED'},
+		);
+		t.deepEqual(f.repository.read(f.scope), before);
+	});
+}
+
+test('SUB-05 direct live forwarding cannot recycle a committed slot by increasing generation', t => {
+	const f = threadHistoryFixture(t);
+	const observer = createThreadHistoryObserver({
+		scope: f.scope,
+		history: f.repository,
+		runs: agentRunRepository(f.database),
+	});
+	t.teardown(() => observer.dispose());
+	observer.commitLive({...f.patch, sequence: 10}, [liveObservation(f)]);
+	const entry = liveObservation(f, 2, 5);
+	t.false(observer.observe(entry.context, entry.tool));
+});
+
+for (const refusal of [
+	'scope',
+	'turn',
+	'generation',
+	'stale-sequence',
+	'outcome',
+	'unlisted',
+	'context-field',
+] as const) {
+	test(`SUB-05 a live terminal with ${refusal} mismatch cannot commit or advance its ended fence`, t => {
+		const f = threadHistoryFixture(t);
+		const observer = createThreadHistoryObserver({
+			scope: f.scope,
+			history: f.repository,
+			runs: agentRunRepository(f.database),
+		});
+		t.teardown(() => observer.dispose());
+		observer.commitLive({...f.patch, sequence: 10}, [liveObservation(f)]);
+		const before = f.repository.read(f.scope);
+		const terminal = {
+			context: {
+				...f.scope,
+				turnId: f.patch.turns[0].id,
+				generation: 1,
+				sequence: 11,
+			},
+			outcome: 'completed' as const,
+		};
+		if (refusal === 'scope') terminal.context.sessionId = 'foreign-session';
+		if (refusal === 'turn') terminal.context.turnId = randomUUID();
+		if (refusal === 'generation') terminal.context.generation = 2;
+		if (refusal === 'stale-sequence') terminal.context.sequence = 5;
+		if (refusal === 'outcome') Object.assign(terminal, {outcome: 'invented'});
+		if (refusal === 'unlisted') Object.assign(terminal, {unlisted: true});
+		if (refusal === 'context-field')
+			Object.assign(terminal.context, {unlisted: true});
+		t.throws(
+			() =>
+				observer.commitLive(
+					{...f.patch, expectedRevision: 1, sequence: 12},
+					[],
+					terminal,
+				),
+			{
+				code: ['outcome', 'unlisted', 'context-field'].includes(refusal)
+					? 'VALIDATION'
+					: 'DENIED',
+			},
+		);
+		t.deepEqual(f.repository.read(f.scope), before);
+		const next = liveObservation(f, 1, 11);
+		t.true(observer.observe(next.context, {...next.tool, status: 'failed'}));
+	});
+}
+
+test('SUB-05 live commits structural identities and safe C rows together before activating its fork', t => {
+	const f = threadHistoryFixture(t);
+	const runs = agentRunRepository(f.database);
+	const observer = createThreadHistoryObserver({
+		scope: f.scope,
+		history: f.repository,
+		runs,
+	});
+	t.teardown(() => observer.dispose());
+	const patch = structuredClone(f.patch);
+	patch.turns[0].outcome = 'unknown';
+	patch.executions[0].outcome = 'unknown';
+	const live = liveObservation(f);
+	t.is(observer.commitLive(patch, [live]), 1);
+	t.is(f.repository.read(f.scope)?.executions[0].id, patch.executions[0].id);
+	t.is(
+		runs.get(f.scope.projectId, f.scope.threadId, patch.executions[0].id)
+			?.status,
+		'running',
+	);
+	t.false(observer.observe(live.context, live.tool));
+	t.is(
+		observer.commitLive(
+			{
+				...patch,
+				expectedRevision: 1,
+				sequence: 2,
+				executions: [{...patch.executions[0], outcome: 'failed'}],
+			},
+			[
+				{
+					context: {...live.context, sequence: 2},
+					tool: {...live.tool, status: 'failed'},
+				},
+			],
+		),
+		2,
+	);
+	t.is(f.repository.read(f.scope)?.executions[0].outcome, 'failed');
+	t.is(
+		runs.get(f.scope.projectId, f.scope.threadId, patch.executions[0].id)
+			?.status,
+		'failed',
+	);
+});
+
+for (const operation of ['tool update', 'turn terminal'] as const) {
+	test(`SUB-05 real failed live ${operation} COMMIT leaves SQL and every original observation fence unchanged`, t => {
+		const f = threadHistoryFixture(t);
+		const runs = agentRunRepository(f.database);
+		let failCommit = false;
+		const history = threadHistoryRepository({
+			...f.database,
+			exec: sql => {
+				if (sql === 'COMMIT' && failCommit) {
+					failCommit = false;
+					throw new IpcFailure('INTERNAL', 'synthetic live COMMIT failure');
+				}
+				f.database.exec(sql);
+			},
+		});
+		const observer = createThreadHistoryObserver({
+			scope: f.scope,
+			history,
+			runs,
+		});
+		t.teardown(() => observer.dispose());
+		const patch = structuredClone(f.patch);
+		patch.turns[0].outcome = 'unknown';
+		patch.executions[0].outcome = 'unknown';
+		const live = liveObservation(f);
+		observer.commitLive(patch, [live]);
+		const before = f.repository.read(f.scope);
+		const rows = runs.list(f.scope.projectId, f.scope.threadId);
+		const terminal =
+			operation === 'turn terminal'
+				? {
+						context: {
+							...f.scope,
+							turnId: patch.turns[0].id,
+							generation: 2,
+							sequence: 4,
+						},
+						outcome: 'cancelled' as const,
+					}
+				: undefined;
+		failCommit = true;
+		t.throws(
+			() =>
+				observer.commitLive(
+					{...patch, expectedRevision: 1, generation: 2, sequence: 4},
+					[
+						{
+							...liveObservation(f, 2, 3),
+							tool: {...live.tool, status: terminal ? 'in_progress' : 'failed'},
+						},
+					],
+					terminal,
+				),
+			{code: 'INTERNAL', message: 'synthetic live COMMIT failure'},
+		);
+		t.deepEqual(f.repository.read(f.scope), before);
+		t.deepEqual(runs.list(f.scope.projectId, f.scope.threadId), rows);
+		t.true(
+			observer.observe(
+				{...live.context, sequence: 2},
+				{...live.tool, status: 'failed'},
+			),
+		);
+		t.true(
+			observer.endTurn(
+				{...f.scope, turnId: patch.turns[0].id, generation: 1, sequence: 3},
+				'failed',
+			),
+		);
+	});
+}
+
+test('SUB-05 a stale live candidate after a newer committed replay never reaches SQL or replaces its observer', t => {
+	const f = threadHistoryFixture(t);
+	const runs = agentRunRepository(f.database);
+	let writes = 0;
+	const observer = createThreadHistoryObserver({
+		scope: f.scope,
+		runs,
+		history: {
+			read: f.repository.read,
+			apply: (scope, patch) => {
+				writes++;
+				return f.repository.apply(scope, patch);
+			},
+		},
+	});
+	t.teardown(() => observer.dispose());
+	const live = liveObservation(f);
+	observer.commitLive(f.patch, [live]);
+	observer.commitReplay(
+		{...f.patch, expectedRevision: 1, generation: 2, sequence: 3},
+		[observation(f, 2, 3)],
+	);
+	const before = f.repository.read(f.scope);
+	writes = 0;
+	t.throws(
+		() =>
+			observer.commitLive({...f.patch, expectedRevision: 1, sequence: 2}, [
+				{context: {...live.context, sequence: 2}, tool: live.tool},
+			]),
+		{code: 'DENIED'},
+	);
+	t.is(writes, 0);
+	t.deepEqual(f.repository.read(f.scope), before);
+	t.true(
+		observer.observe(
+			{...live.context, generation: 2, sequence: 4},
+			{...live.tool, status: 'failed'},
+		),
+	);
+});
+
 test('SUB-05 replay scope refuses malformed Unicode session identity before observation', t => {
 	const f = threadHistoryFixture(t);
 	t.throws(

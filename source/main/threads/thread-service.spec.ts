@@ -566,6 +566,237 @@ for (const path of ['open', 'recovery'] as const) {
 	});
 }
 
+test('SUB-05 successful resume persists structural IDs before exposing synthetic tools', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'mapped-history'});
+	f.store.threads.save(thread);
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	connection.getSessionOffers = id =>
+		id === 'mapped-history'
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
+	connection.resumeSession = async id => ({
+		session: {id, mode: 'normal'},
+		history: [
+			{type: 'user', text: 'synthetic private prompt'},
+			{
+				type: 'tool',
+				id: 'opaque/delegation',
+				title: 'synthetic private task',
+				status: 'completed',
+				delegation: {role: 'explore', history: true},
+			},
+		],
+	});
+	const opened = await f.service.openThread({
+		projectId: f.project.id,
+		threadId: thread.id,
+	});
+	t.is(opened.thread.runState, 'ready');
+	const history = f.store.threadHistory.read({
+		projectId: f.project.id,
+		threadId: thread.id,
+		sessionId: 'mapped-history',
+	});
+	t.truthy(history, 'successful replay must commit its structural ledger');
+	t.is(history?.turns.length, 1);
+	t.is(history?.executions.length, 1);
+	t.is(history?.executions[0].toolCallId, 'opaque/delegation');
+	t.is(opened.sequence, 1);
+	t.true((history?.sequence ?? -1) > opened.sequence);
+	for (const privateField of [
+		'firstSlot',
+		'highWaterMark',
+		'executionId',
+		'turnId',
+	])
+		t.false(JSON.stringify(opened).includes(`"${privateField}":`));
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), [
+		{
+			id: history?.executions[0].id,
+			threadId: thread.id,
+			parentRunId: null,
+			nanocoderChildId: null,
+			role: 'explore',
+			status: 'unknown',
+		},
+	]);
+});
+
+test('SUB-05 recreated ThreadService reuses committed UUIDs and recovers the private replay slot base', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'recreated-history'});
+	f.store.threads.save(thread);
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	let resumes = 0;
+	connection.getSessionOffers = id =>
+		id === 'recreated-history'
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
+	connection.resumeSession = async id => {
+		t.is(id, 'recreated-history');
+		resumes++;
+		return {
+			session: {id, mode: 'normal'},
+			history: [
+				{type: 'user', text: 'private restart fixture'},
+				{
+					type: 'tool',
+					id: 'stable/restarted-call',
+					status: 'completed',
+					delegation: {role: 'explore', history: true},
+				},
+			],
+		};
+	};
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const scope = {...request, sessionId: 'recreated-history'};
+	const first = await f.service.openThread(request);
+	const before = f.store.threadHistory.read(scope);
+	f.service.dispose();
+	const restarted = createThreadService({
+		store: f.store,
+		supervisor: f.supervisor,
+	});
+	t.teardown(() => restarted.dispose());
+	const second = await restarted.openThread(request);
+	const after = f.store.threadHistory.read(scope);
+	t.is(resumes, 2);
+	t.is(second.sequence, first.sequence + 1);
+	t.true((after?.sequence ?? -1) > (before?.sequence ?? -1));
+	t.deepEqual(after?.turns, before?.turns);
+	t.deepEqual(after?.executions, before?.executions);
+	t.is(f.store.agentRuns.list(f.project.id, thread.id).length, 1);
+	t.deepEqual(second.events, first.events);
+});
+
+test('SUB-05 replayed synthetic completion is inert and not a reported success', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'inert-history'});
+	f.store.threads.save(thread);
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	connection.getSessionOffers = id =>
+		id === 'inert-history'
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
+	connection.resumeSession = async id => ({
+		session: {id, mode: 'normal'},
+		history: [
+			{type: 'user', text: 'synthetic fixture'},
+			{type: 'tool', id: 'opaque/tool', status: 'completed'},
+		],
+	});
+	const opened = await f.service.openThread({
+		projectId: f.project.id,
+		threadId: thread.id,
+	});
+	t.like(
+		opened.events.find(event => event.type === 'tool'),
+		{
+			history: {outcome: 'unknown'},
+		},
+	);
+});
+
+test('SUB-05 failed staged replay preserves the old SQL and readable prefix then retries the same saved ID', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'atomic-history'});
+	f.store.threads.save(thread);
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	let ready = true;
+	let resumes = 0;
+	connection.getSessionOffers = id =>
+		ready && id === 'atomic-history'
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
+	connection.resumeSession = async id => {
+		t.is(id, 'atomic-history');
+		resumes++;
+		ready = true;
+		return {
+			session: {id, mode: 'normal'},
+			history: [
+				{type: 'user', text: `private replay ${resumes}`},
+				{
+					type: 'tool',
+					id: 'stable/tool',
+					status: 'completed',
+					delegation: {role: 'explore', history: true},
+				},
+			],
+		};
+	};
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const initial = await f.service.openThread(request);
+	const scope = {...request, sessionId: 'atomic-history'};
+	const history = f.store.threadHistory.read(scope);
+	const rows = f.store.agentRuns.list(f.project.id, thread.id);
+	const apply = f.store.threadHistory.apply;
+	let staged = 0;
+	f.store.threadHistory.apply = (_scope, patch) => {
+		staged = patch.agentRuns.length;
+		throw new IpcFailure('INTERNAL', 'Synthetic identity commit failure');
+	};
+	ready = false;
+	const failed = await f.service.openThread(request);
+	t.deepEqual(failed.events, initial.events);
+	t.is(failed.thread.nanocoderSessionId, 'atomic-history');
+	t.is(staged, 1);
+	t.deepEqual(f.store.threadHistory.read(scope), history);
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), rows);
+	f.store.threadHistory.apply = apply;
+	const retried = await f.service.openThread(request);
+	t.is(retried.thread.runState, 'ready');
+	t.is(resumes, 3);
+	t.is(retried.thread.nanocoderSessionId, 'atomic-history');
+	t.like(retried.events[0], {type: 'user', text: 'private replay 3'});
+	t.deepEqual(
+		f.store.threadHistory.read(scope)?.executions.map(row => row.id),
+		history?.executions.map(row => row.id),
+	);
+});
+
+test('SUB-05 failed structural read clears cached preparation before retrying the same history', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const initial = await f.service.openThread(request);
+	const connection = f.supervisor.getConnection(f.project.id);
+	let ready = false;
+	let resumes = 0;
+	connection.getSessionOffers = id =>
+		ready && id === 'fake-session'
+			? {offeredModes: ['normal'], configOptions: []}
+			: undefined;
+	const original = connection.resumeSession;
+	connection.resumeSession = async (...args) => {
+		resumes++;
+		ready = true;
+		return original(...args);
+	};
+	const read = f.store.threadHistory.read;
+	let fail = true;
+	f.store.threadHistory.read = scope => {
+		if (fail) {
+			fail = false;
+			throw new IpcFailure('INTERNAL', 'Synthetic identity read failure');
+		}
+		return read(scope);
+	};
+	const failed = await f.service.openThread(request);
+	t.deepEqual(failed.events, initial.events);
+	const retried = await f.service.openThread(request);
+	t.is(retried.thread.runState, 'ready');
+	t.is(retried.thread.nanocoderSessionId, 'fake-session');
+	t.is(resumes, 2);
+	f.store.threadHistory.read = read;
+});
+
 async function fixture(
 	t: ExecutionContext,
 	enableRuntime = false,
@@ -3115,7 +3346,8 @@ test('opening a stored session delegates replay and never restores yolo (CHAT-04
 			type: 'tool',
 			id: 'old_call',
 			title: 'execute_bash: echo old',
-			status: 'completed',
+			status: 'unknown',
+			history: {outcome: 'unknown'},
 		},
 	]);
 	t.deepEqual(events, []);

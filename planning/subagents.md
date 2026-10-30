@@ -34,7 +34,20 @@ Phase 1.8 must provide these before composing the observer:
 3. Existing sequence and process-generation checks, stream flush before terminal/replay/approval/switch, and cleanup on removal, supersession and disposal. The observer's bookkeeping must be bounded or retired as the owner closes turns; its current maps are not a long-lived session cache.
 4. A transaction/migration decision for durable mapping owned by phase 1.8. The six existing metadata columns cannot preserve turn/tool identity by themselves. Until then `SUB-05` stays unchecked.
 
-The passive modules' tests do not prove application persistence, restart identity or atomic replay. `SUB-08` and `OQ-03` remain open until Nanocoder exposes stable child identity, relationships, results and per-child cancellation.
+The [phase 1.8 replay checkpoint](durable-replay.md) now composes the required
+store repositories and atomic replay mapping in ThreadService, with safe
+metadata committed before snapshot replacement. Its additive passive
+`fork(repository)` clones every observer fence into independent staging
+closures. Real COMMIT failures and stale/reentrant candidates cannot replace
+the original observer. Existing lane C assertions remain unchanged.
+
+This updates the historical uncomposed-module description above, not the
+`SUB-05` completion boundary. ThreadService live allocation/terminal
+production, complete app/child restart continuation, import/ambiguity
+integration and renderer replay/flush gates remain pending. The passive
+modules alone do not prove those behaviours. `SUB-08` and `OQ-03` remain open
+until Nanocoder exposes stable child identity, relationships, results and
+per-child cancellation.
 
 ## Verification and limits
 

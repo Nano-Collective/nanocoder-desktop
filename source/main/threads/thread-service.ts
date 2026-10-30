@@ -22,6 +22,9 @@ import {
 	type MetadataOperationLease,
 	type ProjectOperationLease,
 } from '@/main/threads/project-operations';
+import {mapThreadReplay} from '@/main/threads/thread-history-mapping';
+import {createThreadHistoryObserver} from '@/main/threads/thread-history-observer';
+import {createThreadSequence} from '@/main/threads/thread-sequence';
 import type {
 	IpcResult,
 	NanocoderMode,
@@ -146,6 +149,13 @@ export function createThreadService(
 	const snapshots = new Map<
 		string,
 		Pick<ThreadSnapshot, 'sequence' | 'events' | 'result'>
+	>();
+	const historyObservers = new Map<
+		string,
+		{
+			sessionId: string;
+			observer: ReturnType<typeof createThreadHistoryObserver>;
+		}
 	>();
 	const prepared = new Map<string, NanocoderConnection>();
 	const preparedSessions = new Map<
@@ -475,6 +485,10 @@ export function createThreadService(
 		if (currentSessions.get(request.projectId)?.thread.id === request.threadId)
 			currentSessions.delete(request.projectId);
 		snapshots.delete(request.threadId);
+		const history = historyObservers.get(request.threadId);
+		history?.observer.forgetThread(request.threadId);
+		history?.observer.dispose();
+		historyObservers.delete(request.threadId);
 		prepared.delete(request.threadId);
 		preparedSessions.delete(request.threadId);
 		prompted.delete(request.threadId);
@@ -589,6 +603,57 @@ export function createThreadService(
 		});
 		prompted.delete(thread.id);
 	};
+	const commitHistory = (
+		thread: ThreadInfo,
+		events: TurnEvent[],
+		lease: ProjectOperationLease,
+	) => {
+		projectOperations.assertCurrent(lease);
+		const sessionId = thread.nanocoderSessionId;
+		if (!sessionId)
+			throw new IpcFailure('AGENT_UNAVAILABLE', 'No session is ready');
+		const scope = {projectId: thread.projectId, threadId: thread.id, sessionId};
+		const owner = historyObservers.get(thread.id);
+		let observer: ReturnType<typeof createThreadHistoryObserver> | undefined;
+		try {
+			const previous = options.store.threadHistory.read(scope);
+			observer =
+				owner?.sessionId === sessionId
+					? owner.observer
+					: createThreadHistoryObserver({
+							scope,
+							history: options.store.threadHistory,
+							runs: options.store.agentRuns,
+						});
+			const allocator = createThreadSequence({
+				sequence: snapshots.get(thread.id)?.sequence ?? 0,
+				highWaterMark: previous?.sequence,
+			});
+			const batches = allocator.reserve(events.length);
+			const mapped = mapThreadReplay({
+				scope,
+				history: previous,
+				generation: (previous?.generation ?? 0) + 1,
+				firstSequence: batches[0].firstSlot,
+				epoch: randomUUID(),
+				events,
+			});
+			projectOperations.assertCurrent(lease);
+			observer.commitReplay(mapped.patch, mapped.observations);
+			if (owner?.observer !== observer) owner?.observer.dispose();
+			historyObservers.set(thread.id, {sessionId, observer});
+			snapshots.set(thread.id, {
+				sequence: allocator.current(),
+				events: structuredClone(mapped.events),
+			});
+		} catch (error) {
+			if (observer && owner?.observer !== observer) observer.dispose();
+			prepared.delete(thread.id);
+			preparedSessions.delete(thread.id);
+			prompted.delete(thread.id);
+			throw error;
+		}
+	};
 	const resume = async (
 		thread: ThreadInfo,
 		connection: NanocoderConnection,
@@ -634,11 +699,8 @@ export function createThreadService(
 			runState: 'ready',
 			viewOnlyReason: null,
 		}));
+		commitHistory(ready, restored.history, lease);
 		remember(ready, connection);
-		snapshots.set(thread.id, {
-			sequence: (snapshots.get(thread.id)?.sequence ?? 0) + 1,
-			events: structuredClone(restored.history),
-		});
 	};
 	const viewOnly = (request: ThreadRequest, error: unknown) => {
 		const reason =
@@ -755,16 +817,12 @@ export function createThreadService(
 						'resume',
 						requestedMode,
 					);
-					const ready = await check();
-					snapshots.set(thread.id, {
-						sequence: (snapshots.get(thread.id)?.sequence ?? 0) + 1,
-						events: structuredClone(restored.history),
-					});
-					remember(ready, connection);
-					updateThread(ready, () => ({
+					const ready = updateThread(await check(), () => ({
 						runState: 'ready',
 						viewOnlyReason: null,
 					}));
+					commitHistory(ready, restored.history, lease);
+					remember(ready, connection);
 				} finally {
 					if (restoring.get(project.id) === signal)
 						restoring.delete(project.id);
@@ -826,6 +884,8 @@ export function createThreadService(
 				return stop;
 			});
 			await Promise.allSettled([...stopped, ...tasks]);
+			for (const {observer} of historyObservers.values()) observer.dispose();
+			historyObservers.clear();
 		},
 		dispose: () => {
 			disposed = true;
@@ -836,6 +896,8 @@ export function createThreadService(
 			unsubscribe();
 			unsubscribeTitles();
 			permissionIds.clear();
+			for (const {observer} of historyObservers.values()) observer.dispose();
+			historyObservers.clear();
 		},
 		listThreads: async ({projectId, archiveState}) => {
 			getProject(projectId);
