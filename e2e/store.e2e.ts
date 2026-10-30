@@ -10,9 +10,11 @@ import {
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import {_electron as electron, expect, test} from '@playwright/test';
+import {expect, test} from '@playwright/test';
 import {childEnv, waitForExit} from '@/main/nanocoder/launch';
 import type {DesktopApi} from '@/shared/desktop-api';
+import {electron} from './qa/electron';
+import {e2eArguments} from './qa/launch-options';
 
 let profile: string;
 test.beforeEach(() => {
@@ -27,7 +29,7 @@ const launch = () =>
 		args: ['.', `--user-data-dir=${profile}`],
 	});
 
-test('a second instance exits and asks the profile owner to show and focus its window', async () => {
+test('a second instance exits and respects the profile owner window presentation policy', async () => {
 	const app = await launch();
 	let second: ChildProcess | undefined;
 	try {
@@ -42,10 +44,10 @@ test('a second instance exits and asks the profile owner to show and focus its w
 					focused = true;
 					focus();
 				};
-				(globalThis as {secondInstance?: Promise<boolean>}).secondInstance =
+				(globalThis as {secondInstance?: Promise<unknown>}).secondInstance =
 					new Promise(resolve =>
 						main.once('second-instance', () =>
-							resolve(focused && window.isVisible()),
+							resolve({focused, visible: window.isVisible()}),
 						),
 					);
 				return main.hasSingleInstanceLock();
@@ -54,7 +56,11 @@ test('a second instance exits and asks the profile owner to show and focus its w
 		const executable = await app.evaluate(() => process.execPath);
 		const child = spawn(
 			executable,
-			[path.resolve(import.meta.dirname, '..'), `--user-data-dir=${profile}`],
+			[
+				path.resolve(import.meta.dirname, '..'),
+				`--user-data-dir=${profile}`,
+				...e2eArguments([]),
+			],
 			{env: childEnv(process.env), shell: false, stdio: 'ignore'},
 		);
 		second = child;
@@ -63,9 +69,12 @@ test('a second instance exits and asks the profile owner to show and focus its w
 		expect(
 			await app.evaluate(
 				() =>
-					(globalThis as {secondInstance?: Promise<boolean>}).secondInstance,
+					(globalThis as {secondInstance?: Promise<unknown>}).secondInstance,
 			),
-		).toBe(true);
+		).toEqual({
+			focused: process.env.NANOCODER_E2E_VISIBLE === '1',
+			visible: process.env.NANOCODER_E2E_VISIBLE === '1',
+		});
 		expect(app.windows()).toHaveLength(1);
 	} finally {
 		if (second?.exitCode === null && second.signalCode === null) second.kill();
@@ -106,7 +115,11 @@ test('a second instance reopens a windowless macOS owner with working storage IP
 		const executable = await app.evaluate(() => process.execPath);
 		const child = spawn(
 			executable,
-			[path.resolve(import.meta.dirname, '..'), `--user-data-dir=${profile}`],
+			[
+				path.resolve(import.meta.dirname, '..'),
+				`--user-data-dir=${profile}`,
+				...e2eArguments([]),
+			],
 			{env: childEnv(process.env), shell: false, stdio: 'ignore'},
 		);
 		second = child;
@@ -121,16 +134,18 @@ test('a second instance reopens a windowless macOS owner with working storage IP
 				(window as unknown as {desktop: DesktopApi}).desktop.getSettings({}),
 			),
 		).toMatchObject({ok: true, value: {theme: 'light'}});
-		await app.evaluate(({BrowserWindow}) => {
-			const window = BrowserWindow.getAllWindows()[0];
-			if (window.isVisible()) return;
-			return new Promise<void>(resolve => window.once('show', resolve));
-		});
+		if (process.env.NANOCODER_E2E_VISIBLE === '1') {
+			await app.evaluate(({BrowserWindow}) => {
+				const window = BrowserWindow.getAllWindows()[0];
+				if (window.isVisible()) return;
+				return new Promise<void>(resolve => window.once('show', resolve));
+			});
+		}
 		expect(
 			await app.evaluate(({BrowserWindow}) =>
 				BrowserWindow.getAllWindows().map(window => window.isVisible()),
 			),
-		).toEqual([true]);
+		).toEqual([process.env.NANOCODER_E2E_VISIBLE === '1']);
 		expect(app.windows()).toHaveLength(1);
 	} finally {
 		if (second?.exitCode === null && second.signalCode === null) second.kill();
