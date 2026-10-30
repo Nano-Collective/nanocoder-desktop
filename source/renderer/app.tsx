@@ -12,8 +12,10 @@ import {
 	observeSupervisor,
 	type SupervisorIndex,
 } from '@/renderer/supervisor-state';
+import {threadComposerState} from '@/renderer/thread-composer-state';
 import {threadPalette} from '@/renderer/thread-palette';
 import {ThreadRail} from '@/renderer/thread-rail';
+import {ThreadRecoveryNotice} from '@/renderer/thread-recovery-notice';
 import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, Divider, StatusBadge} from '@/renderer/ui';
 import {useProjectControls} from '@/renderer/use-project-controls';
@@ -145,12 +147,13 @@ export function App() {
 					? REPLAY_FAILURE_REASON
 					: REPLAY_REASON
 				: null;
-	const editable =
-		(accepting || activeReplay !== undefined) &&
-		thread?.archiveState === 'active' &&
-		thread.runState !== 'view-only' &&
-		!(activeReplay === 'failed' && thread.viewOnlyReason) &&
-		(activeReplay !== undefined || (!workspace.loading && !workspace.pending));
+	const composerState = threadComposerState({
+		thread,
+		accepting,
+		replay: activeReplay,
+		pending: workspace.loading || workspace.pending,
+	});
+	const editable = composerState.editable;
 	const rootControlReason =
 		replayReason ??
 		(rootBusy
@@ -468,7 +471,7 @@ export function App() {
 				composer={
 					outcome?.status === 'connected' &&
 					thread &&
-					thread.runState !== 'view-only' && (
+					composerState.visible && (
 						<Composer
 							draft={draft}
 							editable={editable}
@@ -544,14 +547,14 @@ export function App() {
 						/>
 					</ConversationStream>
 				)}
-				{thread?.runState === 'view-only' && (
-					<Card aria-label="view-only thread">
-						<p>{thread.viewOnlyReason}</p>
-						<Button onClick={onNew}>start a new thread in this project</Button>
-						<Button onClick={() => void controls.remove(thread.id)}>
-							remove from desktop
-						</Button>
-					</Card>
+				{thread && (
+					<ThreadRecoveryNotice
+						thread={thread}
+						pending={workspace.pending}
+						onRetry={() => void controls.open(thread.id)}
+						onNew={onNew}
+						onRemove={() => void controls.remove(thread.id)}
+					/>
 				)}
 				{turn?.ok && (
 					<p role="status">

@@ -125,3 +125,14 @@
 	font-size: var(--typography-meta-font-size);
 	overflow-wrap: anywhere;
 }
+
+.thread-view-only-notice {
+	border-style: dashed;
+	border-radius: var(--components-view-only-notice-rounded);
+	color: var(--components-view-only-notice-text-color);
+	font-family: var(--components-view-only-notice-font-family);
+	font-size: var(--components-view-only-notice-font-size);
+	font-weight: var(--components-view-only-notice-font-weight);
+	line-height: var(--components-view-only-notice-line-height);
+	overflow-wrap: anywhere;
+}

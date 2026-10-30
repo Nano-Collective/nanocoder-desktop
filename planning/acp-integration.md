@@ -93,7 +93,7 @@ None of these is declared in `initialize`, so the desktop detects them by versio
 
    | Desktop feature | Gate |
    |---|---|
-   | Durable resume | `sessionCapabilities.resume` advertised. Without it, threads open view-only after a restart. |
+   | Durable resume | `sessionCapabilities.resume` advertised. Without it, saved threads fail safely after a restart and offer explicit same-thread retry. Only an actual missing-history response makes them view-only (`CHAT-09`). |
    | Close on idle | `sessionCapabilities.close` advertised. Without it, idle shutdown just ends the process. |
    | Thread deletion | `sessionCapabilities.delete` advertised. |
    | Session discovery | `sessionCapabilities.list` advertised. |

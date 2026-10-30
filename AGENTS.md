@@ -74,6 +74,8 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/recovery-tools.tsx` | Plain-props process recovery and captured diagnostics controls |
 | `source/renderer/app-shell.tsx`, `source/renderer/styles/app-shell.css` | U.2 grid and plain-child rail/tools slots; inspector hidden at 840px and below |
 | `source/renderer/thread-rail.tsx`, `source/renderer/thread-rail-model.ts` | Plain-prop U.3 thread groups, state glyphs and metadata actions; presentation uses `styles/threads.css` |
+| `source/renderer/thread-recovery-notice.tsx` | Plain-prop CHAT-09 missing-history metadata/actions and explicit same-thread retry; view-only keeps the composer hidden |
+| `source/renderer/thread-composer-state.ts` | App-only draft visibility/editability projection; runState, not reason presence, distinguishes retryable and view-only |
 | `source/renderer/thread-palette.ts` | New, rename and archive palette commands sharing the rail's callbacks and refusal policy |
 | `source/renderer/thread-controller.ts` | Scoped thread metadata, snapshot/open bridge calls, isolated project/chat sequences and stale async/disposal guards |
 | `source/renderer/thread-stream.ts` | Per-thread transient sequence guards, snapshot-prefix replacement and buffered live delivery; separate from project metadata sequencing |

@@ -130,11 +130,16 @@ successful epoch release the renderer gate. The batcher, conversation stream
 and subagent card do not acquire replay logic. The existing composer and
 control-reason props explain loading or failure in lowercase while keeping
 the draft editable and memory only. Nothing queues an automatic send.
-Retryable recovery failures keep that draft editable. A confirmed `NOT_FOUND`
-recovery instead retains and disables it, using the same main-owned missing
-history reason in the existing thread metadata and composer. The reason lists
-possible causes without claiming which occurred. Full view-only composition
-remains separate. A distinct new thread's exact prompt owner may still prepare
+Retryable recovery failures keep that draft editable and expose an explicit
+same-thread retry through the existing open path. Ordinary open and recovery
+share the same classification: actual `NOT_FOUND` makes the thread view-only;
+other resume/mode/capability failures make it failed with their safe reason.
+View-only hides the composer without discarding its memory-only draft
+(`CHAT-09`). A plain-props dashed muted notice keeps the title/activity, states
+the shared main-owned missing-history reason and offers the existing
+metadata-only new/remove actions. The reason lists possible causes without
+claiming which occurred. Mounted notice verification remains pending while
+built-app launches are paused. A distinct new thread's exact prompt owner may still prepare
 fresh controls; the failed thread, unowned callers and stale owners stay refused.
 
 The mounted fake test holds replay until an event-driven fixture release. It

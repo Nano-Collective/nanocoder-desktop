@@ -173,6 +173,26 @@ function fixture() {
 	};
 }
 
+test('CHAT-09 explicit retry opens only the selected saved thread and preserves its unqueued draft', async t => {
+	const {model, rows, calls} = fixture();
+	rows[0] = {
+		...rows[0],
+		runState: 'failed',
+		viewOnlyReason: 'safe retryable refusal',
+	};
+	await model.selectProject('project-a');
+	model.setDraft('keep this unsent draft');
+	calls.length = 0;
+	t.true(await model.open('a'));
+	t.is(model.getState().conversation.draft, 'keep this unsent draft');
+	t.is(model.getState().workspace.activeThreadId, 'a');
+	t.deepEqual(
+		calls.filter(call => Array.isArray(call) && call[0] !== 'snapshot'),
+		[['open', {projectId: 'project-a', threadId: 'a'}]],
+	);
+	t.false(calls.some(call => Array.isArray(call) && call[0] === 'prompt'));
+});
+
 test('CHAT-08 replay snapshot refuses send, mode and approval without clearing an editable memory draft', async t => {
 	const {model, bridge, calls} = fixture();
 	bridge.getThreadSnapshot = async request =>

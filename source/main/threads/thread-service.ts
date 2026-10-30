@@ -917,16 +917,17 @@ export function createThreadService(
 			throw error;
 		}
 	};
-	const viewOnly = (request: ThreadRequest, error: unknown) => {
-		const reason =
-			error instanceof NanocoderFailure && error.code === 'NOT_FOUND'
-				? 'Nanocoder has no saved history for this thread. An empty session may not have been saved before the process ended, or its history was deleted or expired.'
-				: error instanceof IpcFailure || error instanceof NanocoderFailure
-					? error.message
-					: 'Nanocoder could not resume this thread';
+	const markResumeFailure = (request: ThreadRequest, error: unknown) => {
+		const missing =
+			error instanceof NanocoderFailure && error.code === 'NOT_FOUND';
+		const reason = missing
+			? REPLAY_MISSING_REASON
+			: error instanceof IpcFailure || error instanceof NanocoderFailure
+				? error.message
+				: 'Nanocoder could not resume this thread';
 		saveThread({
 			...getThread(request),
-			runState: 'view-only',
+			runState: missing ? 'view-only' : 'failed',
 			viewOnlyReason: reason,
 		});
 	};
@@ -1055,13 +1056,14 @@ export function createThreadService(
 					if (replay) finishReplay(cached.thread, replay, 'failed');
 					if (
 						replay &&
-						error instanceof NanocoderFailure &&
-						error.code === 'NOT_FOUND'
+						!binding.signal.aborted &&
+						!(
+							error instanceof IpcFailure &&
+							['DENIED', 'BUSY', 'VALIDATION'].includes(error.code)
+						)
 					) {
 						projectOperations.assertCurrent(lease);
-						updateThread(cached.thread, () => ({
-							viewOnlyReason: REPLAY_MISSING_REASON,
-						}));
+						markResumeFailure(request, error);
 					}
 					throw error;
 				} finally {
@@ -1238,7 +1240,7 @@ export function createThreadService(
 						['DENIED', 'BUSY', 'VALIDATION'].includes(error.code)
 					)
 						return failure(error);
-					viewOnly(request, error);
+					markResumeFailure(request, error);
 				} finally {
 					finishPreparation(thread, abort, scope);
 				}

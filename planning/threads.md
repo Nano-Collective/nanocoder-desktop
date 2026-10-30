@@ -48,13 +48,19 @@ shows the actual resume/mode reason and refuses prompts. Other thread metadata
 and the initialised ACP process remain usable. Explicit stop-and-reopen retries
 the same history, never `session/new`. Automatic recovery starts from an
 already-crashed process and remains unavailable if that saved history cannot
-be restored safely. Full durable replay/discovery/import and the complete
-view-only notice/actions remain phase 1.8 (`CHAT-09`); mode controls remain 1.9.
+be restored safely. Phase 1.8 now distinguishes missing history from retryable
+resume/mode/capability failures. Only actual `NOT_FOUND` becomes view-only:
+the existing composer guard hides input, while a dashed muted notice retains
+desktop title/activity and calls the existing metadata-only new/remove paths
+(`CHAT-09`). A retryable failure stays failed with its safe reason and an
+explicit action that reopens only that saved thread, without queuing its draft.
+Discovery/import and mounted verification of the new notice remain pending;
+mode controls remain 1.9.
 The [durable replay checkpoint](durable-replay.md) now composes atomic
 structural replay IDs and passive run metadata before prefix replacement.
 Live production now commits turn/execution identities and owning terminal
 metadata through the same observer and batch allocator before publication.
-Replay loading/flush gates and complete `SUB-05` acceptance remain pending.
+Replay loading/flush gates are implemented. Complete `SUB-05` acceptance remains pending.
 The merged 1.9 controls share the same authority.
 
 ## Bootstrap metadata

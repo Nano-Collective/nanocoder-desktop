@@ -31,6 +31,74 @@ import type {
 	ThreadInfo,
 	TurnEvent,
 } from '@/shared/ipc';
+import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
+
+for (const source of ['open', 'recovery'] as const) {
+	for (const code of ['NOT_FOUND', 'AGENT_UNAVAILABLE'] as const) {
+		test(`CHAT-09 ${source} ${code} classifies resume failure without changing metadata or readable history`, async t => {
+			const f = await fixture(t, true);
+			const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+			f.store.threads.save(thread);
+			const request = {projectId: f.project.id, threadId: thread.id};
+			f.store.threads.setTitle({
+				...request,
+				title: 'manual history fixture',
+				manuallySet: true,
+			});
+			const before = await f.service.openThread(request);
+			const scope = {...request, sessionId: 'fake-session'};
+			const sql = f.store.threadHistory.read(scope);
+			const runs = f.store.agentRuns.list(f.project.id, thread.id);
+			if (source === 'open') {
+				await f.supervisor.stop(f.project.id);
+				writeFileSync(
+					path.join(f.project.canonicalRoot, '.fake-nanocoder'),
+					code === 'NOT_FOUND' ? 'missing-session' : 'resume-fails',
+				);
+				await f.service.openThread(request);
+			} else {
+				const connection = f.supervisor.getConnection(f.project.id);
+				connection.resumeSession = async () => {
+					throw new NanocoderFailure(code, 'safe fixture resume refusal');
+				};
+				await t.throwsAsync(
+					f.service.restore(
+						f.project,
+						connection,
+						new AbortController().signal,
+					),
+				);
+			}
+			const after = await f.service.getThreadSnapshot(request);
+			t.is(
+				after.thread.runState,
+				code === 'NOT_FOUND' ? 'view-only' : 'failed',
+			);
+			t.is(
+				after.thread.viewOnlyReason,
+				code === 'NOT_FOUND'
+					? REPLAY_MISSING_REASON
+					: source === 'open'
+						? 'Nanocoder could not resume the session'
+						: 'safe fixture resume refusal',
+			);
+			t.is(after.thread.id, before.thread.id);
+			t.is(after.thread.nanocoderSessionId, before.thread.nanocoderSessionId);
+			t.is(after.thread.title, before.thread.title);
+			t.is(after.thread.lastActivityAt, before.thread.lastActivityAt);
+			t.true(f.store.threads.getTitleManuallySet(f.project.id, thread.id));
+			t.deepEqual(after.events, before.events);
+			t.deepEqual(after.result, before.result);
+			t.deepEqual(f.store.threadHistory.read(scope), sql);
+			t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), runs);
+			t.true(after.replaying);
+			await t.throwsAsync(
+				f.service.promptThread({...request, text: 'must remain unqueued'}),
+				{code: 'UNAVAILABLE'},
+			);
+		});
+	}
+}
 
 for (const kind of ['mode', 'config'] as const) {
 	test(`CHAT-08 failed replay refuses shared ${kind} work before any control callback`, async t => {
@@ -1939,7 +2007,10 @@ for (const mode of [
 		await supervisor.stop(project.id);
 		writeFileSync(path.join(project.canonicalRoot, '.fake-nanocoder'), mode);
 		const unavailable = await service.openThread(request);
-		t.is(unavailable.thread.runState, 'view-only');
+		t.is(
+			unavailable.thread.runState,
+			mode === 'missing-session' ? 'view-only' : 'failed',
+		);
 		t.truthy(unavailable.thread.viewOnlyReason);
 		if (mode === 'resume-fails')
 			t.is(
@@ -4337,10 +4408,7 @@ test('opening a missing Nanocoder session keeps its ID and shows unable-to-resum
 	t.is(snapshot.thread.nanocoderSessionId, thread.nanocoderSessionId);
 	t.is(snapshot.thread.title, thread.title);
 	t.is(snapshot.thread.runState, 'view-only');
-	t.regex(
-		snapshot.thread.viewOnlyReason ?? '',
-		/Nanocoder has no saved history/,
-	);
+	t.is(snapshot.thread.viewOnlyReason, REPLAY_MISSING_REASON);
 	t.deepEqual(snapshot.events, []);
 	t.deepEqual(store.threads.get(project.id, thread.id), snapshot.thread);
 });
