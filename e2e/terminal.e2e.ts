@@ -98,6 +98,194 @@ test.afterEach(async () => {
 	rmSync(work, {recursive: true, force: true});
 });
 
+async function nestedServer(): Promise<number[]> {
+	const started = await call('start', {projectId});
+	expect(started).toMatchObject({ok: true, value: {status: 'running'}});
+	if (!started.ok) throw new Error('Terminal unavailable');
+	const child = path.join(work, 'child.cjs');
+	const parent = path.join(work, 'parent.cjs');
+	writeFileSync(
+		child,
+		'process.on("SIGTERM",()=>{}); process.on("SIGHUP",()=>{}); require("node:net").createServer().listen(0,"127.0.0.1",()=>console.log("CHILD_PID="+process.pid));',
+	);
+	writeFileSync(
+		parent,
+		`process.on("SIGTERM",()=>{}); process.on("SIGHUP",()=>{}); console.log("PARENT_PID="+process.pid); const child=require("node:child_process").spawn(process.execPath,[${JSON.stringify(child)}],{stdio:["ignore","pipe","inherit"]}); child.stdout.pipe(process.stdout);`,
+	);
+	const prefix =
+		process.platform === 'win32' &&
+		!started.value.shell?.toLowerCase().endsWith('cmd.exe')
+			? '& '
+			: '';
+	await call('write', {
+		projectId,
+		data: `${prefix}"${process.execPath}" "${parent}"\r`,
+	});
+	let pids: number[] = [];
+	await expect
+		.poll(async () => {
+			const result = await call('get', {projectId});
+			if (!result.ok) return 0;
+			pids = [
+				...result.value.output.matchAll(/(?:PARENT|CHILD)_PID=(\d+)/gu),
+			].map(value => Number(value[1]));
+			return pids.length;
+		})
+		.toBe(2);
+	for (const pid of pids) expect(() => process.kill(pid, 0)).not.toThrow();
+	return pids;
+}
+
+async function expectGone(pids: number[]): Promise<void> {
+	await expect
+		.poll(() =>
+			pids.every(pid => {
+				try {
+					process.kill(pid, 0);
+					return false;
+				} catch {
+					return true;
+				}
+			}),
+		)
+		.toBe(true);
+}
+
+test('TERM-07 stop kills a parent node server and its child across process groups', async () => {
+	const pids = await nestedServer();
+	expect(await call('stop', {projectId})).toMatchObject({
+		ok: true,
+		value: {status: 'stopped'},
+	});
+	await expectGone(pids);
+});
+
+test('TERM-07 project switch waits for the old server tree to stop', async () => {
+	const pids = await nestedServer();
+	const oldProjectId = projectId;
+	const other = path.join(work, 'other');
+	mkdirSync(other);
+	await app.evaluate(({dialog}, root) => {
+		dialog.showOpenDialog = (async () => ({
+			canceled: false,
+			filePaths: [root],
+		})) as typeof dialog.showOpenDialog;
+	}, other);
+	const selected = await page.evaluate(async () => {
+		const api = (window as unknown as {desktop: DesktopApi}).desktop;
+		const added = await api.addProject({});
+		if (!added.ok || added.value.status !== 'selected')
+			throw new Error('No project');
+		return api.openProject({projectId: added.value.project.id});
+	});
+	expect(selected).toMatchObject({ok: true, value: {status: 'opened'}});
+	await expectGone(pids);
+	expect(
+		await call('write', {projectId: oldProjectId, data: 'never\r'}),
+	).toMatchObject({ok: false, error: {code: 'DENIED'}});
+});
+
+test('TERM-07 app quit awaits the whole server tree', async () => {
+	const pids = await nestedServer();
+	await app.close();
+	await expectGone(pids);
+});
+
+test('TERM-01 a native utility-process crash leaves main alive and cleans the server tree', async () => {
+	const pids = await nestedServer();
+	const workerPid = await app.evaluate(
+		({app}) =>
+			app
+				.getAppMetrics()
+				.find(
+					metric =>
+						metric.name === 'Nanocoder project terminal' ||
+						metric.serviceName === 'Nanocoder project terminal',
+				)?.pid,
+	);
+	expect(workerPid).toBeTruthy();
+	process.kill(workerPid ?? 0, 'SIGKILL');
+	await expect
+		.poll(async () => {
+			const state = await call('get', {projectId});
+			return state.ok ? state.value.status : 'unavailable';
+		})
+		.toBe('failed');
+	await expectGone(pids);
+	expect(
+		await page.evaluate(() =>
+			(window as unknown as {desktop: DesktopApi}).desktop.getAppInfo(),
+		),
+	).toMatchObject({ok: true});
+	expect(await call('restart', {projectId})).toMatchObject({
+		ok: true,
+		value: {status: 'running'},
+	});
+});
+
+test('TERM-12 agent command approval metadata never starts or writes the user PTY', async () => {
+	const created = await page.evaluate(
+		projectId =>
+			(window as unknown as {desktop: DesktopApi}).desktop.createThread({
+				projectId,
+			}),
+		projectId,
+	);
+	if (!created.ok) throw new Error('No fixture thread');
+	const threadId = created.value.id;
+	const prompting = page.evaluate(
+		({projectId, threadId}) =>
+			(window as unknown as {desktop: DesktopApi}).desktop.promptThread({
+				projectId,
+				threadId,
+				text: 'fixture command',
+			}),
+		{projectId, threadId},
+	);
+	await expect
+		.poll(async () => {
+			const state = await call('get', {projectId});
+			return state.ok ? state.value.agentCommand?.approval : undefined;
+		})
+		.toBe('pending');
+	const snapshot = await page.evaluate(
+		({projectId, threadId}) =>
+			(window as unknown as {desktop: DesktopApi}).desktop.getThreadSnapshot({
+				projectId,
+				threadId,
+			}),
+		{projectId, threadId},
+	);
+	if (!snapshot.ok) throw new Error('No fixture snapshot');
+	const permission = snapshot.value.events.find(
+		event => event.type === 'permission',
+	);
+	if (!permission || permission.type !== 'permission')
+		throw new Error('No fixture permission');
+	const optionId = permission.request.options.find(
+		option => option.kind === 'allow_once',
+	)?.id;
+	if (!optionId) throw new Error('No fixture allow option');
+	const answer = await page.evaluate(
+		request =>
+			(
+				window as unknown as {desktop: DesktopApi}
+			).desktop.answerThreadPermission(request),
+		{projectId, threadId, requestId: permission.request.id, optionId},
+	);
+	expect(answer).toMatchObject({ok: true});
+	await prompting;
+	expect(await call('get', {projectId})).toMatchObject({
+		ok: true,
+		value: {
+			status: 'stopped',
+			shell: null,
+			output: '',
+			agentCommand: {command: 'echo hi', approval: 'allowed'},
+		},
+	});
+});
+
 test('TERM-01/04/07 built main hosts a real UTF-8 PTY and stop leaves no nested server', async () => {
 	test.skip(
 		process.platform === 'win32',

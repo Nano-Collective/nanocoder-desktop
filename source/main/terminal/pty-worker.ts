@@ -10,6 +10,13 @@ let pty: IPty | undefined;
 let pending = '';
 let awaitingAck = false;
 let flush: ReturnType<typeof setTimeout> | undefined;
+let exitCode: number | undefined;
+let epoch = 0;
+
+function finish(): void {
+	if (exitCode !== undefined && !pending && !awaitingAck)
+		send({type: 'exit', code: exitCode});
+}
 
 function schedule(): void {
 	if (flush || awaitingAck || !pending) return;
@@ -19,7 +26,7 @@ function schedule(): void {
 		const data = pending;
 		pending = '';
 		awaitingAck = true;
-		send({type: 'data', data});
+		send({type: 'data', data, epoch});
 	}, 16);
 }
 
@@ -47,7 +54,11 @@ port.on('message', async ({data}: {data: WorkerCommand}) => {
 					rows: launch.rows,
 					encoding: 'utf8',
 				});
-				send({type: 'ready', pid: pty.pid});
+				const terminal =
+					'ptsName' in pty && typeof pty.ptsName === 'string'
+						? pty.ptsName
+						: undefined;
+				send({type: 'ready', pid: pty.pid, terminal});
 				pty.onData(chunk => {
 					pending += chunk;
 					if (pending.length > 65_536)
@@ -55,7 +66,11 @@ port.on('message', async ({data}: {data: WorkerCommand}) => {
 					pty?.pause();
 					schedule();
 				});
-				pty.onExit(event => send({type: 'exit', code: event.exitCode}));
+				pty.onExit(event => {
+					exitCode = event.exitCode;
+					schedule();
+					finish();
+				});
 				break;
 			}
 			case 'write':
@@ -64,10 +79,21 @@ port.on('message', async ({data}: {data: WorkerCommand}) => {
 			case 'resize':
 				pty?.resize(data.cols, data.rows);
 				break;
+			case 'clear':
+				epoch = data.epoch;
+				pending = '';
+				clearTimeout(flush);
+				flush = undefined;
+				pty?.clear();
+				if (!awaitingAck && exitCode === undefined) pty?.resume();
+				break;
 			case 'ack':
 				awaitingAck = false;
 				if (pending) schedule();
-				else pty?.resume();
+				else {
+					finish();
+					if (exitCode === undefined) pty?.resume();
+				}
 		}
 	} catch {
 		send({type: 'failed'});

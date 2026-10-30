@@ -109,7 +109,7 @@ export class TerminalService {
 						},
 						exit: (code, failed) => {
 							if (generation !== this.generation || this.closed) return;
-							this.host = undefined;
+							if (!failed) this.host = undefined;
 							this.state.status = failed ? 'failed' : 'exited';
 							this.state.exitCode = code;
 							this.state.reason = failed
@@ -180,6 +180,7 @@ export class TerminalService {
 
 	clear(request: TerminalRequests['clear']): TerminalSnapshot {
 		this.check(request.projectId);
+		this.host?.clear();
 		this.buffer.clear();
 		this.publish();
 		return this.get(request);

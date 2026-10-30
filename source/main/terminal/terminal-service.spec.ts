@@ -41,6 +41,7 @@ async function fixture(t: {teardown(fn: () => Promise<void>): void}) {
 			return {
 				write: data => writes.push(data),
 				resize: (cols, rows) => sizes.push([cols, rows]),
+				clear: () => {},
 				stop: async () => {
 					stops++;
 				},
@@ -180,4 +181,45 @@ test('TERM-02 invalid sizes and oversized input never reach the PTY', async t =>
 	});
 	t.deepEqual(f.writes, []);
 	t.deepEqual(f.sizes, []);
+});
+
+test('TERM-07 a start still awaiting its host is stopped before a switch can finish', async t => {
+	const f = await fixture(t);
+	let entered!: () => void;
+	let release!: () => void;
+	const spawning = new Promise<void>(resolve => {
+		entered = resolve;
+	});
+	const released = new Promise<void>(resolve => {
+		release = resolve;
+	});
+	let stops = 0;
+	const service = new TerminalService({
+		project: () => f.project,
+		projects: () => [f.project],
+		emit: () => {},
+		shell: async () => ({file: '/bin/sh', args: []}),
+		createHost: async () => {
+			entered();
+			await released;
+			return {
+				write: () => {},
+				resize: () => {},
+				clear: () => {},
+				stop: async () => {
+					stops++;
+				},
+			};
+		},
+	});
+	t.teardown(() => service.close());
+	await service.activate(f.project.id);
+	const starting = service.start({projectId: f.project.id});
+	await spawning;
+	const switched = service.activate(null);
+	release();
+	await t.throwsAsync(starting, {code: 'UNAVAILABLE'});
+	await switched;
+	t.is(stops, 1);
+	t.throws(() => service.get({projectId: f.project.id}), {code: 'DENIED'});
 });

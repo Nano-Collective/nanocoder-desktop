@@ -1,7 +1,11 @@
 import path from 'node:path';
 import {utilityProcess} from 'electron';
 import {IpcFailure} from '@/main/ipc/handle-request';
-import {terminateTree} from '@/main/terminal/process-tree';
+import {
+	captureTerminalProcesses,
+	type TerminalProcesses,
+	terminateTree,
+} from '@/main/terminal/process-tree';
 import type {
 	PtyHostFactory,
 	WorkerCommand,
@@ -21,7 +25,12 @@ export const createUtilityPtyHost: PtyHostFactory = async (launch, events) => {
 		},
 	);
 	let pid: number | undefined;
+	let terminal: string | undefined;
 	let ended = false;
+	let epoch = 0;
+	let known: TerminalProcesses = {pids: [], groups: []};
+	let capture: Promise<void> = Promise.resolve();
+	let monitor: ReturnType<typeof setInterval> | undefined;
 	let stopping: Promise<void> | undefined;
 	let resolveReady!: () => void;
 	let rejectReady!: (error: Error) => void;
@@ -32,14 +41,32 @@ export const createUtilityPtyHost: PtyHostFactory = async (launch, events) => {
 	const send = (command: WorkerCommand) => worker.postMessage(command);
 	const failure = () =>
 		new IpcFailure('UNAVAILABLE', 'The terminal process could not run');
+	const refresh = (): Promise<void> => {
+		capture = capture.then(async () => {
+			if (pid === undefined || ended) return;
+			const current = await captureTerminalProcesses(
+				pid,
+				launch.roots,
+				terminal,
+			);
+			if (current.groups.length) known = current;
+		});
+		return capture;
+	};
 	const stop = (): Promise<void> => {
 		if (stopping) return stopping;
 		stopping = (async () => {
 			ended = true;
 			clearTimeout(deadline);
-			if (pid !== undefined) await terminateTree(pid, launch.roots);
+			clearInterval(monitor);
+			await capture.catch(() => {});
+			if (pid !== undefined)
+				await terminateTree(pid, launch.roots, terminal, known);
 			worker.kill();
-		})();
+		})().catch(error => {
+			stopping = undefined;
+			throw error;
+		});
 		return stopping;
 	};
 	const fail = () => {
@@ -51,18 +78,28 @@ export const createUtilityPtyHost: PtyHostFactory = async (launch, events) => {
 			);
 		}
 	};
-	const deadline = setTimeout(fail, 5000);
+	const deadline = setTimeout(fail, 2000);
 	worker.on('message', (event: WorkerEvent) => {
 		if (ended) return;
 		switch (event.type) {
 			case 'ready':
 				pid = event.pid;
+				terminal = event.terminal;
 				clearTimeout(deadline);
-				resolveReady();
+				void refresh().then(() => {
+					if (ended) return;
+					monitor = setInterval(() => {
+						void refresh().catch(fail);
+					}, 250);
+					resolveReady();
+				}, fail);
 				break;
 			case 'data':
-				events.data(event.data);
-				send({type: 'ack'});
+				void refresh().then(() => {
+					if (ended) return;
+					if (event.epoch === epoch) events.data(event.data);
+					send({type: 'ack'});
+				}, fail);
 				break;
 			case 'exit':
 				void stop().then(
@@ -96,6 +133,14 @@ export const createUtilityPtyHost: PtyHostFactory = async (launch, events) => {
 			if (ended) throw failure();
 			try {
 				send({type: 'resize', cols, rows});
+			} catch {
+				throw failure();
+			}
+		},
+		clear: () => {
+			if (ended) return;
+			try {
+				send({type: 'clear', epoch: ++epoch});
 			} catch {
 				throw failure();
 			}

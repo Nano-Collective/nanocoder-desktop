@@ -12,6 +12,7 @@ export interface PtyLaunch {
 export interface PtyHost {
 	write(data: string): void;
 	resize(cols: number, rows: number): void;
+	clear(): void;
 	stop(): Promise<void>;
 }
 
@@ -27,10 +28,11 @@ export type WorkerCommand =
 	| {type: 'start'; launch: PtyLaunch}
 	| {type: 'write'; data: string}
 	| {type: 'resize'; cols: number; rows: number}
+	| {type: 'clear'; epoch: number}
 	| {type: 'ack'};
 
 export type WorkerEvent =
-	| {type: 'ready'; pid: number}
-	| {type: 'data'; data: string}
+	| {type: 'ready'; pid: number; terminal?: string}
+	| {type: 'data'; data: string; epoch: number}
 	| {type: 'exit'; code: number}
 	| {type: 'failed'};

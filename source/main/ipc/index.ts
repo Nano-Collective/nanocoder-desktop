@@ -26,6 +26,7 @@ import type {TrustRefusal} from '@/main/nanocoder/trust';
 import {confirmProjectTrust} from '@/main/projects/project-consent';
 import {createProjectService} from '@/main/projects/project-service';
 import {isAllowedOrigin} from '@/main/security';
+import {AgentCommandObserver} from '@/main/terminal/agent-command';
 import {TerminalService} from '@/main/terminal/terminal-service';
 import {createUtilityPtyHost} from '@/main/terminal/utility-host';
 import {createThreadService} from '@/main/threads/thread-service';
@@ -63,6 +64,9 @@ let appOrigins: readonly string[] = [];
 let workspaceServices: WorkspaceServices = {};
 let unsubscribeProjectEvents: (() => void) | undefined;
 let terminal: TerminalService | undefined;
+const agentCommands = new AgentCommandObserver((projectId, command) =>
+	terminal?.setAgentCommand(projectId, command),
+);
 
 function availableControls() {
 	if (!controlRuntime)
@@ -85,6 +89,7 @@ function stopProject(projectId: string) {
 
 // Only windows showing the app get events; the renderer never sees the IPC event object.
 function sendProjectEvent(event: ProjectEvent): void {
+	agentCommands.observe(event);
 	for (const window of BrowserWindow.getAllWindows()) {
 		if (
 			!window.webContents.isDestroyed() &&
@@ -180,6 +185,7 @@ async function connect(): Promise<ConnectResult> {
 		if (runtimeDiscovery.signal.aborted)
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'The desktop is shutting down');
 		activeProjectId = undefined;
+		agentCommands.reset(null);
 		activeProjectId = selected.project.id;
 		const opened = await untilAborted(
 			Promise.resolve(projects.openProject({projectId: selected.project.id})),
@@ -254,6 +260,7 @@ function watchRenderer(contents: WebContents): void {
 		);
 		rendererAttachment = new AbortController();
 		activeProjectId = undefined;
+		agentCommands.reset(null);
 		invalidateControls();
 		rendererCleanup = Promise.allSettled([
 			terminal?.activate(null),
@@ -422,6 +429,7 @@ export function registerIpcHandlers(
 						},
 						signal: () => rendererAttachment.signal,
 						beforeOpenProject: async project => {
+							agentCommands.reset(project.id);
 							await terminal?.activate(project.id);
 						},
 						announceProject: project => {
@@ -497,6 +505,17 @@ export function registerIpcHandlers(
 				setProjectDefaultMode: controlRuntime.setProjectDefaultMode,
 			};
 	}
+	const commandThreads = workspaceServices.threads;
+	if (commandThreads)
+		workspaceServices.threads = {
+			...commandThreads,
+			answerThreadPermission: async request => {
+				const accepted = agentCommands.capture(request);
+				const result = await commandThreads.answerThreadPermission(request);
+				accepted?.();
+				return result;
+			},
+		};
 	app.on('web-contents-created', (_event, contents) => watchRenderer(contents));
 	for (const window of BrowserWindow.getAllWindows())
 		watchRenderer(window.webContents);
