@@ -19,6 +19,7 @@ interface ProjectOptions {
 	supervisor: Pick<ProjectSupervisor, 'probeProject' | 'stop'>;
 	signal?(): AbortSignal;
 	announceProject?(project: ProjectInfo): void;
+	beforeOpenProject?(project: ProjectInfo): Promise<void>;
 }
 
 type AsyncProjectService = {
@@ -113,6 +114,8 @@ export function createProjectService(
 		openProject: ({projectId}) =>
 			run<ProjectOpenResult>(async signal => {
 				const project = get(projectId);
+				await options.beforeOpenProject?.(project);
+				signal.throwIfAborted();
 				options.announceProject?.(project);
 				await untilAborted(validateRoot(project), signal);
 				signal.throwIfAborted();

@@ -12,6 +12,7 @@ files:
   - '!.qa/**'
 asarUnpack:
   - '**/*.node'
+  - '**/node-pty/**'
 npmRebuild: true
 mac:
   category: public.app-category.developer-tools

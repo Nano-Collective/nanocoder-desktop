@@ -9,7 +9,10 @@ export default defineConfig({
 		resolve: {alias},
 		build: {
 			rolldownOptions: {
-				input: {index: fromRoot('source/main/index.ts')},
+				input: {
+					index: fromRoot('source/main/index.ts'),
+					'pty-worker': fromRoot('source/main/terminal/pty-worker.ts'),
+				},
 			},
 		},
 	},
