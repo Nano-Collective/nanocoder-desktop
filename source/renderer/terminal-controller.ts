@@ -183,6 +183,7 @@ export class TerminalController {
 			return;
 		}
 		if (event.sequence <= previous.sequence) return;
+		if (previous.status !== 'running' && previous.status !== 'starting') return;
 		const combined = previous.output + event.data;
 		const output = boundTerminalOutput(combined);
 		this.update({

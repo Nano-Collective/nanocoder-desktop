@@ -94,16 +94,24 @@ test('terminal selection is read-only and late responses cannot cross projects',
 test('terminal events preserve order and cannot roll back clear or another project', async t => {
 	const {model, emit} = fixture();
 	await model.select('one');
+	emit({
+		type: 'snapshot',
+		snapshot: {...snapshot('one', 3), status: 'running'},
+	});
 	emit({type: 'data', projectId: 'two', sequence: 999, data: 'foreign'});
-	emit({type: 'data', projectId: 'one', sequence: 3, data: 'first'});
-	emit({type: 'snapshot', snapshot: snapshot('one', 4)});
-	emit({type: 'data', projectId: 'one', sequence: 3, data: 'cleared'});
+	emit({type: 'data', projectId: 'one', sequence: 4, data: 'first'});
+	t.is(model.getState().snapshot?.output, 'first');
+	emit({
+		type: 'snapshot',
+		snapshot: {...snapshot('one', 5), status: 'running'},
+	});
+	emit({type: 'data', projectId: 'one', sequence: 4, data: 'cleared'});
 	emit({type: 'snapshot', snapshot: {...snapshot('one', 2), output: 'stale'}});
 	t.is(model.getState().snapshot?.output, '');
-	emit({type: 'data', projectId: 'one', sequence: 5, data: 'fresh'});
+	emit({type: 'data', projectId: 'one', sequence: 6, data: 'fresh'});
 	t.is(model.getState().snapshot?.output, 'fresh');
 	model.dispose();
-	emit({type: 'data', projectId: 'one', sequence: 6, data: 'disposed'});
+	emit({type: 'data', projectId: 'one', sequence: 7, data: 'disposed'});
 	t.is(model.getState().snapshot?.output, 'fresh');
 });
 
@@ -115,10 +123,23 @@ test('terminal queues bounded data arriving before the initial snapshot', async 
 	emit({type: 'data', projectId: 'one', sequence: 5, data: ' + queued'});
 	waiting.resolve({
 		ok: true,
-		value: {...snapshot('one', 4), output: 'snapshot'},
+		value: {...snapshot('one', 4), status: 'running', output: 'snapshot'},
 	});
 	await selected;
 	t.is(model.getState().snapshot?.output, 'snapshot + queued');
+});
+
+test('TERM-07 late output cannot revive a stopped or exited terminal even with a higher sequence', async t => {
+	const {model, emit} = fixture();
+	await model.select('one');
+	emit({type: 'data', projectId: 'one', sequence: 99, data: 'restarted'});
+	t.is(model.getState().snapshot?.output, '');
+	emit({
+		type: 'snapshot',
+		snapshot: {...snapshot('one', 100), status: 'exited'},
+	});
+	emit({type: 'data', projectId: 'one', sequence: 101, data: 'old batch'});
+	t.is(model.getState().snapshot?.output, '');
 });
 
 test('terminal pending actions reject duplicate actions and user input, then surface refusals', async t => {

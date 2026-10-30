@@ -1,6 +1,7 @@
 import type {Terminal} from '@xterm/xterm';
 import * as React from 'react';
 import {terminalFocusLease} from '@/renderer/terminal-focus';
+import {TerminalOutput} from '@/renderer/terminal-output';
 
 export interface TerminalHandle {
 	focus(): void;
@@ -35,7 +36,6 @@ export function TerminalView(props: {
 	const instance = React.useRef<Terminal | null>(null);
 	const latest = React.useRef(props);
 	latest.current = props;
-	const rendered = React.useRef('');
 	const focusPending = React.useRef<ReturnType<
 		typeof terminalFocusLease
 	> | null>(null);
@@ -65,6 +65,7 @@ export function TerminalView(props: {
 		let resize: ResizeObserver | undefined;
 		let theme: MutationObserver | undefined;
 		let subscription: {dispose(): void} | undefined;
+		let output: TerminalOutput | undefined;
 		const initialise = async () => {
 			await document.fonts.ready;
 			const {Terminal} = await import('@xterm/xterm');
@@ -165,28 +166,11 @@ export function TerminalView(props: {
 					terminal.resize(cols, rows);
 				latest.current.onResize(cols, rows);
 			};
-			let writing = false;
-			const paint = () => {
-				if (disposed || writing) return;
-				const output = latest.current.output;
-				if (output !== rendered.current) {
-					const append = output.startsWith(rendered.current);
-					const data = append ? output.slice(rendered.current.length) : output;
-					if (!append) terminal.reset();
-					rendered.current = output;
-					if (data) {
-						writing = true;
-						terminal.write(data, () => {
-							writing = false;
-							paint();
-						});
-					}
-				}
-			};
+			output = new TerminalOutput(terminal);
 			sync.current = () => {
 				terminal.options.disableStdin = !latest.current.running;
 				terminal.options.screenReaderMode = latest.current.screenReader;
-				paint();
+				output?.update(latest.current.output);
 				fit();
 			};
 			resize = new ResizeObserver(() => {
@@ -218,9 +202,9 @@ export function TerminalView(props: {
 			resize?.disconnect();
 			theme?.disconnect();
 			subscription?.dispose();
+			output?.dispose();
 			instance.current?.dispose();
 			instance.current = null;
-			rendered.current = '';
 			sync.current = () => {};
 		};
 	}, []);
