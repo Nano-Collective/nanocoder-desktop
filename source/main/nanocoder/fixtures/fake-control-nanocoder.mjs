@@ -1,4 +1,4 @@
-import {readFileSync} from 'node:fs';
+import {readFileSync, watch} from 'node:fs';
 import {createInterface} from 'node:readline';
 
 let scenario = '';
@@ -45,8 +45,31 @@ const modes = () => ({
 		'future',
 	].map(id => ({id, name: id})),
 });
+const notifyConfig = sessionId =>
+	send({
+		method: 'session/update',
+		params: {
+			sessionId,
+			update: {
+				sessionUpdate: 'config_option_update',
+				configOptions:
+					scenario === 'config-notify-malformed'
+						? [{...config()[1], currentValue: true}]
+						: scenario === 'config-notify-malformed-mixed'
+							? [config()[0], {...config()[1], currentValue: true}]
+							: scenario === 'config-notify-empty'
+								? []
+								: config(),
+			},
+		},
+	});
 const failure = id =>
 	send({id, error: {code: -32603, message: 'fixture refusal'}});
+watch('.', {persistent: false}, (_event, name) => {
+	if (name !== '.fake-control-notification' || !nextSession) return;
+	model = 'confirmed';
+	notifyConfig(`session-${nextSession}`);
+});
 createInterface({input: process.stdin}).on('line', line => {
 	const {id, method, params} = JSON.parse(line);
 	process.stderr.write(`${JSON.stringify({method, params})}\n`);
@@ -70,6 +93,11 @@ createInterface({input: process.stdin}).on('line', line => {
 			},
 		});
 	} else if (method === 'session/resume') {
+		if (scenario === 'config-notify-replay') {
+			model = 'confirmed';
+			notifyConfig(params.sessionId);
+			model = 'old';
+		}
 		send({id, result: {modes: modes(), configOptions: config()}});
 	} else if (method === 'session/set_config_option') {
 		if (params.configId === 'provider') {
@@ -100,6 +128,33 @@ createInterface({input: process.stdin}).on('line', line => {
 			},
 		});
 	} else if (method === 'session/prompt') {
+		if (
+			scenario.startsWith('config-notify-') &&
+			scenario !== 'config-notify-unprompted' &&
+			scenario !== 'config-notify-close'
+		) {
+			model = 'confirmed';
+			notifyConfig(
+				scenario === 'config-notify-foreign'
+					? 'foreign-session'
+					: scenario === 'config-notify-old'
+						? 'session-1'
+						: params.sessionId,
+			);
+		}
 		send({id, result: {stopReason: 'end_turn'}});
+	} else if (
+		scenario === 'config-notify-unprompted' &&
+		method === '_renameSession'
+	) {
+		if (nextSession) {
+			model = 'confirmed';
+			notifyConfig(`session-${nextSession}`);
+		}
+		send({id, error: {code: -32601, message: 'fixture unsupported'}});
+	} else if (scenario === 'config-notify-close' && method === 'session/close') {
+		model = 'confirmed';
+		notifyConfig(params.sessionId);
+		send({id, result: {}});
 	} else if (id !== undefined) send({id, result: {}});
 });

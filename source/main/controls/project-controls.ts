@@ -53,6 +53,10 @@ const changed = () =>
 
 export function createProjectControls(options: ProjectControlOptions) {
 	const states = new Map<string, OfferState>();
+	const subscriptions = new Map<
+		NanocoderConnection,
+		{projectId: string; unsubscribe(): void}
+	>();
 	const uncertainConnections = new WeakSet<object>();
 	const operations = options.operations;
 	let disposed = false;
@@ -156,10 +160,44 @@ export function createProjectControls(options: ProjectControlOptions) {
 	};
 	const publish = (projectId: string) =>
 		options.publishControls(snapshot(projectId, true));
+	const observeConnection = (
+		projectId: string,
+		connection: NanocoderConnection,
+	) => {
+		if (subscriptions.has(connection) || !connection.observeConfigOptions)
+			return;
+		const unsubscribe = connection.observeConfigOptions({
+			isCurrentSession: sessionId => {
+				const owner = options.getProject(projectId);
+				return !!(
+					!disposed &&
+					owner &&
+					!uncertainConnections.has(connection) &&
+					[...(states.get(projectId)?.sessions.values() ?? [])].some(
+						source =>
+							source.connection === connection &&
+							source.session.id === sessionId &&
+							eligible(owner, source),
+					)
+				);
+			},
+			onChange: () => {
+				if (disposed || !states.has(projectId)) return;
+				const revision = states.get(projectId)?.revision;
+				if (refresh(projectId, true).revision !== revision) publish(projectId);
+			},
+		});
+		subscriptions.set(connection, {projectId, unsubscribe});
+	};
 	const invalidate = (
 		projectId: string,
 		reason = 'model options changed; wait for a prepared session',
 	) => {
+		for (const [connection, subscription] of subscriptions) {
+			if (subscription.projectId !== projectId) continue;
+			subscription.unsubscribe();
+			subscriptions.delete(connection);
+		}
 		const state = states.get(projectId);
 		if (!state) return;
 		state.sessions.clear();
@@ -213,6 +251,7 @@ export function createProjectControls(options: ProjectControlOptions) {
 			if (!eligible(project(lease.projectId), prepared)) throw changed();
 			const state = stateFor(lease.projectId);
 			state.sessions.set(thread.id, prepared);
+			observeConnection(lease.projectId, connection);
 			state.activeThreadId = thread.id;
 			state.fingerprint = '';
 			state.revision = randomUUID();
@@ -313,6 +352,9 @@ export function createProjectControls(options: ProjectControlOptions) {
 		},
 		dispose() {
 			disposed = true;
+			for (const subscription of subscriptions.values())
+				subscription.unsubscribe();
+			subscriptions.clear();
 			states.clear();
 		},
 	};

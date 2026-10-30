@@ -52,6 +52,8 @@ function fixture() {
 		mode: NanocoderMode,
 	) => Promise<unknown> = async () => ({});
 	const calls: unknown[][] = [];
+	const updates: string[] = [];
+	const current = new Set(['one', 'two']);
 	const controls = createSessionControls({
 		isReady: id => ready.has(id),
 		isPrompting: () => prompting,
@@ -75,9 +77,16 @@ function fixture() {
 		config(),
 	);
 	controls.remember('two', [{id: 'normal'}], config());
+	const stopObserving = controls.observeConfigOptions({
+		isCurrentSession: sessionId => current.has(sessionId),
+		onChange: sessionId => updates.push(sessionId),
+	});
 	return {
 		controls,
 		calls,
+		updates,
+		current,
+		stopObserving,
 		ready,
 		prompting: (value: boolean) => {
 			prompting = value;
@@ -217,4 +226,175 @@ test('unready, deleted and missing sessions cannot supply offers or mutate contr
 	await t.throwsAsync(f.controls.setMode('two', 'normal'));
 	await t.throwsAsync(f.controls.setConfigOption('unknown', 'provider', 'b'));
 	t.deepEqual(f.calls, []);
+});
+
+test('current-session config notifications replace bounded process offers without changing mode authority (ACP-14 DEC-31)', t => {
+	const f = fixture();
+	f.prompting(true);
+	const modes = f.controls.getSessionOffers('one')?.offeredModes;
+	const next = config('b', 'confirmed');
+	t.true(f.controls.updateConfigOptions('two', next));
+	next[1].currentValue = 'old';
+	t.is(
+		f.controls.getSessionOffers('one')?.configOptions?.[1]?.currentValue,
+		'confirmed',
+	);
+	t.deepEqual(f.controls.getSessionOffers('one')?.offeredModes, modes);
+	t.true(f.controls.canPrompt());
+	t.deepEqual(f.calls, []);
+	t.deepEqual(f.updates, ['two']);
+	t.false(f.controls.updateConfigOptions('two', config('b', 'confirmed')));
+	t.deepEqual(f.updates, ['two']);
+});
+
+test('malformed, excessive, foreign, old, forgotten and disposed config notifications leave offers unchanged (ACP-14)', t => {
+	const f = fixture();
+	const before = f.controls.getSessionOffers('two');
+	const malformed = [
+		undefined,
+		[{...config()[1], currentValue: true}],
+		[{...config()[1], name: 'x'.repeat(257)}],
+		[
+			{
+				...config()[1],
+				options: Array.from({length: 257}, (_, i) => ({
+					name: String(i),
+					value: String(i),
+				})),
+			},
+		],
+		[config()[1], config()[1]],
+	];
+	for (const raw of malformed) {
+		t.false(f.controls.updateConfigOptions('two', raw));
+		t.deepEqual(f.controls.getSessionOffers('two'), before);
+	}
+	t.false(f.controls.updateConfigOptions('foreign', config('b', 'confirmed')));
+	f.current.delete('one');
+	t.false(f.controls.updateConfigOptions('one', config('b', 'confirmed')));
+	t.deepEqual(f.controls.getSessionOffers('two'), before);
+	f.controls.forget('two');
+	t.false(f.controls.updateConfigOptions('two', config('b', 'confirmed')));
+	t.deepEqual(f.controls.getSessionOffers('one'), {
+		...before,
+		offeredModes: ['normal', 'plan', 'yolo'],
+	});
+	f.controls.dispose();
+	const stopped = f.controls.getSessionOffers('one');
+	t.false(f.controls.updateConfigOptions('one', config('b', 'confirmed')));
+	t.deepEqual(f.controls.getSessionOffers('one'), stopped);
+	t.deepEqual(f.updates, []);
+});
+
+test('notifications cannot clear uncertain config or restore mode readiness (ACP-14 DEC-31)', async t => {
+	const f = fixture();
+	f.config(async () => {
+		throw new Error('fixture refusal');
+	});
+	await t.throwsAsync(f.controls.setConfigOption('two', 'provider', 'b'));
+	t.false(f.controls.updateConfigOptions('two', config('b', 'confirmed')));
+	t.false(f.controls.canPrompt());
+	t.is(f.controls.getSessionOffers('two')?.configOptions, undefined);
+	const unready = fixture();
+	unready.ready.delete('two');
+	t.false(
+		unready.controls.updateConfigOptions('two', config('b', 'confirmed')),
+	);
+	t.is(unready.controls.getSessionOffers('two'), undefined);
+	t.deepEqual(f.updates, []);
+	t.deepEqual(unready.updates, []);
+});
+
+test('another currently owned ready thread may report project-wide config, but replay and released owners cannot (ACP-14)', t => {
+	const f = fixture();
+	const before = f.controls.getSessionOffers('two');
+	t.false(
+		f.controls.updateConfigOptions('one', config('b', 'confirmed'), true),
+	);
+	t.deepEqual(f.controls.getSessionOffers('two'), before);
+	t.true(f.controls.updateConfigOptions('one', config('b', 'confirmed')));
+	t.is(
+		f.controls.getSessionOffers('two')?.configOptions?.[1]?.currentValue,
+		'confirmed',
+	);
+	t.deepEqual(f.updates, ['one']);
+	f.stopObserving();
+	t.false(f.controls.updateConfigOptions('two', config()));
+	t.is(
+		f.controls.getSessionOffers('two')?.configOptions?.[1]?.currentValue,
+		'confirmed',
+	);
+});
+
+test('raw notification frames require own valid notification fields and non-empty bounded config before changing the cache (ACP-14)', t => {
+	const f = fixture();
+	const before = f.controls.getSessionOffers('two');
+	const frame = {
+		jsonrpc: '2.0',
+		method: 'session/update',
+		params: {
+			sessionId: 'two',
+			update: {
+				sessionUpdate: 'config_option_update',
+				configOptions: config('b', 'confirmed'),
+			},
+		},
+	};
+	for (const invalid of [
+		undefined,
+		{},
+		{...frame, jsonrpc: '1.0'},
+		{...frame, method: 'other'},
+		{...frame, id: 1},
+		{...frame, id: null},
+		{...frame, params: {...frame.params, sessionId: 1}},
+		Object.create(frame),
+		{
+			...frame,
+			params: {
+				...frame.params,
+				update: {sessionUpdate: 'current_mode_update', currentModeId: 'yolo'},
+			},
+		},
+		{
+			...frame,
+			params: {
+				...frame.params,
+				update: {...frame.params.update, configOptions: []},
+			},
+		},
+		{
+			...frame,
+			params: {
+				...frame.params,
+				update: {
+					...frame.params.update,
+					configOptions: [config()[0], {...config()[1], currentValue: true}],
+				},
+			},
+		},
+	]) {
+		t.false(f.controls.receiveConfigNotification(invalid));
+		t.deepEqual(f.controls.getSessionOffers('two'), before);
+	}
+	let getters = 0;
+	t.false(
+		f.controls.receiveConfigNotification({
+			...frame,
+			params: {
+				sessionId: 'two',
+				get update() {
+					getters++;
+					return frame.params.update;
+				},
+			},
+		}),
+	);
+	t.is(getters, 0);
+	t.true(f.controls.receiveConfigNotification(frame));
+	t.is(
+		f.controls.getSessionOffers('one')?.configOptions?.[1]?.currentValue,
+		'confirmed',
+	);
+	t.deepEqual(f.updates, ['two']);
 });

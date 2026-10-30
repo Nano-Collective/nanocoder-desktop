@@ -358,3 +358,61 @@ test('a repeated prompt after direct authority invalidation safely resumes inste
 	t.is(f.confirmations(), 1);
 	t.true(f.writes.every(thread => thread.mode !== 'yolo'));
 });
+
+test('unprompted current config notification publishes a new revision without clearing another pending yolo (ACP-14 DEC-31)', async t => {
+	const f = await fixture(t, 'config-notify-unprompted');
+	await f.threads.promptThread({...f.request, text: 'fixture first session'});
+	const before = f.controls.controls.getProjectControls({
+		projectId: f.project.id,
+	});
+	const pending = await f.threads.createThread({projectId: f.project.id});
+	const request = {projectId: f.project.id, threadId: pending.id};
+	await f.controls.setThreadMode({...request, mode: 'yolo'});
+	await f.supervisor.getConnection(f.project.id).probeExtensions();
+	const pushed = f.published.at(-1);
+	if (!pushed) throw new Error('Expected pushed project controls');
+	t.not(pushed?.revision, before.revision);
+	t.is(
+		pushed?.configOptions.find(option => option.id === 'model')?.currentValue,
+		'confirmed',
+	);
+	const after = f.controls.controls.getProjectControls({
+		projectId: f.project.id,
+	});
+	t.is(after.revision, pushed.revision);
+	t.is((await f.threads.getThreadSnapshot(request)).thread.mode, 'yolo');
+	t.is(f.store.threads.get(f.project.id, pending.id)?.nanocoderSessionId, null);
+	t.is(f.launches(), 1);
+	await t.throwsAsync(
+		f.controls.controls.setProjectConfigOption({
+			projectId: f.project.id,
+			revision: before.revision,
+			configId: 'provider',
+			value: 'b',
+		}),
+		{code: 'DENIED'},
+	);
+	t.is(
+		f.rpc().filter(event => event.method === 'session/set_config_option')
+			.length,
+		0,
+	);
+	await f.threads.promptThread({...request, text: 'fixture pending yolo'});
+	t.is((await f.threads.getThreadSnapshot(request)).thread.mode, 'yolo');
+	t.is(f.confirmations(), 1);
+	t.true(f.writes.every(thread => thread.mode !== 'yolo'));
+});
+
+test('disposed project controls ignore a later current-session config notification (ACP-14)', async t => {
+	const f = await fixture(t, 'config-notify-unprompted');
+	await f.threads.promptThread({...f.request, text: 'fixture session'});
+	const before = f.published.length;
+	f.controls.dispose();
+	await f.supervisor.getConnection(f.project.id).probeExtensions();
+	t.is(f.published.length, before);
+	t.is(
+		f.supervisor.getConnection(f.project.id).getSessionOffers('session-1')
+			?.configOptions?.[1]?.currentValue,
+		'old',
+	);
+});

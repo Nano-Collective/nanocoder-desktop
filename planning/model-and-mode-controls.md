@@ -40,6 +40,14 @@ that exact bound connection, never a transcript or a renderer-supplied session I
   model chosen by a provider switch. A failed config response can follow an
   upstream partial change, so every prompt stays blocked until a replacement
   connection. It never retries or invents a rollback.
+- Current ready sessions can refresh model options through unsolicited
+  `config_option_update` notifications. The same main-only owner checks raw
+  config with the existing bounds, before the SDK can strip malformed entries.
+  Replayed, empty, foreign, replaced, deleted, forgotten, unready, closing,
+  disposed or uncertain updates cannot change the cache. A ready session still
+  owned by another thread can update the project-wide model.
+  Changed offers rotate and push the project revision without another controls
+  read. Notifications neither change pending modes nor clear config uncertainty.
 - `acp-client.ts` exposes main-only `getSessionOffers`, `setConfigOption` and
   `setMode`. Unknown or unoffered modes never reach Nanocoder's fallback. A live
   mode change removes prompt readiness until acknowledgement.
@@ -95,9 +103,9 @@ scope checks. A cancelled yolo can also be selected again and explicitly accepte
 
 ## Verification and design deviation
 
-- `pnpm test:all`: 931 unit tests; formatting, types, lint, Knip and audit pass.
-- `pnpm test:ava:coverage`: 96.84% lines.
-- `pnpm test:e2e`: 146 pass, including six mounted controls/composer checks.
+- `pnpm test:all`: 954 unit tests; formatting, types, lint, Knip and audit pass.
+- `pnpm test:ava:coverage`: 97.06% lines.
+- `pnpm test:e2e`: 147 pass, including seven mounted controls/composer checks.
 - Pinned ACP `fc01e239a80ddb2e09ca174e3c909508832d5340`: 20 pass,
   including real mode acknowledgement, provider-confirmed different model and
   resume retaining the process-current model rather than historical config.

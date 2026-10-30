@@ -21,6 +21,7 @@ import {
 	protocolStream,
 } from '@/main/nanocoder/protocol-stream';
 import {
+	type ConfigOptionsObserver,
 	createSessionControls,
 	type SessionOffers,
 } from '@/main/nanocoder/session-controls';
@@ -77,6 +78,7 @@ export interface NanocoderConnection {
 	deleteSession(sessionId: string): Promise<void>;
 	renameSession(sessionId: string, title: string): Promise<string>;
 	getSessionOffers(sessionId: string): SessionOffers | undefined;
+	observeConfigOptions?(observer: ConfigOptionsObserver): () => void;
 	setMode(sessionId: string, mode: NanocoderMode): Promise<SessionInfo>;
 	setConfigOption(
 		sessionId: string,
@@ -181,7 +183,15 @@ export async function connectNanocoder(
 	let replay: SessionNotification['update'][] | undefined;
 	const readySessions = new Set<string>();
 	const activePrompts = new Set<Promise<unknown>>();
+	let notificationControls:
+		| ReturnType<typeof createSessionControls>
+		| undefined;
 	let canCloseSession = false;
+	const stream = protocolStream(child.stdout, child.stdin, line => {
+		violated = true;
+		stderr.append(`[stdout] ${line}`);
+		child.kill();
+	});
 
 	const connection = client({name: options.clientInfo.name})
 		.onRequest(methods.client.session.requestPermission, ({params}) =>
@@ -203,13 +213,18 @@ export async function connectNanocoder(
 				if (params) options.onTitleChanged?.(params);
 			},
 		)
-		.connect(
-			protocolStream(child.stdout, child.stdin, line => {
-				violated = true;
-				stderr.append(`[stdout] ${line}`);
-				child.kill();
-			}),
-		);
+		.connect({
+			...stream,
+			// The SDK drops malformed config entries; authority must see the original.
+			readable: stream.readable.pipeThrough(
+				new TransformStream({
+					transform(frame, controller) {
+						notificationControls?.receiveConfigNotification(frame, !!replay);
+						controller.enqueue(frame);
+					},
+				}),
+			),
+		});
 
 	const closeQuietly = async (sessionId: string) => {
 		if (!canCloseSession) return;
@@ -220,6 +235,7 @@ export async function connectNanocoder(
 
 	let closing: Promise<void> | undefined;
 	const close = (): Promise<void> => {
+		notificationControls?.dispose();
 		closing ??= (async () => {
 			const grace = options.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
 			const terminate = () => {
@@ -250,6 +266,7 @@ export async function connectNanocoder(
 	};
 	options.signal?.addEventListener('abort', abort, {once: true});
 	void exited.then(() => options.signal?.removeEventListener('abort', abort));
+	void exited.then(() => notificationControls?.dispose());
 
 	const timeoutMs = options.initializeTimeoutMs ?? INITIALIZE_TIMEOUT_MS;
 	let timedOut = false;
@@ -352,6 +369,7 @@ export async function connectNanocoder(
 			).configOptions,
 		failure: (code, message) => new NanocoderFailure(code, message),
 	});
+	notificationControls = sessionControls;
 
 	const newSession = async (mode: NanocoderMode): Promise<SessionInfo> => {
 		const created = await connection.agent
@@ -576,6 +594,7 @@ export async function connectNanocoder(
 		deleteSession,
 		renameSession,
 		getSessionOffers: sessionControls.getSessionOffers,
+		observeConfigOptions: sessionControls.observeConfigOptions,
 		setMode: sessionControls.setMode,
 		setConfigOption: sessionControls.setConfigOption,
 		prompt,

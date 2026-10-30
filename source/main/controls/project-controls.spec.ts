@@ -5,6 +5,7 @@ import type {
 	NanocoderConnection,
 	SessionOffers,
 } from '@/main/nanocoder/acp-client';
+import {createSessionControls} from '@/main/nanocoder/session-controls';
 import {createProjectOperations} from '@/main/threads/project-operations';
 import type {ProjectControls, ProjectInfo, ThreadInfo} from '@/shared/ipc';
 
@@ -74,9 +75,37 @@ function fixture() {
 		offers = next;
 		return structuredClone(next);
 	};
+	const ready = new Set<string>();
+	const rawOptions = (model = 'old') =>
+		offers.configOptions?.map(option => ({
+			...option,
+			type: 'select',
+			category: 'model',
+			currentValue: option.id === 'model' ? model : option.currentValue,
+		}));
+	const notifications = createSessionControls({
+		isReady: sessionId => ready.has(sessionId),
+		isPrompting: () => false,
+		setReady: () => {},
+		setMode: async () => undefined,
+		setConfigOption: async () => undefined,
+		failure: (_code, message) => new Error(message),
+	});
 	const connection = {
 		agent: {root: '/fixture'},
 		getSessionOffers: () => structuredClone(offers),
+		observeConfigOptions: (
+			observer: Parameters<typeof notifications.observeConfigOptions>[0],
+		) =>
+			notifications.observeConfigOptions({
+				isCurrentSession: observer.isCurrentSession,
+				onChange: sessionId => {
+					const confirmed = notifications.getSessionOffers(sessionId);
+					if (!confirmed) throw new Error('fixture notification was not ready');
+					offers = confirmed;
+					observer.onChange(sessionId);
+				},
+			}),
 		setConfigOption: (sessionId: string, id: string, value: string) => {
 			calls.push([sessionId, id, value]);
 			return mutate();
@@ -112,6 +141,12 @@ function fixture() {
 	const observe = (row = thread) =>
 		operations.runProjectOperation(project.id, 'prepare', async lease => {
 			await operations.runOwnedStep(lease, async () => {
+				ready.add(row.nanocoderSessionId ?? '');
+				notifications.remember(
+					row.nanocoderSessionId ?? '',
+					offers.offeredModes.map(id => ({id})),
+					rawOptions(),
+				);
 				controls.onSessionPrepared({
 					lease,
 					thread: row,
@@ -141,6 +176,8 @@ function fixture() {
 		admissions,
 		observe,
 		request,
+		notify: (sessionId = 'session', model = 'confirmed') =>
+			notifications.updateConfigOptions(sessionId, rawOptions(model)),
 		canonicalise: (next: typeof canonicalise) => {
 			canonicalise = next;
 		},
@@ -151,6 +188,66 @@ function fixture() {
 			offers = next;
 		},
 	};
+}
+
+test('notifications from a replaced preparation cannot update offers even while its session stays ready (ACP-14)', async t => {
+	const f = fixture();
+	await f.observe();
+	const replacement = {...f.thread, nanocoderSessionId: 'replacement'};
+	f.threads.set(f.thread.id, replacement);
+	await f.observe(replacement);
+	const before = f.controls.getProjectControls({projectId: f.project.id});
+	const count = f.published.length;
+	t.false(f.notify('session'));
+	t.is(f.published.length, count);
+	t.deepEqual(f.controls.getProjectControls({projectId: f.project.id}), before);
+	t.true(f.notify('replacement'));
+	t.not(f.published.at(-1)?.revision, before.revision);
+	t.is(f.published.at(-1)?.configOptions[1]?.currentValue, 'confirmed');
+});
+
+test('a ready session owned by another thread can refresh the project-wide model without changing the active thread (ACP-14 CHAT-10)', async t => {
+	const f = fixture();
+	await f.observe();
+	const other = {...f.thread, id: 'other', nanocoderSessionId: 'other-session'};
+	f.threads.set(other.id, other);
+	await f.observe(other);
+	const before = f.controls.getProjectControls({projectId: f.project.id});
+	t.true(f.notify('session'));
+	t.not(f.published.at(-1)?.revision, before.revision);
+	t.is(f.published.at(-1)?.configOptions[1]?.currentValue, 'confirmed');
+	t.is(
+		f.controls.getOwnedSession(f.project.id, other.id)?.session.id,
+		'other-session',
+	);
+	t.is(
+		f.controls.getOwnedSession(f.project.id, f.thread.id)?.session.id,
+		'session',
+	);
+});
+
+for (const change of [
+	'deleted',
+	'invalidated',
+	'foreign connection',
+	'disposed',
+]) {
+	test(`${change} notification owner cannot update the normalised cache or publish controls (ACP-14)`, async t => {
+		const f = fixture();
+		await f.observe();
+		if (change === 'deleted') f.threads.delete(f.thread.id);
+		if (change === 'invalidated') f.controls.invalidate(f.project.id);
+		if (change === 'foreign connection') f.connections.set(f.project.id, {});
+		if (change === 'disposed') f.controls.dispose();
+		const count = f.published.length;
+		t.false(f.notify());
+		t.is(f.published.length, count);
+		t.is(
+			f.connection.getSessionOffers('session')?.configOptions?.[1]
+				?.currentValue,
+			'old',
+		);
+	});
 }
 
 test('get controls is side-effect free and has no model catalogue before a first session (CHAT-04)', t => {

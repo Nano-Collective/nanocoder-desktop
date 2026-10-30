@@ -4,6 +4,7 @@ import {
 	mkdtempSync,
 	realpathSync,
 	rmSync,
+	writeFileSync,
 } from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -296,4 +297,60 @@ test('inactive composer controls dim, while reasons keep their rendered contrast
 		).toHaveCSS('opacity', '1');
 		expect(await visibleTextContrast(page, theme)).toEqual([]);
 	}
+});
+
+test('an unprompted current config notification updates the mounted selection and revision without another read (ACP-14)', async () => {
+	await page.evaluate(() => {
+		const state = window as unknown as {
+			desktop: DesktopApi;
+			revisions: string[];
+		};
+		state.revisions = [];
+		state.desktop.onProjectEvent(event => {
+			if (event.type === 'project-controls')
+				state.revisions.push(event.controls.revision);
+		});
+	});
+	const input = page.getByRole('textbox', {name: 'message', exact: true});
+	await input.fill('fixture session before unprompted config');
+	await input.press('Enter');
+	await expect(input).toHaveValue('');
+	const model = page.getByRole('combobox', {
+		name: 'model for every thread in project project',
+		exact: true,
+	});
+	await expect(model).toHaveValue('old');
+	const revision = await page.evaluate(() =>
+		(window as unknown as {revisions: string[]}).revisions.at(-1),
+	);
+	expect(revision).toBeTruthy();
+	await app.evaluate(({ipcMain}) => {
+		const state = globalThis as unknown as {unexpectedControlReads: number};
+		state.unexpectedControlReads = 0;
+		ipcMain.removeHandler('projects:get-controls');
+		ipcMain.handle('projects:get-controls', () => {
+			state.unexpectedControlReads++;
+			return {
+				ok: false,
+				error: {code: 'UNAVAILABLE', message: 'fixture forbids another read'},
+			};
+		});
+	});
+	writeFileSync(
+		path.join(work, 'project', '.fake-control-notification'),
+		'fixture',
+	);
+	await expect(model).toHaveValue('confirmed');
+	expect(
+		await page.evaluate(() =>
+			(window as unknown as {revisions: string[]}).revisions.at(-1),
+		),
+	).not.toBe(revision);
+	expect(
+		await app.evaluate(
+			() =>
+				(globalThis as unknown as {unexpectedControlReads: number})
+					.unexpectedControlReads,
+		),
+	).toBe(0);
 });
