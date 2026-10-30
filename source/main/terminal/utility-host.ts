@@ -5,6 +5,7 @@ import {
 	captureTerminalProcesses,
 	type TerminalProcesses,
 	terminateTree,
+	waitForProcessExit,
 } from '@/main/terminal/process-tree';
 import type {
 	PtyHostFactory,
@@ -27,6 +28,11 @@ export const createUtilityPtyHost: PtyHostFactory = async (launch, events) => {
 	let pid: number | undefined;
 	let terminal: string | undefined;
 	let ended = false;
+	let workerEnded = false;
+	let resolveWorkerExit!: () => void;
+	const workerExit = new Promise<void>(resolve => {
+		resolveWorkerExit = resolve;
+	});
 	let epoch = 0;
 	let known: TerminalProcesses = {pids: [], groups: []};
 	let capture: Promise<void> = Promise.resolve();
@@ -62,7 +68,19 @@ export const createUtilityPtyHost: PtyHostFactory = async (launch, events) => {
 			await capture.catch(() => {});
 			if (pid !== undefined)
 				await terminateTree(pid, launch.roots, terminal, known);
-			worker.kill();
+			if (!workerEnded) worker.kill();
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			try {
+				await Promise.race([
+					workerExit,
+					new Promise<never>((_, reject) => {
+						timer = setTimeout(() => reject(failure()), 1000);
+					}),
+				]);
+			} finally {
+				clearTimeout(timer);
+			}
+			if (pid !== undefined) await waitForProcessExit(pid);
 		})().catch(error => {
 			stopping = undefined;
 			throw error;
@@ -112,8 +130,15 @@ export const createUtilityPtyHost: PtyHostFactory = async (launch, events) => {
 				break;
 		}
 	});
-	worker.once('exit', fail);
-	worker.once('spawn', () => send({type: 'start', launch}));
+	worker.once('exit', () => {
+		workerEnded = true;
+		resolveWorkerExit();
+		fail();
+	});
+	worker.once('spawn', () => {
+		if (ended) worker.kill();
+		else send({type: 'start', launch});
+	});
 	try {
 		await ready;
 	} catch {

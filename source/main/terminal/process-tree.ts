@@ -91,31 +91,164 @@ export async function terminateTree(
 		});
 		return;
 	}
-	const snapshot = async () => {
-		const {stdout} = await run(executable, ['-axo', 'pid=,ppid=,pgid=,tty='], {
-			shell: false,
-			timeout: 1000,
-			maxBuffer: 4_194_304,
-		});
-		return terminalProcesses(pid, terminal, stdout);
-	};
-	const initial = await snapshot();
-	for (const group of new Set([...known.groups, ...initial.groups, pid]))
-		signal(-group, 'SIGHUP');
-	// A production grace deadline, not a test sleep.
-	await delay(200);
-	const final = await snapshot();
-	const pids = new Set([...known.pids, ...initial.pids, ...final.pids]);
-	const groups = new Set([
-		...known.groups,
-		...initial.groups,
-		...final.groups,
+	await stopPosixTree(pid, terminal, known, {
+		read: async timeout => {
+			const {stdout} = await run(
+				executable,
+				['-axo', 'pid=,ppid=,pgid=,stat=,tty='],
+				{
+					shell: false,
+					timeout,
+					maxBuffer: 4_194_304,
+				},
+			);
+			return stdout;
+		},
+		signal,
+		wait: delay,
+		now: () => performance.now(),
+	});
+}
+
+interface ProcessRow {
+	pid: number;
+	parent: number;
+	group: number;
+	state: string;
+	tty: string;
+}
+
+function processRows(table: string): ProcessRow[] {
+	const lines = table.split('\n').filter(line => line.trim());
+	if (!lines.length) throw new Error('Invalid process snapshot');
+	return lines.map(line => {
+		const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s*$/u.exec(line);
+		if (!match) throw new Error('Invalid process snapshot');
+		return {
+			pid: Number(match[1]),
+			parent: Number(match[2]),
+			group: Number(match[3]),
+			state: match[4],
+			tty: match[5],
+		};
+	});
+}
+
+export async function stopPosixTree(
+	pid: number,
+	terminal: string | undefined,
+	known: TerminalProcesses,
+	operations: {
+		read(timeout: number): Promise<string>;
+		signal(pid: number, signal: NodeJS.Signals): void;
+		wait(ms: number): Promise<void>;
+		now(): number;
+	},
+): Promise<void> {
+	if (!Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid)
+		throw new Error('Invalid terminal process');
+	const deadline = operations.now() + 2000;
+	const pids = new Set([
 		pid,
+		...known.pids.filter(value => value > 1 && value !== process.pid),
 	]);
-	for (const group of groups) signal(-group, 'SIGSTOP');
-	for (const child of [...pids].reverse()) signal(child, 'SIGSTOP');
-	for (const group of groups) signal(-group, 'SIGKILL');
-	for (const child of pids) signal(child, 'SIGKILL');
+	const groups = new Set([pid, ...known.groups.filter(value => value > 1)]);
+	const stopped = new Set<number>();
+	const read = async () =>
+		processRows(
+			await operations.read(
+				Math.max(1, Math.min(750, Math.floor(deadline - operations.now()))),
+			),
+		);
+	const live = (entry: ProcessRow) => !/^[ZX]/u.test(entry.state);
+	const retain = (entries: ProcessRow[]) => {
+		const rootLive = entries.some(
+			entry =>
+				entry.pid === pid &&
+				live(entry) &&
+				entry.tty === terminal?.replace(/^\/dev\//u, ''),
+		);
+		const table = entries
+			.map(entry => `${entry.pid} ${entry.parent} ${entry.group} ${entry.tty}`)
+			.join('\n');
+		const members = terminalProcesses(
+			pid,
+			rootLive ? terminal : undefined,
+			table,
+		);
+		const parents = entries
+			.map(entry => `${entry.pid} ${entry.parent}`)
+			.join('\n');
+		for (const seed of pids)
+			for (const child of descendantPids(seed, parents))
+				members.pids.push(child);
+		for (const entry of entries)
+			if (groups.has(entry.group)) members.pids.push(entry.pid);
+		for (const child of members.pids)
+			if (child > 1 && child !== process.pid) pids.add(child);
+		for (const entry of entries)
+			if (pids.has(entry.pid) && entry.group > 1) groups.add(entry.group);
+	};
+	const attempt = (target: number, value: NodeJS.Signals): boolean => {
+		try {
+			operations.signal(target, value);
+			return true;
+		} catch {
+			return false;
+		}
+	};
+	let discoveryError: unknown;
+	try {
+		retain(await read());
+		for (const group of groups) attempt(-group, 'SIGHUP');
+		// A production grace deadline, not a test sleep.
+		await operations.wait(200);
+		retain(await read());
+	} catch (error) {
+		discoveryError = error;
+	}
+	for (const target of [...groups]
+		.map(group => -group)
+		.concat([...pids].reverse())) {
+		if (attempt(target, 'SIGSTOP')) stopped.add(target);
+	}
+	for (const group of groups) attempt(-group, 'SIGKILL');
+	for (const child of pids) attempt(child, 'SIGKILL');
+	try {
+		if (discoveryError) throw discoveryError;
+		for (;;) {
+			const entries = await read();
+			if (
+				!entries.some(
+					entry =>
+						live(entry) && (pids.has(entry.pid) || groups.has(entry.group)),
+				)
+			)
+				return;
+			if (operations.now() >= deadline)
+				throw new Error('Terminal processes remain alive');
+			await operations.wait(Math.min(25, deadline - operations.now()));
+		}
+	} catch (error) {
+		for (const target of stopped) attempt(target, 'SIGCONT');
+		throw error;
+	}
+}
+
+export async function waitForProcessExit(
+	pid: number,
+	operations: {
+		exists(pid: number): boolean;
+		wait(ms: number): Promise<void>;
+		now(): number;
+	} = {exists: alive, wait: delay, now: () => performance.now()},
+): Promise<void> {
+	const deadline = operations.now() + 1000;
+	while (operations.exists(pid)) {
+		if (operations.now() >= deadline)
+			throw new Error('Terminal process was not reaped');
+		await operations.wait(Math.min(25, deadline - operations.now()));
+	}
 }
 
 export function terminalProcesses(
@@ -143,7 +276,10 @@ export function terminalProcesses(
 		),
 	);
 	const tty = terminal?.replace(/^\/dev\//u, '');
-	const validTty = tty && /^(?:ttys?\w+|pts\/\d+)$/u.test(tty);
+	const validTty =
+		tty &&
+		/^(?:ttys?\w+|pts\/\d+)$/u.test(tty) &&
+		entries.some(entry => entry.pid === root && entry.tty === tty);
 	for (const entry of entries)
 		if (validTty && entry.tty === tty) pids.add(entry.pid);
 	pids.delete(process.pid);
@@ -159,8 +295,8 @@ function alive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
-	} catch {
-		return false;
+	} catch (error) {
+		return (error as NodeJS.ErrnoException).code !== 'ESRCH';
 	}
 }
 
