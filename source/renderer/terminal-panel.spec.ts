@@ -18,7 +18,10 @@ const snapshot: TerminalSnapshot = {
 	reason: null,
 	agentCommand: null,
 };
-const render = (state = snapshot, disabledReason: string | null = null) =>
+const render = (
+	state: TerminalSnapshot | null = snapshot,
+	disabledReason: string | null = null,
+) =>
 	renderToStaticMarkup(
 		createElement(TerminalPanel, {
 			snapshot: state,
@@ -52,6 +55,8 @@ test('terminal panel offers explicit lifecycle controls and documented screen-re
 	t.true(
 		render(snapshot, 'trust before starting').includes('trust before starting'),
 	);
+	t.true(render(null).includes('unavailable'));
+	t.false(render(null).includes('○ loading'));
 });
 
 test('agent strip is inert escaped display, with truthful unknown approval and separate ownership', t => {

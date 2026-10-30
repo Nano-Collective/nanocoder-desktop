@@ -1,5 +1,6 @@
 import * as React from 'react';
 import type {TerminalAction} from '@/renderer/terminal-controller';
+import {terminalFocusLease} from '@/renderer/terminal-focus';
 import {type TerminalHandle, TerminalView} from '@/renderer/terminal-view';
 import {Button} from '@/renderer/ui';
 import type {TerminalSnapshot} from '@/shared/terminal';
@@ -42,15 +43,19 @@ export function TerminalPanel({
 	const running = snapshot?.status === 'running';
 	const busy = pending || loading || snapshot?.status === 'starting';
 	const command = snapshot?.agentCommand;
-	const status = snapshot?.status ?? 'loading';
+	const status = snapshot?.status ?? (loading ? 'loading' : 'unavailable');
 	const run = async (action: TerminalAction, target: HTMLButtonElement) => {
-		if (
-			(await onAction(action)) &&
-			(action === 'start' || action === 'restart') &&
-			(document.activeElement === target ||
-				(!target.isConnected && document.activeElement === document.body))
-		)
-			view.current?.focus();
+		const focus = terminalFocusLease(document, target);
+		try {
+			if (
+				(await onAction(action)) &&
+				(action === 'start' || action === 'restart') &&
+				focus.canReturn()
+			)
+				view.current?.focus();
+		} finally {
+			focus.dispose();
+		}
 	};
 	return (
 		<section className="terminal-panel" aria-label="your project terminal">

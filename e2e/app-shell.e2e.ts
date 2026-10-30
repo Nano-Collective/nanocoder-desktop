@@ -286,6 +286,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 					name: 'import saved session: existing saved session',
 					exact: true,
 				}),
+				page.getByRole('button', {name: 'open terminal', exact: true}),
 				palette,
 				page.getByText('runtime and setup details', {exact: true}),
 				open,

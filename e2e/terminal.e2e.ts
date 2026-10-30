@@ -20,6 +20,7 @@ import type {IpcResult} from '@/shared/ipc';
 import type {TerminalRequests, TerminalSnapshot} from '@/shared/terminal';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
 let app: ElectronApplication;
@@ -44,6 +45,14 @@ function call<K extends keyof TerminalRequests>(
 test.beforeEach(async () => {
 	work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-terminal-')));
 	mkdirSync(path.join(work, 'project'));
+	const home = path.join(work, 'home');
+	mkdirSync(home);
+	for (const profile of ['.zshrc', '.bash_profile', '.bashrc']) {
+		writeFileSync(
+			path.join(home, profile),
+			"PS1='$ '\nPROMPT='$ '\nHISTFILE=/dev/null\n",
+		);
+	}
 	mkdirSync(path.join(work, 'nanocoder/dist'), {recursive: true});
 	writeFileSync(
 		path.join(work, 'nanocoder/package.json'),
@@ -63,10 +72,13 @@ test.beforeEach(async () => {
 	);
 	app = await electron.launch({
 		args: ['.', `--user-data-dir=${path.join(work, 'profile')}`],
-		env: qaEnvironment(process.env, {
-			cliPath: path.join(work, 'nanocoder/dist/cli.js'),
-			nodePath: process.execPath,
-		}),
+		env: qaEnvironment(
+			{...process.env, HOME: home},
+			{
+				cliPath: path.join(work, 'nanocoder/dist/cli.js'),
+				nodePath: process.execPath,
+			},
+		),
 	});
 	page = await app.firstWindow();
 	await app.evaluate(
@@ -225,6 +237,15 @@ test('TERM-01 a native utility-process crash leaves main alive and cleans the se
 });
 
 test('TERM-12 agent command approval metadata never starts or writes the user PTY', async () => {
+	await page.getByRole('button', {name: 'open project', exact: true}).click();
+	await expect(page.getByLabel('project trust feedback')).toContainText(
+		'project ready',
+	);
+	await page.getByRole('button', {name: 'open terminal', exact: true}).click();
+	const strip = page.getByRole('complementary', {
+		name: 'Nanocoder agent activity',
+	});
+	await expect(strip).toContainText('none reported');
 	const created = await page.evaluate(
 		projectId =>
 			(window as unknown as {desktop: DesktopApi}).desktop.createThread({
@@ -249,6 +270,8 @@ test('TERM-12 agent command approval metadata never starts or writes the user PT
 			return state.ok ? state.value.agentCommand?.approval : undefined;
 		})
 		.toBe('pending');
+	await expect(strip).toContainText('▲ approval pending');
+	await expect(strip.locator('button, input, a')).toHaveCount(0);
 	const snapshot = await page.evaluate(
 		({projectId, threadId}) =>
 			(window as unknown as {desktop: DesktopApi}).desktop.getThreadSnapshot({
@@ -285,6 +308,250 @@ test('TERM-12 agent command approval metadata never starts or writes the user PT
 			agentCommand: {command: 'echo hi', approval: 'allowed'},
 		},
 	});
+	await expect(strip).toContainText('echo hi');
+	await expect(strip).toContainText('✓ allowed');
+	await expect(strip).toContainText(
+		'agent activity only, not input into your terminal.',
+	);
+	// Preserve cross-platform metadata checks; the printf UI fixture is POSIX.
+	if (process.platform === 'win32') return;
+	await page.locator(`[data-thread-id="${threadId}"] .thread-open`).click();
+	await page.getByRole('button', {name: 'start terminal', exact: true}).click();
+	await expect(
+		page.getByRole('textbox', {name: 'your terminal input'}),
+	).toBeFocused();
+	await page.keyboard.insertText(
+		"printf '\\165\\163\\145\\162\\040\\164\\145\\162\\155\\151\\156\\141\\154\\040\\162\\145\\141\\144\\171\\n'",
+	);
+	await page.keyboard.press('Enter');
+	await expect(page.locator('.terminal-view')).toContainText(
+		'user terminal ready',
+	);
+	const draft = page.getByRole('textbox', {name: 'message', exact: true});
+	await draft.fill('kept terminal QA draft');
+	const screenshots = path.resolve('.qa/terminal-ui');
+	mkdirSync(screenshots, {recursive: true});
+	for (const theme of ['dark', 'light']) {
+		await page.evaluate(theme => {
+			document.documentElement.dataset.theme = theme;
+		}, theme);
+		for (const width of [1240, 1020, 840]) {
+			await page.setViewportSize({width, height: 900});
+			await expect(draft).toBeEditable();
+			await draft.fill(`kept ${theme} ${width} terminal QA draft`);
+			await expect(draft).toHaveValue(
+				`kept ${theme} ${width} terminal QA draft`,
+			);
+			await expect(
+				page.getByRole('button', {name: 'send', exact: true}),
+			).toBeEnabled();
+			expect(
+				await draft.evaluate(input => {
+					const rect = input.getBoundingClientRect();
+					const dock = document
+						.querySelector('.terminal-panel')
+						?.getBoundingClientRect();
+					return (
+						dock !== undefined &&
+						rect.top >= 0 &&
+						rect.bottom <= dock.top &&
+						rect.left >= 0 &&
+						rect.right <= innerWidth
+					);
+				}),
+			).toBe(true);
+			await expect
+				.poll(async () => {
+					const state = await call('get', {projectId});
+					if (!state.ok) return false;
+					return page
+						.locator('.xterm-screen')
+						.evaluate(
+							(screen, cols) =>
+								screen.clientWidth > 0 &&
+								screen.clientWidth <=
+									(screen.parentElement?.clientWidth ?? 0) &&
+								cols >= 2,
+							state.value.cols,
+						);
+				})
+				.toBe(true);
+			expect(await visibleTextContrast(page, theme)).toEqual([]);
+			const geometry = await page
+				.locator('.terminal-panel')
+				.evaluate(element => ({
+					width: element.clientWidth,
+					scrollWidth: element.scrollWidth,
+					height: element.clientHeight,
+					ligatures: getComputedStyle(
+						element.querySelector('.terminal-view') ?? element,
+					).fontVariantLigatures,
+				}));
+			expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width);
+			expect(geometry.height).toBeGreaterThan(240);
+			expect(geometry.ligatures).toBe('none');
+			await page.screenshot({
+				path: path.join(screenshots, `terminal-${theme}-${width}.png`),
+			});
+		}
+	}
+});
+
+test('TERM-02/04/06/11 mounted terminal types, escapes, restarts, clears and stops without trapping focus', async () => {
+	test.skip(
+		process.platform === 'win32',
+		'POSIX printf fixture; Windows UI acceptance is separate',
+	);
+	const errors: string[] = [];
+	page.on('pageerror', error => errors.push(error.message));
+	const step = async (name: string, action: () => Promise<void>) => {
+		console.info(`[terminal-ui] ${name}`);
+		await test.step(name, action);
+	};
+	const input = page.getByRole('textbox', {name: 'your terminal input'});
+	await step('open project and terminal', async () => {
+		await page.getByRole('button', {name: 'open project', exact: true}).click();
+		await expect(page.getByLabel('project trust feedback')).toContainText(
+			'project ready',
+		);
+		await page
+			.getByRole('button', {name: 'open terminal', exact: true})
+			.click();
+		expect(await call('get', {projectId})).toMatchObject({
+			ok: true,
+			value: {status: 'stopped'},
+		});
+	});
+	await step('start terminal', async () => {
+		const start = page.getByRole('button', {
+			name: 'start terminal',
+			exact: true,
+		});
+		await expect(start).toBeVisible();
+		await expect(start).toBeEnabled();
+		const inspected = await start.evaluate(button => {
+			const rect = button.getBoundingClientRect();
+			const hit = document.elementFromPoint(
+				rect.x + rect.width / 2,
+				rect.y + rect.height / 2,
+			);
+			return {
+				hit: hit === button || (hit !== null && button.contains(hit)),
+				inViewport: rect.top >= 0 && rect.bottom <= innerHeight,
+			};
+		});
+		expect(inspected).toEqual({hit: true, inViewport: true});
+		expect(
+			await page.locator('.shell-conversation-footer').evaluate(footer => {
+				const dock = document
+					.querySelector('.terminal-panel')
+					?.getBoundingClientRect();
+				return (
+					dock !== undefined &&
+					footer.getBoundingClientRect().bottom <= dock.top + 1
+				);
+			}),
+		).toBe(true);
+		await start.click();
+		await expect(input).toBeFocused();
+	});
+	await step('type UTF-8', async () => {
+		await expect(
+			page.getByRole('button', {name: 'screen-reader mode off'}),
+		).toHaveAttribute('aria-pressed', 'false');
+		await page.keyboard.insertText(
+			"printf '\\143\\141\\146\\303\\251 UI_READY\\n'",
+		);
+		await page.keyboard.press('Enter');
+		await expect(page.locator('.terminal-view')).toContainText('café UI_READY');
+	});
+	await step('keyboard escape and focus return', async () => {
+		await input.press('Control+Shift+Tab');
+		await expect(
+			page.getByRole('button', {name: 'focus your terminal'}),
+		).toBeFocused();
+		await page.keyboard.press('Tab');
+		await expect(input).not.toBeFocused();
+		await page.getByRole('button', {name: 'focus your terminal'}).click();
+		await expect(input).toBeFocused();
+	});
+	await step('screen-reader mode', async () => {
+		await page.getByRole('button', {name: 'screen-reader mode off'}).click();
+		await expect(
+			page.getByRole('button', {name: 'screen-reader mode on'}),
+		).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.locator('.xterm-accessibility')).toHaveCount(1);
+		await expect(page.locator('.xterm-accessibility')).toContainText(
+			'café UI_READY',
+		);
+		expect(await page.locator('.terminal-view').ariaSnapshot()).toContain(
+			'café UI_READY',
+		);
+	});
+	await step('clear terminal', async () => {
+		await page.getByRole('button', {name: 'clear', exact: true}).click();
+		await expect
+			.poll(async () => {
+				const state = await call('get', {projectId});
+				return state.ok ? state.value.output : null;
+			})
+			.toBe('');
+		await expect(page.locator('.terminal-view')).not.toContainText('UI_READY');
+	});
+	await step('restart terminal', async () => {
+		const before = await call('get', {projectId});
+		if (!before.ok) throw new Error('No terminal before restart');
+		await page.getByRole('button', {name: 'restart', exact: true}).click();
+		await expect(input).toBeFocused();
+		await expect
+			.poll(async () => {
+				const current = await call('get', {projectId});
+				return (
+					current.ok &&
+					current.value.status === 'running' &&
+					current.value.sequence > before.value.sequence &&
+					current.value.output.length > 0
+				);
+			})
+			.toBe(true);
+		// Screen-reader mode uses key events, not insertText-only IME events.
+		await page.keyboard.type(
+			"printf '\\162\\145\\163\\164\\141\\162\\164\\145\\144\\n'",
+		);
+		await page.keyboard.press('Enter');
+		await expect(page.locator('.terminal-view')).toContainText('restarted');
+		const current = await call('get', {projectId});
+		expect(current.ok && current.value.output.includes('restarted')).toBe(true);
+		await expect(page.locator('.terminal-view')).not.toContainText('UI_READY');
+	});
+	await step('stop terminal', async () => {
+		await page.getByRole('button', {name: 'stop', exact: true}).click();
+		await expect
+			.poll(async () => {
+				const state = await call('get', {projectId});
+				return state.ok ? state.value.status : null;
+			})
+			.toBe('stopped');
+		await expect(page.locator('.terminal-view')).not.toContainText('restarted');
+	});
+	await step('close and reopen panel without starting', async () => {
+		await page.getByRole('button', {name: 'close terminal panel'}).click();
+		await expect(
+			page.getByRole('button', {name: 'open terminal', exact: true}),
+		).toBeFocused();
+		await expect(page.locator('.terminal-panel')).toHaveCount(0);
+		await page
+			.getByRole('button', {name: 'open terminal', exact: true})
+			.click();
+		await expect(
+			page.getByRole('button', {name: 'start terminal', exact: true}),
+		).toBeEnabled();
+		expect(await call('get', {projectId})).toMatchObject({
+			ok: true,
+			value: {status: 'stopped', output: ''},
+		});
+	});
+	expect(errors).toEqual([]);
 });
 
 test('TERM-01 packaged asar worker loads its native addon and spawn helper without showing a window', async () => {

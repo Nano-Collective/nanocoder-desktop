@@ -1,5 +1,6 @@
 import type {Terminal} from '@xterm/xterm';
 import * as React from 'react';
+import {terminalFocusLease} from '@/renderer/terminal-focus';
 
 export interface TerminalHandle {
 	focus(): void;
@@ -35,14 +36,22 @@ export function TerminalView(props: {
 	const latest = React.useRef(props);
 	latest.current = props;
 	const rendered = React.useRef('');
-	const focusPending = React.useRef(false);
+	const focusPending = React.useRef<ReturnType<
+		typeof terminalFocusLease
+	> | null>(null);
 	const sync = React.useRef<() => void>(() => {});
 	React.useImperativeHandle(
 		props.ref,
 		() => ({
 			focus() {
 				if (instance.current) instance.current.focus();
-				else focusPending.current = true;
+				else {
+					focusPending.current?.dispose();
+					focusPending.current = terminalFocusLease(
+						document,
+						document.activeElement ?? document.body,
+					);
+				}
 			},
 		}),
 		[],
@@ -65,6 +74,8 @@ export function TerminalView(props: {
 				rows: 8,
 				scrollback: 10_000,
 				cursorBlink: false,
+				fontWeight: 'normal',
+				fontWeightBold: 'normal',
 				allowProposedApi: false,
 				disableStdin: !latest.current.running,
 				linkHandler: {activate() {}},
@@ -112,6 +123,7 @@ export function TerminalView(props: {
 			terminal.open(element);
 			terminal.textarea?.setAttribute('aria-label', 'your terminal input');
 			terminal.textarea?.setAttribute('aria-describedby', 'terminal-help');
+			terminal.textarea?.setAttribute('aria-keyshortcuts', 'Control+Shift+Tab');
 			terminal.attachCustomKeyEventHandler(event => {
 				if (!leavesTerminal(event)) return true;
 				if (event.type === 'keydown') {
@@ -191,13 +203,17 @@ export function TerminalView(props: {
 				attributeFilter: ['data-theme'],
 			});
 			sync.current();
-			if (focusPending.current) terminal.focus();
+			if (focusPending.current?.canReturn()) terminal.focus();
+			focusPending.current?.dispose();
+			focusPending.current = null;
 		};
 		void initialise().catch(() => {
 			if (!disposed) latest.current.onFailure();
 		});
 		return () => {
 			disposed = true;
+			focusPending.current?.dispose();
+			focusPending.current = null;
 			cancelAnimationFrame(frame);
 			resize?.disconnect();
 			theme?.disconnect();
