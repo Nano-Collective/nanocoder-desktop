@@ -109,7 +109,7 @@ test('advertised sessions and positively probed extensions enable only those fea
 test('refused versions turn every feature off even when advertised or probed', t => {
 	const agent = describeAgent('/p', {
 		protocolVersion: 1,
-		agentInfo: {name: 'nanocoder', version: '1.31.0'},
+		agentInfo: {name: 'nanocoder', version: '1.30.0'},
 		agentCapabilities: {
 			sessionCapabilities: {resume: {}, close: {}, delete: {}, list: {}},
 		},

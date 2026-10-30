@@ -1,7 +1,7 @@
 import type {VersionPolicyResult} from '@/shared/ipc';
 
-// Provisional next minor after 1.31.0, which predates the trust check (OQ-02).
-export const MIN_NANOCODER_VERSION = '1.32.0';
+// Provisional override-only development floor; raise to 1.32.0 when released (OQ-02).
+export const MIN_NANOCODER_VERSION = '1.31.0';
 const LAST_TESTED_VERSION = '1.31.0';
 
 function release(value: string): number[] | undefined {
@@ -40,15 +40,26 @@ export function versionPolicy(
 		return {
 			status: 'refused',
 			version,
-			reason: `Nanocoder ${version} is below the minimum ${MIN_NANOCODER_VERSION}. Upgrade Nanocoder: published 1.31.0 lacks the required ACP directory trust check.`,
+			reason: `Nanocoder ${version} is below the minimum ${MIN_NANOCODER_VERSION}. Upgrade Nanocoder to a build with the required ACP directory trust check.`,
 		};
 	}
+	if (requiresTrustPreflight(version))
+		return {
+			status: 'untested',
+			version,
+			reason: `Nanocoder ${version} requires an explicit NANOCODER_DESKTOP_CLI override and a verified ACP directory trust check. Compatibility is unverified; published 1.31.0 is not supported.`,
+		};
 	if (compare(parsed, LAST_TESTED_VERSION.split('.').map(Number)) > 0) {
 		return {
 			status: 'untested',
 			version,
-			reason: `Nanocoder ${version} is newer than the tested ${LAST_TESTED_VERSION} development build (8a5f4d4). Compatibility is unverified; missing features stay disabled.`,
+			reason: `Nanocoder ${version} is newer than the tested ${LAST_TESTED_VERSION} development build (fc01e239). Compatibility is unverified; missing features stay disabled.`,
 		};
 	}
 	return {status: 'supported', version, reason: null};
+}
+
+export function requiresTrustPreflight(version: string | null): boolean {
+	const parsed = version === null ? undefined : release(version);
+	return parsed?.[0] === 1 && parsed[1] === 31;
 }
