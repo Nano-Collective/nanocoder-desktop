@@ -13,6 +13,12 @@ drafting; no queue or automatic send is added. Mapped terminal results settle
 the correct turn after switching away and back, but stale command tickets and
 replaced-generation callbacks remain refused.
 
+Runtime metadata writes re-read the exact current session and folder owner,
+then patch only their own fields. A generated title accepted while another
+prompt prepares, after a recovery check or during terminal-event delivery
+cannot be overwritten by an earlier header. Archive has no asynchronous gap;
+rename updates only the title; view-only and permission state use current rows.
+
 ## Retired technical owners and retained protections
 
 The technical session cache, prompt/cancel helpers and legacy metadata listener

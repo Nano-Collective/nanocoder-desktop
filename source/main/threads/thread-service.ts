@@ -171,6 +171,36 @@ export function createThreadService(
 		if (!thread) throw new IpcFailure('NOT_FOUND', 'Thread not found');
 		return thread;
 	};
+	const updateThread = (
+		expected: ThreadInfo,
+		changes: (
+			current: ThreadInfo,
+		) => Partial<
+			Pick<
+				ThreadInfo,
+				| 'nanocoderSessionId'
+				| 'title'
+				| 'mode'
+				| 'runState'
+				| 'viewOnlyReason'
+				| 'lastActivityAt'
+			>
+		>,
+	) => {
+		const owner = getProject(expected.projectId);
+		const current = getThread({
+			projectId: expected.projectId,
+			threadId: expected.id,
+		});
+		if (
+			current.nanocoderSessionId !== expected.nanocoderSessionId ||
+			current.sessionCwd !== expected.sessionCwd ||
+			owner.canonicalRoot !== expected.sessionCwd ||
+			owner.sessionCwd !== expected.sessionCwd
+		)
+			throw new IpcFailure('DENIED', 'The thread session changed');
+		return saveThread({...current, ...changes(current)});
+	};
 	const assertMutable = (thread: ThreadInfo) => {
 		const active = options.supervisor.getState(thread.projectId).activeThreadId;
 		if (
@@ -356,13 +386,12 @@ export function createThreadService(
 			fresh.sessionCwd !== current.sessionCwd
 		)
 			throw new IpcFailure('DENIED', 'The thread session changed');
-		saveThread({
-			...fresh,
+		const ready = updateThread(fresh, () => ({
 			mode: restored.session.mode,
 			runState: 'ready',
 			viewOnlyReason: null,
-		});
-		remember(fresh, connection);
+		}));
+		remember(ready, connection);
 		snapshots.set(thread.id, {
 			sequence: (snapshots.get(thread.id)?.sequence ?? 0) + 1,
 			events: structuredClone(restored.history),
@@ -444,12 +473,11 @@ export function createThreadService(
 					events: structuredClone(restored.history),
 				});
 				remember(fresh, connection);
-				saveThread({
-					...fresh,
+				updateThread(fresh, () => ({
 					mode: restored.session.mode,
 					runState: 'ready',
 					viewOnlyReason: null,
-				});
+				}));
 			} finally {
 				if (restoring.get(project.id) === signal) restoring.delete(project.id);
 			}
@@ -763,12 +791,10 @@ export function createThreadService(
 						);
 						signal.throwIfAborted();
 						try {
-							thread = {
-								...getThread(request),
+							thread = updateThread(thread, () => ({
 								nanocoderSessionId: session.id,
 								mode: session.mode,
-							};
-							saveThread(thread);
+							}));
 							remember(thread, connection);
 						} catch (error) {
 							await options.supervisor.stop(project.id).catch(() => undefined);
@@ -792,20 +818,18 @@ export function createThreadService(
 					const sessionId = thread.nanocoderSessionId;
 					if (!sessionId)
 						throw new IpcFailure('AGENT_UNAVAILABLE', 'No session is ready');
-					thread = {
-						...thread,
+					thread = updateThread(thread, current => ({
 						title:
-							thread.title === 'new thread' &&
+							current.title === 'new thread' &&
 							options.store.threads.getTitleManuallySet(
-								thread.projectId,
-								thread.id,
+								current.projectId,
+								current.id,
 							) === false
 								? request.text.trim().replace(/\s+/g, ' ').slice(0, 80)
-								: thread.title,
+								: current.title,
 						runState: 'running',
 						lastActivityAt: now(),
-					};
-					saveThread(thread);
+					}));
 					remember(thread, connection);
 					signal.throwIfAborted();
 					const preparation = preparationAborts.get(thread.projectId);
@@ -830,12 +854,11 @@ export function createThreadService(
 							ok: true,
 							value: {stopReason: result.stopReason},
 						});
-					saveThread({
-						...current,
+					updateThread(current, () => ({
 						runState:
 							result.stopReason === 'cancelled' ? 'interrupted' : 'ready',
 						lastActivityAt: now(),
-					});
+					}));
 					return {stopReason: result.stopReason};
 				} catch (error) {
 					if (
@@ -843,11 +866,10 @@ export function createThreadService(
 						!scope.aborted &&
 						signal.reason instanceof PreparationCancelled
 					) {
-						saveThread({
-							...getThread(request),
+						updateThread(thread, () => ({
 							runState: 'interrupted',
 							lastActivityAt: now(),
-						});
+						}));
 						return {stopReason: 'cancelled' as const};
 					}
 					if (started && !disposed) {
@@ -867,11 +889,10 @@ export function createThreadService(
 									},
 								});
 							}
-							saveThread({
-								...current,
+							updateThread(current, () => ({
 								runState: 'failed',
 								lastActivityAt: now(),
-							});
+							}));
 						}
 					}
 					return failure(error);

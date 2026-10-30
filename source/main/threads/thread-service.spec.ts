@@ -1881,6 +1881,135 @@ test('live updates map only the saved session to its desktop thread (CHAT-04)', 
 	);
 });
 
+test('the next prompt preserves a generated title accepted during preparation (CHAT-12)', async t => {
+	const {project, service, store, supervisor, notifyTitle} = await fixture(
+		t,
+		true,
+	);
+	const thread = await service.createThread({projectId: project.id});
+	const request = {projectId: project.id, threadId: thread.id};
+	await supervisor.ensureProcess(project);
+	supervisor.getConnection(project.id).prompt = async () => ({
+		stopReason: 'end_turn',
+	});
+	await service.promptThread({...request, text: 'first synthetic task'});
+	const previous = store.threads.get(project.id, thread.id);
+	if (!previous?.nanocoderSessionId) throw new Error('Missing saved session');
+	const sessionId = previous.nanocoderSessionId;
+	const ensure = supervisor.ensureProcess.bind(supervisor);
+	supervisor.ensureProcess = async chosen => {
+		const result = await ensure(chosen);
+		notifyTitle(sessionId, 'generated between turns');
+		t.is(
+			store.threads.get(project.id, thread.id)?.title,
+			'generated between turns',
+		);
+		return result;
+	};
+	await service.promptThread({...request, text: 'second synthetic task'});
+	t.like(store.threads.get(project.id, thread.id), {
+		...previous,
+		title: 'generated between turns',
+	});
+	t.false(store.threads.getTitleManuallySet(project.id, thread.id));
+});
+
+test('recovery preserves a generated title accepted after its final async owner check (CHAT-12)', async t => {
+	const {project, service, store, supervisor, notifyTitle} = await fixture(
+		t,
+		true,
+	);
+	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
+	store.threads.save(thread);
+	const request = {projectId: project.id, threadId: thread.id};
+	await service.openThread(request);
+	await supervisor.stop(project.id);
+	await supervisor.ensureProcess(project);
+	const connection = supervisor.getConnection(project.id);
+	const resume = connection.resumeSession;
+	let resumed = false;
+	connection.resumeSession = async (...args) => {
+		const result = await resume(...args);
+		resumed = true;
+		return result;
+	};
+	const get = store.threads.get.bind(store.threads);
+	let reads = 0;
+	let accepted = false;
+	store.threads.get = (projectId, threadId) => {
+		const current = get(projectId, threadId);
+		if (resumed && ++reads === 2)
+			queueMicrotask(() => {
+				notifyTitle('fake-session', 'generated after recovery check');
+				accepted =
+					get(project.id, thread.id)?.title ===
+					'generated after recovery check';
+			});
+		return current;
+	};
+	await service.restore(project, connection, new AbortController().signal);
+	t.true(accepted);
+	t.like(get(project.id, thread.id), {
+		...thread,
+		title: 'generated after recovery check',
+	});
+});
+
+for (const delivery of ['metadata', 'success terminal', 'failure terminal']) {
+	test(`turn state preserves a generated title accepted by the ${delivery} listener (CHAT-12)`, async t => {
+		let observe: ((event: ProjectEvent) => void) | undefined;
+		const {project, service, store, supervisor, notifyTitle} = await fixture(
+			t,
+			true,
+			event => observe?.(event),
+		);
+		const thread = await service.createThread({projectId: project.id});
+		const request = {projectId: project.id, threadId: thread.id};
+		await supervisor.ensureProcess(project);
+		const connection = supervisor.getConnection(project.id);
+		connection.prompt = async () => ({stopReason: 'end_turn'});
+		await service.promptThread({...request, text: 'first synthetic task'});
+		const previous = store.threads.get(project.id, thread.id);
+		if (!previous?.nanocoderSessionId) throw new Error('Missing saved session');
+		const sessionId = previous.nanocoderSessionId;
+		let accepted = false;
+		observe = event => {
+			if (
+				event.type === 'turn' &&
+				(delivery === 'metadata'
+					? event.events.some(item => item.type === 'metadata')
+					: event.result !== undefined)
+			) {
+				notifyTitle(sessionId, 'generated at turn end');
+				accepted =
+					store.threads.get(project.id, thread.id)?.title ===
+					'generated at turn end';
+			}
+		};
+		connection.prompt = async () => {
+			if (delivery === 'failure terminal')
+				throw new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'Synthetic prompt failed',
+				);
+			return {stopReason: 'end_turn', metadata: {usage: {totalTokens: 20}}};
+		};
+		const prompted = service.promptThread({
+			...request,
+			text: 'second synthetic task',
+		});
+		if (delivery === 'failure terminal')
+			await t.throwsAsync(prompted, {instanceOf: IpcFailure});
+		else await prompted;
+		t.true(accepted);
+		t.like(store.threads.get(project.id, thread.id), {
+			...previous,
+			runState: delivery === 'failure terminal' ? 'failed' : 'ready',
+			title: 'generated at turn end',
+		});
+	});
+}
+
 test('turn completion preserves title metadata updated during the turn (CHAT-12)', async t => {
 	const {project, service, store, supervisor} = await fixture(t, true);
 	const thread = await service.createThread({projectId: project.id});
