@@ -51,6 +51,15 @@ test('finds Nanocoder installed after the app started, without a restart', async
 		copyFileSync('source/main/nanocoder/fixtures/fake-nanocoder.mjs', fakeCli);
 
 		await page.getByRole('button', {name: 'Check again'}).click();
+		await expect(alert).toHaveCount(0);
+		const details = page.locator('.runtime-details');
+		if (
+			!(await details.evaluate(element => (element as HTMLDetailsElement).open))
+		) {
+			await details.locator('summary').focus();
+			await page.keyboard.press('Enter');
+		}
+		await expect(details).toHaveAttribute('open');
 		await expect(page.getByText(`Nanocoder 9.9.9 at ${fakeCli}`)).toBeVisible();
 		await expect(alert).toHaveCount(0);
 		await expect(
