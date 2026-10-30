@@ -1935,6 +1935,58 @@ test('ordinary history open refuses a located root before launch or former-cwd r
 	t.is(supervisor.getState(project.id).status, 'stopped');
 });
 
+test('ACP-10 renderer detach drops cancelled approval payloads from retained snapshots before reopen', async t => {
+	const {
+		project,
+		service,
+		store,
+		supervisor,
+		connection,
+		target,
+		requests,
+		turn,
+	} = await waitingThread(t, true);
+	const before = await service.getThreadSnapshot(target);
+	t.is(before.events.filter(event => event.type === 'permission').length, 2);
+	const scope = {...target, sessionId: 'fake-session'};
+	const history = store.threadHistory.read(scope);
+	await service.detach([project]);
+	await turn;
+	t.is(supervisor.getState(project.id).status, 'stopped');
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines()).filter(event => event.answer),
+		[{answer: {outcome: 'cancelled'}}],
+	);
+	const after = await service.getThreadSnapshot(target);
+	t.deepEqual(
+		after.events,
+		before.events.filter(
+			event =>
+				event.type !== 'permission' && event.type !== 'permission-closed',
+		),
+	);
+	t.is(after.sequence, before.sequence);
+	t.is(after.result, undefined);
+	t.deepEqual(store.threadHistory.read(scope), history);
+	for (const request of requests)
+		await t.throwsAsync(
+			service.answerThreadPermission({
+				...target,
+				requestId: request.id,
+				optionId: 'allow',
+			}),
+			{instanceOf: IpcFailure, code: 'DENIED'},
+		);
+	const reopened = await service.openThread(target);
+	t.is(reopened.thread.nanocoderSessionId, 'fake-session');
+	t.false(
+		reopened.events.some(
+			event =>
+				event.type === 'permission' || event.type === 'permission-closed',
+		),
+	);
+});
+
 test('a restarted waiting thread is interrupted with no synthetic terminal, launch or surviving approval authority (CHAT-03, ACP-10)', async t => {
 	const {project, root, service, store, supervisor, target, requests, turn} =
 		await waitingThread(t);

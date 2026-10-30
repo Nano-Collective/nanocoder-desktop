@@ -120,6 +120,10 @@ terminal. It creates no general metadata/execution capability and bypasses
 neither root, epoch, saved-session nor replacement-connection checks.
 Active live records retire in prompt cleanup. Thread removal, detach and
 disposal still retire the passive per-thread owner.
+Detach also removes ephemeral permission events from retained memory prefixes,
+independently of dropped stale callbacks. Native requests are still cancelled,
+never allowed; sequence, readable content and SQL stay unchanged, with no
+synthetic terminal or revived card on reopen.
 
 ## Truthful history and remaining work
 

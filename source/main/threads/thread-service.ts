@@ -985,6 +985,14 @@ export function createThreadService(
 			mutations.clear();
 			restoring.clear();
 			permissionIds.clear();
+			for (const [threadId, state] of snapshots)
+				snapshots.set(threadId, {
+					...state,
+					events: state.events.filter(
+						event =>
+							event.type !== 'permission' && event.type !== 'permission-closed',
+					),
+				});
 			const stopped = [...ids].map(id => {
 				const stop = Promise.resolve().then(() => options.supervisor.stop(id));
 				projectOperations.invalidate(id, stop);
