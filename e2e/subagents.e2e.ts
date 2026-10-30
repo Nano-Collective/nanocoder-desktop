@@ -216,11 +216,7 @@ test.describe('fc01-shaped delegation cards', () => {
 				await page.setViewportSize({width, height: 900});
 				await stop().focus();
 				await expect(stop()).toBeFocused();
-				expect(
-					await stop().evaluate(
-						element => getComputedStyle(element).outlineWidth,
-					),
-				).toBe('2px');
+				await expect(stop()).toHaveCSS('outline-width', '2px');
 				const box = await cards().last().boundingBox();
 				expect(box?.width).toBeGreaterThan(200);
 				expect(
