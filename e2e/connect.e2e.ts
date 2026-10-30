@@ -466,7 +466,7 @@ test('two project processes keep simultaneous turns, events and approvals separa
 test('a version below the minimum is refused with a clear upgrade message', async () => {
 	await openFolder(project('old-agent', 'old-version'));
 	await expect(page.getByRole('alert')).toContainText(
-		'Nanocoder 1.31.0 is below the minimum 1.32.0',
+		'Nanocoder 1.30.0 is below the minimum 1.31.0',
 	);
 	await expect(page.getByRole('alert')).toContainText('Upgrade Nanocoder');
 	await expect(page.getByLabel('Message')).toHaveCount(0);

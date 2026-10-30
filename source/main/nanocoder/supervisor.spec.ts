@@ -518,7 +518,7 @@ test('refuses old package versions before any process or trust launch', async t 
 	const supervisor = make({
 		resolveRuntime: async () => ({
 			ok: true,
-			runtime: {...runtime, version: '1.31.0'},
+			runtime: {...runtime, version: '1.30.0'},
 		}),
 		connect: async () => {
 			starts++;
@@ -529,7 +529,7 @@ test('refuses old package versions before any process or trust launch', async t 
 	const chosen = project();
 	const state = await supervisor.ensureProcess(chosen);
 	t.is(state.status, 'unsupported');
-	t.regex(state.reason ?? '', /below the minimum 1.32.0/);
+	t.regex(state.reason ?? '', /below the minimum 1.31.0/);
 	t.is(starts, 0);
 	t.true(
 		Object.values(supervisor.getCapabilityGates(chosen.id).features).every(
@@ -544,8 +544,30 @@ test('checks initialize version even when package metadata claims a newer versio
 	const chosen = project('old-version');
 	const state = await supervisor.ensureProcess(chosen);
 	t.is(state.status, 'unsupported');
-	t.regex(state.reason ?? '', /Nanocoder 1.31.0 is below/);
-	t.is(state.agent?.version, '1.31.0');
+	t.regex(state.reason ?? '', /Nanocoder 1.30.0 is below/);
+	t.is(state.agent?.version, '1.30.0');
+	t.throws(() => supervisor.getConnection(chosen.id), {instanceOf: IpcFailure});
+});
+
+test('a published-like 1.31.0 fails preflight before opening a project or asking for trust (ACP-20)', async t => {
+	let confirmations = 0;
+	const supervisor = make({
+		resolveRuntime: async () => ({
+			ok: true,
+			runtime: {...runtime, version: '1.31.0'},
+		}),
+		confirmTrust: async () => {
+			confirmations++;
+			return true;
+		},
+	});
+	t.teardown(() => supervisor.close());
+	const chosen = project();
+	const state = await supervisor.ensureProcess(chosen);
+	t.is(state.status, 'unsupported');
+	t.regex(state.reason ?? '', /could not verify.*directory trust check/i);
+	t.is(confirmations, 0);
+	t.is(state.agent, null);
 	t.throws(() => supervisor.getConnection(chosen.id), {instanceOf: IpcFailure});
 });
 

@@ -3,6 +3,10 @@ import {accessSync, constants, readFileSync, statSync} from 'node:fs';
 import path from 'node:path';
 import {promisify} from 'node:util';
 import {childEnv} from '@/main/nanocoder/launch';
+import {
+	requiresTrustPreflight,
+	versionPolicy,
+} from '@/main/nanocoder/version-policy';
 import {canonicalPathSync, isInside} from '@/main/paths';
 import type {NanocoderRuntime} from '@/shared/ipc';
 
@@ -183,6 +187,18 @@ export async function resolveNanocoder(
 			ok: false,
 			code: 'DENIED',
 			message: `Not a Nanocoder package: ${cliPath}`,
+		};
+	}
+	const policy = versionPolicy(version);
+	if (
+		policy.status === 'refused' ||
+		(requiresTrustPreflight(version) && !cliOverride)
+	) {
+		return {
+			ok: false,
+			code: 'UNSUPPORTED',
+			message:
+				policy.reason ?? 'Nanocoder requires a verified development override',
 		};
 	}
 

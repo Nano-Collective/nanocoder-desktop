@@ -61,7 +61,7 @@ const results = {
 			title: 'Nanocoder',
 			version:
 				mode === 'old-version'
-					? '1.31.0'
+					? '1.30.0'
 					: mode === 'minimum-version' || mode === 'minimum-no-gates'
 						? '1.32.0'
 						: '9.9.9',
