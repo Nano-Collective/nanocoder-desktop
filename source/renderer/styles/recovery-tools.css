@@ -1,5 +1,5 @@
 .nc-recovery,
-.nc-diagnostics {
+.ui-card.nc-diagnostics {
 	min-width: 0;
 	overflow-wrap: anywhere;
 }
@@ -23,13 +23,13 @@
 	overflow-wrap: anywhere;
 }
 
-.nc-recovery {
+.ui-card.nc-recovery {
 	padding: 16px 18px;
 	gap: 10px;
 	font-size: 11px;
 	line-height: 1.8;
 }
-.nc-recovery--ready {
+.ui-card.nc-recovery--ready {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -43,7 +43,7 @@
 	min-height: 28px;
 	font-size: 10px;
 }
-.nc-diagnostics {
+.ui-card.nc-diagnostics {
 	padding: 18px 20px;
 	gap: 14px;
 	font-size: 11px;

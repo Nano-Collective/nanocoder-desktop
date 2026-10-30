@@ -644,3 +644,32 @@ test('built main refuses unknown recovery handles and renderer-supplied paths or
 		),
 	).toEqual(['NOT_FOUND', 'VALIDATION', 'VALIDATION']);
 });
+
+test('compact ready row and reviewed diagnostics keep their computed presentation in both themes and widths', async () => {
+	await open();
+	const ready = page.getByRole('region', {name: 'Nanocoder recovery'});
+	for (const theme of ['dark', 'light']) {
+		await page.evaluate(theme => {
+			document.documentElement.dataset.theme = theme;
+		}, theme);
+		for (const width of [1240, 1020, 840]) {
+			await page.setViewportSize({width, height: 900});
+			await expect(ready).toHaveCSS('display', 'flex');
+			await expect(ready).toHaveCSS('padding', '0px');
+			await expect(ready).toHaveCSS('border-top-width', '0px');
+			await expect(ready).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+			await expect(ready).toHaveCSS(
+				'color',
+				theme === 'dark' ? 'rgb(168, 168, 168)' : 'rgb(79, 86, 120)',
+			);
+		}
+	}
+	await ready.getByRole('button', {name: 'diagnostics', exact: true}).click();
+	const diagnostics = page.getByRole('region', {
+		name: 'redacted diagnostics',
+		exact: true,
+	});
+	await expect(diagnostics).toHaveCSS('padding', '18px 20px');
+	await expect(diagnostics).toHaveCSS('gap', '14px');
+	await expect(diagnostics).toHaveCSS('font-size', '11px');
+});
