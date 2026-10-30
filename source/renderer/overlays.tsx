@@ -95,6 +95,7 @@ export function OverlayProvider({
 	const dialog = useRef<HTMLDialogElement>(null);
 	const input = useRef<HTMLInputElement>(null);
 	const returnFocus = useRef<(() => void) | null>(null);
+	const closingFocus = useRef<Element | null>(null);
 	const notifications = useRef<ReturnType<typeof toastQueue> | null>(null);
 	const themeChanged = useRef(false);
 	const mac = navigator.platform.startsWith('Mac');
@@ -149,9 +150,8 @@ export function OverlayProvider({
 
 	const close = useCallback(() => {
 		dialog.current?.close();
+		closingFocus.current = document.activeElement;
 		setKind(null);
-		returnFocus.current?.();
-		returnFocus.current = null;
 	}, []);
 
 	useLayoutEffect(() => {
@@ -255,6 +255,19 @@ export function OverlayProvider({
 				aria-label={
 					kind === 'shortcuts' ? 'keyboard shortcuts' : 'command palette'
 				}
+				onClose={() => {
+					if (dialog.current?.open) return;
+					const restore = returnFocus.current;
+					returnFocus.current = null;
+					const active = document.activeElement;
+					if (
+						active !== document.body &&
+						active !== closingFocus.current &&
+						!dialog.current?.contains(active)
+					)
+						return;
+					restore?.();
+				}}
 				onCancel={event => {
 					event.preventDefault();
 					close();

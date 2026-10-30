@@ -25,7 +25,8 @@ queue. They add no IPC channels or preload capabilities.
 - Native modal dialogs keep the background inert. Escape closes from every
   control, including an empty search. The close button and backdrop also close.
   Focus returns to the original control, or the palette button if that control
-  was removed or disabled (`A11Y-01`, `A11Y-03`).
+  was removed or disabled (`A11Y-01`, `A11Y-03`). Return waits for the native
+  close event and respects focus already recovered by a pending approval.
 - Theme actions save through the existing settings method before changing the
   renderer. Success is announced only after the setting is saved.
 - Notifications never take focus. A persistent polite, atomic live region

@@ -10,11 +10,11 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {
 	type ElectronApplication,
-	_electron as electron,
 	expect,
 	type Page,
 	test,
 } from '@playwright/test';
+import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 
 const root = path.resolve(import.meta.dirname, '..');
