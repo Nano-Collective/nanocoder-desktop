@@ -1,8 +1,15 @@
-import {mkdtempSync, rmSync} from 'node:fs';
+import {
+	copyFileSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {expect, test} from '@playwright/test';
 import {electron} from './qa/electron';
+import {qaEnvironment} from './qa/environment';
 
 test('quiet launch and macOS activation keep native windows and Dock hidden without faking DOM focus', async () => {
 	test.skip(
@@ -10,8 +17,21 @@ test('quiet launch and macOS activation keep native windows and Dock hidden with
 		'Manual visible QA opt-in',
 	);
 	const profile = mkdtempSync(path.join(tmpdir(), 'nd-quiet-e2e-'));
+	const cli = path.join(profile, 'nanocoder/dist/cli.js');
+	mkdirSync(path.dirname(cli), {recursive: true});
+	copyFileSync('source/main/nanocoder/fixtures/fake-nanocoder.mjs', cli);
+	writeFileSync(
+		path.join(profile, 'nanocoder/package.json'),
+		JSON.stringify({
+			name: '@nanocollective/nanocoder',
+			version: '9.9.9',
+			type: 'module',
+			bin: {nanocoder: 'dist/cli.js'},
+		}),
+	);
 	const app = await electron.launch({
 		args: ['.', `--user-data-dir=${profile}`],
+		env: qaEnvironment(process.env, {cliPath: cli, nodePath: process.execPath}),
 	});
 	try {
 		const page = await app.firstWindow();
