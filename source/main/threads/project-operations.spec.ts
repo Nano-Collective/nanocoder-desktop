@@ -2,6 +2,8 @@ import test, {type ExecutionContext} from 'ava';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {
 	createProjectOperations,
+	type MetadataOperationLease,
+	type PendingProjectOperationLease,
 	type ProjectOperationLease,
 } from '@/main/threads/project-operations';
 
@@ -566,4 +568,367 @@ test('a released scope abort cannot invalidate a replacement owner', async t => 
 		operations.assertCurrent(lease);
 		t.false(lease.signal.aborted);
 	});
+});
+
+test('CHAT-17 metadata-only reservations share the execution slot in both directions', async t => {
+	const {operations, projects} = fixture();
+	await operations.runMetadataOperation(
+		'project',
+		'archive-thread',
+		async () => {
+			await rejectsCode(
+				t,
+				operations.runProjectOperation('project', 'set-mode', async () => {}),
+				'BUSY',
+			);
+		},
+	);
+	await operations.runProjectOperation('project', 'set-mode', async () => {
+		await rejectsCode(
+			t,
+			operations.runMetadataOperation(
+				'project',
+				'remove-thread',
+				async () => {},
+			),
+			'BUSY',
+		);
+	});
+	required(projects, 'project').trusted = false;
+	await operations.runMetadataOperation(
+		'project',
+		'archive-thread',
+		async lease => {
+			operations.assertMetadataCurrent(lease);
+		},
+	);
+	await rejectsCode(
+		t,
+		operations.runProjectOperation('project', 'set-mode', async () => {}),
+		'DENIED',
+	);
+});
+
+test('CHAT-17 metadata-only brands refuse every execution binding and owned-step path', async t => {
+	const {operations, connections} = fixture();
+	await operations.runMetadataOperation(
+		'project',
+		'archive-thread',
+		async (lease: MetadataOperationLease) => {
+			// @ts-expect-error Metadata leases cannot enter execution authority.
+			throwsCode(t, () => operations.assertCurrent(lease), 'DENIED');
+			// @ts-expect-error Metadata leases cannot bind an execution thread.
+			throwsCode(t, () => operations.bindThread(lease, 'thread'), 'DENIED');
+			// @ts-expect-error Metadata leases cannot bind an ACP session.
+			throwsCode(t, () => operations.bindSession(lease, 'saved'), 'DENIED');
+			throwsCode(
+				t,
+				() =>
+					// @ts-expect-error Metadata leases cannot bind an ACP connection.
+					operations.bindConnection(lease, required(connections, 'project')),
+				'DENIED',
+			);
+			await rejectsCode(
+				t,
+				// @ts-expect-error Metadata leases cannot run permission, prompt or controls work.
+				operations.runOwnedStep(lease, async () => t.fail('No execution work')),
+				'DENIED',
+			);
+			await rejectsCode(
+				t,
+				// @ts-expect-error Metadata leases cannot cancel an execution owner.
+				operations.runCancellationStep(lease, async () =>
+					t.fail('No cancellation'),
+				),
+				'DENIED',
+			);
+			// @ts-expect-error Metadata leases cannot promote to execution authority.
+			throwsCode(t, () => operations.confirmExecution(lease), 'DENIED');
+		},
+	);
+});
+
+for (const change of ['root', 'epoch', 'abort', 'thread'] as const) {
+	test(`CHAT-17 metadata-only reservations refuse a changed ${change}`, async t => {
+		const {operations, projects, threads} = fixture();
+		const controller = new AbortController();
+		await rejectsCode(
+			t,
+			operations.runMetadataOperation(
+				'project',
+				'archive-thread',
+				async lease => {
+					if (change === 'root')
+						required(projects, 'project').canonicalRoot = '/fixture/replaced';
+					else if (change === 'epoch') operations.invalidate('project');
+					else if (change === 'abort') controller.abort();
+					else threads.delete('project/thread');
+					operations.assertMetadataCurrent(lease);
+				},
+				{threadId: 'thread', signal: controller.signal},
+			),
+			change === 'root'
+				? 'DENIED'
+				: change === 'thread'
+					? 'NOT_FOUND'
+					: 'AGENT_UNAVAILABLE',
+		);
+		t.false(operations.isBusy('project'));
+	});
+}
+
+for (const metadataOnly of [false, true]) {
+	test(`CHAT-17 ${metadataOnly ? 'metadata' : 'execution'} owned removal completes without granting stale work`, async t => {
+		const {operations, threads} = fixture();
+		const remove = (
+			lease: Parameters<typeof operations.removeOwnedThread>[0],
+		) => {
+			operations.removeOwnedThread(lease, () => {
+				threads.delete('project/thread');
+			});
+		};
+		const result = metadataOnly
+			? await operations.runMetadataOperation(
+					'project',
+					'remove-thread',
+					async lease => {
+						remove(lease);
+						throwsCode(
+							t,
+							() => operations.assertMetadataCurrent(lease),
+							'NOT_FOUND',
+						);
+						return 'removed';
+					},
+					{threadId: 'thread'},
+				)
+			: await operations.runProjectOperation(
+					'project',
+					'delete-history',
+					async lease => {
+						remove(lease);
+						throwsCode(t, () => operations.assertCurrent(lease), 'NOT_FOUND');
+						return 'removed';
+					},
+					{threadId: 'thread'},
+				);
+		t.is(result, 'removed');
+		t.false(operations.isBusy('project'));
+	});
+	test(`CHAT-17 completed ${metadataOnly ? 'metadata' : 'execution'} removal survives only its terminal invalidation`, async t => {
+		const {operations, threads} = fixture();
+		const remove = (
+			lease: Parameters<typeof operations.removeOwnedThread>[0],
+		) => {
+			operations.removeOwnedThread(lease, () => {
+				threads.delete('project/thread');
+			});
+			operations.invalidateThread('project', 'thread');
+		};
+		const result = metadataOnly
+			? await operations.runMetadataOperation(
+					'project',
+					'remove-thread',
+					async lease => {
+						remove(lease);
+						throwsCode(
+							t,
+							() => operations.assertMetadataCurrent(lease),
+							'AGENT_UNAVAILABLE',
+						);
+						return 'removed';
+					},
+					{threadId: 'thread'},
+				)
+			: await operations.runProjectOperation(
+					'project',
+					'delete-history',
+					async lease => {
+						remove(lease);
+						throwsCode(
+							t,
+							() => operations.assertCurrent(lease),
+							'AGENT_UNAVAILABLE',
+						);
+						return 'removed';
+					},
+					{threadId: 'thread'},
+				);
+		t.is(result, 'removed');
+	});
+}
+
+test('CHAT-17 an externally removed bound thread still refuses completion', async t => {
+	const {operations, threads} = fixture();
+	await rejectsCode(
+		t,
+		operations.runProjectOperation(
+			'project',
+			'prompt',
+			async () => {
+				threads.delete('project/thread');
+			},
+			{threadId: 'thread'},
+		),
+		'NOT_FOUND',
+	);
+});
+
+test('CHAT-17 a pending history confirmation can decline while untrusted without execution authority', async t => {
+	const {operations, projects, connections} = fixture();
+	required(projects, 'project').trusted = false;
+	await operations.runConfirmationOperation(
+		'project',
+		'delete-history',
+		async (lease: PendingProjectOperationLease) => {
+			// @ts-expect-error Pending consent is not execution authority.
+			throwsCode(t, () => operations.assertCurrent(lease), 'DENIED');
+			// @ts-expect-error Pending consent cannot bind an execution thread.
+			throwsCode(t, () => operations.bindThread(lease, 'thread'), 'DENIED');
+			// @ts-expect-error Pending consent cannot bind an ACP session.
+			throwsCode(t, () => operations.bindSession(lease, 'saved'), 'DENIED');
+			throwsCode(
+				t,
+				() =>
+					// @ts-expect-error Pending consent cannot bind an ACP connection.
+					operations.bindConnection(lease, required(connections, 'project')),
+				'DENIED',
+			);
+			await rejectsCode(
+				t,
+				// @ts-expect-error Pending consent cannot run permission, prompt or controls work.
+				operations.runOwnedStep(lease, async () => t.fail('No execution work')),
+				'DENIED',
+			);
+			await rejectsCode(
+				t,
+				// @ts-expect-error Pending consent cannot cancel an execution owner.
+				operations.runCancellationStep(lease, async () =>
+					t.fail('No cancellation'),
+				),
+				'DENIED',
+			);
+			throwsCode(
+				t,
+				// @ts-expect-error Pending consent cannot complete an execution removal.
+				() => operations.removeOwnedThread(lease, () => {}),
+				'DENIED',
+			);
+			t.false(await operations.runConfirmationStep(lease, async () => false));
+		},
+	);
+	t.false(operations.isBusy('project'));
+});
+
+test('CHAT-17 accepted history confirmation promotes its exact reservation without reacquisition', async t => {
+	const {operations} = fixture();
+	await operations.runConfirmationOperation(
+		'project',
+		'delete-history',
+		async pending => {
+			t.true(await operations.runConfirmationStep(pending, async () => true));
+			const lease = operations.confirmExecution(pending);
+			t.is(lease.signal, pending.signal);
+			t.is(lease.epoch, pending.epoch);
+			t.true(operations.isBusy('project'));
+			operations.assertCurrent(lease);
+			await rejectsCode(
+				t,
+				operations.runProjectOperation('project', 'set-mode', async () => {}),
+				'BUSY',
+			);
+			throwsCode(t, () => operations.confirmExecution(pending), 'DENIED');
+		},
+		{threadId: 'thread'},
+	);
+});
+
+for (const change of ['root', 'epoch', 'abort', 'trust'] as const) {
+	test(`CHAT-17 accepted history confirmation refuses changed ${change} before promotion`, async t => {
+		const {operations, projects} = fixture();
+		const controller = new AbortController();
+		await rejectsCode(
+			t,
+			operations.runConfirmationOperation(
+				'project',
+				'delete-history',
+				async pending => {
+					if (change === 'root')
+						required(projects, 'project').canonicalRoot = '/fixture/replaced';
+					else if (change === 'epoch') operations.invalidate('project');
+					else if (change === 'abort') controller.abort();
+					else required(projects, 'project').trusted = false;
+					operations.confirmExecution(pending);
+				},
+				{signal: controller.signal},
+			),
+			change === 'root' || change === 'trust' ? 'DENIED' : 'AGENT_UNAVAILABLE',
+		);
+	});
+}
+
+test('CHAT-17 aborting pending history confirmation does not await the native dialog or launch late work', async t => {
+	const {operations} = fixture();
+	const answer = deferred();
+	const entered = deferred();
+	let launched = false;
+	const task = operations.runConfirmationOperation(
+		'project',
+		'delete-history',
+		async pending => {
+			await operations.runConfirmationStep(pending, () => {
+				entered.resolve();
+				return answer.promise;
+			});
+			operations.confirmExecution(pending);
+			launched = true;
+		},
+	);
+	const rejected = rejectsCode(t, task, 'AGENT_UNAVAILABLE');
+	await entered.promise;
+	operations.invalidate('project');
+	await rejected;
+	t.false(operations.isBusy('project'));
+	answer.resolve();
+	t.false(launched);
+});
+
+test('CHAT-17 an owned cancellation can stop its exact connection after trust is revoked', async t => {
+	const {operations, projects, connections} = fixture();
+	await rejectsCode(
+		t,
+		operations.runProjectOperation(
+			'project',
+			'prompt',
+			async lease => {
+				operations.bindConnection(lease, required(connections, 'project'));
+				required(projects, 'project').trusted = false;
+				await operations.runCancellationStep(lease, async () => {
+					connections.delete('project');
+				});
+				t.pass();
+			},
+			{threadId: 'thread'},
+		),
+		'DENIED',
+	);
+});
+
+test('CHAT-17 cancellation cannot follow a replacement connection', async t => {
+	const {operations, connections} = fixture();
+	await rejectsCode(
+		t,
+		operations.runProjectOperation(
+			'project',
+			'prompt',
+			async lease => {
+				operations.bindConnection(lease, required(connections, 'project'));
+				await operations.runCancellationStep(lease, async () => {
+					connections.set('project', {});
+				});
+			},
+			{threadId: 'thread'},
+		),
+		'AGENT_UNAVAILABLE',
+	);
 });

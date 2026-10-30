@@ -32,6 +32,128 @@ import type {
 	TurnEvent,
 } from '@/shared/ipc';
 
+for (const control of ['mode', 'config'] as const) {
+	for (const action of [
+		'archive',
+		'remove',
+		'rename-unsaved',
+		'rename-saved',
+		'delete-history',
+	] as const) {
+		test(`CHAT-17 ${action} refuses the shared ${control} owner before metadata consent or ACP work`, async t => {
+			const f = await fixture(t, true);
+			const thread = seed(f.project, {
+				nanocoderSessionId: action === 'rename-unsaved' ? null : 'saved',
+			});
+			f.store.threads.save(thread);
+			const held = deferred<void>();
+			const owner = f.service.runProjectOperation(
+				f.project.id,
+				`set-${control}`,
+				() => held.promise,
+			);
+			const request = {projectId: f.project.id, threadId: thread.id};
+			try {
+				const mutation =
+					action === 'archive'
+						? f.service.archiveThread({...request, archived: true})
+						: action === 'remove'
+							? f.service.removeThread(request)
+							: action.startsWith('rename')
+								? f.service.renameThread({...request, title: 'not saved'})
+								: f.service.deleteThreadHistory(request);
+				await t.throwsAsync(mutation, {instanceOf: IpcFailure, code: 'BUSY'});
+				t.deepEqual(f.store.threads.get(f.project.id, thread.id), thread);
+				t.deepEqual(f.calls, []);
+			} finally {
+				held.resolve();
+				await owner;
+			}
+		});
+	}
+}
+
+for (const action of ['archive', 'remove', 'rename-unsaved'] as const) {
+	test(`CHAT-17 ${action} reserves before its synchronous metadata write and refuses reentrant controls`, async t => {
+		const f = await fixture(t, true);
+		const thread = seed(f.project, {nanocoderSessionId: null});
+		f.store.threads.save(thread);
+		let controlsStarted = 0;
+		const attempts: Promise<string>[] = [];
+		const compete = () => {
+			attempts.push(
+				f.service
+					.runProjectOperation(f.project.id, 'set-mode', async () => {
+						controlsStarted++;
+					})
+					.then(
+						() => 'allowed',
+						(error: IpcFailure) => error.code,
+					),
+			);
+		};
+		const save = f.store.threads.save.bind(f.store.threads);
+		const remove = f.store.threads.remove.bind(f.store.threads);
+		const setTitle = f.store.threads.setTitle.bind(f.store.threads);
+		f.store.threads.save = value => {
+			compete();
+			return save(value);
+		};
+		f.store.threads.remove = (projectId, threadId) => {
+			compete();
+			return remove(projectId, threadId);
+		};
+		f.store.threads.setTitle = value => {
+			compete();
+			return setTitle(value);
+		};
+		const request = {projectId: f.project.id, threadId: thread.id};
+		if (action === 'archive')
+			await f.service.archiveThread({...request, archived: true});
+		else if (action === 'remove')
+			t.is(await f.service.removeThread(request), null);
+		else await f.service.renameThread({...request, title: 'saved offline'});
+		t.deepEqual(await Promise.all(attempts), ['BUSY']);
+		t.is(controlsStarted, 0);
+		t.deepEqual(f.calls, []);
+	});
+}
+
+for (const action of ['archive', 'remove', 'rename-unsaved'] as const) {
+	test(`CHAT-17 ${action} preserves untrusted offline metadata without preparing Nanocoder`, async t => {
+		let hooks = 0;
+		const f = await fixture(t, false, undefined, false, {
+			validateBeforePrepare: () => {
+				hooks++;
+			},
+			onSessionPrepared: () => {
+				hooks++;
+			},
+		});
+		const thread = seed(f.project, {nanocoderSessionId: null});
+		f.store.threads.save(thread);
+		renameSync(f.project.canonicalRoot, `${f.project.canonicalRoot}-offline`);
+		const request = {projectId: f.project.id, threadId: thread.id};
+		if (action === 'archive')
+			t.is(
+				(await f.service.archiveThread({...request, archived: true}))
+					.archiveState,
+				'archived',
+			);
+		else if (action === 'remove') {
+			t.is(await f.service.removeThread(request), null);
+			t.is(f.store.threads.get(f.project.id, thread.id), undefined);
+		} else
+			t.is(
+				(await f.service.renameThread({...request, title: 'offline title'}))
+					.title,
+				'offline title',
+			);
+		t.deepEqual(f.calls, []);
+		t.is(hooks, 0);
+	});
+}
+
 for (const kind of ['high', 'low'] as const) {
 	test(`CHAT-08 a new session acknowledgement refuses ${kind} surrogate before storing or prompting`, async t => {
 		const events: ProjectEvent[] = [];
@@ -81,6 +203,259 @@ for (const kind of ['high', 'low'] as const) {
 		t.is(prepared, 0);
 		t.deepEqual(events, []);
 		t.is(f.supervisor.getState(f.project.id).status, 'stopped');
+	});
+}
+
+test('CHAT-17 cancellation retains the active prompt slot until the cancel acknowledgement settles', async t => {
+	const f = await waitingThread(t);
+	const entered = deferred<void>();
+	const release = deferred<void>();
+	const original = f.supervisor.cancel.bind(f.supervisor);
+	f.supervisor.cancel = async (...args) => {
+		await original(...args);
+		entered.resolve();
+		await release.promise;
+	};
+	const cancelling = f.service.cancelThread(f.target);
+	try {
+		await entered.promise;
+		await t.throwsAsync(
+			f.service.runProjectOperation(f.project.id, 'set-mode', async () => {}),
+			{instanceOf: IpcFailure, code: 'BUSY'},
+		);
+		await t.throwsAsync(
+			f.service.archiveThread({...f.target, archived: true}),
+			{
+				instanceOf: IpcFailure,
+				code: 'BUSY',
+			},
+		);
+		await t.throwsAsync(f.service.removeThread(f.target), {
+			instanceOf: IpcFailure,
+			code: 'BUSY',
+		});
+	} finally {
+		release.resolve();
+		await cancelling;
+	}
+	t.deepEqual(await f.turn, {stopReason: 'cancelled'});
+});
+
+for (const upstream of [false, true]) {
+	test(`CHAT-17 ${upstream ? 'history deletion' : 'desktop removal'} invalidates its exact scope without losing completed removal`, async t => {
+		const f = await fixture(t, true);
+		const thread = seed(f.project);
+		f.store.threads.save(thread);
+		const invalidated: string[] = [];
+		const invalidate = f.service.projectOperations.invalidateThread;
+		f.service.projectOperations.invalidateThread = (
+			projectId,
+			threadId,
+			stop,
+		) => {
+			invalidated.push(`${projectId}/${threadId}`);
+			invalidate(projectId, threadId, stop);
+		};
+		const request = {projectId: f.project.id, threadId: thread.id};
+		if (upstream) {
+			f.confirmDeletion(async () => true);
+			await f.supervisor.ensureProcess(f.project);
+			f.supervisor.getConnection(f.project.id).deleteSession = async () => {};
+			t.deepEqual(await f.service.deleteThreadHistory(request), {
+				status: 'deleted',
+			});
+		} else t.is(await f.service.removeThread(request), null);
+		t.deepEqual(invalidated, [`${f.project.id}/${thread.id}`]);
+		t.is(f.store.threads.get(f.project.id, thread.id), undefined);
+		t.false(f.service.projectOperations.isBusy(f.project.id));
+	});
+}
+
+test('CHAT-17 a pending history dialog cannot block active permission and cancel exceptions in another project', async t => {
+	const f = await waitingThread(t, true);
+	const otherRoot = path.join(f.root, 'other');
+	mkdirSync(otherRoot);
+	const other = {
+		...f.project,
+		id: randomUUID(),
+		canonicalRoot: otherRoot,
+		sessionCwd: otherRoot,
+		trusted: false,
+	};
+	f.store.projects.save(other);
+	const thread = seed(other);
+	f.store.threads.save(thread);
+	const entered = deferred<void>();
+	const answer = deferred<boolean>();
+	f.confirmDeletion(() => {
+		entered.resolve();
+		return answer.promise;
+	});
+	const deletion = f.service.deleteThreadHistory({
+		projectId: other.id,
+		threadId: thread.id,
+	});
+	try {
+		await entered.promise;
+		for (const attempt of [
+			() => f.service.deleteThreadHistory(f.target),
+			() => f.service.archiveThread({...f.target, archived: true}),
+			() => f.service.removeThread(f.target),
+		])
+			await t.throwsAsync(attempt(), {instanceOf: IpcFailure, code: 'BUSY'});
+		t.is(
+			await f.service.answerThreadPermission({
+				...f.target,
+				requestId: f.requests[0].id,
+				optionId: 'allow',
+			}),
+			null,
+		);
+		t.is(await f.service.cancelThread(f.target), null);
+		t.deepEqual(await f.turn, {stopReason: 'cancelled'});
+		t.deepEqual(f.calls, ['launch', 'confirm-delete']);
+	} finally {
+		answer.resolve(false);
+		await deletion;
+	}
+	t.deepEqual(await deletion, {status: 'cancelled'});
+});
+
+test('CHAT-17 declining history deletion keeps cancellation truthful after an automatic title changes', async t => {
+	const f = await fixture(t);
+	const thread = seed(f.project);
+	f.store.threads.save(thread);
+	f.confirmDeletion(async () => {
+		f.store.threads.setTitle({
+			projectId: f.project.id,
+			threadId: thread.id,
+			title: 'updated while the dialog was open',
+			manuallySet: false,
+		});
+		return false;
+	});
+	t.deepEqual(
+		await f.service.deleteThreadHistory({
+			projectId: f.project.id,
+			threadId: thread.id,
+		}),
+		{status: 'cancelled'},
+	);
+	t.deepEqual(f.calls, ['confirm-delete']);
+});
+
+test('CHAT-17 preparation cancellation holds the slot through both the pending hook and child-stop settlement', async t => {
+	const entered = deferred<void>();
+	const releaseHook = deferred<void>();
+	const f = await fixture(t, true, undefined, false, {
+		beforeFirstPrompt: async () => {
+			entered.resolve();
+			await releaseHook.promise;
+		},
+	});
+	const thread = await f.service.createThread({projectId: f.project.id});
+	const target = {projectId: f.project.id, threadId: thread.id};
+	const turn = f.service.promptThread({...target, text: 'not sent'});
+	void turn.catch(() => undefined);
+	await entered.promise;
+	const stopped = deferred<void>();
+	const releaseStop = deferred<void>();
+	const stop = f.supervisor.stop.bind(f.supervisor);
+	f.supervisor.stop = async id => {
+		const state = await stop(id);
+		stopped.resolve();
+		await releaseStop.promise;
+		return state;
+	};
+	const cancellation = f.service.cancelThread(target);
+	try {
+		await stopped.promise;
+		for (const attempt of [
+			() =>
+				f.service.runProjectOperation(
+					f.project.id,
+					'set-config',
+					async () => {},
+				),
+			() => f.service.archiveThread({...target, archived: true}),
+			() => f.service.removeThread(target),
+		])
+			await t.throwsAsync(attempt(), {instanceOf: IpcFailure, code: 'BUSY'});
+	} finally {
+		releaseHook.resolve();
+		releaseStop.resolve();
+		await cancellation;
+		f.supervisor.stop = stop;
+	}
+	t.deepEqual(await turn, {stopReason: 'cancelled'});
+});
+
+test('CHAT-17 a control lease cannot stand in for an active permission or cancellation owner', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'saved'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const original = f.supervisor.getState.bind(f.supervisor);
+	f.supervisor.getState = id => ({...original(id), activeThreadId: 'saved'});
+	let answered = 0;
+	let cancelled = 0;
+	f.supervisor.answerPermission = () => {
+		answered++;
+		return true;
+	};
+	f.supervisor.cancel = async () => {
+		cancelled++;
+	};
+	await f.service.runProjectOperation(
+		f.project.id,
+		'set-mode',
+		async () => {
+			await t.throwsAsync(
+				f.service.answerThreadPermission({
+					...request,
+					requestId: 'offered',
+					optionId: 'allow',
+				}),
+				{instanceOf: IpcFailure, code: 'DENIED'},
+			);
+			t.is(await f.service.cancelThread(request), null);
+		},
+		{threadId: thread.id},
+	);
+	t.is(answered, 0);
+	t.is(cancelled, 0);
+	t.deepEqual(f.calls, []);
+});
+
+for (const change of ['epoch', 'connection'] as const) {
+	test(`CHAT-17 a changed ${change} cannot grant an active permission`, async t => {
+		const f = await waitingThread(t);
+		const original = f.supervisor.getConnection.bind(f.supervisor);
+		if (change === 'epoch')
+			f.service.projectOperations.invalidate(f.project.id);
+		else {
+			const replacement = {...f.connection};
+			f.supervisor.getConnection = () => replacement;
+		}
+		let answered = 0;
+		const answer = f.supervisor.answerPermission.bind(f.supervisor);
+		f.supervisor.answerPermission = (...args) => {
+			answered++;
+			return answer(...args);
+		};
+		try {
+			await t.throwsAsync(
+				f.service.answerThreadPermission({
+					...f.target,
+					requestId: f.requests[0].id,
+					optionId: 'allow',
+				}),
+				{instanceOf: IpcFailure, code: 'AGENT_UNAVAILABLE'},
+			);
+			t.is(answered, 0);
+		} finally {
+			f.supervisor.getConnection = original;
+		}
 	});
 }
 
@@ -2431,8 +2806,19 @@ for (const action of ['rename', 'delete'] as const) {
 			code: 'AGENT_UNAVAILABLE',
 		});
 		await entered.promise;
-		await service.detach([project]);
+		let detached = false;
+		const detaching = service.detach([project]).then(() => {
+			detached = true;
+		});
+		await Promise.resolve();
+		await Promise.resolve();
+		t.false(detached);
+		await t.throwsAsync(
+			service.runProjectOperation(project.id, 'set-mode', async () => {}),
+			{instanceOf: IpcFailure, code: 'BUSY'},
+		);
 		answer.resolve();
+		await detaching;
 		await rejected;
 		t.deepEqual(store.threads.get(project.id, thread.id), thread);
 		t.false(store.threads.getTitleManuallySet(project.id, thread.id));
@@ -2460,6 +2846,53 @@ test('deleting history needs a separate main confirmation and cancellation start
 	);
 	t.deepEqual(store.threads.get(project.id, thread.id), thread);
 	t.deepEqual(calls, ['confirm-delete']);
+});
+
+test('CHAT-17 an open history dialog blocks project mutations but leaves metadata readable and shutdown non-blocking', async t => {
+	const f = await fixture(t);
+	const thread = seed(f.project);
+	const peer = seed(f.project, {nanocoderSessionId: null});
+	f.store.threads.save(thread);
+	f.store.threads.save(peer);
+	const entered = deferred<void>();
+	const answer = deferred<boolean>();
+	f.confirmDeletion(() => {
+		entered.resolve();
+		return answer.promise;
+	});
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const peerRequest = {...request, threadId: peer.id};
+	const deletion = f.service.deleteThreadHistory(request);
+	const refused = t.throwsAsync(deletion, {code: 'AGENT_UNAVAILABLE'});
+	await entered.promise;
+	for (const attempt of [
+		() =>
+			f.service.runProjectOperation(f.project.id, 'set-mode', async () => {}),
+		() =>
+			f.service.runProjectOperation(f.project.id, 'set-config', async () => {}),
+		() => f.service.archiveThread({...peerRequest, archived: true}),
+		() => f.service.removeThread(peerRequest),
+		() => f.service.renameThread({...peerRequest, title: 'not saved'}),
+		() => f.service.promptThread({...peerRequest, text: 'not sent'}),
+	]) {
+		await t.throwsAsync(attempt(), {instanceOf: IpcFailure, code: 'BUSY'});
+	}
+	t.is((await f.service.getThreadSnapshot(request)).thread.id, thread.id);
+	t.is(
+		(
+			await f.service.listThreads({
+				projectId: f.project.id,
+				archiveState: 'active',
+			})
+		).length,
+		2,
+	);
+	await f.service.detach([f.project]);
+	await refused;
+	t.deepEqual(f.calls, ['confirm-delete']);
+	answer.resolve(true);
+	t.deepEqual(f.store.threads.get(f.project.id, thread.id), thread);
+	t.deepEqual(f.calls, ['confirm-delete']);
 });
 
 test('accepted history deletion uses the saved session and removes metadata only after success (CHAT-14, DATA-07)', async t => {

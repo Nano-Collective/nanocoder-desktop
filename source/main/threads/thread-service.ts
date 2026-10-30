@@ -1,7 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import type {ThreadService} from '@/main/ipc/workspace-services';
-import {untilAborted} from '@/main/nanocoder/abort';
 import {
 	type NanocoderConnection,
 	NanocoderFailure,
@@ -20,6 +19,7 @@ import {
 } from '@/main/store/validation';
 import {
 	createProjectOperations,
+	type MetadataOperationLease,
 	type ProjectOperationLease,
 } from '@/main/threads/project-operations';
 import type {
@@ -237,6 +237,32 @@ export function createThreadService(
 		);
 		return trackOperation(projectId, task);
 	};
+	const runMetadataOperation: typeof projectOperations.runMetadataOperation = (
+		projectId,
+		kind,
+		work,
+		scope = {},
+	) =>
+		trackOperation(
+			projectId,
+			projectOperations.runMetadataOperation(projectId, kind, work, {
+				...scope,
+				signal: scope.signal
+					? AbortSignal.any([attachment.signal, scope.signal])
+					: attachment.signal,
+			}),
+		);
+	const runConfirmationOperation: typeof projectOperations.runConfirmationOperation =
+		(projectId, kind, work, scope = {}) =>
+			trackOperation(
+				projectId,
+				projectOperations.runConfirmationOperation(projectId, kind, work, {
+					...scope,
+					signal: scope.signal
+						? AbortSignal.any([attachment.signal, scope.signal])
+						: attachment.signal,
+				}),
+			);
 	const now = () => (options.now?.() ?? new Date()).toISOString();
 	const presentThread = (thread: ThreadInfo) => {
 		const connection = connectionBinding(thread.projectId);
@@ -438,8 +464,14 @@ export function createThreadService(
 		}
 		return project;
 	};
-	const removeMetadata = (request: ThreadRequest) => {
-		options.store.threads.remove(request.projectId, request.threadId);
+	const removeMetadata = (
+		request: ThreadRequest,
+		lease: ProjectOperationLease | MetadataOperationLease,
+	) => {
+		projectOperations.removeOwnedThread(lease, () => {
+			options.store.threads.remove(request.projectId, request.threadId);
+		});
+		projectOperations.invalidateThread(request.projectId, request.threadId);
 		if (currentSessions.get(request.projectId)?.thread.id === request.threadId)
 			currentSessions.delete(request.projectId);
 		snapshots.delete(request.threadId);
@@ -898,142 +930,189 @@ export function createThreadService(
 				return structuredClone(snapshot(request));
 			}),
 		getThreadSnapshot: async request => structuredClone(snapshot(request)),
-		renameThread: request =>
-			operation(request.projectId, async signal => {
-				const patch = validate(threadTitlePatch, {
-					...request,
-					manuallySet: true,
-				});
-				const thread = getThread(request);
-				assertMutable(thread);
-				const sessionId = thread.nanocoderSessionId;
-				if (!sessionId)
-					return presentThread(
-						publishThread(options.store.threads.setTitle(patch)),
-					);
-				const project = getProject(thread.projectId);
-				const unchanged = () => {
-					const current = getThread(request);
-					const owner = getProject(thread.projectId);
-					if (
-						current.nanocoderSessionId !== sessionId ||
-						current.sessionCwd !== thread.sessionCwd ||
-						owner.canonicalRoot !== project.canonicalRoot ||
-						owner.sessionCwd !== project.sessionCwd
-					)
+		renameThread: async request => {
+			const patch = validate(threadTitlePatch, {
+				...request,
+				manuallySet: true,
+			});
+			const initial = getThread(request);
+			if (initial.nanocoderSessionId === null)
+				return runMetadataOperation(
+					request.projectId,
+					'rename-unsaved-thread',
+					async lease => {
+						assertMutable(getThread(request));
+						projectOperations.assertMetadataCurrent(lease);
+						return presentThread(
+							publishThread(options.store.threads.setTitle(patch)),
+						);
+					},
+					{threadId: request.threadId},
+				);
+			return runProjectOperation(
+				request.projectId,
+				'rename-thread',
+				async lease => {
+					const thread = getThread(request);
+					assertMutable(thread);
+					const sessionId = thread.nanocoderSessionId;
+					if (!sessionId)
 						throw new IpcFailure('DENIED', 'The thread session changed');
-					return current;
-				};
-				mutations.add(thread.id);
-				try {
-					const owner = await validateProject(unchanged());
-					signal.throwIfAborted();
-					await options.supervisor.ensureProcess(owner);
-					signal.throwIfAborted();
-					await validateProject(unchanged());
-					signal.throwIfAborted();
-					const gate = options.supervisor.getCapabilityGates(owner.id).features
-						.rename;
-					if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
-					const connection = options.supervisor.getConnection(owner.id);
-					const title = await untilAborted(
-						connection.renameSession(sessionId, patch.title),
-						signal,
-					);
-					signal.throwIfAborted();
-					await validateProject(unchanged());
-					signal.throwIfAborted();
-					if (options.supervisor.getConnection(owner.id) !== connection)
-						throw new IpcFailure(
-							'AGENT_UNAVAILABLE',
-							'The project process changed',
+					const project = getProject(thread.projectId);
+					const unchanged = () => {
+						const current = getThread(request);
+						const owner = getProject(thread.projectId);
+						if (
+							current.nanocoderSessionId !== sessionId ||
+							current.sessionCwd !== thread.sessionCwd ||
+							owner.canonicalRoot !== project.canonicalRoot ||
+							owner.sessionCwd !== project.sessionCwd
+						)
+							throw new IpcFailure('DENIED', 'The thread session changed');
+						return current;
+					};
+					mutations.add(thread.id);
+					try {
+						const owner = await projectOperations.runOwnedStep(lease, () =>
+							validateProject(unchanged()),
 						);
-					return presentThread(
-						publishThread(options.store.threads.setTitle({...patch, title})),
-					);
-				} catch (error) {
-					return failure(error);
-				} finally {
-					if (!signal.aborted) mutations.delete(thread.id);
-				}
-			}),
-		archiveThread: async request => {
-			const previous = getThread(request);
-			assertMutable(previous);
-			const thread = {
-				...previous,
-				archiveState: request.archived ? 'archived' : 'active',
-			} satisfies ThreadInfo;
-			saveThread(thread);
-			return presentThread(thread);
+						await projectOperations.runOwnedStep(lease, () =>
+							options.supervisor.ensureProcess(owner),
+						);
+						await projectOperations.runOwnedStep(lease, () =>
+							validateProject(unchanged()),
+						);
+						const gate = options.supervisor.getCapabilityGates(owner.id)
+							.features.rename;
+						if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
+						const connection = options.supervisor.getConnection(owner.id);
+						projectOperations.bindConnection(lease, connection);
+						const title = await projectOperations.runOwnedStep(lease, () =>
+							connection.renameSession(sessionId, patch.title),
+						);
+						await projectOperations.runOwnedStep(lease, () =>
+							validateProject(unchanged()),
+						);
+						return presentThread(
+							publishThread(options.store.threads.setTitle({...patch, title})),
+						);
+					} catch (error) {
+						return failure(error);
+					} finally {
+						mutations.delete(thread.id);
+					}
+				},
+				{threadId: request.threadId},
+			);
 		},
-		removeThread: async request => {
-			assertMutable(getThread(request));
-			removeMetadata(request);
-			return null;
-		},
+		archiveThread: request =>
+			runMetadataOperation(
+				request.projectId,
+				'archive-thread',
+				async lease => {
+					const previous = getThread(request);
+					assertMutable(previous);
+					projectOperations.assertMetadataCurrent(lease);
+					const thread = {
+						...previous,
+						archiveState: request.archived ? 'archived' : 'active',
+					} satisfies ThreadInfo;
+					saveThread(thread);
+					return presentThread(thread);
+				},
+				{threadId: request.threadId},
+			),
+		removeThread: request =>
+			runMetadataOperation(
+				request.projectId,
+				'remove-thread',
+				async lease => {
+					assertMutable(getThread(request));
+					removeMetadata(request, lease);
+					return null;
+				},
+				{threadId: request.threadId},
+			),
 		deleteThreadHistory: request =>
-			operation(request.projectId, async signal => {
-				const thread = getThread(request);
-				assertMutable(thread);
-				const project = getProject(thread.projectId);
-				const sessionId = thread.nanocoderSessionId;
-				if (!sessionId)
-					throw new IpcFailure(
-						'UNSUPPORTED',
-						'This thread has no Nanocoder history; remove its desktop row instead',
-					);
-				const unchanged = () => {
-					const current = getThread(request);
-					const owner = getProject(thread.projectId);
-					if (
-						current.nanocoderSessionId !== sessionId ||
-						current.sessionCwd !== thread.sessionCwd ||
-						current.title !== thread.title ||
-						owner.canonicalRoot !== project.canonicalRoot ||
-						owner.sessionCwd !== project.sessionCwd
-					)
+			runConfirmationOperation(
+				request.projectId,
+				'delete-history',
+				async pendingLease => {
+					const thread = getThread(request);
+					assertMutable(thread);
+					const project = getProject(thread.projectId);
+					const sessionId = thread.nanocoderSessionId;
+					if (!sessionId)
 						throw new IpcFailure(
-							'DENIED',
-							'The thread changed; confirm its history deletion again',
+							'UNSUPPORTED',
+							'This thread has no Nanocoder history; remove its desktop row instead',
 						);
-					return current;
-				};
-				mutations.add(thread.id);
-				try {
-					const confirmed = await untilAborted(
-						Promise.resolve(
-							options.confirmDeleteHistory?.(
-								structuredClone({project, thread}),
-							),
-						),
-						signal,
-					);
-					signal.throwIfAborted();
-					if (confirmed !== true) return {status: 'cancelled'};
-					const owner = await validateProject(unchanged());
-					signal.throwIfAborted();
-					await options.supervisor.ensureProcess(owner);
-					signal.throwIfAborted();
-					await validateProject(unchanged());
-					signal.throwIfAborted();
-					const gate = options.supervisor.getCapabilityGates(owner.id).features
-						.delete;
-					if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
-					await untilAborted(
-						options.supervisor.getConnection(owner.id).deleteSession(sessionId),
-						signal,
-					);
-					signal.throwIfAborted();
-					unchanged();
-					removeMetadata(request);
-					return {status: 'deleted'};
-				} catch (error) {
-					return failure(error);
-				} finally {
-					if (!signal.aborted) mutations.delete(thread.id);
-				}
-			}),
+					const unchanged = () => {
+						const current = getThread(request);
+						const owner = getProject(thread.projectId);
+						if (
+							current.nanocoderSessionId !== sessionId ||
+							current.sessionCwd !== thread.sessionCwd ||
+							current.title !== thread.title ||
+							owner.canonicalRoot !== project.canonicalRoot ||
+							owner.sessionCwd !== project.sessionCwd
+						)
+							throw new IpcFailure(
+								'DENIED',
+								'The thread changed; confirm its history deletion again',
+							);
+						return current;
+					};
+					mutations.add(thread.id);
+					try {
+						const confirmed = await projectOperations.runConfirmationStep(
+							pendingLease,
+							() =>
+								Promise.resolve(
+									options.confirmDeleteHistory?.(
+										structuredClone({project, thread}),
+									),
+								),
+						);
+						if (confirmed !== true) return {status: 'cancelled' as const};
+						unchanged();
+						const lease = projectOperations.confirmExecution(pendingLease);
+						const active = {lease, threadId: thread.id};
+						activeLeases.set(thread.projectId, active);
+						try {
+							const owner = await projectOperations.runOwnedStep(lease, () =>
+								validateProject(unchanged()),
+							);
+							await projectOperations.runOwnedStep(lease, () =>
+								options.supervisor.ensureProcess(owner),
+							);
+							await projectOperations.runOwnedStep(lease, () =>
+								validateProject(unchanged()),
+							);
+							const gate = options.supervisor.getCapabilityGates(owner.id)
+								.features.delete;
+							if (!gate.enabled)
+								throw new IpcFailure('UNSUPPORTED', gate.reason);
+							const connection = options.supervisor.getConnection(owner.id);
+							projectOperations.bindConnection(lease, connection);
+							await projectOperations.runOwnedStep(lease, () =>
+								connection.deleteSession(sessionId),
+							);
+							unchanged();
+							removeMetadata(request, lease);
+							return {status: 'deleted' as const};
+						} finally {
+							if (activeLeases.get(thread.projectId) === active)
+								activeLeases.delete(thread.projectId);
+						}
+					} catch (error) {
+						return failure(error);
+					} finally {
+						mutations.delete(thread.id);
+					}
+				},
+				{threadId: request.threadId},
+			),
 		promptThread: async request => {
 			const scope = attachment.signal;
 			const requestedMode = getThread(request).mode;
@@ -1279,21 +1358,31 @@ export function createThreadService(
 		},
 		cancelThread: async request => {
 			const thread = getThread(request);
+			const owner = activeLeases.get(thread.projectId);
+			if (owner?.threadId !== thread.id || owner.lease.kind !== 'prompt')
+				return null;
 			const sessionId = thread.nanocoderSessionId;
 			const active = options.supervisor.getState(
 				thread.projectId,
 			).activeThreadId;
 			try {
 				if (sessionId && active === sessionId) {
-					await options.supervisor.cancel(thread.projectId, sessionId);
+					await projectOperations.runCancellationStep(owner.lease, () =>
+						options.supervisor.cancel(thread.projectId, sessionId),
+					);
 				} else if (
 					active === null &&
 					pending.get(thread.projectId) === thread.id
 				) {
 					const preparation = preparationAborts.get(thread.projectId);
 					if (preparation?.threadId === thread.id && !preparation.turnStarted) {
-						preparation.abort.abort(new PreparationCancelled());
-						await options.supervisor.stop(thread.projectId);
+						await projectOperations.runCancellationStep(
+							owner.lease,
+							async () => {
+								preparation.abort.abort(new PreparationCancelled());
+								await options.supervisor.stop(thread.projectId);
+							},
+						);
 					}
 				}
 			} catch (error) {
@@ -1304,6 +1393,7 @@ export function createThreadService(
 		setThreadMode: unavailable,
 		answerThreadPermission: async request => {
 			const thread = getThread(request);
+			const active = activeLeases.get(thread.projectId);
 			const sessionId = thread.nanocoderSessionId;
 			const denied = () =>
 				new IpcFailure(
@@ -1311,31 +1401,37 @@ export function createThreadService(
 					'This permission request is not waiting for this thread',
 				);
 			if (
+				active?.threadId !== thread.id ||
+				active.lease.kind !== 'prompt' ||
 				!sessionId ||
 				options.supervisor.getState(thread.projectId).activeThreadId !==
 					sessionId
 			)
 				throw denied();
-			const owner = await validateProject(thread);
-			const current = getThread(request);
-			const project = getProject(thread.projectId);
-			if (
-				!project.trusted ||
-				current.nanocoderSessionId !== sessionId ||
-				current.sessionCwd !== thread.sessionCwd ||
-				project.canonicalRoot !== owner.canonicalRoot ||
-				project.sessionCwd !== owner.sessionCwd ||
-				options.supervisor.getState(thread.projectId).activeThreadId !==
-					sessionId ||
-				!options.supervisor.answerPermission(
-					thread.projectId,
-					sessionId,
-					request.requestId,
-					request.optionId,
+			return projectOperations.runOwnedStep(active.lease, async () => {
+				const owner = await validateProject(thread);
+				projectOperations.assertCurrent(active.lease);
+				const current = getThread(request);
+				const project = getProject(thread.projectId);
+				if (
+					activeLeases.get(thread.projectId) !== active ||
+					!project.trusted ||
+					current.nanocoderSessionId !== sessionId ||
+					current.sessionCwd !== thread.sessionCwd ||
+					project.canonicalRoot !== owner.canonicalRoot ||
+					project.sessionCwd !== owner.sessionCwd ||
+					options.supervisor.getState(thread.projectId).activeThreadId !==
+						sessionId ||
+					!options.supervisor.answerPermission(
+						thread.projectId,
+						sessionId,
+						request.requestId,
+						request.optionId,
+					)
 				)
-			)
-				throw denied();
-			return null;
+					throw denied();
+				return null;
+			});
 		},
 		discoverSessions: unavailable,
 		importSession: unavailable,

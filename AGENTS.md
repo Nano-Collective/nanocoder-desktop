@@ -51,7 +51,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/acp-client.ts` | Starts `nanocoder --acp` in the project root, sends `initialize`, and opens or resumes sessions with their mode set |
 | `source/main/nanocoder/session-title.ts` | Bounded, allowlisted parsing for main-only Nanocoder title notifications |
 | `source/main/threads/thread-service.ts` | Metadata-first threads, mapped transient events, main-only activity/recovery/detach adapters and separately confirmed history deletion |
-| `source/main/threads/project-operations.ts`, `planning/project-operations.md` | Shared main-only leases, ThreadService preparation/prompt/recovery hooks, live-mode projection and detach settlement barriers |
+| `source/main/threads/project-operations.ts`, `planning/project-operations.md` | Shared branded execution/metadata/confirmation leases, owned thread mutations, active-turn exceptions and preparation/recovery/detach settlement barriers |
 | `source/main/nanocoder/trust.ts` | Reads Nanocoder's trust refusals and runs the short trust launch (`DEC-30`) |
 | `source/main/nanocoder/open-project.ts` | Connects, asks before trusting a folder, then opens or resumes a session in the starting mode |
 | `source/main/nanocoder/protocol-stream.ts` | Reads stdout as ACP only; anything else ends the connection |

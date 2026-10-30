@@ -3,8 +3,9 @@
 Phase 1.8 foundation for `CHAT-17`, `ACP-06` and phase 1.9 controls. The
 `createProjectOperations` authority in `source/main/threads/project-operations.ts`
 has focused test-first coverage. ThreadService now shares one authority across
-prompt preparation/turns, history open and recovery, with owned control hooks and
-detach settlement. It adds no IPC or database schema and never creates a session
+prompt preparation/turns, history open, recovery and ordinary thread mutations,
+with owned control hooks, active-turn exceptions and detach settlement. It adds
+no IPC or database schema and never creates a session
 before first send. The remaining phase 1.8 work is not accepted by this checkpoint.
 
 ## One authority
@@ -64,11 +65,65 @@ choice and prompt/terminal settlement. Await the owned steps. Controls use the
 same helpers, not a public entry that reacquires. A nested public acquisition
 receives BUSY, rather than waiting on itself.
 
-Permission answers and cancellation retain their existing active-turn owner and
-offered-option checks; they never acquire a competing slot. The authority can
-retain an owned cancellation step after the prompt returns. The remaining
-legacy mutation/cancel and project-lifecycle integration is follow-up phase 1.8
-work, not a claimed part of this preparation-hook checkpoint.
+Permission answers require the exact current prompt lease, thread, saved session
+and connection, as well as an offered request/option. They use `runOwnedStep`
+without acquiring another slot. A mode/config or recovery holder cannot answer
+for a merely matching upstream active-session ID.
+
+Cancellation uses `runCancellationStep` on that same prompt owner, never a new
+acquisition. It keeps the slot through the real cancel acknowledgement or child
+stop, even after prompt terminal delivery. Revoked trust cannot prevent stopping
+the exact old owner, but root/epoch/thread/session changes and a replacement
+connection still refuse. The stopping connection may disappear; cancellation
+cannot follow it into a new connection. Idle/wrong-thread cancellation remains a
+local no-op. Preparation cancellation holds both unfinished hooks and child stop.
+
+## Metadata mutations and history confirmation
+
+`runMetadataOperation` uses the same slot, root/cwd snapshots, epoch, abort,
+thread/session checks and settlement cleanup. Its distinct private-symbol
+`MetadataOperationLease` cannot enter execution helpers in TypeScript or at
+runtime. `assertCurrent`, `bindThread`, `bindSession`, `bindConnection`,
+`runOwnedStep`, `runCancellationStep` and execution promotion refuse it.
+Acquisition itself can bind an existing metadata row; this grants no ACP access.
+
+Only archive, remove and rename of an unsaved thread use this path. They remain
+available on untrusted/offline projects without launching or preparing
+Nanocoder, and do not require the old thread cwd to match a relocated project
+root. Saved-session rename keeps its execution trust/root and capability checks.
+Rename and upstream deletion now await their actual ACP settlements, not an
+abort race that would release the slot early.
+
+History deletion first uses `runConfirmationOperation` with a distinct
+`PendingProjectOperationLease`. It cannot use execution/binding/removal helpers.
+This preserves native confirmation and a process-free `cancelled` result on an
+untrusted/offline project. `runConfirmationStep` uses `abort.ts` to abandon a
+pending native answer after invalidation, without blocking shutdown or allowing
+a late answer to launch anything. Native consent itself is not an ACP settlement.
+
+Acceptance calls `confirmExecution` on the same reservation, without releasing
+or reacquiring it. Promotion rechecks root/cwd, epoch, abort, trust and the bound
+thread/session; it invalidates the old pending token. Native canonical-path and
+capability checks still run before ACP deletion. Declining returns `cancelled`
+without launching or promoting. An automatic title change does not turn a
+declined confirmation into a deletion error.
+
+While the dialog is open, same-project mode/config, send/resume/recovery,
+archive/remove/rename and another history deletion receive immediate `BUSY`.
+Lists, snapshots, drafts, new unsaved metadata rows and metadata-only selection
+remain available. A dialog cannot reserve over an already active prompt:
+history deletion receives `BUSY` before showing consent. Active permission and
+cancel exceptions never acquire another slot, and an open dialog in another
+project cannot block them.
+
+`removeOwnedThread` validates its exact owner before a synchronous data-only
+removal callback, verifies that the bound row is gone, and records terminal
+completion. Both removal paths then invalidate that exact thread and clear
+memory/UI metadata. Only that proven completed removal may return its successful
+result after its own invalidation; this does not revive the token. Further
+execution/metadata helper calls still refuse, an externally removed row still
+returns `NOT_FOUND`, and a reappearing row cannot pass completion. All registered
+ACP/child settlements still finish before releasing the slot.
 
 ## Optional main-only control dependencies
 
@@ -131,7 +186,8 @@ Detach and disposal invalidate composed operations; detach registers each child
 shutdown promise before cleanup can release its slot. Broader composition must
 also call invalidation for relocation/root replacement,
 restart/connection replacement, project deletion/trust revocation and disposal.
-Its thread removal/history deletion paths invalidate the exact owning thread.
+ThreadService's removal/history deletion paths invalidate the exact owning
+thread after the owned metadata removal completes.
 Register any child shutdown promise when invalidating; the caller still owns
 reporting shutdown errors.
 
