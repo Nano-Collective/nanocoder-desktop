@@ -26,6 +26,14 @@ The temporary technical gate publishes prompt metadata through its existing even
 
 `applyEvents` makes one transcript update per delivery. Untouched settled rows keep object identity. Rows and agent Markdown are memoised. `ConversationStream` accepts plain transcript/running props and an approval child slot; it does not own a desktop capability.
 
+## Polite stream announcements
+
+`stream-announcements.tsx` implements `A11Y-04` and `A11Y-05` outside the transcript list. Its polite, atomic live node announces started, waiting for approval, completed, failed, cancelled and interrupted states. Completed agent messages get a plain-text preview of at most 160 Unicode characters, including an ellipsis when needed. Preview work reads at most 4,000 input code units and omits code fences, inline code, Markdown link targets and HTML tags. Reasoning, tool rows, permission details and token chunks are never announcement inputs.
+
+An injected clock limits new speech to one message per second, starting only after the live-node write is acknowledged. A bounded eight-message queue survives modal changes and disposal cancels pending timers and frame callbacks. An authoritative outcome replaces a still-queued implicit interruption. A message finishes when another row follows it or the turn completes; replayed idle history stays silent.
+
+One persistent node moves between the normal stream host and the open native dialog. Its text and identity survive the move, with no rewrite of delivered speech. New nonempty text waits for two settled animation frames after the last move. The existing modal approval-count region owns approval speech while the palette or shortcut sheet is open, so the stream suppresses queued waiting announcements and clears withdrawn waiting text before moving its node into the dialog. Announcements never move focus or animate; reduced motion does not turn speech off.
+
 ## Markdown and commands
 
 Only `AgentMarkdown` imports exactly pinned `react-markdown` 10.1.0. There are no added remark/rehype plugins. CommonMark headings, lists, blockquotes and code render; raw HTML is skipped, all images are text placeholders and all links are inert spans with their targets removed. There is no external-link IPC or automatic navigation. This small module can be replaced without changing the stream contract.
@@ -40,4 +48,6 @@ Unit tests cover mapping, patch semantics, metadata projection/refusal, project/
 
 `e2e/streaming.e2e.ts` drives a monotonic fake stream, asserts the achieved rate is at least 100 updates/sec and measures maximum input-to-frame, scroll-to-frame, frame gap and MessageChannel event-loop delay against 100ms. It checks ordered content, memory-only drafts, native disclosure keyboard focus, reduced-motion cursor/spinner, both themes and 1240/1020/840 widths. Condition/event waits replace fixed sleeps.
 
-The UI uses existing design tokens and preserves known design contrast gaps rather than changing designer-owned values. Full platform screen-reader acceptance, throttled stream announcements, advanced subagent controls and main-owned external-link navigation remain later work. No transcript, tool output or resource body is persisted by the desktop.
+The stream-announcement unit tests use injected time and frame callbacks, without sleeps. The dedicated built-app tests check native-dialog moves in Chromium's accessibility tree, focus retention, approval-count ownership and terminal outcomes. The `PERF-04` stream probe also limits announcement writes during its 300 updates. Full platform screen-reader acceptance, including VoiceOver's handling of native-dialog moves, still needs the manual protocol.
+
+The UI uses existing design tokens and preserves known design contrast gaps rather than changing designer-owned values. Full platform screen-reader acceptance, advanced subagent controls and main-owned external-link navigation remain later work. No transcript, tool output or resource body is persisted by the desktop.
