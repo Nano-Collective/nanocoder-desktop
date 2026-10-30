@@ -298,6 +298,8 @@ test('focused approvals stay fully visible across turns and widths in both theme
 					right: rect.right,
 					top: rect.top,
 					bottom: rect.bottom,
+					scrollLeft: scroll?.left ?? 0,
+					scrollRight: scroll?.right ?? 0,
 					scrollTop: scroll?.top ?? 0,
 					scrollBottom: scroll?.bottom ?? 0,
 					windowHeight: innerHeight,
@@ -307,6 +309,8 @@ test('focused approvals stay fully visible across turns and widths in both theme
 			expect(geometry.overflow).toBe(false);
 			expect(geometry.left).toBeGreaterThanOrEqual(0);
 			expect(geometry.right).toBeLessThanOrEqual(width);
+			expect(geometry.left).toBeGreaterThanOrEqual(geometry.scrollLeft);
+			expect(geometry.right).toBeLessThanOrEqual(geometry.scrollRight);
 			expect(geometry.top).toBeGreaterThanOrEqual(0);
 			expect(geometry.bottom).toBeLessThanOrEqual(geometry.windowHeight);
 			expect(geometry.top).toBeGreaterThanOrEqual(geometry.scrollTop);
