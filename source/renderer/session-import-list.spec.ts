@@ -7,6 +7,7 @@ import {
 } from '@/renderer/session-import-list';
 
 const props: SessionImportListProps = {
+	projectId: 'project-a',
 	active: true,
 	sessions: [
 		{

@@ -218,10 +218,23 @@ ID with deterministic synthetic history and no transcript file. The test
 asserts unchanged execution UUIDs and safe rows, retained failure, unknown
 synthetic completion, exactly two inert cards and both-theme contrast checks.
 It also rejects a replacement `session/new` or `session/load` in that process.
-This positive proof does not complete missing-history or import
-acceptance.
+This positive proof does not by itself complete phase 1.8 acceptance.
 
-Still pending: view-only/retry actions; discovery/import;
-app-and-child restart continuation and full phase 1.8/SUB-05
-acceptance. Existing streaming and subagent views must retain their guards.
-SUB-08/OQ-03 and the pinned 1.31 versus provisional 1.32 OQ-02 are not waived.
+The phase 1.8 branch also implements explicit missing-history view-only and
+same-thread retry actions (`CHAT-09`, `ACP-19`), plus best-effort exact-root
+discovery and metadata-only import (`ACP-18`). Both-theme built tests cover
+the recovery actions, draft preservation, explicit same-session opening and
+import ownership. The pinned real-ACP discovery test also checks continued
+model context after the child restarts. See
+[`supervisor-recovery.e2e.ts`](../e2e/supervisor-recovery.e2e.ts),
+[`session-import.e2e.ts`](../e2e/session-import.e2e.ts) and
+[`session-discovery.acp.ts`](../source/main/nanocoder/session-discovery.acp.ts).
+
+Complete app-and-child restart continuation with a real model session and
+independent full phase 1.8/SUB-05 acceptance remain pending. Existing streaming
+and subagent views must retain their guards. `SUB-08` and `OQ-03` remain open.
+`OQ-02` also remains open: the provisional 1.31.x exception requires an explicit
+`NANOCODER_DESKTOP_CLI` override and fail-closed trust preflight; published npm
+1.31.0 remains unsupported. Raise the floor back to 1.32.0 when released and
+verified, as recorded in the
+[current version policy](acp-integration.md#provisional-prototype-policy-phase-14).

@@ -25,16 +25,16 @@ A sealed card never regains a stop while a later turn awaits its batched user bo
 
 ## SUB-05 remains pending
 
-`store/agent-runs.ts` uses the existing migration-001 table and accepts only desktop run UUID, thread UUID, null parent/child IDs, a bounded role identifier and a status enum. Project/thread joins and save-time ownership prevent reassignment. Reads are bounded to 200 rows. No prompt, task text, output, approval label, ACP packet or stderr is stored. There is no new migration, renderer capability, DesktopStore composition or application write yet. The Electron test asserts the real application's table is empty after fake delegations.
+`store/agent-runs.ts` uses the existing migration-001 table and accepts only desktop run UUID, thread UUID, null parent/child IDs, a bounded role identifier and a status enum. Project/thread joins and save-time ownership prevent reassignment. Reads are bounded to 200 rows. No prompt, task text, output, approval label, ACP packet or stderr is stored. Phase 1.8 adds migration 004 for structural turn/execution identities, composes the repositories in DesktopStore and owns atomic live/replay application writes in ThreadService. No renderer capability is added. The composed Electron tests check exact safe run rows and identity joins after fake delegations.
 
 `subagent-runs.ts` is a passive consumer, not a lifecycle owner. It accepts validated main-owned context with project, thread, session, turn, execution and tool-call identity, sequence, generation and explicit live/replay provenance. It refuses mismatched IDs, duplicate/stale sequence, scope reuse, removed/disposed owners, orphan updates and uncommitted replay. Synthetic replay cannot overwrite known failure/interruption with success. End-of-turn settlement marks unfinished work interrupted, failed or unknown, never inferred completed.
 
-Phase 1.8 must provide these before composing the observer:
+The phase 1.8 composition now provides these boundaries:
 
 1. A stable main-owned execution UUID for each `(project, thread, session, turn, toolCallId)`, reused during replay and restart. Reused tool IDs in different turns must get different UUIDs. No names or prefix parsing.
-2. Full replay staged and committed only after successful completion. The observer receives `replayCommitted` observations only after identity mapping is complete, with an epoch and truthful terminal evidence. Rollback, restart reconciliation and durable mapping are not implemented here.
+2. Full replay staged and committed only after successful completion. The observer receives `replayCommitted` observations only after identity mapping is complete, with an epoch and truthful terminal evidence. ThreadService and the store own rollback, restart reconciliation and durable mapping, not the passive consumer.
 3. Existing sequence and process-generation checks, stream flush before terminal/replay/approval/switch, and cleanup on removal, supersession and disposal. The observer's bookkeeping must be bounded or retired as the owner closes turns; its current maps are not a long-lived session cache.
-4. A transaction/migration decision for durable mapping owned by phase 1.8. The six existing metadata columns cannot preserve turn/tool identity by themselves. Until then `SUB-05` stays unchecked.
+4. Migration 004 and one identity/run transaction owned by phase 1.8. The six existing metadata columns do not preserve turn/tool identity by themselves. `SUB-05` stays unchecked until independent full integration acceptance.
 
 The [phase 1.8 replay checkpoint](durable-replay.md) now composes the required
 store repositories and atomic replay mapping in ThreadService, with safe
@@ -55,9 +55,12 @@ Previously reported completion is not styled as historical success. A built
 whole-app/child restart proof checks UUID reuse, retained failure, synthetic
 unknown outcome and no duplicate cards with the same temporary profile.
 
-This updates the historical uncomposed-module description above, not the
-`SUB-05` completion boundary. Complete app/child restart continuation, import/ambiguity
-integration and renderer replay/flush gates remain pending. The passive
+The branch also implements bounded replay and opaque renderer readiness gates,
+plus exact-root discovery and explicit metadata-only import. Source, both-theme
+built tests and pinned real-ACP checks cover their scoped refusals and
+continuation boundaries, as described in [durable replay](durable-replay.md).
+Complete app/child restart continuation with a real model session and
+independent full phase 1.8/SUB-05 acceptance remain pending. The passive
 modules alone do not prove those behaviours. `SUB-08` and `OQ-03` remain open
 until Nanocoder exposes stable child identity, relationships, results and
 per-child cancellation.

@@ -545,6 +545,43 @@ test('title metadata refuses cross-project targets and non-allowlisted fields (C
 	t.false(store.threads.getTitleManuallySet(owner.id, saved.id));
 });
 
+test('CHAT-08 current schema independently pins version four, migration ids and the exact metadata tables', async t => {
+	const f = fixture(t);
+	(await f.open()).close();
+	const db = f.driver.open(f.filename);
+	t.teardown(() => db.close());
+	t.is(db.prepare('PRAGMA user_version').get()?.user_version, 4);
+	t.deepEqual(
+		db
+			.prepare('SELECT version FROM schema_migration ORDER BY version')
+			.all()
+			.map(row => row.version),
+		[1, 2, 3, 4],
+	);
+	t.deepEqual(
+		db
+			.prepare(
+				"SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name",
+			)
+			.all()
+			.map(row => row.name),
+		[
+			'agent_run',
+			'browser_tab',
+			'project',
+			'schema_migration',
+			'setting',
+			'terminal_session',
+			'thread',
+			'thread_execution_identity',
+			'thread_history',
+			'thread_turn_identity',
+			'turn_summary',
+			'ui_state',
+		],
+	);
+});
+
 test('all migrated tables are introspected and have no content-bearing column', async t => {
 	const f = fixture(t);
 	(await f.open()).close();

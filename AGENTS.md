@@ -109,6 +109,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `e2e/streaming.e2e.ts` | Fake stream cadence, ordered rendering, input/scroll/frame response, safe resources and multi-width stream QA |
 | `e2e/replay-gates.e2e.ts` | Mounted replay success/failure refusals, editable unqueued drafts and 200-message post-replay usability timing (`PERF-03`) |
 | `e2e/session-import.e2e.ts` | Both-theme keyboard saved-session import, no ACP/selection/draft side effects, explicit same-session resume and project ownership |
+| `e2e/session-import-focus.e2e.ts`, `e2e/qa/session-import-focus-harness.ts` | Mounted pending-import composer/scope focus guards and preserved keyboard-only return in both themes |
 | `e2e/stream-announcements.e2e.ts`, `e2e/qa/stream-announcement-harness.ts` | Isolated fake-clock speech, accessibility-tree/modal-host checks and lifecycle/approval focus checks |
 | `e2e/subagents.e2e.ts`, `e2e/qa/subagent-harness.ts` | Fake delegation/approval/cancel, card focus and stop-owner/refusal tests; `subagents.acp.ts` checks real pinned ACP |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |

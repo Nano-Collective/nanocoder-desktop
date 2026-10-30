@@ -3,6 +3,7 @@ import {Button} from '@/renderer/ui';
 import type {DiscoveredSession} from '@/shared/ipc';
 
 export interface SessionImportListProps {
+	projectId: string | null;
 	active: boolean;
 	sessions: readonly DiscoveredSession[];
 	loading: boolean;
@@ -16,8 +17,9 @@ export interface SessionImportListProps {
 export function SessionImportList(
 	props: SessionImportListProps,
 ): React.ReactElement | null {
+	const region = React.useRef<HTMLElement>(null);
 	const refresh = React.useRef<HTMLButtonElement>(null);
-	const returnFocus = React.useRef(false);
+	const returnFocus = React.useRef<{projectId: string | null} | null>(null);
 	const reasonId = React.useId();
 	const reason = props.loading
 		? 'loading saved session metadata'
@@ -25,14 +27,26 @@ export function SessionImportList(
 			? 'waiting for the metadata import'
 			: props.disabledReason;
 	React.useLayoutEffect(() => {
-		if (returnFocus.current && props.importing === null) {
-			returnFocus.current = false;
+		const pending = returnFocus.current;
+		if (!pending) return;
+		if (pending.projectId !== props.projectId) {
+			returnFocus.current = null;
+			return;
+		}
+		if (props.importing !== null) return;
+		returnFocus.current = null;
+		const active = document.activeElement;
+		if (active === document.body || region.current?.contains(active)) {
 			refresh.current?.focus();
 		}
 	});
 	if (!props.active) return null;
 	return (
-		<section className="session-imports" aria-label="import saved sessions">
+		<section
+			ref={region}
+			className="session-imports"
+			aria-label="import saved sessions"
+		>
 			<h2 className="thread-group-heading">saved sessions</h2>
 			<Button
 				ref={refresh}
@@ -82,7 +96,7 @@ export function SessionImportList(
 							aria-describedby={reason ? reasonId : undefined}
 							disabled={Boolean(reason)}
 							onClick={() => {
-								returnFocus.current = true;
+								returnFocus.current = {projectId: props.projectId};
 								void props.onImport(session.id);
 							}}
 						>

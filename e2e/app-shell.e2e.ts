@@ -297,6 +297,11 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 					thread.locator('.thread-open'),
 					thread.locator('.thread-actions > summary'),
 				]),
+				page.getByRole('button', {name: 'refresh saved sessions', exact: true}),
+				page.getByRole('button', {
+					name: 'import saved session: existing saved session',
+					exact: true,
+				}),
 				open,
 				diagnostics,
 				input,
