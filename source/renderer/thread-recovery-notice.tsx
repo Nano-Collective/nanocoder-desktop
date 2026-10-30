@@ -17,7 +17,7 @@ export function ThreadRecoveryNotice({
 	onRetry,
 	onNew,
 	onRemove,
-}: ThreadRecoveryNoticeProps) {
+}: ThreadRecoveryNoticeProps): React.ReactElement | null {
 	const missing = thread.runState === 'view-only';
 	if (
 		!thread.nanocoderSessionId ||
@@ -27,35 +27,46 @@ export function ThreadRecoveryNotice({
 	return (
 		<Card
 			aria-label={missing ? 'view-only thread' : 'thread recovery'}
-			className={missing ? 'thread-view-only-notice' : ''}
+			className={`thread-recovery-notice${missing ? ' thread-view-only-notice' : ''}`}
 			variant={missing ? 'default' : 'failure'}
 		>
 			<p>
 				<span aria-hidden="true">{missing ? '◍' : '✕'}</span>{' '}
 				{missing ? 'view-only' : 'saved history could not be restored'}
 			</p>
-			<p>{thread.title}</p>
-			<p>
-				last active{' '}
-				<time dateTime={thread.lastActivityAt}>{thread.lastActivityAt}</time>
-			</p>
+			<h2>{thread.title}</h2>
+			<dl className="thread-recovery-metadata">
+				<dt>last active</dt>
+				<dd>
+					<time dateTime={thread.lastActivityAt}>
+						{new Date(thread.lastActivityAt).toLocaleString()}
+					</time>
+				</dd>
+			</dl>
 			<p>{thread.viewOnlyReason ?? REPLAY_MISSING_REASON}</p>
 			{pending && (
 				<p role="status">waiting for the thread request or native dialog</p>
 			)}
 			{missing ? (
-				<React.Fragment>
+				<div className="thread-recovery-actions">
 					<Button disabled={pending} onClick={onNew}>
 						start a new thread in this project
 					</Button>
 					<Button disabled={pending} onClick={onRemove}>
 						remove from desktop
 					</Button>
-				</React.Fragment>
+				</div>
 			) : (
 				<Button disabled={pending} onClick={onRetry}>
 					retry this thread
 				</Button>
+			)}
+			{missing && (
+				<p className="thread-recovery-note">
+					composer hidden. saved history is unavailable from Nanocoder. any
+					messages still shown are held in memory in this window only. removing
+					desktop metadata does not delete Nanocoder history.
+				</p>
 			)}
 		</Card>
 	);

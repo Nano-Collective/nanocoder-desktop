@@ -40,3 +40,22 @@
 .subagent-fallback {
 	margin-top: var(--spacing-md);
 }
+
+.subagent-run-card {
+	padding: 15px;
+	border-radius: 10px;
+	font-size: 11px;
+}
+.subagent-run-card header {
+	gap: 8px 12px;
+}
+.subagent-task {
+	flex: 1 1 100%;
+	font-size: 12px;
+}
+.subagent-run-card .ui-button {
+	font-size: 10px;
+}
+.subagent-fallback {
+	font-size: 10px;
+}

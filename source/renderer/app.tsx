@@ -1,8 +1,10 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
 import {ApprovalRequests} from '@/renderer/approval-requests';
+import logoUrl from '@/renderer/assets/nano-collective-avatar.png';
 import {Composer} from '@/renderer/composer';
 import {ConversationStream} from '@/renderer/conversation-stream';
+import type {FocusTarget} from '@/renderer/overlay-model';
 import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
 import {RecentProjects} from '@/renderer/recent-projects';
@@ -193,6 +195,7 @@ export function App() {
 	} | null>(null);
 	const renameDialog = useRef<HTMLDialogElement>(null);
 	const renameInput = useRef<HTMLInputElement>(null);
+	const renameReturn = useRef<HTMLElement | null>(null);
 	const renameId = renaming?.threadId;
 
 	useEffect(() => {
@@ -200,7 +203,25 @@ export function App() {
 		const dialog = renameDialog.current;
 		dialog?.showModal();
 		renameInput.current?.focus();
-		return () => dialog?.close();
+		return () => {
+			const restore =
+				document.activeElement === document.body ||
+				!!dialog?.contains(document.activeElement);
+			dialog?.close();
+			if (!restore || document.querySelector('dialog[open]')) return;
+			const target = renameReturn.current;
+			renameReturn.current = null;
+			if (
+				target?.isConnected &&
+				!target.matches(':disabled') &&
+				target.checkVisibility()
+			)
+				target.focus();
+			else
+				document
+					.querySelector<HTMLButtonElement>('[aria-label="command palette"]')
+					?.focus();
+		};
 	}, [renameId]);
 
 	useEffect(() => {
@@ -283,9 +304,20 @@ export function App() {
 	const cancel = async () => {
 		if (thread) await controls.cancel(thread.id);
 	};
-	const rename = (threadId: string) => {
+	const rename = (threadId: string, originalFocus?: FocusTarget) => {
 		const row = workspace.threads.find(row => row.id === threadId);
-		if (row && projectId) setRenaming({projectId, threadId, title: row.title});
+		if (row && projectId) {
+			const active = document.activeElement;
+			renameReturn.current =
+				originalFocus instanceof HTMLElement
+					? originalFocus
+					: active instanceof HTMLElement &&
+							active !== document.body &&
+							!active.closest('dialog')
+						? active
+						: null;
+			setRenaming({projectId, threadId, title: row.title});
+		}
 	};
 	const onNew = () => {
 		void controls.create();
@@ -362,10 +394,24 @@ export function App() {
 			]}
 		>
 			<AppShell
-				title={info?.name}
+				logoSrc={logoUrl}
+				title={info?.name ?? 'Nanocoder'}
+				threadTitle={thread?.title}
+				projectName={currentProject?.displayName}
+				sidebarFooter={
+					<>
+						<span>
+							Nanocoder{' '}
+							{agent?.version ??
+								(runtime?.ok ? runtime.value.version : 'not connected')}
+						</span>
+						<span>desktop {info?.version ?? 'pre-v0.1'}</span>
+					</>
+				}
 				palette={<PaletteButton />}
 				projectRail={
 					<RecentProjects
+						compact
 						{...projectControls}
 						pending={connecting || projectControls.pending}
 					/>
@@ -373,6 +419,7 @@ export function App() {
 				threadRail={
 					<>
 						<ThreadRail
+							key={`threads:${projectId}`}
 							projectId={projectId}
 							threads={workspace.threads}
 							activeThreadId={workspace.activeThreadId}
@@ -434,41 +481,105 @@ export function App() {
 				streamTools={
 					<>
 						<TrustFeedback feedback={projectControls.feedback} />
-						{info && (
-							<p className="gate-meta">
-								version {info.version}. pre-v0.1: an early build, with most
-								features still to come.
-							</p>
-						)}
-						<section className="gate-runtime" aria-label="Nanocoder runtime">
-							{runtime?.ok && (
+						{!thread && (
+							<section className="workspace-welcome" aria-label="get started">
+								<img src={logoUrl} alt="" width="56" height="56" />
+								<p className="workspace-eyebrow">
+									local-first workspace / pre-v0.1
+								</p>
+								<h2>what are you working on?</h2>
 								<p>
-									Nanocoder {runtime.value.version} at {runtime.value.cliPath},
-									on Node.js {runtime.value.nodeVersion} at{' '}
-									{runtime.value.nodePath}
+									open a project folder to start a Nanocoder thread. you’ll
+									review what can run before you trust the folder.
+								</p>
+								{runtime?.ok && (
+									<Button
+										onClick={connect}
+										disabled={connecting || projectControls.pending}
+									>
+										{connecting
+											? 'starting Nanocoder'
+											: 'open a project folder'}
+									</Button>
+								)}
+								{projectControls.projects.length > 0 && (
+									<section
+										className="welcome-recents"
+										aria-label="recent folders on welcome"
+									>
+										<h3>recent projects</h3>
+										{projectControls.projects.map(project => (
+											<div key={project.id}>
+												<span>
+													<span>{project.displayName}</span>
+													<small>{project.canonicalRoot}</small>
+												</span>
+												<Button
+													aria-label={`${project.availability === 'available' ? 'open' : 'locate'} recent project ${project.displayName}`}
+													disabled={connecting || projectControls.pending}
+													onClick={() =>
+														project.availability === 'available'
+															? projectControls.onOpen(project.id)
+															: projectControls.onLocate(project.id)
+													}
+												>
+													{project.availability === 'available'
+														? 'open'
+														: 'locate'}
+												</Button>
+											</div>
+										))}
+									</section>
+								)}
+							</section>
+						)}
+						<div className="workspace-setup">
+							{gates[projectId ?? '']?.versionPolicy.reason && (
+								<p className="workspace-setup-warning" role="status">
+									{gates[projectId ?? '']?.versionPolicy.reason}
 								</p>
 							)}
-							{runtime && !runtime.ok && (
-								<>
-									<p role="alert">{runtime.error.message}</p>
-									<Button onClick={checkRuntime}>check again</Button>
-								</>
-							)}
-							{runtime?.ok && (
-								<Button
-									onClick={connect}
-									disabled={connecting || projectControls.pending}
+							<div className="workspace-setup-actions">
+								<details
+									className="runtime-details"
+									open={runtime && !runtime.ok ? true : undefined}
 								>
-									{connecting ? 'starting Nanocoder' : 'open a project folder'}
-								</Button>
-							)}
-						</section>
-						{outcome?.status === 'connected' && (
-							<AgentDetails agent={outcome.agent} thread={thread} />
-						)}
-						{gates[projectId ?? ''] && (
-							<FeatureDetails gates={gates[projectId ?? '']} />
-						)}
+									<summary>runtime and setup details</summary>{' '}
+									<section
+										className="gate-runtime"
+										aria-label="Nanocoder runtime"
+									>
+										{runtime?.ok && (
+											<p>
+												Nanocoder {runtime.value.version} at{' '}
+												{runtime.value.cliPath}, on Node.js{' '}
+												{runtime.value.nodeVersion} at {runtime.value.nodePath}
+											</p>
+										)}
+										{runtime && !runtime.ok && (
+											<>
+												<p role="alert">{runtime.error.message}</p>
+												<Button onClick={checkRuntime}>check again</Button>
+											</>
+										)}
+									</section>
+									{outcome?.status === 'connected' && (
+										<AgentDetails agent={outcome.agent} thread={thread} />
+									)}
+									{gates[projectId ?? ''] && (
+										<FeatureDetails gates={gates[projectId ?? '']} />
+									)}
+								</details>
+								{thread && runtime?.ok && (
+									<Button
+										onClick={connect}
+										disabled={connecting || projectControls.pending}
+									>
+										open a project folder
+									</Button>
+								)}
+							</div>
+						</div>
 						<RecoveryTools
 							state={processState}
 							onRetry={async id => {
@@ -495,6 +606,20 @@ export function App() {
 						/>
 						{workspace.error && <p role="alert">{workspace.error}</p>}
 					</>
+				}
+				approvalShelf={
+					thread && (
+						<ApprovalRequests
+							key={`${projectId}:${thread.id}`}
+							requests={transcript.permissions}
+							mode={thread.mode}
+							busy={sending}
+							fallbackFocus={composerInput}
+							onAnswer={(id, optionId) =>
+								controls.answer(thread.id, id, optionId)
+							}
+						/>
+					)
 				}
 				composer={
 					outcome?.status === 'connected' &&
@@ -562,18 +687,7 @@ export function App() {
 									? 'failed'
 									: undefined
 						}
-					>
-						<ApprovalRequests
-							key={`${projectId}:${thread.id}`}
-							requests={transcript.permissions}
-							mode={thread.mode}
-							busy={sending}
-							fallbackFocus={composerInput}
-							onAnswer={(id, optionId) =>
-								controls.answer(thread.id, id, optionId)
-							}
-						/>
-					</ConversationStream>
+					/>
 				)}
 				{thread && (
 					<ThreadRecoveryNotice
@@ -619,11 +733,12 @@ export function App() {
 			{renaming && (
 				<dialog
 					ref={renameDialog}
-					className="overlay-dialog"
+					className="overlay-dialog rename-dialog"
 					aria-label="rename thread"
 					onCancel={() => setRenaming(null)}
 				>
 					<form
+						className="overlay-content"
 						onSubmit={event => {
 							event.preventDefault();
 							if (renaming.projectId !== projectId) return;
@@ -634,6 +749,11 @@ export function App() {
 								});
 						}}
 					>
+						<h2>rename thread</h2>
+						<p>
+							change this thread’s title. its conversation and project stay
+							unchanged.
+						</p>
 						<label>
 							thread title
 							<input
@@ -645,10 +765,15 @@ export function App() {
 								}
 							/>
 						</label>
-						<Button type="submit" disabled={pending || !renaming.title.trim()}>
-							save title
-						</Button>
-						<Button onClick={() => setRenaming(null)}>cancel</Button>
+						<div className="rename-dialog-actions">
+							<Button
+								type="submit"
+								disabled={pending || !renaming.title.trim()}
+							>
+								save title
+							</Button>
+							<Button onClick={() => setRenaming(null)}>cancel</Button>
+						</div>
 					</form>
 				</dialog>
 			)}

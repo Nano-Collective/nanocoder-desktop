@@ -109,6 +109,8 @@ test('no results remain keyboard safe', async () => {
 	const input = palette.getByRole('combobox');
 	await input.fill('no-matching-action');
 	await expect(palette.getByText('no matching commands')).toBeVisible();
+	await expect(input).toHaveAttribute('aria-expanded', 'false');
+	await expect(palette.getByRole('listbox')).toHaveCount(0);
 	await page.keyboard.press('ArrowDown');
 	await page.keyboard.press('Enter');
 	await expect(palette).toBeVisible();
@@ -186,7 +188,12 @@ test('overlays match both themes at every width and retain visible keyboard focu
 				exact: true,
 			});
 			await expect(palette).toHaveCSS('width', '520px');
-			await expect(palette).toHaveCSS('top', '72px');
+			const bounds = await palette.boundingBox();
+			expect(bounds?.y).toBeGreaterThanOrEqual(40);
+			expect((bounds?.y ?? 0) + (bounds?.height ?? 0)).toBeLessThanOrEqual(860);
+			expect(
+				Math.abs((bounds?.y ?? 0) + (bounds?.height ?? 0) / 2 - 450),
+			).toBeLessThan(1);
 			await expect(palette).toHaveCSS(
 				'box-shadow',
 				'rgba(0, 0, 0, 0.35) 0px 18px 48px 0px',
@@ -229,7 +236,7 @@ test('toast is polite, never focuses, honours reduced motion and automatically d
 	await expect(region).toHaveAttribute('aria-atomic', 'true');
 	await expect(toast).toBeVisible();
 	await expect(toast).toHaveCSS('transition-duration', '0s');
-	await expect(toast).toHaveCSS('border-left-width', '2px');
+	await expect(toast).toHaveCSS('border-left-width', '1px');
 	await expect(trigger).toBeFocused();
 	await expect(toast).toHaveCount(0);
 	await expect(trigger).toBeFocused();
@@ -268,8 +275,21 @@ test('palette adds opens and locates projects through the existing project contr
 		).toContainText(label);
 		await page.keyboard.press('Enter');
 	};
+	const showProjects = async () => {
+		const switcher = page.locator('.project-switcher');
+		await expect(
+			switcher.locator('.recent-projects-heading button'),
+		).toBeEnabled();
+		if (
+			!(await switcher.evaluate(
+				element => (element as HTMLDetailsElement).open,
+			))
+		)
+			await switcher.locator('summary').click();
+	};
 	await picker(folder);
 	await command('add project folder');
+	await showProjects();
 	await expect(
 		page.getByRole('region', {name: 'recent projects'}),
 	).toContainText(folder);
@@ -280,6 +300,7 @@ test('palette adds opens and locates projects through the existing project contr
 		page.getByRole('button', {name: 'add project folder', exact: true}),
 	).toBeEnabled();
 	await command('open project palette-project');
+	await showProjects();
 	await expect(
 		page.getByRole('status', {name: 'project trust feedback'}),
 	).toContainText('project ready: palette-project');
@@ -289,6 +310,10 @@ test('palette adds opens and locates projects through the existing project contr
 	await expect(page.getByRole('dialog')).toBeHidden();
 	renameSync(folder, moved);
 	await page.reload();
+	await expect(
+		page.locator('.project-switcher .recent-project-description'),
+	).toContainText('folder missing');
+	await showProjects();
 	await expect(
 		page.getByRole('region', {name: 'recent projects'}),
 	).toContainText('folder missing');
@@ -313,6 +338,7 @@ test('palette adds opens and locates projects through the existing project contr
 	await page.keyboard.press('Escape');
 	await picker(moved);
 	await command('locate project palette-project');
+	await showProjects();
 	await expect(
 		page.getByRole('status', {name: 'project trust feedback'}),
 	).toContainText('project ready: palette-project-moved');
@@ -407,6 +433,29 @@ test('Ctrl+K opens the palette on non-Mac platforms', async () => {
 	await page.keyboard.press('Escape');
 });
 
+test('pointer and keyboard keep exactly one palette result active without taking search focus', async () => {
+	const page = await app.firstWindow();
+	await page
+		.getByRole('button', {name: 'command palette', exact: true})
+		.click();
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	const input = palette.getByRole('combobox');
+	await input.fill('theme');
+	const options = palette.getByRole('option');
+	await options.nth(1).hover();
+	await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
+	await expect(
+		palette.locator('[role="option"][aria-selected="true"]'),
+	).toHaveCount(1);
+	await expect(input).toBeFocused();
+	await page.keyboard.press('ArrowDown');
+	await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true');
+	await expect(input).toBeFocused();
+	await page.keyboard.press('Escape');
+});
 for (const modal of ['closed', 'palette', 'shortcuts'] as const) {
 	test(`an async theme-save failure is announced once in the active layer with ${modal}`, async () => {
 		const page = await app.firstWindow();

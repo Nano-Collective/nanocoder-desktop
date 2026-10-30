@@ -2,20 +2,25 @@
 	position: relative;
 	min-width: 0;
 	overflow: hidden;
+	gap: 8px;
+	padding: 13px 13px 10px;
+	border-radius: 13px;
 }
 
 .composer .composer-inactive-control:disabled {
-	opacity: 0.5;
+	opacity: 1;
+	color: var(--colors-on-surface-muted);
 }
 
 .composer .composer-message {
 	display: flex;
 	align-items: flex-start;
-	gap: var(--spacing-md);
+	gap: 8px;
 }
 
 .composer-prompt,
-.composer .composer-pill.composer-mode {
+.composer .composer-pill.composer-mode,
+.composer .composer-send:not(:disabled) {
 	color: var(--colors-primary);
 }
 
@@ -24,13 +29,15 @@
 	flex: 1;
 	width: 100%;
 	min-width: 0;
-	min-height: 3.5em;
+	min-height: 53px;
 	max-height: 160px;
 	resize: vertical;
+	padding: 0 4px;
 	border: 0;
 	color: var(--colors-on-surface);
 	background: transparent;
 	font: inherit;
+	line-height: 1.7;
 }
 
 .composer textarea::placeholder {
@@ -41,52 +48,85 @@
 .composer .gate-hint {
 	margin: 0;
 	overflow-wrap: anywhere;
+	font-size: 9px;
 }
 
 .composer-control-rail {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: var(--spacing-md);
+	gap: 5px;
 	min-width: 0;
 }
 
 .composer .composer-pill {
 	display: flex;
 	align-items: center;
-	gap: var(--spacing-xs);
+	gap: 4px;
 	min-width: 0;
 	max-width: 100%;
-	padding: var(--spacing-xs) var(--spacing-md);
+	padding: 5px 7px;
 	border: 1px solid var(--colors-stroke);
-	border-radius: var(--components-composer-pill-rounded);
-	color: var(--components-composer-pill-text-color);
-	font-size: var(--components-composer-pill-font-size);
+	border-radius: 7px;
+	background: var(--colors-surface-elevated);
+	color: var(--colors-on-surface-muted);
+	font-size: 10px;
 }
 
+.composer-pill > span {
+	display: none;
+}
 .composer-pill select {
 	min-width: 0;
-	max-width: 240px;
+	max-width: 220px;
 	border: 0;
-	color: inherit;
-	background: var(--colors-surface-panel);
+	color: var(--colors-on-surface);
+	background: var(--colors-surface-elevated);
 	font: inherit;
 }
 
+.composer-mode select {
+	color: var(--colors-primary);
+}
+.composer-control-rail > .ui-button {
+	font-size: 10px;
+}
+.composer-control-rail > .composer-send {
+	margin-left: auto;
+}
 .composer-context {
 	border-style: dashed;
-	color: var(--colors-on-surface-muted);
 }
-
 .composer-context-gauge {
-	height: var(--components-context-gauge-height);
+	height: 2px;
 	overflow: hidden;
 }
-
 .composer-context-gauge > span {
 	display: block;
 	height: 100%;
-	background: var(--components-context-gauge-background-color);
+	background: var(--colors-primary);
+}
+
+.composer-options {
+	font-size: 9px;
+	color: var(--colors-on-surface-muted);
+}
+.composer-options > summary {
+	cursor: pointer;
+	min-height: 24px;
+}
+.composer-options .ui-button {
+	min-height: 28px;
+	font-size: 10px;
+	margin-top: 7px;
+}
+.composer-options .gate-hint {
+	margin-block: 4px;
+}
+.composer-footer-hint {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
 }
 
 .composer .sr-only {

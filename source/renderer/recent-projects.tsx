@@ -3,6 +3,7 @@ import {Button, Divider} from '@/renderer/ui';
 import type {ProjectInfo} from '@/shared/ipc';
 
 interface RecentProjectsProps {
+	compact?: boolean;
 	projects: readonly ProjectInfo[];
 	activeProjectId: string | null;
 	pending: boolean;
@@ -12,6 +13,7 @@ interface RecentProjectsProps {
 }
 
 export function RecentProjects({
+	compact = false,
 	projects,
 	activeProjectId,
 	pending,
@@ -19,7 +21,9 @@ export function RecentProjects({
 	onOpen,
 	onLocate,
 }: RecentProjectsProps): React.ReactElement {
-	return (
+	const switcher = React.useRef<HTMLDetailsElement>(null);
+	const selected = projects.find(project => project.id === activeProjectId);
+	const list = (
 		<section className="recent-projects" aria-label="recent projects">
 			<header className="recent-projects-heading">
 				<h2>recent projects</h2>
@@ -76,5 +80,39 @@ export function RecentProjects({
 				))}
 			</ol>
 		</section>
+	);
+	if (!compact) return list;
+	return (
+		<details
+			ref={switcher}
+			className="project-switcher"
+			open={!selected || undefined}
+		>
+			<summary aria-label="switch project">
+				<span className="project-initial" aria-hidden="true">
+					{selected?.displayName.slice(0, 1) ?? '⌗'}
+				</span>
+				<span className="project-switch-label">
+					<span>{selected?.displayName ?? 'choose a project'}</span>
+					<span className="project-switch-root">
+						{selected?.canonicalRoot ?? 'open a local folder'}
+					</span>
+				</span>
+				<span aria-hidden="true">▾</span>
+			</summary>
+			<div
+				className="project-switcher-menu"
+				onClick={event => {
+					if (
+						(event.target as Element).closest('button') &&
+						selected &&
+						switcher.current
+					)
+						switcher.current.open = false;
+				}}
+			>
+				{list}
+			</div>
+		</details>
 	);
 }

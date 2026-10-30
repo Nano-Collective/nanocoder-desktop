@@ -29,7 +29,7 @@ for (const theme of ['dark', 'light']) {
 }
 
 test('known-gap exceptions come from the design and stay within its ratios', t => {
-	t.is(knownGaps.length, 12);
+	t.is(knownGaps.length, 0);
 	for (const gap of knownGaps) {
 		const ratio = contrast(
 			themedColor(gap.foreground, gap.theme),
@@ -53,13 +53,13 @@ test('55% key hints need a design decision before they can be used', t => {
 	t.false(isKnownGap(hint, background, 'light'));
 });
 
-test('the light running badge pairing is covered by its listed design gap', t => {
+test('the approved light running badge pairing passes without an exception', t => {
 	const foreground = themedColor('success', 'light');
 	const background = themedColor('surface-panel', 'light');
 	t.true(
 		usedPairs.some(([fg, bg]) => fg === 'success' && bg === 'surface-panel'),
 	);
-	t.true(contrast(foreground, background) < 4.5);
-	t.true(isKnownGap(foreground, background, 'light'));
+	t.true(contrast(foreground, background) >= 4.5);
+	t.false(isKnownGap(foreground, background, 'light'));
 	t.true(contrast(themedColor('error', 'light'), background) >= 4.5);
 });

@@ -24,7 +24,9 @@ The temporary technical gate publishes prompt metadata through its existing even
 
 `createStreamBatcher` accepts a thread ID and ordered event arrays, schedules a cancellable 16ms delivery and exposes `flush`, `remove` and `dispose`. Contiguous events are batched without reordering interleaved thread queues. The owner flushes before terminal state, replay replacement, approval display/answer and thread changes. Cleanup cancels pending callbacks.
 
-`applyEvents` makes one transcript update per delivery. Untouched settled rows keep object identity. Rows and agent Markdown are memoised. `ConversationStream` accepts plain transcript/running props and an approval child slot; it does not own a desktop capability.
+`applyEvents` makes one transcript update per delivery. Untouched settled rows keep object identity. Rows and agent Markdown are memoised. `ConversationStream` accepts plain transcript/running props and an optional child slot; it does not own a desktop capability. In the `DEC-40` workspace, `App` mounts `ApprovalRequests` in AppShell's separate shelf above the composer, so a waiting decision cannot disappear into transcript scrollback. Request identity, shortcut checks and focus-return ownership are unchanged.
+
+Finished reasoning uses a native keyboard disclosure; live reasoning remains expanded. Routine completed tool details fold, while failed/cancelled results start expanded. No events are grouped, removed or reordered. Larger reading rows and dense detail use the approved tokens. Model/mode controls precede send in both visual and keyboard order. Project-default and alwaysAllow detail remains inspectable in a disclosure; refusal reasons and pending mode stay visible. Disabled controls retain full-opacity readable ink.
 
 ## Polite stream announcements
 
@@ -50,4 +52,4 @@ Unit tests cover mapping, patch semantics, metadata projection/refusal, project/
 
 The stream-announcement unit tests use injected time and frame callbacks, without sleeps. The dedicated built-app tests check native-dialog moves in Chromium's accessibility tree, focus retention, approval-count ownership and terminal outcomes. The `PERF-04` stream probe also limits announcement writes during its 300 updates. Full platform screen-reader acceptance, including VoiceOver's handling of native-dialog moves, still needs the manual protocol.
 
-The UI uses existing design tokens and preserves known design contrast gaps rather than changing designer-owned values. Full platform screen-reader acceptance, advanced subagent controls and main-owned external-link navigation remain later work. No transcript, tool output or resource body is persisted by the desktop.
+The UI uses the designer-approved `DEC-40` tokens and passes the updated contrast inventory without the retired exceptions. Full platform screen-reader acceptance, advanced subagent controls and main-owned external-link navigation remain later work. No transcript, tool output or resource body is persisted by the desktop.

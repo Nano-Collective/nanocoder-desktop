@@ -84,3 +84,15 @@ test('archived thread palette command unarchives the selected thread (CHAT-13)',
 	t.true(runAction(actions[2]));
 	t.deepEqual(calls, [['archive', thread.id, false]]);
 });
+
+test('rename passes the palette opener through without treating it as thread authority', t => {
+	const opener = {isConnected: true, focus() {}};
+	let received: unknown;
+	const {actions} = fixture({
+		onRename: (id, originalFocus) => {
+			received = {id, originalFocus};
+		},
+	});
+	t.true(runAction(actions[1], opener));
+	t.deepEqual(received, {id: thread.id, originalFocus: opener});
+});

@@ -97,7 +97,7 @@ test('Fira Code loads from bundled app resources, with no network requests', asy
 	expect(requests.filter(url => /^https?:/.test(url))).toEqual([]);
 	await expect(page.locator('html')).toHaveCSS(
 		'background-color',
-		'rgb(22, 22, 24)',
+		'rgb(22, 22, 22)',
 	);
 });
 
@@ -151,7 +151,7 @@ test('both themes apply and keep the technical gate readable at all three widths
 		}, theme);
 		await expect(page.locator('html')).toHaveCSS(
 			'background-color',
-			theme === 'light' ? 'rgb(246, 246, 249)' : 'rgb(22, 22, 24)',
+			theme === 'light' ? 'rgb(245, 246, 251)' : 'rgb(22, 22, 22)',
 		);
 		await expect(page.locator('html')).toHaveCSS('color-scheme', theme);
 		for (const width of [1240, 1020, 840]) {
@@ -167,7 +167,7 @@ test('both themes apply and keep the technical gate readable at all three widths
 	await page.emulateMedia({reducedMotion: 'no-preference'});
 	await expect(page.getByRole('button').first()).toHaveCSS(
 		'transition-duration',
-		'0.2s, 0.2s, 0.2s',
+		'0s',
 	);
 });
 
@@ -180,9 +180,13 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	await expect(open).toHaveCSS('outline-style', 'solid');
 	await expect(open).toHaveCSS('outline-width', '2px');
 	await page.keyboard.press('Enter');
-	await expect(
-		page.getByRole('region', {name: 'connected agent'}),
-	).toBeVisible();
+	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	const switcher = page.getByLabel('switch project', {exact: true});
+	if (!(await page.locator('.project-switcher').getAttribute('open'))) {
+		await page.locator('.project-switcher').evaluate(element => {
+			(element as HTMLDetailsElement).open = true;
+		});
+	}
 	const recent = page.getByRole('region', {name: 'recent projects'});
 	await expect(
 		recent.getByRole('button', {name: 'open project', exact: true}),
@@ -199,7 +203,7 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	const input = page.getByRole('textbox', {name: 'message'});
 	const send = page.getByRole('button', {name: 'send', exact: true});
 	const focusOrder = [
-		palette,
+		switcher,
 		...['add project folder', 'open project', 'locate project'].map(name =>
 			recent.getByRole('button', {name, exact: true}),
 		),
@@ -211,9 +215,12 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 			name: 'import saved session: existing saved session',
 			exact: true,
 		}),
+		palette,
+		page.getByText('runtime and setup details', {exact: true}),
 		open,
 		diagnostics,
 		input,
+		page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
 		send,
 	];
 	await expect(
@@ -244,16 +251,19 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	const dialog = card.getByRole('alertdialog');
 	await expect(dialog).toBeFocused();
 	await expect(dialog).toHaveCSS('outline-width', '2px');
+	const switcher = page.getByLabel('switch project', {exact: true});
 	const recent = page.getByRole('region', {name: 'recent projects'});
 	const rail = page.getByRole('region', {name: 'project threads'});
 	const focusOrder = [
-		page.getByRole('button', {name: 'command palette', exact: true}),
+		switcher,
 		recent.getByRole('button', {name: 'add project folder', exact: true}),
 		recent.getByRole('button', {name: 'open project', exact: true}),
 		recent.getByRole('button', {name: 'locate project', exact: true}),
 		rail.getByRole('button', {name: 'new thread', exact: true}),
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
+		page.getByRole('button', {name: 'command palette', exact: true}),
+		page.getByText('runtime and setup details', {exact: true}),
 		page.getByRole('button', {name: 'open a project folder', exact: true}),
 		page.getByRole('button', {name: 'diagnostics', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),
@@ -342,6 +352,8 @@ test('visible low-contrast key hints are caught even when hidden from assistive 
 		button.className = 'ui-button';
 		button.innerHTML =
 			'example <kbd class="ui-key-hint" aria-hidden="true">enter</kbd>';
+		const hint = button.querySelector('kbd');
+		if (hint) hint.style.opacity = '0.55';
 		document.body.append(button);
 	});
 	try {
@@ -375,16 +387,16 @@ test('running and failed badge backgrounds and failure typography follow their c
 					page.locator(`#token-fixture .ui-badge--${state}`),
 				).toHaveCSS(
 					'background-color',
-					theme === 'light' ? 'rgb(237, 237, 242)' : 'rgb(22, 22, 24)',
+					theme === 'light' ? 'rgb(235, 237, 245)' : 'rgb(22, 22, 22)',
 				);
 			}
 			await expect(page.locator('#token-fixture .ui-card--failure')).toHaveCSS(
 				'font-size',
-				'11.5px',
+				'11px',
 			);
 			await expect(page.locator('#token-fixture .ui-card--failure')).toHaveCSS(
 				'line-height',
-				'17.825px',
+				'19.8px',
 			);
 			expect(await visibleTextContrast(page, theme)).toEqual([]);
 		}
@@ -415,7 +427,7 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 			page.getByRole('button', {name: 'open a project folder'}),
 		).toBeEnabled();
 		await expect(
-			page.getByRole('region', {name: 'connected agent'}),
+			page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 		).toContainText(folder);
 		await page
 			.getByRole('textbox', {name: 'message'})
@@ -442,7 +454,7 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		);
 		const failure = page.getByRole('alert');
 		await expect(failure).toContainText('Nanocoder stopped during the turn');
-		await expect(failure).toHaveCSS('font-size', '11.5px');
+		await expect(failure).toHaveCSS('font-size', '11px');
 		await expect(
 			page.getByRole('status').filter({hasText: 'failed'}),
 		).toBeVisible();
@@ -454,7 +466,7 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		await expect(page.locator('.ui-badge--success')).toHaveCount(0);
 		await expect(page.locator('.ui-badge--failed')).toHaveCSS(
 			'background-color',
-			theme === 'light' ? 'rgb(237, 237, 242)' : 'rgb(22, 22, 24)',
+			theme === 'light' ? 'rgb(235, 237, 245)' : 'rgb(22, 22, 22)',
 		);
 		await expect(page.getByRole('textbox', {name: 'message'})).toBeDisabled();
 		await expect(
@@ -469,15 +481,15 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		await expect(glyph).toBeVisible();
 		await expect(glyph).toHaveCSS(
 			'color',
-			theme === 'dark' ? 'rgb(226, 90, 104)' : 'rgb(207, 34, 46)',
+			theme === 'dark' ? 'rgb(247, 118, 142)' : 'rgb(161, 40, 76)',
 		);
 		await expect(selected).toHaveCSS(
 			'background-color',
-			theme === 'dark' ? 'rgb(35, 47, 62)' : 'rgb(218, 218, 242)',
+			theme === 'dark' ? 'rgb(32, 42, 59)' : 'rgb(220, 230, 250)',
 		);
 		await expect(selected).toHaveCSS(
 			'border-left-color',
-			theme === 'dark' ? 'rgb(69, 155, 247)' : 'rgb(0, 0, 238)',
+			theme === 'dark' ? 'rgb(122, 162, 247)' : 'rgb(0, 0, 238)',
 		);
 		const rendered = await glyph.evaluate(element => {
 			const style = getComputedStyle(element);
