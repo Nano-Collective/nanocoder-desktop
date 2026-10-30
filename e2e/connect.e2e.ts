@@ -110,7 +110,17 @@ test.afterAll(async () => {
 	rmSync(work, {recursive: true, force: true});
 });
 
+async function showSetup() {
+	const details = page.locator('.runtime-details');
+	if (
+		!(await details.evaluate(element => (element as HTMLDetailsElement).open))
+	)
+		await details.locator('summary').click();
+	await expect(details).toHaveAttribute('open');
+}
+
 test('shows the Nanocoder it will launch', async () => {
+	await showSetup();
 	await expect(page.getByText(`Nanocoder 9.9.9 at ${fakeCli}`)).toBeVisible();
 });
 
@@ -158,7 +168,11 @@ test('refuses a prompt before any project is open', async () => {
 test('initialises a trusted folder without eagerly creating a session or asking', async () => {
 	const root = project('trusted');
 	await openFolder(root);
-	const agent = page.getByRole('region', {name: 'Connected agent'});
+	await showSetup();
+	const agent = page.getByRole('region', {
+		name: 'Connected agent',
+		includeHidden: true,
+	});
 	await expect(agent).toContainText(
 		`connected to nanocoder 9.9.9 over ACP protocol version 1 in ${root}`,
 	);
@@ -193,7 +207,7 @@ test('trusts the folder through Nanocoder when the user agrees, then opens it', 
 	expect(await trustPrompts()).toHaveLength(1);
 	expect(existsSync(path.join(root, '.fake-trusted'))).toBe(true);
 	await expect(
-		page.getByRole('region', {name: 'Connected agent'}),
+		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
 	).toContainText(`in ${root}`);
 	await expect(page.getByRole('alert')).toHaveCount(0);
 });
@@ -474,6 +488,7 @@ test('a version below the minimum is refused with a clear upgrade message', asyn
 
 test('an older accepted version shows a reason for every disabled feature', async () => {
 	await openFolder(project('minimum-agent', 'minimum-no-gates'));
+	await showSetup();
 	const features = page.getByRole('region', {name: 'Nanocoder features'});
 	await expect(features.locator('dd')).toHaveCount(9);
 	for (const entry of await features.locator('dd').allTextContents()) {
@@ -708,7 +723,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 		const other = project(`reload-mode-other-${resume}`);
 		await openFolder(other);
 		await expect(
-			page.getByRole('region', {name: 'Connected agent'}),
+			page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
 		).toContainText(other);
 		const state = await page.evaluate(
 			projectId =>
@@ -721,7 +736,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 		writeFileSync(path.join(root, '.fake-nanocoder'), 'ok');
 		await openFolder(root);
 		await expect(
-			page.getByRole('region', {name: 'Connected agent'}),
+			page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
 		).toContainText(root);
 		await sendMessage();
 		await expect(cards()).toBeVisible();
@@ -734,12 +749,14 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 test('idle reconnect replays all feature reasons and the version warning before a prompt', async () => {
 	const root = project('reload-idle-gates', 'minimum-no-gates');
 	await openFolder(root);
+	await showSetup();
 	const features = () => page.getByRole('region', {name: 'Nanocoder features'});
 	await expect(features().locator('dd')).toHaveCount(9);
 	const reasons = await features().locator('dd').allTextContents();
 	await page.reload();
 	await recordRecoveryProjects();
 	await openFolder(root);
+	await showSetup();
 	await expect(features().locator('dd')).toHaveText(reasons);
 	for (const reason of reasons) expect(reason).toMatch(/^unavailable: .+/);
 	await expect(features().getByRole('status')).toContainText(
@@ -792,7 +809,7 @@ test('a detached folder picker cannot hold the latch or reopen its late selectio
 		).releasePicker?.({canceled: false, filePaths: [root]});
 	}, late);
 	await expect(
-		page.getByRole('region', {name: 'Connected agent'}),
+		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
 	).toContainText(replacement);
 	await sendMessage();
 	await expect(cards()).toBeVisible();
@@ -842,7 +859,7 @@ test('a detached trust dialog cannot hold the latch or grant its late confirmati
 		).releaseTrust?.({response: 0, checkboxChecked: false});
 	});
 	await expect(
-		page.getByRole('region', {name: 'Connected agent'}),
+		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
 	).toContainText(replacement);
 	await sendMessage();
 	await expect(cards()).toBeVisible();
@@ -898,7 +915,7 @@ test('a second reload cancels an open still queued behind bounded process cleanu
 	const replacement = project('reload-queued-replacement');
 	await openFolder(replacement);
 	await expect(
-		page.getByRole('region', {name: 'Connected agent'}),
+		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
 	).toContainText(replacement);
 	await sendMessage();
 	await expect(cards()).toBeVisible();

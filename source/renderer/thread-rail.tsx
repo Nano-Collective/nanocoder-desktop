@@ -89,7 +89,27 @@ export function ThreadRail(props: ThreadRailProps): React.ReactElement {
 					>
 						{status.glyph}
 					</span>
-					<span className="thread-title">{thread.title}</span>
+					<span className="thread-copy">
+						<span className="thread-title">{thread.title}</span>
+						{thread.id === props.activeThreadId && (
+							<span className="thread-state-label">{status.label}</span>
+						)}
+					</span>
+					<time
+						className="thread-age"
+						dateTime={thread.lastActivityAt}
+						title={new Date(thread.lastActivityAt).toLocaleString()}
+					>
+						{Math.max(
+							0,
+							Math.floor(
+								(props.now.getTime() - Date.parse(thread.lastActivityAt)) /
+									86400000,
+							),
+						) > 0
+							? `${Math.floor((props.now.getTime() - Date.parse(thread.lastActivityAt)) / 86400000)}d`
+							: 'today'}
+					</time>
 				</button>
 				<details className="thread-actions">
 					<summary aria-label={`actions for ${thread.title}`}>⋯</summary>

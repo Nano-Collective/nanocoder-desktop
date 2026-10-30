@@ -356,7 +356,7 @@ test('stream semantics keyboard disclosure reduced motion and both themes at thr
 	);
 	await expect(page.locator('.stream-reasoning').last()).toHaveCSS(
 		'font-style',
-		'italic',
+		'normal',
 	);
 	await expect(page.locator('.stream-reasoning').last()).toHaveCSS(
 		'font-synthesis',
@@ -364,12 +364,20 @@ test('stream semantics keyboard disclosure reduced motion and both themes at thr
 	);
 	await expect(page.locator('.gate-message-user').last()).toHaveCSS(
 		'border-left-width',
-		'2px',
+		'0px',
 	);
 	await expect(
 		page.getByText('turn ended: end_turn', {exact: true}),
 	).toBeVisible();
 	await expect(page.locator('.stream-cursor')).toHaveCount(0);
+	const reasoning = page.locator('.stream-reasoning').last();
+	await expect(reasoning).not.toHaveAttribute('open');
+	const reasoningSummary = reasoning.locator('summary');
+	await reasoningSummary.focus();
+	await page.keyboard.press('Enter');
+	await expect(reasoning.locator('p')).toBeVisible();
+	await page.keyboard.press('Enter');
+	await expect(reasoning.locator('p')).toBeHidden();
 	const toolDetails = page.locator('.gate-message-tool details');
 	await expect(toolDetails).toHaveCount(2);
 	await expect(toolDetails.first()).toContainText('fixture tool detail');

@@ -48,6 +48,16 @@ test('CHAT-09 view-only notice explains missing history and retains escaped desk
 	t.true(html.includes(`dateTime="${thread.lastActivityAt}"`));
 	t.false(html.includes('<script>'));
 	t.false(html.includes('<textarea'));
+	t.true(
+		html.includes(
+			'any messages still shown are held in memory in this window only',
+		),
+	);
+	t.true(
+		html.includes(
+			'removing desktop metadata does not delete Nanocoder history',
+		),
+	);
 	t.false(html.includes('retry this thread'));
 	t.is((html.match(/<button/g) ?? []).length, 2);
 });

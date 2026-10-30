@@ -1,4 +1,4 @@
-import type {PaletteAction} from '@/renderer/overlay-model';
+import type {FocusTarget, PaletteAction} from '@/renderer/overlay-model';
 import {threadMutationReason} from '@/renderer/thread-rail-model';
 import type {ThreadInfo} from '@/shared/ipc';
 
@@ -8,7 +8,7 @@ interface ThreadControls {
 	pending: boolean;
 	renameDisabledReason?: string;
 	onNew(projectId: string): void;
-	onRename(threadId: string): void;
+	onRename(threadId: string, originalFocus?: FocusTarget): void;
 	onArchive(threadId: string, archived: boolean): void;
 }
 
@@ -39,8 +39,8 @@ export function threadPalette(controls: ThreadControls): PaletteAction[] {
 			keywords: `name chat session ${selected?.title ?? ''}`,
 			description: selected?.title,
 			disabledReason: reason ?? controls.renameDisabledReason,
-			run: () => {
-				if (selected) controls.onRename(selected.id);
+			run: originalFocus => {
+				if (selected) controls.onRename(selected.id, originalFocus);
 			},
 		},
 		{

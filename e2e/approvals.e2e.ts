@@ -69,7 +69,7 @@ async function open(mode = 'ok') {
 	}, folder);
 	await page.getByRole('button', {name: 'open a project folder'}).click();
 	await expect(
-		page.getByRole('region', {name: 'connected agent'}),
+		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 	).toContainText(folder);
 	await expect(input()).toBeEnabled();
 }
@@ -283,7 +283,7 @@ test('focused approvals stay fully visible across turns and widths in both theme
 			await expect(cards()).toHaveCSS('animation-duration', '2.2s');
 			await expect(cards()).toHaveCSS(
 				'border-top-color',
-				theme === 'dark' ? 'rgb(221, 167, 60)' : 'rgb(154, 103, 0)',
+				theme === 'dark' ? 'rgb(224, 175, 104)' : 'rgb(118, 81, 11)',
 			);
 			await expect(dialogs()).toHaveCSS('outline-width', '2px');
 			for (const hint of await cards().locator('kbd').all())
@@ -291,21 +291,28 @@ test('focused approvals stay fully visible across turns and widths in both theme
 			const geometry = await cards().evaluate(card => {
 				const rect = card.getBoundingClientRect();
 				const scroll = document
-					.querySelector('.shell-stream-scroll')
+					.querySelector('.shell-conversation-footer')
 					?.getBoundingClientRect();
 				return {
 					left: rect.left,
 					right: rect.right,
 					top: rect.top,
 					bottom: rect.bottom,
+					scrollLeft: scroll?.left ?? 0,
+					scrollRight: scroll?.right ?? 0,
 					scrollTop: scroll?.top ?? 0,
 					scrollBottom: scroll?.bottom ?? 0,
+					windowHeight: innerHeight,
 					overflow: document.documentElement.scrollWidth > innerWidth,
 				};
 			});
 			expect(geometry.overflow).toBe(false);
 			expect(geometry.left).toBeGreaterThanOrEqual(0);
 			expect(geometry.right).toBeLessThanOrEqual(width);
+			expect(geometry.left).toBeGreaterThanOrEqual(geometry.scrollLeft);
+			expect(geometry.right).toBeLessThanOrEqual(geometry.scrollRight);
+			expect(geometry.top).toBeGreaterThanOrEqual(0);
+			expect(geometry.bottom).toBeLessThanOrEqual(geometry.windowHeight);
 			expect(geometry.top).toBeGreaterThanOrEqual(geometry.scrollTop);
 			expect(geometry.bottom).toBeLessThanOrEqual(geometry.scrollBottom);
 			await page.keyboard.press('4');

@@ -152,7 +152,7 @@ test('long thread titles stay inside the rail with visible glyphs, selection rul
 			await expect(selected).toHaveCSS('border-left-width', '2px');
 			await expect(selected).toHaveCSS(
 				'border-left-color',
-				theme === 'dark' ? 'rgb(69, 155, 247)' : 'rgb(0, 0, 238)',
+				theme === 'dark' ? 'rgb(122, 162, 247)' : 'rgb(0, 0, 238)',
 			);
 		}
 	}
@@ -254,22 +254,22 @@ for (const [state, glyph] of [
 			).toBeGreaterThanOrEqual(4.5);
 			await expect(selected).toHaveCSS(
 				'background-color',
-				theme === 'dark' ? 'rgb(35, 47, 62)' : 'rgb(218, 218, 242)',
+				theme === 'dark' ? 'rgb(32, 42, 59)' : 'rgb(220, 230, 250)',
 			);
 			await expect(selected).toHaveCSS('border-left-width', '2px');
 			await expect(selected).toHaveCSS(
 				'border-left-color',
-				theme === 'dark' ? 'rgb(69, 155, 247)' : 'rgb(0, 0, 238)',
+				theme === 'dark' ? 'rgb(122, 162, 247)' : 'rgb(0, 0, 238)',
 			);
 			if (state === 'waiting' || state === 'interrupted')
 				await expect(marker).toHaveCSS(
 					'color',
-					theme === 'dark' ? 'rgb(221, 167, 60)' : 'rgb(154, 103, 0)',
+					theme === 'dark' ? 'rgb(224, 175, 104)' : 'rgb(118, 81, 11)',
 				);
 			if (state === 'running')
 				await expect(marker).toHaveCSS(
 					'color',
-					theme === 'dark' ? 'rgb(69, 155, 247)' : 'rgb(0, 0, 238)',
+					theme === 'dark' ? 'rgb(122, 162, 247)' : 'rgb(0, 0, 238)',
 				);
 		}
 	});
@@ -357,4 +357,70 @@ test('the first thread prompt persists its real session before mapped content an
 			methods.indexOf('{"method":"session/prompt"}'),
 		);
 	}
+});
+
+test('rename uses the shared dialog and preserves keyboard focus, draft and thread identity', async () => {
+	await page
+		.getByRole('button', {name: 'open a project folder', exact: true})
+		.click();
+	const input = page.getByRole('textbox', {name: 'message', exact: true});
+	await expect(input).toBeEnabled();
+	await input.fill('retained rename draft');
+	const row = page.locator('.thread-row[data-selected="true"]');
+	const id = await row.getAttribute('data-thread-id');
+	if (!id) throw new Error('Missing selected thread id');
+	await row.locator('summary').focus();
+	await page.keyboard.press('Enter');
+	const rename = row.getByRole('button', {
+		name: 'rename: new thread',
+		exact: true,
+	});
+	await rename.focus();
+	await page.keyboard.press('Enter');
+	const dialog = page.getByRole('dialog', {name: 'rename thread', exact: true});
+	const title = dialog.getByRole('textbox', {
+		name: 'thread title',
+		exact: true,
+	});
+	await expect(title).toBeFocused();
+	await title.fill('cancelled fixture title');
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+	await expect(rename).toBeFocused();
+	await expect(input).toHaveValue('retained rename draft');
+	await page.keyboard.press('Enter');
+	await expect(title).toBeFocused();
+	await title.fill('renamed fixture');
+	await page.keyboard.press('Enter');
+	await expect(dialog).toHaveCount(0);
+	await expect(row.locator('.thread-title')).toHaveText('renamed fixture');
+	await expect(row).toHaveAttribute('data-thread-id', id);
+	await expect(input).toHaveValue('retained rename draft');
+	await expect(
+		row.getByRole('button', {name: 'rename: renamed fixture', exact: true}),
+	).toBeFocused();
+	await input.focus();
+	await input.evaluate(element =>
+		(element as HTMLTextAreaElement).setSelectionRange(2, 9),
+	);
+	await page.keyboard.press(
+		process.platform === 'darwin' ? 'Meta+k' : 'Control+k',
+	);
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	await palette.getByRole('combobox').fill('rename thread');
+	await page.keyboard.press('Enter');
+	await expect(title).toBeFocused();
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+	await expect(input).toBeFocused();
+	await expect(input).toHaveValue('retained rename draft');
+	expect(
+		await input.evaluate(element => ({
+			start: (element as HTMLTextAreaElement).selectionStart,
+			end: (element as HTMLTextAreaElement).selectionEnd,
+		})),
+	).toEqual({start: 2, end: 9});
 });

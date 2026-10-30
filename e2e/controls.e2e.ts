@@ -117,6 +117,9 @@ test('multiline composer keeps drafts, ignores IME Enter and changes mode/defaul
 		page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
 	).toHaveValue('plan');
 	await page
+		.getByText('mode and project default details', {exact: true})
+		.click();
+	await page
 		.getByRole('button', {name: "use as this project's default", exact: true})
 		.click();
 	await expect(
@@ -206,6 +209,9 @@ test('native yolo cancellation is the default and accepted pending yolo is never
 	await expect(
 		page.getByText('yolo · pending first message.', {exact: false}),
 	).toBeVisible();
+	await page
+		.getByText('mode and project default details', {exact: true})
+		.click();
 	await expect(
 		page.getByRole('button', {
 			name: "use as this project's default",
@@ -273,7 +279,7 @@ test('cancelling yolo preserves an earlier pending plan and its draft through fi
 	await expect(mode).toHaveValue('plan');
 });
 
-test('inactive composer controls dim, while reasons keep their rendered contrast in both themes (U.5)', async () => {
+test('inactive composer controls and reasons retain readable contrast in both themes (U.5)', async () => {
 	await page.emulateMedia({reducedMotion: 'reduce'});
 	const input = page.getByRole('textbox', {name: 'message', exact: true});
 	await page.evaluate(async () => {
@@ -283,7 +289,7 @@ test('inactive composer controls dim, while reasons keep their rendered contrast
 		await desktop.stopProject({projectId: ui.value.activeProjectId});
 	});
 	await expect(input).toBeDisabled();
-	await expect(input).toHaveCSS('opacity', '0.5');
+	await expect(input).toHaveCSS('opacity', '1');
 	for (const theme of ['dark', 'light']) {
 		await page.evaluate(value => {
 			document.documentElement.dataset.theme = value;

@@ -148,28 +148,6 @@ export function Composer(props: ComposerProps) {
 					props.inputRef?.current?.focus();
 				}}
 			/>
-			<div className="gate-actions">
-				<Button
-					type="submit"
-					aria-label="send"
-					disabled={!!sendReason}
-					aria-describedby={hintId}
-				>
-					<span aria-hidden="true">▶ </span>send
-				</Button>
-				{props.running && (
-					<Button
-						variant="reject"
-						disabled={props.stopping}
-						onClick={props.onCancel}
-					>
-						{props.stopping ? 'cancelling turn' : 'cancel turn'}
-					</Button>
-				)}
-				<p id={hintId} className="gate-hint">
-					{sendReason ?? '⏎ send · ⇧⏎ newline · / commands'}
-				</p>
-			</div>
 			<div className="composer-control-rail">
 				{options.length ? (
 					options.map(option => (
@@ -229,32 +207,58 @@ export function Composer(props: ComposerProps) {
 						⌁ ctx {percentage}%
 					</span>
 				)}
+				<Button
+					className="composer-send"
+					type="submit"
+					aria-label="send"
+					disabled={!!sendReason}
+					aria-describedby={hintId}
+				>
+					<span aria-hidden="true">▶ </span>send
+				</Button>
+				{props.running && (
+					<Button
+						variant="reject"
+						disabled={props.stopping}
+						onClick={props.onCancel}
+					>
+						{props.stopping ? 'cancelling turn' : 'cancel turn'}
+					</Button>
+				)}
 			</div>
+			<p id={hintId} className="gate-hint">
+				{sendReason ?? '⏎ send · ⇧⏎ newline · / commands'}
+			</p>
 			<p id={modelHintId} className="gate-hint">
 				{modelReason ??
 					`applies to every thread in project ${props.projectName}`}
 			</p>
-			<p id={modeHintId} className="gate-hint">
-				{modeReason && <>{modeReason}. </>}
-				{props.modePending && <>{props.mode} · pending first message. </>}
-				tools in Nanocoder's alwaysAllow list run without asking in every mode
-			</p>
-			<div className="gate-actions">
-				<Button
-					disabled={!!defaultReason}
-					aria-describedby={defaultHintId}
-					onClick={() => {
-						if (!defaultReason && props.mode !== 'yolo')
-							props.onDefault(props.mode);
-					}}
-				>
-					use as this project's default
-				</Button>
-				<p id={defaultHintId} className="gate-hint">
-					project default: {props.defaultMode}
-					{defaultReason ? ` · ${defaultReason}` : ''}
+			{modeReason && <p className="gate-hint">{modeReason}</p>}
+			{props.modePending && (
+				<p className="gate-hint">{props.mode} · pending first message.</p>
+			)}
+			<details className="composer-options">
+				<summary>mode and project default details</summary>
+				<p id={modeHintId} className="gate-hint">
+					tools in Nanocoder's alwaysAllow list run without asking in every mode
 				</p>
-			</div>
+				<div className="gate-actions">
+					<Button
+						disabled={!!defaultReason}
+						aria-describedby={defaultHintId}
+						onClick={() => {
+							if (!defaultReason && props.mode !== 'yolo')
+								props.onDefault(props.mode);
+						}}
+					>
+						use as this project's default
+					</Button>
+					<p id={defaultHintId} className="gate-hint">
+						project default: {props.defaultMode}
+						{defaultReason ? ` · ${defaultReason}` : ''}
+					</p>
+				</div>
+			</details>
 			{props.error && <p role="alert">{props.error}</p>}
 			{context && (
 				<div

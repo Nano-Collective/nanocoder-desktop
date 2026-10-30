@@ -24,18 +24,6 @@ body {
 	margin: 0;
 }
 
-:root,
-body,
-button,
-input,
-.ui-card,
-.ui-badge {
-	transition:
-		color 200ms,
-		background-color 200ms,
-		border-color 200ms;
-}
-
 h1,
 h2,
 p,
@@ -76,7 +64,8 @@ pre,
 	align-items: center;
 	justify-content: center;
 	gap: var(--spacing-md);
-	padding: var(--spacing-xs) var(--spacing-md);
+	min-height: 32px;
+	padding: 5px 11px;
 	border: 1px solid var(--colors-stroke);
 	border-radius: var(--components-button-rounded);
 	background: var(--components-button-background-color);
@@ -107,7 +96,7 @@ pre,
 }
 
 .ui-key-hint {
-	opacity: 0.55;
+	color: var(--colors-on-surface-muted);
 }
 
 .ui-badge {

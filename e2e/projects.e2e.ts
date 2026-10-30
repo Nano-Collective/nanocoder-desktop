@@ -26,6 +26,7 @@ import type {
 } from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
 let app: ElectronApplication;
@@ -250,6 +251,20 @@ test('workspace and existing folder actions reuse the same canonical project pro
 	});
 });
 
+async function showProjects() {
+	await expect(page.locator('.recent-projects [role="status"]')).toHaveCount(0);
+	await expect(page.locator('.project-switcher')).toBeVisible();
+	if (
+		!(await page
+			.locator('.project-switcher')
+			.evaluate(element => (element as HTMLDetailsElement).open))
+	)
+		await page.getByLabel('switch project', {exact: true}).click();
+	await expect(
+		page.getByRole('region', {name: 'recent projects'}),
+	).toBeVisible();
+}
+
 test('a recent-project action opens by id without reopening the folder picker (CHAT-02)', async () => {
 	const root = path.join(work, 'project');
 	mkdirSync(root);
@@ -257,8 +272,10 @@ test('a recent-project action opens by id without reopening the folder picker (C
 	const project = await add(root);
 	await picker(root, 0);
 	await page.reload();
+	await showProjects();
 	const recent = page.getByRole('region', {name: 'recent projects'});
 	await expect(recent).toBeVisible();
+	await showProjects();
 	await recent.getByRole('button', {name: 'open project', exact: true}).click();
 	await expect(page.getByLabel('project trust feedback')).toContainText(
 		'project ready',
@@ -282,14 +299,18 @@ test('missing recent folders explain the disabled open action and offer locate (
 	renameSync(root, moved);
 	await picker(moved);
 	await page.reload();
+	await showProjects();
 	const recent = page.getByRole('region', {name: 'recent projects'});
+	await showProjects();
 	await expect(
 		recent.getByRole('button', {name: 'open project', exact: true}),
 	).toBeDisabled();
 	await expect(recent).toContainText('folder missing');
+	await showProjects();
 	await recent
 		.getByRole('button', {name: 'locate project', exact: true})
 		.click();
+	await showProjects();
 	await expect(
 		recent.getByRole('button', {name: 'open moved', exact: true}),
 	).toBeEnabled();
@@ -301,8 +322,10 @@ test('missing recent folders explain the disabled open action and offer locate (
 
 test('cancelling the recent-project picker leaves the list unchanged and reports cancellation (CHAT-01)', async () => {
 	await picker();
+	await showProjects();
 	const recent = page.getByRole('region', {name: 'recent projects'});
 	await expect(recent).toBeVisible();
+	await showProjects();
 	await recent
 		.getByRole('button', {name: 'add project folder', exact: true})
 		.click();
@@ -353,7 +376,9 @@ test('opening a recent project exposes only its own thread and restores each pro
 	const firstThreadId = await selected.getAttribute('data-thread-id');
 	expect(firstThreadId).not.toBeNull();
 	if (!firstThreadId) throw new Error('Expected the first selected thread');
+	await showProjects();
 	const recent = page.getByRole('region', {name: 'recent projects'});
+	await showProjects();
 	await recent
 		.getByRole('button', {name: 'open second-project', exact: true})
 		.click();
@@ -364,23 +389,26 @@ test('opening a recent project exposes only its own thread and restores each pro
 	await expect(input).toHaveValue('');
 	await expect(selected).not.toHaveAttribute('data-thread-id', firstThreadId);
 	await expect(
-		page.getByRole('region', {name: 'connected agent'}),
+		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 	).toContainText(second);
 	await input.fill('second project private draft');
+	await showProjects();
 	await recent
 		.getByRole('button', {name: 'open first-project', exact: true})
 		.click();
 	await expect(input).toHaveValue('first project private draft');
 	await expect(selected).toHaveAttribute('data-thread-id', firstThreadId);
 	await expect(
-		page.getByRole('region', {name: 'connected agent'}),
+		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 	).toContainText(first);
+	await showProjects();
 	await recent
 		.getByRole('button', {name: 'open second-project', exact: true})
 		.click();
 	await expect(input).toHaveValue('second project private draft');
 	await expect(selected).not.toHaveAttribute('data-thread-id', firstThreadId);
 	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await showProjects();
 	await expect(recent.locator('[aria-current="true"]')).toContainText(
 		'second-project',
 	);
@@ -391,8 +419,8 @@ test('opening a recent project exposes only its own thread and restores each pro
 	).toBeVisible();
 	await page.emulateMedia({reducedMotion: 'reduce'});
 	for (const [theme, color] of [
-		['dark', 'rgb(230, 230, 234)'],
-		['light', 'rgb(27, 33, 50)'],
+		['dark', 'rgb(230, 230, 230)'],
+		['light', 'rgb(36, 40, 59)'],
 	]) {
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
@@ -413,9 +441,80 @@ test('opening a folder through the legacy action refreshes the active recent pro
 		.getByRole('button', {name: 'open a project folder', exact: true})
 		.click();
 	await expect(page.getByRole('textbox', {name: 'message'})).toBeVisible();
+	await showProjects();
 	await expect(
 		page
 			.getByRole('region', {name: 'recent projects'})
 			.locator('[aria-current="true"]'),
 	).toContainText('current-project');
+});
+
+test('welcome keeps runtime details quiet and keyboard inspectable before any project starts', async () => {
+	for (const theme of ['dark', 'light'] as const) {
+		await page.evaluate(theme => {
+			document.documentElement.dataset.theme = theme;
+		}, theme);
+		for (const width of [1240, 1020, 840]) {
+			await page.setViewportSize({width, height: 900});
+			await expect(
+				page.getByRole('region', {name: 'get started'}),
+			).toBeVisible();
+			const details = page.locator('.runtime-details');
+			await expect(details).not.toHaveAttribute('open');
+			const summary = details.locator('summary');
+			await summary.focus();
+			await page.keyboard.press('Tab');
+			await page.keyboard.press('Shift+Tab');
+			await expect(summary).toBeFocused();
+			await expect(summary).toHaveCSS('outline-width', '2px');
+			await page.keyboard.press('Enter');
+			await expect(details).toHaveAttribute('open');
+			await expect(
+				page.getByRole('region', {name: 'Nanocoder runtime'}),
+			).toContainText('Nanocoder 9.9.9 at');
+			await page.keyboard.press('Enter');
+			await expect(details).not.toHaveAttribute('open');
+			expect(await visibleTextContrast(page, theme)).toEqual([]);
+		}
+	}
+	expect(await call('listProjects', {})).toEqual({ok: true, value: []});
+});
+
+test('long welcome recent paths give actions their full width without dropping project identity', async () => {
+	const root = path.join(
+		work,
+		'long-project-folder-for-the-welcome-recent-project-row-with-a-readable-action',
+	);
+	mkdirSync(root);
+	await add(root);
+	await page.reload();
+	const recents = page.getByRole('region', {
+		name: 'recent folders on welcome',
+		exact: true,
+	});
+	const action = recents.getByRole('button', {name: /^open recent project/});
+	const savedPath = recents.locator('small');
+	await expect(savedPath).toHaveText(root);
+	for (const theme of ['dark', 'light']) {
+		await page.evaluate(theme => {
+			document.documentElement.dataset.theme = theme;
+		}, theme);
+		for (const width of [1240, 1020, 840]) {
+			await page.setViewportSize({width, height: 900});
+			await expect(action).toHaveCSS('white-space', 'nowrap');
+			await expect(action).toHaveCSS('flex-shrink', '0');
+			await expect(savedPath).toHaveCSS('overflow-wrap', 'anywhere');
+			await expect(savedPath).toHaveCSS('white-space', 'normal');
+			expect(
+				await savedPath.evaluate(
+					element => element.scrollWidth <= element.clientWidth,
+				),
+			).toBe(true);
+			expect(
+				await action.evaluate(
+					element => element.scrollWidth <= element.clientWidth,
+				),
+			).toBe(true);
+		}
+	}
 });

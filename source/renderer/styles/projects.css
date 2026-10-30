@@ -55,3 +55,254 @@
 .recent-project-actions {
 	padding-block: var(--spacing-sm);
 }
+
+.project-switcher {
+	min-width: 0;
+}
+.project-switcher > summary {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 50px;
+	padding: 8px;
+	border: 1px solid var(--colors-stroke);
+	border-radius: 7px;
+	background: var(--colors-surface);
+	color: var(--colors-on-surface);
+	cursor: pointer;
+	list-style: none;
+}
+.project-switcher > summary::-webkit-details-marker {
+	display: none;
+}
+.project-initial {
+	flex: none;
+	width: 25px;
+	height: 25px;
+	display: grid;
+	place-items: center;
+	border-radius: 5px;
+	background: var(--colors-surface-elevated);
+}
+.project-switch-label {
+	flex: 1;
+	min-width: 0;
+}
+.project-switch-label > span {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.project-switch-root {
+	color: var(--colors-on-surface-muted);
+	font-size: 9px;
+}
+.project-switcher-menu {
+	margin-top: 8px;
+	padding: 8px;
+	border: 1px solid var(--colors-stroke);
+	border-radius: 7px;
+	background: var(--colors-surface-elevated);
+}
+.project-switcher-menu h2 {
+	font-size: 10px;
+}
+.project-switcher-menu .recent-project {
+	padding-inline: 4px;
+}
+.project-switcher-menu .recent-project-meta {
+	font-size: 9px;
+}
+.project-switcher-menu .recent-project-path {
+	word-break: break-all;
+}
+.project-switcher-menu .recent-project-actions {
+	gap: 4px;
+}
+.project-switcher-menu .ui-button {
+	min-height: 28px;
+	font-size: 10px;
+	padding: 4px 7px;
+}
+
+.workspace-welcome {
+	display: grid;
+	justify-items: start;
+	gap: 18px;
+	width: min(100%, 550px);
+	margin: 70px auto 20px;
+	padding-block: 12px;
+}
+.workspace-welcome > img {
+	margin-bottom: 10px;
+	border-radius: 14px;
+}
+.workspace-eyebrow,
+.workspace-setup,
+.workspace-setup-warning {
+	color: var(--colors-on-surface-muted);
+	font-size: 11px;
+	line-height: 1.8;
+}
+.workspace-eyebrow {
+	font-size: 10px;
+	letter-spacing: 0.1em;
+}
+.workspace-welcome h2 {
+	font-size: 25px;
+	font-weight: 400;
+	line-height: 1.5;
+}
+.workspace-welcome > p:not(.workspace-eyebrow) {
+	color: var(--colors-on-surface-muted);
+	font-size: 12px;
+	line-height: 1.9;
+}
+.workspace-welcome > .ui-button {
+	margin-block: 2px 12px;
+	padding: 10px 15px;
+	border-color: var(--colors-primary);
+	color: var(--colors-primary);
+}
+.welcome-recents {
+	width: 100%;
+}
+.welcome-recents h3 {
+	margin-bottom: 12px;
+	color: var(--colors-on-surface-muted);
+	font-size: 10px;
+	font-weight: 400;
+	letter-spacing: 0.1em;
+}
+.welcome-recents > div {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 13px 0;
+	border-bottom: 1px solid var(--colors-stroke);
+}
+.welcome-recents span {
+	display: block;
+	min-width: 0;
+}
+.welcome-recents small {
+	display: block;
+	overflow-wrap: anywhere;
+	color: var(--colors-on-surface-muted);
+	font-size: 10px;
+}
+.workspace-setup {
+	width: min(100%, 740px);
+	margin: 0 auto;
+}
+.workspace-setup-actions {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+}
+.runtime-details {
+	flex: 1;
+	min-width: 0;
+}
+.runtime-details > summary {
+	min-height: 32px;
+	padding-block: 6px;
+	cursor: pointer;
+}
+.runtime-details[open] > summary {
+	margin-bottom: 12px;
+}
+.runtime-details > .ui-card,
+.runtime-details > section {
+	margin-bottom: 12px;
+}
+.workspace-setup-actions > .ui-button {
+	flex: none;
+	font-size: 10px;
+	min-height: 30px;
+}
+.workspace-setup-warning {
+	margin-bottom: 8px;
+}
+.project-trust-feedback {
+	width: 100%;
+	font-size: 11px;
+	line-height: 1.8;
+}
+@media (max-width: 840px) {
+	.workspace-welcome {
+		margin-top: 40px;
+	}
+	.workspace-welcome h2 {
+		font-size: 22px;
+	}
+}
+
+.session-imports {
+	padding: 12px 8px;
+	border: 1px solid var(--colors-stroke);
+	border-radius: 7px;
+	background: var(--colors-surface);
+}
+.session-import {
+	padding: 10px 0 2px;
+	gap: 5px;
+}
+.session-import > .ui-button {
+	justify-self: start;
+	min-height: 28px;
+	padding: 4px 8px;
+	font-size: 10px;
+}
+.session-import-title {
+	font-size: 11px;
+}
+.session-imports .thread-rail-note {
+	line-height: 1.8;
+}
+
+.thread-recovery-notice {
+	width: 100%;
+	padding: 20px 22px;
+	gap: 14px;
+}
+.thread-recovery-notice > h2 {
+	font-size: 16px;
+	font-weight: 400;
+	line-height: 1.8;
+}
+.thread-recovery-metadata {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	gap: 8px 20px;
+}
+.thread-recovery-metadata dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+.thread-recovery-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.thread-recovery-note {
+	color: var(--colors-on-surface-muted);
+	font-size: 10px;
+	line-height: 1.8;
+}
+
+.welcome-recents > div > span {
+	flex: 1;
+	min-width: 0;
+}
+.welcome-recents small {
+	overflow-wrap: anywhere;
+	white-space: normal;
+}
+.welcome-recents .ui-button {
+	flex: none;
+	white-space: nowrap;
+}

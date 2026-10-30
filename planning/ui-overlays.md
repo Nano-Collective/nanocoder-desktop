@@ -64,3 +64,7 @@ both themes, reduced motion and notification focus/live-region behaviour.
 
 This supports the overlay portions of `A11Y-01` and `A11Y-03`; it does not claim
 screen-reader acceptance or completion of whole-app accessibility requirements.
+
+## Approved overlay presentation (DEC-40)
+
+The 520px elevated shell is vertically centred within 40px viewport margins, with 15px corners and an 80% surface scrim. Palette rows keep one active pointer/keyboard selection. Empty results collapse the combobox popup semantics and expose the no-results status. The shortcut sheet names implemented bindings only, including multiline input and request-scoped offered approval options. Quiet notifications sit near the lower centre of the conversation and retain the persistent non-focusing polite regions and clock-driven timing. Renderer rename uses the same shell; all destructive/trust/history/diagnostics confirmations remain native and main-owned.

@@ -24,11 +24,11 @@ test('shell slots preserve plain child components without extra controls', t => 
 	t.true(html.includes('data-shell-slot="project-rail"'));
 	t.true(html.includes('data-shell-slot="stream-tools"'));
 	t.false(html.includes('project list not built yet'));
-	t.true(html.includes('thread list not built yet'));
+	t.false(html.includes('thread list not built yet'));
 	t.false(html.includes('<button'));
 });
 
-test('unfinished shell surfaces say they are placeholders rather than live actions', t => {
+test('unused later shell slots render no placeholders or pretend actions', t => {
 	const html = renderToStaticMarkup(
 		createElement(AppShell, {
 			title: 'Nanocoder',
@@ -42,8 +42,29 @@ test('unfinished shell surfaces say they are placeholders rather than live actio
 		'files and review are not built yet',
 		'palette not built yet',
 	])
-		t.true(html.includes(label));
-	t.true(html.includes('class="shell-placeholder'));
+		t.false(html.includes(label));
+	t.false(html.includes('class="shell-placeholder'));
 	t.false(html.includes('role="tab"'));
 	t.false(html.includes('bottom-panel'));
+});
+
+test('later workbench and bottom slots preserve plain children with an explicit return action', t => {
+	const html = renderToStaticMarkup(
+		createElement(AppShell, {
+			title: 'Nanocoder',
+			statusBadges: null,
+			children: 'chat fixture',
+			workbench: {
+				title: 'fixture panel',
+				children: 'panel fixture',
+				onClose() {},
+			},
+			bottomPanel: 'terminal fixture',
+		}),
+	);
+	t.true(html.includes('data-shell-slot="workbench"'));
+	t.true(html.includes('back to chat'));
+	t.true(html.includes('panel fixture'));
+	t.true(html.includes('data-shell-slot="bottom-panel"'));
+	t.true(html.includes('terminal fixture'));
 });

@@ -144,3 +144,27 @@ test('context is shown only from an actual usage_update, never turn token totals
 	t.true(html.includes('aria-valuenow="12"'));
 	t.true(html.includes('session cost: 0.5 USD'));
 });
+
+test('finished reasoning and completed tools fold while reported failures start open', t => {
+	const html = render([
+		{kind: 'thought', text: 'finished reasoning fixture'},
+		{
+			kind: 'tool',
+			id: 'done',
+			title: 'done',
+			status: 'completed',
+			details: {output: 'routine output'},
+		},
+		{
+			kind: 'tool',
+			id: 'bad',
+			title: 'bad',
+			status: 'failed',
+			details: {output: 'reported failure'},
+		},
+	]);
+	t.regex(html, /<details class="stream-reasoning">/);
+	t.regex(html, /<details open="">/);
+	t.true(html.includes('reported failure'));
+	t.true(html.includes('routine output'));
+});
