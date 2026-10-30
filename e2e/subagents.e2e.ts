@@ -183,17 +183,26 @@ test.describe('fc01-shaped delegation cards', () => {
 	});
 
 	test('thin delegation safely falls back and source bounds are not settings (SUB-06/07)', async () => {
+		const retained = await cards().allTextContents();
 		await prompt('fixture fallback');
+		await expect(cards()).toHaveCount(retained.length + 1);
 		await expect(cards().last()).toContainText('child details not available');
 		await expect(cards().last()).toContainText(
 			'source bounds: depth 2, batch 5',
 		);
 		await expect(cards().last()).toContainText('elapsed not reported');
 		await expect(cards().last().getByRole('combobox')).toHaveCount(0);
-		await stop().click();
+		await cards()
+			.last()
+			.getByRole('button', {
+				name: /stop turn:.*entire turn and all subagents/,
+			})
+			.click();
 		await expect(
 			page.getByText('turn interrupted: cancelled', {exact: true}),
 		).toBeVisible();
+		for (const [index, text] of retained.entries())
+			await expect(cards().nth(index)).toHaveText(text);
 	});
 
 	for (const theme of ['dark', 'light'] as const) {

@@ -7,7 +7,13 @@ import type {
 	SqlValue,
 	ThreadRepository,
 } from '@/main/store/contracts';
-import {projectSchema, threadSchema, validate} from '@/main/store/validation';
+import {
+	projectSchema,
+	threadSchema,
+	threadTitlePatch,
+	threadTitleTarget,
+	validate,
+} from '@/main/store/validation';
 import type {ProjectInfo, ThreadInfo} from '@/shared/ipc';
 
 function availability(root: string): ProjectInfo['availability'] {
@@ -117,6 +123,40 @@ export function repositories(database: SqlDatabase): {
 		},
 	};
 	const threads: ThreadRepository = {
+		setTitle: input => {
+			const patch = validate(threadTitlePatch, input);
+			database
+				.prepare(`
+				UPDATE thread SET title = ?, title_manually_set = ?
+				WHERE project_id = ? AND id = ?
+					AND (title_manually_set = 0 OR ? = 1)
+			`)
+				.run(
+					patch.title,
+					Number(patch.manuallySet),
+					patch.projectId,
+					patch.threadId,
+					Number(patch.manuallySet),
+				);
+			const thread = threads.get(patch.projectId, patch.threadId);
+			if (!thread) throw new IpcFailure('NOT_FOUND', 'Thread not found');
+			return thread;
+		},
+		getTitleManuallySet: (projectId, threadId) => {
+			validate(threadTitleTarget, {projectId, threadId});
+			const row = database
+				.prepare(
+					'SELECT title_manually_set FROM thread WHERE project_id = ? AND id = ?',
+				)
+				.get(projectId, threadId);
+			if (!row) return undefined;
+			if (row.title_manually_set === 1) return true;
+			if (row.title_manually_set === 0) return false;
+			throw new IpcFailure(
+				'STORE_CORRUPT',
+				'The thread title metadata is invalid',
+			);
+		},
 		list: (projectId, archiveState) =>
 			database
 				.prepare(`

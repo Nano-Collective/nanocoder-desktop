@@ -2,28 +2,22 @@ import {type FormEvent, useCallback, useEffect, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
 import {ApprovalRequests} from '@/renderer/approval-requests';
 import {ConversationStream} from '@/renderer/conversation-stream';
-import {legacyMetadataEvent} from '@/renderer/legacy-stream';
 import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
 import {RecentProjects} from '@/renderer/recent-projects';
 import {RecoveryTools} from '@/renderer/recovery-tools';
-import {createStreamBatcher} from '@/renderer/stream-batcher';
 import {SlashSuggestions} from '@/renderer/stream-commands';
 import {
 	acpBadge,
 	observeSupervisor,
 	type SupervisorIndex,
 } from '@/renderer/supervisor-state';
-import {
-	addUserMessage,
-	applyEvents,
-	emptyTranscript,
-	settleSubagentTurn,
-	type Transcript,
-} from '@/renderer/transcript';
+import {threadPalette} from '@/renderer/thread-palette';
+import {ThreadRail} from '@/renderer/thread-rail';
 import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, Divider, StatusBadge} from '@/renderer/ui';
 import {useProjects} from '@/renderer/use-projects';
+import {useThreads} from '@/renderer/use-threads';
 import type {
 	AppInfo,
 	CapabilityGates,
@@ -31,11 +25,8 @@ import type {
 	ConnectResult,
 	IpcResult,
 	NanocoderRuntime,
-	SessionInfo,
-	TurnResult,
+	ThreadInfo,
 } from '@/shared/ipc';
-
-const yesNo = (value: boolean) => (value ? 'yes' : 'no');
 
 function FeatureDetails({gates}: {gates: CapabilityGates}) {
 	return (
@@ -59,12 +50,11 @@ function FeatureDetails({gates}: {gates: CapabilityGates}) {
 
 function AgentDetails({
 	agent,
-	session,
+	thread,
 }: {
 	agent: ConnectedAgent;
-	session: SessionInfo | null;
+	thread: ThreadInfo | null;
 }) {
-	const {capabilities} = agent;
 	return (
 		<Card aria-label="connected agent">
 			<p>
@@ -72,23 +62,25 @@ function AgentDetails({
 				{agent.version ?? '(no version)'} over ACP protocol version{' '}
 				{agent.protocolVersion} in {agent.root}
 			</p>
-			{session && (
+			{thread?.nanocoderSessionId && (
 				<p>
-					session {session.id} in {session.mode} mode
+					session {thread.nanocoderSessionId} in {thread.mode} mode
 				</p>
 			)}
 			<Divider soft />
 			<dl className="gate-capabilities">
-				<dt>resume sessions</dt>
-				<dd>{yesNo(capabilities.sessions.resume)}</dd>
-				<dt>close sessions</dt>
-				<dd>{yesNo(capabilities.sessions.close)}</dd>
-				<dt>list sessions</dt>
-				<dd>{yesNo(capabilities.sessions.list)}</dd>
-				<dt>delete sessions</dt>
-				<dd>{yesNo(capabilities.sessions.delete)}</dd>
-				<dt>load sessions</dt>
-				<dd>{yesNo(capabilities.loadSession)}</dd>
+				{Object.entries({
+					'resume sessions': agent.capabilities.sessions.resume,
+					'close sessions': agent.capabilities.sessions.close,
+					'list sessions': agent.capabilities.sessions.list,
+					'delete sessions': agent.capabilities.sessions.delete,
+					'load sessions': agent.capabilities.loadSession,
+				}).map(([name, enabled]) => (
+					<div key={name}>
+						<dt>{name}</dt>
+						<dd>{enabled ? 'yes' : 'no'}</dd>
+					</div>
+				))}
 			</dl>
 		</Card>
 	);
@@ -101,513 +93,179 @@ export function App() {
 	);
 	const [connecting, setConnecting] = useState(false);
 	const [opened, setOpened] = useState<IpcResult<ConnectResult> | null>(null);
-	const [recoveredAgent, setRecoveredAgent] = useState<{
-		projectId: string;
-		agent: ConnectedAgent;
-	} | null>(null);
-	const streamBatcher = useRef<ReturnType<typeof createStreamBatcher> | null>(
-		null,
-	);
-	const projectControls = useProjects(() => {
-		streamBatcher.current?.flush();
-		setOpened(null);
-		setRecoveredAgent(null);
-	});
-	const [transcripts, setTranscripts] = useState<Record<string, Transcript>>(
-		{},
-	);
-	const [draft, setDraft] = useState('');
-	const [running, setRunning] = useState<Record<string, boolean>>({});
-	const [turns, setTurns] = useState<
-		Record<string, IpcResult<TurnResult> | null>
-	>({});
+	const projectControls = useProjects(() => setOpened(null));
+	const [agents, setAgents] = useState<Record<string, ConnectedAgent>>({});
 	const [gates, setGates] = useState<Record<string, CapabilityGates>>({});
 	const [supervisors, setSupervisors] = useState<SupervisorIndex>({});
-	const [cancellations, setCancellations] = useState<
-		Record<string, IpcResult<null> | 'pending' | null>
-	>({});
-	const composerInput = useRef<HTMLInputElement>(null);
 	const supervisorIndex = useRef<SupervisorIndex>({});
 	const [attemptedProjectId, setAttemptedProjectId] = useState<string | null>(
 		null,
 	);
 	const selectedProject = useRef<string | null>(null);
-	const roots = useRef(new Map<string, string>());
-	const recoveryReplay = useRef(
-		new Map<string, {transcript: Transcript; received: boolean}>(),
-	);
-	const processGenerations = useRef(new Map<string, number>());
-	const outcome =
-		recoveredAgent?.projectId === attemptedProjectId && recoveredAgent
-			? {
-					status: 'connected' as const,
-					agent: recoveredAgent.agent,
-					session: null,
-				}
-			: opened?.ok
-				? opened.value
-				: null;
-	const root = outcome?.status === 'connected' ? outcome.agent.root : '';
-	const transcript = transcripts[root] ?? emptyTranscript;
-	const sending = running[root] ?? false;
-	const turn = turns[root];
-	const cancellation = cancellations[root];
-	const selected =
-		supervisors[attemptedProjectId ?? projectControls.activeProjectId ?? ''];
+	const projectId = attemptedProjectId ?? projectControls.activeProjectId;
+	const selected = supervisors[projectId ?? ''];
 	const processState = selected?.state ?? null;
+	const controls = useThreads(projectId, processState?.status === 'ready');
+	const {workspace, conversation} = controls;
+	const thread =
+		workspace.threads.find(row => row.id === workspace.activeThreadId) ?? null;
+	const {transcript, draft, turn, cancellation} = conversation;
+	const agent = agents[projectId ?? ''];
+	const outcome =
+		opened?.ok && opened.value.status !== 'cancelled'
+			? opened.value
+			: agent
+				? {status: 'connected' as const, agent}
+				: null;
 	const accepting =
 		processState?.status === 'ready' &&
-		processState.agent?.root === root &&
+		processState.agent?.root === agent?.root &&
 		!connecting &&
 		!projectControls.pending;
+	const rootBusy =
+		workspace.promptingThreadId !== null ||
+		(processState?.activeThreadId ?? null) !== null;
+	const sending =
+		thread !== null &&
+		(workspace.promptingThreadId === thread.id ||
+			(thread.nanocoderSessionId !== null &&
+				thread.nanocoderSessionId === processState?.activeThreadId));
+	const stopping =
+		thread !== null && workspace.cancellingThreadIds.includes(thread.id);
+	const editable =
+		accepting &&
+		thread?.archiveState === 'active' &&
+		thread.runState !== 'view-only' &&
+		!workspace.loading &&
+		!workspace.pending;
+	const failed =
+		thread?.runState === 'failed' ||
+		(turn !== null && !turn.ok && thread?.runState !== 'ready');
 	const processBadge = acpBadge(supervisors, selected?.root ?? '');
+	const composerInput = useRef<HTMLInputElement>(null);
+	const [renaming, setRenaming] = useState<{
+		projectId: string;
+		threadId: string;
+		title: string;
+	} | null>(null);
+	const renameDialog = useRef<HTMLDialogElement>(null);
+	const renameInput = useRef<HTMLInputElement>(null);
+	const renameId = renaming?.threadId;
+
+	useEffect(() => {
+		if (!renameId) return;
+		const dialog = renameDialog.current;
+		dialog?.showModal();
+		renameInput.current?.focus();
+		return () => dialog?.close();
+	}, [renameId]);
 
 	useEffect(() => {
 		if (
 			!sending &&
-			cancellation &&
-			cancellation !== 'pending' &&
-			cancellation.ok &&
+			cancellation?.ok &&
 			document.activeElement === document.body
 		)
 			composerInput.current?.focus();
 	}, [sending, cancellation]);
 
 	useEffect(() => {
-		const batcher = createStreamBatcher((root, events) =>
-			setTranscripts(current => ({
-				...current,
-				[root]: applyEvents(current[root] ?? emptyTranscript, events),
-			})),
-		);
-		streamBatcher.current = batcher;
-		const unsubscribe = window.desktop.onProjectEvent(event => {
-			const next = observeSupervisor(supervisorIndex.current, event);
-			if (event.type !== 'turn' && next === supervisorIndex.current) return;
-			if (next !== supervisorIndex.current) {
-				supervisorIndex.current = next;
-				setSupervisors(next);
-			}
+		return window.desktop.onProjectEvent(event => {
+			const previous = supervisorIndex.current;
+			const next = observeSupervisor(previous, event);
+			if (next === previous) return;
+			supervisorIndex.current = next;
+			setSupervisors(next);
 			if (event.type === 'project') {
-				batcher.flush();
-				roots.current.set(event.projectId, event.project.canonicalRoot);
 				if (selectedProject.current !== event.projectId) {
 					setOpened(null);
-					setRecoveredAgent(null);
+					setRenaming(null);
 				}
 				selectedProject.current = event.projectId;
 				setAttemptedProjectId(event.projectId);
-				return;
-			}
-			if (event.type === 'project-removed') {
-				const removedRoot = roots.current.get(event.projectId);
-				if (removedRoot) batcher.remove(removedRoot);
-				roots.current.delete(event.projectId);
-				recoveryReplay.current.delete(event.projectId);
+			} else if (event.type === 'project-removed') {
 				if (selectedProject.current === event.projectId) {
 					selectedProject.current = null;
 					setAttemptedProjectId(null);
-					setRecoveredAgent(null);
 					setOpened(null);
+					setRenaming(null);
 				}
-				return;
-			}
-			if (event.type === 'supervisor') {
-				const processRoot =
-					event.state.agent?.root ?? roots.current.get(event.projectId);
-				if (processRoot) batcher.flush(processRoot);
-				if (event.state.status === 'starting') {
-					recoveryReplay.current.set(event.projectId, {
-						transcript: emptyTranscript,
-						received: false,
-					});
-					if (processRoot) {
-						processGenerations.current.set(
-							processRoot,
-							(processGenerations.current.get(processRoot) ?? 0) + 1,
-						);
-						setRunning(current => ({...current, [processRoot]: false}));
-					}
-				} else {
-					const replayed = recoveryReplay.current.get(event.projectId);
-					if (event.state.status === 'ready' && processRoot && replayed) {
-						if (replayed.received)
-							setTranscripts(current => ({
-								...current,
-								[processRoot]: {
-									...replayed.transcript,
-									items: [
-										...replayed.transcript.items,
-										...(current[processRoot]?.items.filter(
-											item => item.kind === 'failure',
-										) ?? []),
-									],
-								},
-							}));
-						setTurns(current => ({...current, [processRoot]: null}));
-						setRunning(current => ({...current, [processRoot]: false}));
-					}
-					recoveryReplay.current.delete(event.projectId);
-				}
-			}
-			if (
-				event.type === 'supervisor' &&
-				event.state.agent &&
-				event.state.gates
-			) {
-				const root = event.state.agent.root;
-				roots.current.set(event.projectId, root);
-				const next = event.state.gates;
-				setGates(current => ({...current, [root]: next}));
-			}
-			if (event.type === 'turn') {
-				const replayed = recoveryReplay.current.get(event.projectId);
-				if (replayed) {
-					recoveryReplay.current.set(event.projectId, {
-						transcript: applyEvents(replayed.transcript, event.events),
-						received: true,
-					});
-					return;
-				}
-				const root = roots.current.get(event.projectId);
-				if (root) {
-					batcher.enqueue(root, event.events);
-					if (
-						event.events.some(
-							turn =>
-								turn.type === 'permission' || turn.type === 'permission-closed',
-						)
-					)
-						batcher.flush(root);
-				}
+				void projectControls.refresh();
+			} else if (event.type === 'supervisor') {
+				const {agent, gates} = event.state;
+				if (agent)
+					setAgents(current => ({...current, [event.projectId]: agent}));
+				if (gates)
+					setGates(current => ({...current, [event.projectId]: gates}));
+				if (
+					event.state.status === 'ready' &&
+					previous[event.projectId]?.state?.status === 'starting'
+				)
+					void controls.reload(event.projectId);
 			}
 		});
-		const unsubscribeLegacy = window.desktop.onNanocoderEvent(event => {
-			const metadata = legacyMetadataEvent(event);
-			const currentRoot = roots.current.get(selectedProject.current ?? '');
-			if (!metadata || !currentRoot) return;
-			batcher.enqueue(currentRoot, [metadata]);
-			batcher.flush(currentRoot);
-		});
-		return () => {
-			unsubscribe();
-			unsubscribeLegacy();
-			batcher.dispose();
-			if (streamBatcher.current === batcher) streamBatcher.current = null;
-		};
-	}, []);
+	}, [controls.reload, projectControls.refresh]);
 
 	const checkRuntime = useCallback(() => {
 		void window.desktop.getNanocoderRuntime().then(setRuntime);
 	}, []);
-
 	useEffect(() => {
 		void window.desktop.getAppInfo().then(result => {
-			if (result.ok) {
-				setInfo(result.value);
-			}
+			if (result.ok) setInfo(result.value);
 		});
 		checkRuntime();
 	}, [checkRuntime]);
-
 	const connect = async () => {
-		streamBatcher.current?.flush();
 		setConnecting(true);
-		const result = await window.desktop.connectNanocoder();
-		void projectControls.refresh();
-		setConnecting(false);
-		if (!result.ok || result.value.status !== 'cancelled') {
-			setRecoveredAgent(null);
-			setOpened(result);
-		}
-	};
-
-	const send = async (event: FormEvent) => {
-		event.preventDefault();
-		const text = draft.trim();
-		if (!text || sending || !accepting) return;
-		streamBatcher.current?.flush(root);
-		const generation = processGenerations.current.get(root) ?? 0;
-		setDraft('');
-		setRunning(current => ({...current, [root]: true}));
-		setTurns(current => ({...current, [root]: null}));
-		setCancellations(current => ({...current, [root]: null}));
-		setTranscripts(current => ({
-			...current,
-			[root]: addUserMessage(current[root] ?? emptyTranscript, text),
-		}));
-		const result = await window.desktop.sendPrompt(text);
-		streamBatcher.current?.flush(root);
-		if (!result.ok)
-			setTranscripts(current => {
-				const previous = current[root] ?? emptyTranscript;
-				return {
-					...current,
-					[root]: {
-						...previous,
-						items: [
-							...previous.items,
-							{kind: 'failure', text: result.error.message},
-						],
-					},
-				};
-			});
-		if ((processGenerations.current.get(root) ?? 0) !== generation) return;
-		setTranscripts(current => ({
-			...current,
-			[root]: settleSubagentTurn(
-				current[root] ?? emptyTranscript,
-				result.ok
-					? result.value.stopReason === 'cancelled'
-						? 'cancelled'
-						: 'completed'
-					: 'failed',
-			),
-		}));
-		setTurns(current => ({...current, [root]: result}));
-		setRunning(current => ({...current, [root]: false}));
-	};
-
-	const cancel = async () => {
-		if (cancellation === 'pending') return;
-		streamBatcher.current?.flush(root);
-		setCancellations(current => ({...current, [root]: 'pending'}));
-		let result: IpcResult<null>;
 		try {
-			result = await window.desktop.cancelPrompt();
-		} catch {
-			result = {
-				ok: false,
-				error: {
-					code: 'AGENT_UNAVAILABLE',
-					message: 'could not cancel the turn. try again.',
-					retryable: true,
-				},
-			};
+			const result = await window.desktop.connectNanocoder();
+			if (!result.ok || result.value.status !== 'cancelled') setOpened(result);
+		} finally {
+			setConnecting(false);
+			void projectControls.refresh();
 		}
-		streamBatcher.current?.flush(root);
-		setCancellations(current => ({...current, [root]: result}));
 	};
-
-	const shell = (
-		<AppShell
-			palette={<PaletteButton />}
-			title={info?.name}
-			projectRail={
-				<RecentProjects
-					{...projectControls}
-					pending={connecting || projectControls.pending}
-				/>
-			}
-			statusBadges={
-				<div className="gate-actions">
-					<StatusBadge
-						status={
-							transcript.permissions.length
-								? 'approval'
-								: sending
-									? 'running'
-									: (turn && !turn.ok) || (opened && !opened.ok)
-										? 'failed'
-										: turn?.ok && turn.value.stopReason === 'cancelled'
-											? 'interrupted'
-											: 'idle'
-						}
-					/>
-					{processBadge && <StatusBadge {...processBadge} />}
-				</div>
-			}
-			streamTools={
-				<>
-					<TrustFeedback feedback={projectControls.feedback} />
-					{info && (
-						<p className="gate-meta">
-							version {info.version}. pre-v0.1: an early build, with most
-							features still to come.
-						</p>
-					)}
-					<section className="gate-runtime" aria-label="Nanocoder runtime">
-						{runtime?.ok && (
-							<p>
-								Nanocoder {runtime.value.version} at {runtime.value.cliPath}, on
-								Node.js {runtime.value.nodeVersion} at {runtime.value.nodePath}
-							</p>
-						)}
-						{runtime && !runtime.ok && (
-							<>
-								<p role="alert">{runtime.error.message}</p>
-								<Button onClick={checkRuntime}>check again</Button>
-							</>
-						)}
-						{runtime?.ok && (
-							<Button
-								onClick={connect}
-								disabled={connecting || projectControls.pending}
-							>
-								{connecting ? (
-									<>
-										<span className="spinner" aria-hidden="true">
-											◐
-										</span>{' '}
-										starting Nanocoder
-									</>
-								) : (
-									'open a project folder'
-								)}
-							</Button>
-						)}
-					</section>
-					{outcome?.status === 'connected' && (
-						<AgentDetails agent={outcome.agent} session={outcome.session} />
-					)}
-					{outcome?.status === 'connected' && gates[outcome.agent.root] && (
-						<FeatureDetails gates={gates[outcome.agent.root]} />
-					)}
-					<RecoveryTools
-						state={processState}
-						onRetry={async projectId => {
-							const result = await window.desktop.restartProject({projectId});
-							if (
-								selectedProject.current === projectId &&
-								result.ok &&
-								result.value.status === 'ready' &&
-								result.value.agent
-							) {
-								setRecoveredAgent({projectId, agent: result.value.agent});
-								setOpened(null);
-								projectControls.clearFeedback();
-								void projectControls.refresh();
-							}
-							return result;
-						}}
-						onCapture={projectId => window.desktop.getDiagnostics({projectId})}
-						onExport={request => window.desktop.exportDiagnostics(request)}
-					/>
-				</>
-			}
-			composer={
-				outcome?.status === 'connected' && (
-					<form className="gate-composer" onSubmit={send}>
-						<label>
-							message
-							<input
-								ref={composerInput}
-								value={draft}
-								onChange={event => setDraft(event.target.value)}
-								disabled={!accepting}
-								placeholder="ask anything…"
-								aria-describedby="composer-hint"
-							/>
-						</label>
-						<SlashSuggestions
-							commands={transcript.commands ?? []}
-							draft={draft}
-							disabled={!accepting}
-							onInsert={value => {
-								setDraft(value);
-								composerInput.current?.focus();
-							}}
-						/>
-						<div className="gate-actions">
-							<Button
-								type="submit"
-								disabled={sending || !accepting || draft.trim() === ''}
-							>
-								send
-							</Button>
-							{sending && (
-								<Button
-									variant="reject"
-									disabled={connecting || cancellation === 'pending'}
-									onClick={() => {
-										void cancel();
-									}}
-								>
-									{cancellation === 'pending'
-										? 'cancelling turn'
-										: 'cancel turn'}
-								</Button>
-							)}
-							<p id="composer-hint" className="gate-hint">
-								{!accepting
-									? 'Nanocoder is not ready. retry before sending.'
-									: sending
-										? 'waiting for Nanocoder to finish the turn'
-										: draft.trim() === ''
-											? 'enter a message to send'
-											: 'ready to send'}
-							</p>
-						</div>
-						{cancellation && cancellation !== 'pending' && !cancellation.ok && (
-							<p role="alert">{cancellation.error.message}</p>
-						)}
-					</form>
-				)
-			}
-		>
-			{outcome?.status === 'connected' && (
-				<ConversationStream
-					key={root}
-					transcript={transcript}
-					running={sending}
-					onStopTurn={cancel}
-					stopping={cancellation === 'pending'}
-					outcome={
-						turn?.ok
-							? turn.value.stopReason === 'cancelled'
-								? 'cancelled'
-								: 'completed'
-							: turn
-								? 'failed'
-								: undefined
-					}
-				>
-					<ApprovalRequests
-						key={root}
-						requests={transcript.permissions}
-						mode={outcome.session?.mode ?? 'normal'}
-						busy={sending}
-						fallbackFocus={composerInput}
-						onAnswer={(id, optionId) => {
-							streamBatcher.current?.flush(root);
-							return window.desktop.answerPermission(id, optionId);
-						}}
-					/>
-				</ConversationStream>
-			)}
-			{turn?.ok && (
-				<p role="status">
-					{turn.value.stopReason === 'cancelled'
-						? 'turn interrupted'
-						: 'turn ended'}
-					: {turn.value.stopReason}
-				</p>
-			)}
-			{turn && !turn.ok && (
-				<Card variant="failure" role="alert">
-					<span>
-						<span aria-hidden="true">✕ </span>
-						{turn.error.message}
-					</span>
-				</Card>
-			)}
-			{outcome?.status === 'untrusted' && (
-				<Card variant="failure" role="alert">
-					<span>
-						<span aria-hidden="true">✕ </span>not opened. {outcome.message}
-					</span>
-				</Card>
-			)}
-			{opened && !opened.ok && (
-				<Card variant="failure" role="alert">
-					<span>
-						<span aria-hidden="true">✕ </span>
-						{opened.error.message}
-					</span>
-				</Card>
-			)}
-		</AppShell>
-	);
+	const send = (event: FormEvent) => {
+		event.preventDefault();
+		if (editable && !rootBusy && draft.trim()) void controls.send();
+	};
+	const cancel = async () => {
+		if (thread) await controls.cancel(thread.id);
+	};
+	const rename = (threadId: string) => {
+		const row = workspace.threads.find(row => row.id === threadId);
+		if (row && projectId) setRenaming({projectId, threadId, title: row.title});
+	};
+	const onNew = () => {
+		void controls.create();
+	};
+	const onArchive = (id: string, archived: boolean) => {
+		void controls.archive(id, archived);
+	};
+	const renameGate = gates[projectId ?? '']?.features.rename;
+	const deleteGate = gates[projectId ?? '']?.features.delete;
+	const renameDisabledReason = renameGate?.enabled
+		? undefined
+		: (renameGate?.reason ?? 'Nanocoder is not ready');
+	const deleteHistoryDisabledReason = deleteGate?.enabled
+		? undefined
+		: (deleteGate?.reason ?? 'Nanocoder is not ready');
+	const pending =
+		workspace.loading ||
+		workspace.pending ||
+		connecting ||
+		projectControls.pending;
+	const hint = !accepting
+		? 'Nanocoder is not ready. retry before sending.'
+		: thread?.archiveState === 'archived'
+			? 'this thread is archived; unarchive it before sending'
+			: sending
+				? 'waiting for Nanocoder to finish the turn'
+				: rootBusy
+					? 'another thread is running'
+					: draft.trim() === ''
+						? 'enter a message to send'
+						: 'ready to send';
 
 	return (
 		<OverlayProvider
@@ -616,6 +274,17 @@ export function App() {
 				...projectPalette({
 					...projectControls,
 					pending: connecting || projectControls.pending,
+				}),
+				...threadPalette({
+					projectId,
+					thread,
+					pending,
+					renameDisabledReason: thread?.nanocoderSessionId
+						? renameDisabledReason
+						: undefined,
+					onNew,
+					onRename: rename,
+					onArchive,
 				}),
 				{
 					id: 'open-folder',
@@ -634,7 +303,283 @@ export function App() {
 				},
 			]}
 		>
-			{shell}
+			<AppShell
+				title={info?.name}
+				palette={<PaletteButton />}
+				projectRail={
+					<RecentProjects
+						{...projectControls}
+						pending={connecting || projectControls.pending}
+					/>
+				}
+				threadRail={
+					<ThreadRail
+						projectId={projectId}
+						threads={workspace.threads}
+						activeThreadId={workspace.activeThreadId}
+						pending={pending}
+						now={new Date()}
+						renameDisabledReason={renameDisabledReason}
+						deleteHistoryDisabledReason={deleteHistoryDisabledReason}
+						onNew={onNew}
+						onOpen={id => {
+							setRenaming(null);
+							void controls.open(id);
+						}}
+						onRename={rename}
+						onArchive={onArchive}
+						onRemove={id => {
+							void controls.remove(id);
+						}}
+						onDeleteHistory={id => {
+							void controls.deleteHistory(id);
+						}}
+					/>
+				}
+				statusBadges={
+					<div className="gate-actions">
+						<StatusBadge
+							status={
+								transcript.permissions.length
+									? 'approval'
+									: sending
+										? 'running'
+										: failed || (opened && !opened.ok)
+											? 'failed'
+											: thread?.runState === 'interrupted'
+												? 'interrupted'
+												: 'idle'
+							}
+						/>
+						{processBadge && <StatusBadge {...processBadge} />}
+					</div>
+				}
+				streamTools={
+					<>
+						<TrustFeedback feedback={projectControls.feedback} />
+						{info && (
+							<p className="gate-meta">
+								version {info.version}. pre-v0.1: an early build, with most
+								features still to come.
+							</p>
+						)}
+						<section className="gate-runtime" aria-label="Nanocoder runtime">
+							{runtime?.ok && (
+								<p>
+									Nanocoder {runtime.value.version} at {runtime.value.cliPath},
+									on Node.js {runtime.value.nodeVersion} at{' '}
+									{runtime.value.nodePath}
+								</p>
+							)}
+							{runtime && !runtime.ok && (
+								<>
+									<p role="alert">{runtime.error.message}</p>
+									<Button onClick={checkRuntime}>check again</Button>
+								</>
+							)}
+							{runtime?.ok && (
+								<Button
+									onClick={connect}
+									disabled={connecting || projectControls.pending}
+								>
+									{connecting ? 'starting Nanocoder' : 'open a project folder'}
+								</Button>
+							)}
+						</section>
+						{outcome?.status === 'connected' && (
+							<AgentDetails agent={outcome.agent} thread={thread} />
+						)}
+						{gates[projectId ?? ''] && (
+							<FeatureDetails gates={gates[projectId ?? '']} />
+						)}
+						<RecoveryTools
+							state={processState}
+							onRetry={async id => {
+								const result = await window.desktop.restartProject({
+									projectId: id,
+								});
+								if (
+									selectedProject.current === id &&
+									result.ok &&
+									result.value.status === 'ready' &&
+									result.value.agent
+								) {
+									setOpened(null);
+									projectControls.clearFeedback();
+									void projectControls.refresh();
+									await controls.reload(id);
+								}
+								return result;
+							}}
+							onCapture={projectId =>
+								window.desktop.getDiagnostics({projectId})
+							}
+							onExport={request => window.desktop.exportDiagnostics(request)}
+						/>
+						{workspace.error && <p role="alert">{workspace.error}</p>}
+					</>
+				}
+				composer={
+					outcome?.status === 'connected' &&
+					thread &&
+					thread.runState !== 'view-only' && (
+						<form className="gate-composer" onSubmit={send}>
+							<label>
+								message
+								<input
+									ref={composerInput}
+									value={draft}
+									onChange={event => controls.setDraft(event.target.value)}
+									disabled={!editable}
+									placeholder="ask anything…"
+									aria-describedby="composer-hint"
+								/>
+							</label>
+							<SlashSuggestions
+								commands={transcript.commands ?? []}
+								draft={draft}
+								disabled={!editable}
+								onInsert={value => {
+									controls.setDraft(value);
+									composerInput.current?.focus();
+								}}
+							/>
+							<div className="gate-actions">
+								<Button
+									type="submit"
+									disabled={rootBusy || !editable || !draft.trim()}
+									aria-describedby="composer-hint"
+								>
+									send
+								</Button>
+								{sending && (
+									<Button
+										variant="reject"
+										disabled={connecting || stopping}
+										onClick={() => {
+											void cancel();
+										}}
+									>
+										{stopping ? 'cancelling turn' : 'cancel turn'}
+									</Button>
+								)}
+								<p id="composer-hint" className="gate-hint">
+									{hint}
+								</p>
+							</div>
+							{cancellation && !cancellation.ok && (
+								<p role="alert">{cancellation.error.message}</p>
+							)}
+						</form>
+					)
+				}
+			>
+				{thread && (
+					<ConversationStream
+						key={`${projectId}:${thread.id}`}
+						transcript={transcript}
+						running={sending}
+						onStopTurn={cancel}
+						stopping={stopping}
+						outcome={
+							turn?.ok
+								? turn.value.stopReason === 'cancelled'
+									? 'cancelled'
+									: 'completed'
+								: turn
+									? 'failed'
+									: undefined
+						}
+					>
+						<ApprovalRequests
+							key={`${projectId}:${thread.id}`}
+							requests={transcript.permissions}
+							mode={thread.mode}
+							busy={sending}
+							fallbackFocus={composerInput}
+							onAnswer={(id, optionId) =>
+								controls.answer(thread.id, id, optionId)
+							}
+						/>
+					</ConversationStream>
+				)}
+				{thread?.runState === 'view-only' && (
+					<Card aria-label="view-only thread">
+						<p>{thread.viewOnlyReason}</p>
+						<Button onClick={onNew}>start a new thread in this project</Button>
+						<Button onClick={() => void controls.remove(thread.id)}>
+							remove from desktop
+						</Button>
+					</Card>
+				)}
+				{turn?.ok && (
+					<p role="status">
+						{turn.value.stopReason === 'cancelled'
+							? 'turn interrupted'
+							: 'turn ended'}
+						: {turn.value.stopReason}
+					</p>
+				)}
+				{turn && !turn.ok && failed && (
+					<Card variant="failure" role="alert">
+						<span>
+							<span aria-hidden="true">✕ </span>
+							{turn.error.message}
+						</span>
+					</Card>
+				)}
+				{outcome?.status === 'untrusted' && (
+					<Card variant="failure" role="alert">
+						<span>
+							<span aria-hidden="true">✕ </span>not opened. {outcome.message}
+						</span>
+					</Card>
+				)}
+				{opened && !opened.ok && (
+					<Card variant="failure" role="alert">
+						<span>
+							<span aria-hidden="true">✕ </span>
+							{opened.error.message}
+						</span>
+					</Card>
+				)}
+			</AppShell>
+			{renaming && (
+				<dialog
+					ref={renameDialog}
+					className="overlay-dialog"
+					aria-label="rename thread"
+					onCancel={() => setRenaming(null)}
+				>
+					<form
+						onSubmit={event => {
+							event.preventDefault();
+							if (renaming.projectId !== projectId) return;
+							void controls
+								.rename(renaming.threadId, renaming.title)
+								.then(saved => {
+									if (saved) setRenaming(null);
+								});
+						}}
+					>
+						<label>
+							thread title
+							<input
+								ref={renameInput}
+								value={renaming.title}
+								maxLength={200}
+								onChange={event =>
+									setRenaming({...renaming, title: event.target.value})
+								}
+							/>
+						</label>
+						<Button type="submit" disabled={pending || !renaming.title.trim()}>
+							save title
+						</Button>
+						<Button onClick={() => setRenaming(null)}>cancel</Button>
+					</form>
+				</dialog>
+			)}
 		</OverlayProvider>
 	);
 }

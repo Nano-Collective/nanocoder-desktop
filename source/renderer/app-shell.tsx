@@ -4,6 +4,7 @@ export function AppShell({
 	title,
 	statusBadges,
 	projectRail,
+	threadRail,
 	streamTools,
 	composer,
 	palette,
@@ -12,6 +13,7 @@ export function AppShell({
 	title: React.ReactNode;
 	statusBadges: React.ReactNode;
 	projectRail?: React.ReactNode;
+	threadRail?: React.ReactNode;
 	streamTools?: React.ReactNode;
 	composer?: React.ReactNode;
 	palette?: React.ReactNode;
@@ -45,7 +47,11 @@ export function AppShell({
 							<p className="shell-placeholder">project list not built yet</p>
 						)}
 					</div>
-					<p className="shell-placeholder">thread list not built yet</p>
+					<div data-shell-slot="thread-rail">
+						{threadRail ?? (
+							<p className="shell-placeholder">thread list not built yet</p>
+						)}
+					</div>
 				</aside>
 				<main className="shell-stream" aria-label="conversation workspace">
 					<div className="shell-stream-scroll">

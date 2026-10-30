@@ -29,7 +29,6 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/paths.ts` | Shared native realpath canonicalisation (symlinks and volume case aliases) and component containment |
 | `source/main/ipc/handle-request.ts` | Sender check, schema validation and the result shape for every IPC call |
 | `source/main/ipc/index.ts` | Registers the IPC handlers |
-| `source/main/ipc/cancel-prompt.ts` | Pure strict schema for temporary technical-turn cancellation, with co-located refusal tests |
 | `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |
 | `source/main/ipc/workspace-services.ts` | Main-only project and thread service contracts |
 | `source/main/projects/` | Canonical project selection and relocation, bounded read-only trust summaries, and snapshot-checked native consent |
@@ -37,11 +36,11 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/store/index.ts` | Opens `userData/desktop.sqlite`, checks integrity, quarantines corruption and stores validated settings/UI state |
 | `source/main/store/node-sqlite.ts` | `node:sqlite` adapter and online backup; library errors never expose SQL inputs |
 | `source/main/store/migrations/` | Numbered, transactional schema upgrades, with a backup before upgrading an existing database |
+| `source/main/store/migrations/003-manual-thread-titles.ts` | Main-only boolean for durable manual-title precedence; existing titles are conservatively protected (`CHAT-12`) |
 | `source/main/store/repositories.ts` | Project/thread metadata only, scoped queries, canonical paths and cascade removal |
 | `source/main/store/validation.ts` | Allowlisted metadata schemas, including the settings/UI patches shared with IPC |
 | `source/main/nanocoder/supervisor-contracts.ts` | Main-only per-project supervisor interface |
 | `source/main/nanocoder/supervisor.ts` | Canonical-root process ownership, bounded recovery, injected idle activity and awaited shutdown |
-| `source/main/nanocoder/technical-sessions.ts` | Technical session cache, safe-mode recovery, activity and renderer-detach cleanup |
 | `source/main/nanocoder/clock.ts`, `source/main/nanocoder/fixtures/fake-clock.ts` | Cancellable supervisor timers and deterministic recovery/idle tests |
 | `source/main/nanocoder/diagnostics.ts` | Payload-filtered immutable captures, expiry and exact main-owned review/export |
 | `source/main/nanocoder/version-policy.ts` | Provisional minimum version, fail-closed parsing and untested-version warnings (`ACP-04`, `OQ-02`) |
@@ -49,12 +48,13 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path |
 | `source/main/nanocoder/launch.ts` | Starts Nanocoder with an argument array and no shell |
 | `source/main/nanocoder/acp-client.ts` | Starts `nanocoder --acp` in the project root, sends `initialize`, and opens or resumes sessions with their mode set |
+| `source/main/nanocoder/session-title.ts` | Bounded, allowlisted parsing for main-only Nanocoder title notifications |
+| `source/main/threads/thread-service.ts` | Metadata-first threads, mapped transient events, main-only activity/recovery/detach adapters and separately confirmed history deletion |
 | `source/main/nanocoder/trust.ts` | Reads Nanocoder's trust refusals and runs the short trust launch (`DEC-30`) |
 | `source/main/nanocoder/open-project.ts` | Connects, asks before trusting a folder, then opens or resumes a session in the starting mode |
 | `source/main/nanocoder/protocol-stream.ts` | Reads stdout as ACP only; anything else ends the connection |
 | `source/main/nanocoder/stderr-ring.ts` | Bounded, redacted, in-memory ring for Nanocoder's stderr |
 | `source/main/nanocoder/permissions.ts` | Holds each permission request until the user answers; only an option Nanocoder offered counts |
-| `source/main/nanocoder/cancel-technical-turn.ts` | Main-owned technical-turn cancellation and awaited supervisor settlement |
 | `source/main/nanocoder/turn-events.ts`, `source/main/nanocoder/turn-metadata.ts` | Normalises SDK stream updates and allowlisted vendor metadata without adding capabilities |
 | `source/main/nanocoder/subagent-display.ts`, `source/shared/subagents.ts` | Bounded display-only delegation and permission source hints, never routing or answer authority |
 | `source/main/store/agent-runs.ts`, `source/main/nanocoder/subagent-runs.ts` | Passive metadata-only repository and lifecycle consumer; application composition awaits phase 1.8 identity/replay |
@@ -65,6 +65,12 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `planning/subagents.md` | Phase 1.10 source limits, SUB-05 composition contract and subagent verification gaps |
 | `source/renderer/recovery-tools.tsx` | Plain-props process recovery and captured diagnostics controls |
 | `source/renderer/app-shell.tsx`, `source/renderer/styles/app-shell.css` | U.2 grid and plain-child rail/tools slots; inspector hidden at 840px and below |
+| `source/renderer/thread-rail.tsx`, `source/renderer/thread-rail-model.ts` | Plain-prop U.3 thread groups, state glyphs and metadata actions; presentation uses `styles/threads.css` |
+| `source/renderer/thread-palette.ts` | New, rename and archive palette commands sharing the rail's callbacks and refusal policy |
+| `source/renderer/thread-controller.ts` | Scoped thread metadata, snapshot/open bridge calls, isolated project/chat sequences and stale async/disposal guards |
+| `source/renderer/thread-stream.ts` | Per-thread transient sequence guards, snapshot-prefix replacement and buffered live delivery; separate from project metadata sequencing |
+| `source/renderer/thread-workspace.ts`, `source/renderer/use-threads.ts`, `source/renderer/thread-conversations.ts` | Live scoped workspace composition, memory-only drafts and authoritative transient terminal prefixes |
+| `planning/threads.md` | Phase 1.5 ownership, legacy protection twins, selected-glyph accessibility deviation and deferred resume work |
 | `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
 | `source/renderer/approval-requests.tsx` | U.6 plain-prop approval cards, request-scoped shortcuts and queued focus return |
 | `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |

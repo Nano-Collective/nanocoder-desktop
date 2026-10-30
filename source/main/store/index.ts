@@ -162,6 +162,11 @@ async function openStore(options: StoreOptions): Promise<DesktopStore> {
 		}
 		database.exec('PRAGMA foreign_keys = ON');
 		database.exec('PRAGMA journal_mode = WAL');
+		database
+			.prepare(
+				"UPDATE thread SET run_state = 'interrupted' WHERE run_state IN ('running', 'waiting-approval')",
+			)
+			.run();
 		return createStore(database);
 	} catch (error) {
 		database?.close();

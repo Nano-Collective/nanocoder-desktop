@@ -8,6 +8,7 @@ import '@/renderer/styles/technical-gate.css';
 import '@/renderer/styles/conversation-stream.css';
 import '@/renderer/styles/overlays.css';
 import '@/renderer/styles/projects.css';
+import '@/renderer/styles/threads.css';
 
 const root = document.getElementById('root');
 if (!root) {

@@ -2,10 +2,12 @@ import {IpcFailure} from '@/main/ipc/handle-request';
 import type {SqlDatabase} from '@/main/store/contracts';
 import {metadataSql} from '@/main/store/migrations/001-metadata';
 import {uiStateSql} from '@/main/store/migrations/002-ui-state';
+import {manualThreadTitlesSql} from '@/main/store/migrations/003-manual-thread-titles';
 
 export const migrations = [
 	{version: 1, sql: metadataSql},
 	{version: 2, sql: uiStateSql},
+	{version: 3, sql: manualThreadTitlesSql},
 ] as const;
 
 export function transaction<T>(

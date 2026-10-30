@@ -35,13 +35,11 @@ Design deviation, agreed for accessibility: `.approval-key-hints .ui-key-hint` u
 
 ## Cancel
 
-The temporary technical-gate `cancelPrompt()` bridge sends a strict empty payload on `nanocoder:cancel-prompt`. Main chooses the active project and session; renderer-supplied IDs or extra fields are rejected. No open session returns `AGENT_UNAVAILABLE`; an open session with no active turn is a clean no-op.
-
-The pure request schema and its refusal test live in `source/main/ipc/cancel-prompt.ts` and the adjacent spec, not in the Nanocoder cancellation helper.
+The `cancelThread()` bridge sends only desktop project/thread IDs on `threads:cancel`. Main resolves the saved Nanocoder session and cancels only that active owner. Renderer-supplied session IDs, extra fields and malformed scopes are rejected before the service runs. An unknown thread is refused; a known sessionless or idle thread is a local no-op. The strict schemas and service-invocation refusal tests live in `source/main/ipc/workspace.ts` and its adjacent spec.
 
 Cancellation reuses `ProjectSupervisor.cancel`, which cancels pending permissions and waits for the turn to settle. A cancelled turn is shown as interrupted, not successful or failed. The cancel control remains available during approval, and the composer becomes usable again afterwards.
 
-The temporary channel retires with `sendPrompt` and `answerPermission` when ThreadService replaces the technical gate. It does not extend the `threads:*` contract.
+The temporary `sendPrompt`, `answerPermission`, `cancelPrompt` and legacy event bridge are retired. ThreadService owns prompt, approval and cancel routing. Its tests retain scoped forwarding, offered-option refusals, cancellation during preparation and the requirement to await supervisor settlement.
 
 ## Verification
 

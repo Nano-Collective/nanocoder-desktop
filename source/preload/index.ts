@@ -1,6 +1,6 @@
 import {contextBridge, ipcRenderer} from 'electron';
 import type {DesktopApi} from '@/shared/desktop-api';
-import {CHANNELS, type ProjectEvent, type TurnEvent} from '@/shared/ipc';
+import {CHANNELS, type ProjectEvent} from '@/shared/ipc';
 
 const api: DesktopApi = {
 	getSettings: request => ipcRenderer.invoke(CHANNELS.getSettings, request),
@@ -49,19 +49,6 @@ const api: DesktopApi = {
 	getNanocoderRuntime: () =>
 		ipcRenderer.invoke(CHANNELS.getNanocoderRuntime, {}),
 	connectNanocoder: () => ipcRenderer.invoke(CHANNELS.connectNanocoder, {}),
-	sendPrompt: text => ipcRenderer.invoke(CHANNELS.sendPrompt, {text}),
-	cancelPrompt: () => ipcRenderer.invoke(CHANNELS.cancelPrompt, {}),
-	answerPermission: (id, optionId) =>
-		ipcRenderer.invoke(CHANNELS.answerPermission, {id, optionId}),
-	onNanocoderEvent: listener => {
-		const handler = (_event: unknown, turnEvent: TurnEvent) => {
-			listener(turnEvent);
-		};
-		ipcRenderer.on(CHANNELS.nanocoderEvent, handler);
-		return () => {
-			ipcRenderer.removeListener(CHANNELS.nanocoderEvent, handler);
-		};
-	},
 	onProjectEvent: listener => {
 		const handler = (_event: unknown, event: ProjectEvent) => listener(event);
 		ipcRenderer.on(CHANNELS.projectEvent, handler);

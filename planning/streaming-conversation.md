@@ -36,7 +36,7 @@ Slash suggestions come only from `available_commands_update`. Selecting one inse
 
 ## Verification and remaining scope
 
-Unit tests cover mapping, patch semantics, metadata projection/refusal, legacy duplication refusal, project/session usage ownership, batching cancellation and Markdown resource/navigation refusal. Built-app tests use fake content and a fresh `--user-data-dir`, never a real provider or conversation.
+Unit tests cover mapping, patch semantics, metadata projection/refusal, project/thread usage ownership, batching cancellation and Markdown resource/navigation refusal. The retired legacy event channel is absent from preload; built-app tests prove literal legacy events cannot change the transcript. Built-app tests use fake content and a fresh `--user-data-dir`, never a real provider or conversation.
 
 `e2e/streaming.e2e.ts` drives a monotonic fake stream, asserts the achieved rate is at least 100 updates/sec and measures maximum input-to-frame, scroll-to-frame, frame gap and MessageChannel event-loop delay against 100ms. It checks ordered content, memory-only drafts, native disclosure keyboard focus, reduced-motion cursor/spinner, both themes and 1240/1020/840 widths. Condition/event waits replace fixed sleeps.
 

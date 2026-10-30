@@ -351,7 +351,7 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 **Build**
 
 - [x] Permission requests with Nanocoder's own options (`CHAT-06`, `ACP-10`) ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), exact offered IDs and labels; [`permissions.spec.ts`](../source/main/nanocoder/permissions.spec.ts), main-process refusals)
-- [x] Cancel, including during a pending permission (`CHAT-07`, `ACP-09`) ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), pending and active-turn cancellation; [`cancel-technical-turn.spec.ts`](../source/main/nanocoder/cancel-technical-turn.spec.ts), strict main-owned scope)
+- [x] Cancel, including during a pending permission (`CHAT-07`, `ACP-09`) ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), pending and active-turn cancellation; [`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), strict main-owned scope and awaited settlement; [`workspace.spec.ts`](../source/main/ipc/workspace.spec.ts), renderer session-identity refusal before service invocation)
 - [x] `ask_user` as selectable options (`CHAT-21`) ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), selection-only question and exact selected answer ID)
 
 **Results we want**

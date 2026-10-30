@@ -18,6 +18,7 @@ import {
 import {connectProject} from '@/main/nanocoder/open-project';
 import {PermissionBroker} from '@/main/nanocoder/permissions';
 import type {Resolution} from '@/main/nanocoder/runtime';
+import type {SessionTitleChange} from '@/main/nanocoder/session-title';
 import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
 import type {NanocoderSupervisor} from '@/main/nanocoder/supervisor-contracts';
 import type {TrustRefusal} from '@/main/nanocoder/trust';
@@ -30,6 +31,7 @@ import type {
 	ProjectEvent,
 	ProjectInfo,
 	SupervisorState,
+	ThreadInfo,
 	TurnEvent,
 } from '@/shared/ipc';
 
@@ -92,6 +94,9 @@ const stopped = (projectId: string): SupervisorState => ({
 export class ProjectSupervisor implements NanocoderSupervisor {
 	private readonly entries = new Map<string, Entry>();
 	private readonly listeners = new Set<(event: ProjectEvent) => void>();
+	private readonly titleListeners = new Set<
+		(change: SessionTitleChange & {projectId: string}) => void
+	>();
 	private readonly sequences = new Map<string, number>();
 	private readonly turnSequences = new Map<string, Map<string, number>>();
 	private closed = false;
@@ -199,6 +204,15 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		};
 	}
 
+	subscribeTitles(
+		listener: (change: SessionTitleChange & {projectId: string}) => void,
+	): () => void {
+		this.titleListeners.add(listener);
+		return () => {
+			this.titleListeners.delete(listener);
+		};
+	}
+
 	private emit(event: ProjectEvent): void {
 		for (const listener of this.listeners) listener(structuredClone(event));
 	}
@@ -215,6 +229,24 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			projectId: project.id,
 			sequence: this.sequence(project.id),
 			project,
+		});
+	}
+
+	publishThread(thread: ThreadInfo): void {
+		this.emit({
+			type: 'thread',
+			projectId: thread.projectId,
+			sequence: this.sequence(thread.projectId),
+			thread,
+		});
+	}
+
+	publishThreadRemoved(projectId: string, threadId: string): void {
+		this.emit({
+			type: 'thread-removed',
+			projectId,
+			threadId,
+			sequence: this.sequence(projectId),
 		});
 	}
 
@@ -477,6 +509,11 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 					entry.lastActivityAt = this.clock.now();
 					const event = toTurnEvent(notification.update);
 					if (event) this.turn(entry, notification.sessionId, event);
+				},
+				onTitleChanged: change => {
+					if (signal.aborted) return;
+					for (const listener of this.titleListeners)
+						listener(structuredClone({...change, projectId: project.id}));
 				},
 				onPermission: request => {
 					if (

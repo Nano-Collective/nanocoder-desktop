@@ -17,8 +17,8 @@ Phase 1.2 implements `CHAT-01`, `CHAT-02` and the current `DEC-30` proposal.
 - A missing or replaced canonical root cannot open. Locate asks for another
   native selection, refuses another project's root, stops the former process
   before saving the new root, and clears trust. Existing thread history and its
-  recorded cwd are not rewritten. The technical session cache discards the old
-  session when the project's session cwd changes.
+  recorded cwd are not rewritten. ThreadService refuses the former session's
+  cwd before resume, keeps its identity and never silently substitutes a session.
 - A trust refusal clears the desktop trust flag, including when it comes from a
   direct supervisor start. A refusal does not trigger an automatic restart.
 

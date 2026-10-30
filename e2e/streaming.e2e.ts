@@ -18,7 +18,6 @@ import {
 	test,
 } from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
-import {CHANNELS} from '@/shared/ipc';
 import {qaEnvironment} from './qa/environment';
 import {visibleTextContrast} from './qa/ui-contrast';
 
@@ -39,7 +38,6 @@ interface Probe {
 	inputFrameMs: number[];
 	eventLoopMs: number[];
 	stop: boolean;
-	legacySeen: boolean;
 }
 
 interface StreamWindow extends Window {
@@ -115,7 +113,6 @@ test('100 updates per second keep ordered content and input and scroll response 
 			inputFrameMs: [],
 			eventLoopMs: [],
 			stop: false,
-			legacySeen: false,
 		};
 		state.streamProbe = probe;
 		state.desktop.onProjectEvent(event => {
@@ -127,10 +124,6 @@ test('100 updates per second keep ordered content and input and scroll response 
 				probe.updates++;
 				probe.lastUpdate = performance.now();
 			}
-		});
-		state.desktop.onNanocoderEvent(event => {
-			if (event.type === 'text' && event.text === 'duplicate legacy fixture')
-				probe.legacySeen = true;
 		});
 		document.querySelector('input')?.addEventListener('input', () => {
 			if (!probe.updates || probe.stop) return;
@@ -265,15 +258,14 @@ test('100 updates per second keep ordered content and input and scroll response 
 				type: 'text',
 				text: 'duplicate legacy fixture',
 			}),
-		CHANNELS.nanocoderEvent,
+		'nanocoder:event',
 	);
-	await expect
-		.poll(() =>
-			page.evaluate(
-				() => (window as unknown as StreamWindow).streamProbe.legacySeen,
-			),
-		)
-		.toBe(true);
+	const bridgeKeys = await page.evaluate(async () => {
+		const {desktop} = window as unknown as StreamWindow;
+		await desktop.getAppInfo();
+		return Object.keys(desktop);
+	});
+	expect(bridgeKeys).not.toContain('onNanocoderEvent');
 	await expect(agent).toHaveText(before ?? '');
 	await expect(input).toHaveValue('draft-memory-only-210');
 	for (const file of ['desktop.sqlite', 'desktop.sqlite-wal']) {

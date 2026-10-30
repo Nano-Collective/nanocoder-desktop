@@ -20,6 +20,7 @@ import {
 } from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {ProjectEvent} from '@/shared/ipc';
+import {qaEnvironment} from './qa/environment';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-e2e-')));
 const fakeCli = path.join(work, 'nanocoder', 'dist', 'cli.js');
@@ -81,11 +82,10 @@ test.beforeAll(async () => {
 	copyFileSync('source/main/nanocoder/fixtures/fake-nanocoder.mjs', fakeCli);
 	app = await electron.launch({
 		args: ['.', `--user-data-dir=${path.join(work, 'profile')}`],
-		env: {
-			...process.env,
-			NANOCODER_DESKTOP_CLI: fakeCli,
-			NANOCODER_DESKTOP_NODE: process.execPath,
-		},
+		env: qaEnvironment(process.env, {
+			cliPath: fakeCli,
+			nodePath: process.execPath,
+		}),
 	});
 	page = await app.firstWindow();
 	// Records the id of every permission request the app is shown, through the real bridge.
@@ -93,17 +93,13 @@ test.beforeAll(async () => {
 		const seen: string[] = [];
 		const state = window as unknown as {
 			permissionIds: string[];
-			desktop: {
-				onNanocoderEvent(
-					listener: (event: {type: string; request?: {id: string}}) => void,
-				): void;
-			};
+			desktop: DesktopApi;
 		};
 		state.permissionIds = seen;
-		state.desktop.onNanocoderEvent(event => {
-			if (event.type === 'permission' && event.request) {
-				seen.push(event.request.id);
-			}
+		state.desktop.onProjectEvent(event => {
+			if (event.type !== 'turn') return;
+			for (const item of event.events)
+				if (item.type === 'permission') seen.push(item.request.id);
 		});
 	});
 });
@@ -118,8 +114,8 @@ test('shows the Nanocoder it will launch', async () => {
 });
 
 interface Bridge {
-	sendPrompt(text: unknown): Promise<{ok: boolean; error?: {code: string}}>;
-	answerPermission(
+	prompt(text: unknown): Promise<{ok: boolean; error?: {code: string}}>;
+	answer(
 		id: unknown,
 		optionId: unknown,
 	): Promise<{ok: boolean; error?: {code: string}}>;
@@ -130,29 +126,42 @@ const bridge = <K extends keyof Bridge>(
 	...args: Parameters<Bridge[K]>
 ) =>
 	page.evaluate(
-		([name, values]) =>
-			(
-				window as unknown as {
-					desktop: Record<string, (...a: unknown[]) => unknown>;
-				}
-			).desktop[name](...values),
+		async ([name, values]) => {
+			const {desktop} = window as unknown as {desktop: DesktopApi};
+			const ui = await desktop.getUiState({});
+			const owner = {
+				projectId:
+					(ui.ok && ui.value.activeProjectId) ||
+					'11111111-1111-4111-8111-111111111111',
+				threadId:
+					(ui.ok && ui.value.activeThreadId) ||
+					'22222222-2222-4222-8222-222222222222',
+			};
+			return name === 'prompt'
+				? desktop.promptThread({...owner, text: values[0]} as never)
+				: desktop.answerThreadPermission({
+						...owner,
+						requestId: values[0],
+						optionId: values[1],
+					} as never);
+		},
 		[method, args] as const,
 	) as ReturnType<Bridge[K]>;
 
 test('refuses a prompt before any project is open', async () => {
-	const result = await bridge('sendPrompt', 'Hello');
+	const result = await bridge('prompt', 'Hello');
 	expect(result.ok).toBe(false);
-	expect(result.error?.code).toBe('AGENT_UNAVAILABLE');
+	expect(result.error?.code).toBe('NOT_FOUND');
 });
 
-test('opens a trusted folder in normal mode without asking', async () => {
+test('initialises a trusted folder without eagerly creating a session or asking', async () => {
 	const root = project('trusted');
 	await openFolder(root);
 	const agent = page.getByRole('region', {name: 'Connected agent'});
 	await expect(agent).toContainText(
 		`connected to nanocoder 9.9.9 over ACP protocol version 1 in ${root}`,
 	);
-	await expect(agent).toContainText('session fake-session in normal mode');
+	await expect(agent).not.toContainText('session fake-session');
 	await expect(agent.locator('dt:has-text("resume sessions") + dd')).toHaveText(
 		'yes',
 	);
@@ -184,7 +193,7 @@ test('trusts the folder through Nanocoder when the user agrees, then opens it', 
 	expect(existsSync(path.join(root, '.fake-trusted'))).toBe(true);
 	await expect(
 		page.getByRole('region', {name: 'Connected agent'}),
-	).toContainText('session fake-session in normal mode');
+	).toContainText(`in ${root}`);
 	await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
@@ -276,20 +285,20 @@ test('only an option Nanocoder offered can answer a waiting request', async () =
 	expect(live).toMatch(/^permission-\d+$/);
 
 	// The live request, with an option Nanocoder did not offer: refused, and still waiting.
-	const unoffered = await bridge('answerPermission', live, 'allow_always');
+	const unoffered = await bridge('answer', live, 'allow_always');
 	expect(unoffered.ok).toBe(false);
-	expect(unoffered.error?.code).toBe('NOT_FOUND');
+	expect(unoffered.error?.code).toBe('DENIED');
 	await expect(cards()).toBeVisible();
 
 	// A request that was never issued, and a malformed call.
-	const unknown = await bridge('answerPermission', 'permission-9999', 'allow');
-	const malformed = await bridge('answerPermission', 1, ['allow']);
-	expect(unknown.error?.code).toBe('NOT_FOUND');
+	const unknown = await bridge('answer', 'permission-9999', 'allow');
+	const malformed = await bridge('answer', 1, ['allow']);
+	expect(unknown.error?.code).toBe('DENIED');
 	expect(malformed.error?.code).toBe('VALIDATION');
 	await expect(cards()).toBeVisible();
 
 	// The same live request still accepts an option it offered.
-	const offered = await bridge('answerPermission', live, 'allow');
+	const offered = await bridge('answer', live, 'allow');
 	expect(offered.ok).toBe(true);
 	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 });
@@ -328,8 +337,8 @@ test('opening another project is not blocked by a turn left open', async () => {
 });
 
 test('validates a prompt', async () => {
-	const empty = await bridge('sendPrompt', '   ');
-	const wrongType = await bridge('sendPrompt', {text: 'x'});
+	const empty = await bridge('prompt', '   ');
+	const wrongType = await bridge('prompt', {text: 'x'});
 	expect(empty.error?.code).toBe('VALIDATION');
 	expect(wrongType.error?.code).toBe('VALIDATION');
 });
@@ -337,7 +346,9 @@ test('validates a prompt', async () => {
 test('conversation and tool text never enters the desktop database', async () => {
 	await openFolder(project('privacy'));
 	const marker = 'fixture-private-prompt-not-for-storage';
-	await page.getByLabel('Message').fill(marker);
+	await page
+		.getByLabel('Message')
+		.fill(`synthetic bounded title ${'x'.repeat(80)} ${marker}`);
 	await page.getByRole('button', {name: 'Send'}).click();
 	await cards().getByRole('button', {name: 'Allow'}).click();
 	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
@@ -384,9 +395,9 @@ test('two project processes keep simultaneous turns, events and approvals separa
 	await expect(cards()).toBeVisible();
 	const secondPermission = (await permissionIds()).at(-1) ?? '';
 	expect(secondPermission).not.toBe(firstPermission);
-	expect(
-		(await bridge('answerPermission', firstPermission, 'allow')).error?.code,
-	).toBe('NOT_FOUND');
+	expect((await bridge('answer', firstPermission, 'allow')).error?.code).toBe(
+		'DENIED',
+	);
 	await expect(
 		page.getByRole('list', {name: 'Conversation'}),
 	).not.toContainText('First project only');
@@ -405,9 +416,14 @@ test('two project processes keep simultaneous turns, events and approvals separa
 		expect(state.ok).toBe(true);
 		if (state.ok) {
 			expect(state.value.status).toBe('ready');
-			expect(state.value.activeThreadId).toBe('fake-session');
+			expect(state.value.activeThreadId).toMatch(
+				/^fake-session-[a-f0-9]{12}-[a-f0-9-]{36}$/,
+			);
 		}
 	}
+	expect(
+		new Set(states.map(state => state.ok && state.value.activeThreadId)).size,
+	).toBe(2);
 	await cards().getByRole('button', {name: 'Allow'}).click();
 	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
 	await openFolder(first);
@@ -502,10 +518,13 @@ async function recoveryProjectId(root: string): Promise<string> {
 	}, root);
 }
 
-test('a failed cached resume closes its process and the next open prepares a fresh session', async () => {
+test('a missing cached session stays view-only until the user explicitly starts a fresh thread', async () => {
 	await recordRecoveryProjects();
 	const root = project('resume-clean-retry');
 	await openFolder(root);
+	await sendMessage();
+	await cards().getByRole('button', {name: 'Deny'}).click();
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 	const projectId = await recoveryProjectId(root);
 	const stopped = await page.evaluate(
 		projectId =>
@@ -517,22 +536,24 @@ test('a failed cached resume closes its process and the next open prepares a fre
 	expect(stopped.ok).toBe(true);
 	writeFileSync(path.join(root, '.fake-nanocoder'), 'missing-session');
 	await openFolder(root);
-	await expect(page.getByRole('alert')).toContainText(
-		'Nanocoder no longer has this session',
-	);
+	await page.locator('.thread-open[aria-current="true"]').click();
+	await expect(
+		page.getByRole('region', {name: 'view-only thread'}),
+	).toContainText('Nanocoder has no saved history for this thread');
 	await expect(page.getByLabel('Message')).toHaveCount(0);
-	const state = await page.evaluate(
+	const stoppedMissing = await page.evaluate(
 		projectId =>
-			(window as unknown as {desktop: DesktopApi}).desktop.getSupervisorState({
+			(window as unknown as {desktop: DesktopApi}).desktop.stopProject({
 				projectId,
 			}),
 		projectId,
 	);
-	expect(state.ok && state.value.status).toBe('stopped');
+	expect(stoppedMissing.ok).toBe(true);
+	writeFileSync(path.join(root, '.fake-nanocoder'), 'multiple-sessions');
 	await openFolder(root);
-	await expect(
-		page.getByRole('region', {name: 'Connected agent'}),
-	).toContainText('session fake-session in normal mode');
+	await page
+		.getByRole('button', {name: 'start a new thread in this project'})
+		.click();
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
@@ -560,9 +581,7 @@ test('reloading during approval cancels hidden requests and leaves a usable sess
 			return state.ok && state.value.status;
 		})
 		.toBe('stopped');
-	expect((await bridge('answerPermission', stale, 'allow')).error?.code).toBe(
-		'NOT_FOUND',
-	);
+	expect((await bridge('answer', stale, 'allow')).error?.code).toBe('DENIED');
 	await openFolder(root);
 	await expect(cards()).toHaveCount(0);
 	await sendMessage();
@@ -636,6 +655,9 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 		);
 		if (resume) {
 			await openFolder(root);
+			await sendMessage();
+			await cards().getByRole('button', {name: 'Deny'}).click();
+			await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 			const projectId = await recoveryProjectId(root);
 			expect(
 				(
@@ -657,26 +679,30 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 			})) as typeof dialog.showOpenDialog;
 		}, root);
 		await page.getByRole('button', {name: 'Open a project folder'}).click();
-		await expect
-			.poll(() =>
-				page.evaluate(() =>
-					(
-						window as unknown as {recoveryEvents: ProjectEvent[]}
-					).recoveryEvents.some(
-						event =>
-							event.type === 'turn' &&
-							event.events.some(
-								item =>
-									item.type === 'text' && item.text.includes('mode waiting'),
-							),
-					),
-				),
-			)
-			.toBe(true);
+		await expect(page.getByLabel('Message')).toBeEnabled();
 		const projectId = await recoveryProjectId(root);
-		expect((await bridge('sendPrompt', 'not ready')).error?.code).toBe(
-			'AGENT_UNAVAILABLE',
+		await sendMessage();
+		await expect
+			.poll(async () => {
+				const diagnostics = await page.evaluate(
+					projectId =>
+						(window as unknown as {desktop: DesktopApi}).desktop.getDiagnostics(
+							{
+								projectId,
+							},
+						),
+					projectId,
+				);
+				return (
+					diagnostics.ok &&
+					diagnostics.value.lines.includes('{"method":"session/set_mode"}')
+				);
+			})
+			.toBe(true);
+		await expect(page.locator('.conversation-stream')).not.toContainText(
+			'mode waiting',
 		);
+		expect((await bridge('prompt', 'not ready')).error?.code).toBe('BUSY');
 		await page.reload();
 		const other = project(`reload-mode-other-${resume}`);
 		await openFolder(other);
