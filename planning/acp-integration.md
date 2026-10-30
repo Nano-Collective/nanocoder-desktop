@@ -93,7 +93,7 @@ None of these is declared in `initialize`, so the desktop detects them by versio
 
    | Desktop feature | Gate |
    |---|---|
-   | Durable resume | `sessionCapabilities.resume` advertised. Without it, threads open view-only after a restart. |
+   | Durable resume | `sessionCapabilities.resume` advertised. Without it, saved threads fail safely after a restart and offer explicit same-thread retry. Only an actual missing-history response makes them view-only (`CHAT-09`). |
    | Close on idle | `sessionCapabilities.close` advertised. Without it, idle shutdown just ends the process. |
    | Thread deletion | `sessionCapabilities.delete` advertised. |
    | Session discovery | `sessionCapabilities.list` advertised. |
@@ -230,15 +230,16 @@ Decided ([whitepaper, Project and session identity][wp-identity]):
 - The desktop stores both the **canonical project root** (used for security checks) and the **session cwd** (the directory passed to ACP).
 - The **Nanocoder session ID** is the durable join key. Listing is discovery only.
 
-How discovery should work, Suggestion (not discussed):
+Phase 1.8 implementation of `DEC-34`:
 
-1. Call `session/list` without a `cwd` filter. Nanocoder then returns every saved session ([source][nc-sm-list]).
-2. Canonicalise each session's `cwd` the same way the desktop canonicalises project roots: resolve symlinks, and compare case-insensitively on case-insensitive filesystems.
-3. Treat a session as belonging to the project when its canonical `cwd` is the root or inside it.
-4. Offer unknown matching sessions for import into the thread list. Do not store sessions that do not belong to a known project.
-5. Never persist titles of sessions from other projects: they can contain sensitive text.
+1. Only an already-ready connection advertising listing may send `session/list`, with `{cwd: canonicalProjectRoot}`. Discovery never launches Nanocoder, asks for trust, opens a session or falls back to a global list.
+2. Main resolves each reported `cwd` with native realpath and requires **exact equality with the canonical project root**. Native symlink and volume-case aliases can match; unconditional lowercasing is not used. Nested folders are refused because they may be separately configured projects or trust scopes. This narrow import rule does not change general path containment.
+3. Foreign, nested and outside-symlink entries are dropped before their titles are read into the candidate projection. IDs use the shared opaque session-ID schema unchanged, including permitted nonblank surrounding spaces. Duplicate IDs are ambiguous and all their entries are dropped. Titles use the existing bounded plain-text parser; unknown fields are ignored.
+4. At most 512 entries and 512 KiB of allowlisted UTF-8 metadata are accepted. Malformed, unavailable, unsupported or oversized lists provide no offers. An empty list never removes or changes a known thread.
+5. Offer unknown sessions newest first. Import is an explicit metadata operation under the existing project authority, not a new execution lease: no ACP call, history copy, automatic selection, resume or prompt. Another project's session owner is refused without exposing its title.
+6. Import requires the latest connection/root/cwd/attachment-scoped offer, revalidates the original reported path natively, and checks ownership again after the asynchronous check. An already-owned same-project offer returns its existing thread unchanged, including archive state, manual title, mode and activity. A new row takes the project's non-`yolo` default, never a mode from the list. Explicit opening later uses the existing same-ID resume and mode gates.
 
-This avoids depending on Nanocoder changing its exact-match filter. A Nanocoder change is still useful for other clients.
+The pinned development build `fc01e239a80ddb2e09ca174e3c909508832d5340` forwards `params.cwd` to `workingDirectory` in [`acp-agent.ts`][nc-discovery-pinned]. Its [`session-manager.ts`][nc-discovery-filter-pinned] compares exact `path.normalize` strings, not native realpaths. The requested canonical-root filter can therefore omit sessions saved under an alias even when main would consider them equivalent. That is an accepted best-effort omission, never proof that saved history is absent, and does not justify requesting every project's sessions.
 
 ## Process-global model state
 
@@ -316,6 +317,8 @@ Nanocoder already has unit-level ACP specs (`acp-agent.spec.ts`, `acp-capabiliti
 [nc-replay-meta]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/acp/acp-agent.ts#L932-L951
 [nc-server]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/acp/acp-server.ts#L24-L50
 [nc-sm-list]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/session/session-manager.ts#L390-L401
+[nc-discovery-pinned]: https://github.com/Nano-Collective/nanocoder/blob/fc01e239a80ddb2e09ca174e3c909508832d5340/source/acp/acp-agent.ts#L632-L648
+[nc-discovery-filter-pinned]: https://github.com/Nano-Collective/nanocoder/blob/fc01e239a80ddb2e09ca174e3c909508832d5340/source/session/session-manager.ts#L390-L400
 [nc-retention]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/session/session-manager.ts#L521-L607
 [nc-subagent-approval]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/acp/acp-conversation.ts#L90-L160
 [nc-global-handler]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/acp/acp-conversation.ts#L163-L193

@@ -62,6 +62,9 @@ Columns in the whitepaper's diagram are Decided. Columns marked "added" are Sugg
 | | `nanocoder_child_id` | text, nullable | Empty until Nanocoder exposes child IDs (`OQ-03`). |
 | | `role` | text | Subagent name, for example `explore`. |
 | | `status` | text | |
+| `thread_history` | `thread_id`, `session_id`, `revision`, `generation`, `sequence`, `complete` | text / integers | Added for phase 1.8: current scoped structural-ledger version, never a transcript. |
+| `thread_turn_identity` | `id`, `thread_id`, `session_id`, `ordinal`, `outcome` | text / integer | Added: desktop UUID and immutable order, with only justified structural outcome metadata. |
+| `thread_execution_identity` | `id`, `thread_id`, `session_id`, `turn_id`, `tool_call_id`, `ordinal`, `outcome` | text / integer | Added: exact bounded opaque tool-call ID within a stable desktop turn; no tool input or result. |
 | `terminal_session` | `id`, `project_id`, `cwd`, `state` | | No scrollback (`TERM-09`). |
 | `browser_tab` | `id`, `project_id`, `url`, `title` | | v1 has one tab. URLs can be sensitive; cleared with browser data (`BRW-08`). |
 | `setting` | `key` text primary key, `value` JSON | | Added (`DATA-09`). |
@@ -110,6 +113,7 @@ Phase 1.1 implements this in [`source/main/store/`](../source/main/store/), behi
 
 - `001-metadata.ts` creates the eight planned tables and their indexes; `002-ui-state.ts` adds the singleton UI-state table. Each migration takes `BEGIN IMMEDIATE`, rechecks the schema marker and ledger, skips already applied work and commits its schema, record and `user_version` together.
 - `003-manual-thread-titles.ts` adds the boolean `title_manually_set` (`CHAT-12`). It marks existing titles manual because their origin is unknown; new rows default to automatic. Project-scoped title updates validate an allowlisted title and boolean together. An automatic title cannot overwrite a manual title or clear its flag, including after a crash. No title history is added.
+- `004-thread-execution-identities.ts` adds the three structural identity tables above. Thread/project removal cascades them. It does not change migrations 001 to 003 or store conversation content.
 - An existing database gets an online SQLite backup before the first pending migration, including committed WAL changes. Backups are named `desktop.sqlite.backup-<uuid>`. A backup failure stops the upgrade. `STORE_TOO_NEW` refuses a newer version without replacing or upgrading it.
 - Startup checks schema compatibility before `PRAGMA integrity_check`, in one read transaction. An identifiable newer marker or ledger is always refused, even when integrity fails. Recoverable corruption or an invalid supported migration record closes the connection, then moves the database into `desktop.sqlite.corrupt-<uuid>/` and starts fresh. Closing SQLite can checkpoint committed WAL data into the database and remove WAL/SHM files; quarantine preserves committed data, not a byte-for-byte forensic snapshot. Files still present after close are moved too. Quarantines and backups are not automatically deleted.
 - The database directory is canonicalised. Existing database and sidecar symlinks, hard links and non-files are refused. New database and backup files are created with owner-only permissions where the platform supports them.
@@ -117,6 +121,16 @@ Phase 1.1 implements this in [`source/main/store/`](../source/main/store/), behi
 - Project availability is derived on read, not persisted. Repositories check new or changed session paths, and refuse cross-project thread moves. Metadata-only updates to unchanged saved paths still work when a folder is missing. Granting trust rechecks the project root; execution services must always re-check roots before use. Saved timestamps use fixed millisecond precision; list ordering also handles older rows with mixed ISO precision. Repositories remove desktop rows only.
 
 Evidence: [`store.spec.ts`](../source/main/store/store.spec.ts) introspects every migrated table for prohibited content columns and covers migrations, backups, rollback, refusal, recovery and metadata round trips. [`store.e2e.ts`](../e2e/store.e2e.ts) exercises the built main process, persistence across restart and corrupt-file startup; [`connect.e2e.ts`](../e2e/connect.e2e.ts) scans SQLite after a fake conversation and tool call.
+
+### Structural replay foundation
+
+`DesktopStore.threadHistory` and `DesktopStore.agentRuns` are main-only repositories, not IPC capabilities. A structural patch is a bounded upsert, not permission to replace or reassign an earlier identity. It checks the exact current project/thread/session, expected revision and increasing counters, rejects duplicate IDs or slots, and keeps at most 10,000 turns and executions per thread. A changed saved session cannot inherit the old ledger.
+
+One main-owned session-ID schema protects thread metadata, structural scopes, new/resumed acknowledgements and the existing import IPC boundary. It rejects unpaired UTF-16 surrogates, control/format characters and IDs over 200 UTF-8 bytes instead of allowing SQLite to change an opaque ID. Valid Unicode remains exact. A resumed acknowledgement must also match the saved ID before mode metadata, hooks or replay change. Discovery/import composition is still pending; listed IDs must pass this same schema before caching, publication or persistence.
+
+Replay retains previously justified outcomes; a synthetic completed tool is otherwise `unknown`, never evidence of success. The identity repository commits structural IDs and safe `agent_run` metadata in one data-only transaction. The disposable replay observer stages through a bounded, scoped repository, validates every observation against its execution, generation and replay epoch, and activates only after SQL commits. A failed commit leaves both SQL and the previous observer's sequence/generation memory unchanged.
+
+Tests cover real commit failure, malformed staged prefixes, stale callbacks, removal/disposal, ordinary non-delegation tools and a successful commit followed by an actual `SIGKILL` and reopen. This is a storage/staging foundation only. ThreadService mapping and replay publication, renderer replay gates and `SUB-05` application acceptance remain pending.
 
 ## Browser partition
 

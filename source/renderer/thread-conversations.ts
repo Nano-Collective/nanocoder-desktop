@@ -132,6 +132,7 @@ export function createThreadConversations(options: {
 		receive(event: Extract<ProjectEvent, {type: 'turn'}>) {
 			if (event.projectId !== projectId || !allowed(event.threadId)) return;
 			const current = generation;
+			if (event.replay) batcher.flush(event.threadId);
 			batcher.enqueue(event.threadId, event.events);
 			if (
 				event.events.some(

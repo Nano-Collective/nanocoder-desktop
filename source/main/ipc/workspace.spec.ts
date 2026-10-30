@@ -68,6 +68,46 @@ const payloads = {
 } satisfies WorkspaceRequests;
 const methods = Object.keys(payloads) as WorkspaceMethod[];
 
+for (const kind of ['high', 'low'] as const) {
+	test(`CHAT-08 importing a ${kind} surrogate identity refuses before calling a service`, async t => {
+		let calls = 0;
+		const request = registered({
+			threads: {
+				importSession: async () => {
+					calls++;
+					return null;
+				},
+			},
+		} as unknown as WorkspaceServices);
+		const result = await request('importSession', {
+			...project,
+			sessionId: kind === 'high' ? 'session\uD800' : 'session\uDFFF',
+		});
+		t.false(result.ok);
+		if (!result.ok) {
+			t.is(result.error.code, 'VALIDATION');
+			t.is(result.error.message, 'Invalid request');
+		}
+		t.is(calls, 0);
+	});
+}
+
+test('CHAT-08 an import request preserves its valid Unicode opaque identity exactly', async t => {
+	const sessionId = 'session/é/\u{1F680}';
+	let imported: string | undefined;
+	const request = registered({
+		threads: {
+			importSession: async (input: {sessionId: string}) => {
+				imported = input.sessionId;
+				return null;
+			},
+		},
+	} as unknown as WorkspaceServices);
+	const result = await request('importSession', {...project, sessionId});
+	t.true(result.ok);
+	t.is(imported, sessionId);
+});
+
 function registered(services?: WorkspaceServices) {
 	const handlers = new Map<
 		string,
@@ -95,6 +135,24 @@ function registered(services?: WorkspaceServices) {
 		return handler(payload, source);
 	};
 }
+
+test('CHAT-08 no workspace IPC request accepts a replay epoch or phase as authority', async t => {
+	const request = registered();
+	for (const [method, payload] of Object.entries(payloads)) {
+		for (const extra of [
+			{epoch: threadId},
+			{replayEpoch: threadId},
+			{replay: {epoch: threadId, phase: 'complete'}},
+		]) {
+			const result = await request(method as WorkspaceMethod, {
+				...payload,
+				...extra,
+			});
+			t.false(result.ok);
+			if (!result.ok) t.is(result.error.code, 'VALIDATION');
+		}
+	}
+});
 
 test('cancelThread refuses renderer session identities and malformed scopes before invoking the thread service (ACP-10)', async t => {
 	let calls = 0;

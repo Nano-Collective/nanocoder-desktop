@@ -13,23 +13,47 @@ import type {
 } from '@/main/nanocoder/supervisor';
 import {canonicalPath} from '@/main/paths';
 import type {DesktopStore} from '@/main/store/contracts';
-import {threadTitlePatch, validate} from '@/main/store/validation';
+import type {
+	ThreadHistory,
+	ThreadHistoryScope,
+} from '@/main/store/thread-execution-identities';
+import {
+	nanocoderSessionIdSchema,
+	threadTitlePatch,
+	validate,
+} from '@/main/store/validation';
 import {
 	createProjectOperations,
+	type MetadataOperationLease,
 	type ProjectOperationLease,
 } from '@/main/threads/project-operations';
+import {
+	type DiscoveredSessionProof,
+	sessionDiscovery,
+} from '@/main/threads/session-discovery';
+import {mapThreadReplay} from '@/main/threads/thread-history-mapping';
+import {createThreadHistoryObserver} from '@/main/threads/thread-history-observer';
+import {mapThreadLive} from '@/main/threads/thread-live-mapping';
+import {createThreadSequence} from '@/main/threads/thread-sequence';
 import type {
+	DiscoveredSession,
 	IpcResult,
 	NanocoderMode,
 	ProjectEvent,
 	ProjectInfo,
 	SessionInfo,
 	ThreadInfo,
+	ThreadReplay,
 	ThreadRequest,
 	ThreadSnapshot,
 	TurnEvent,
 	TurnResult,
 } from '@/shared/ipc';
+import {
+	REPLAY_FAILURE_REASON,
+	REPLAY_MISSING_REASON,
+	threadReplaySchema,
+} from '@/shared/thread-replay';
 
 export interface OwnedSessionContext {
 	lease: ProjectOperationLease;
@@ -38,6 +62,12 @@ export interface OwnedSessionContext {
 	session: SessionInfo;
 	source: 'new' | 'resume';
 	requestedMode: NanocoderMode;
+}
+
+function assertResumedIdentity(expected: string, session: SessionInfo): void {
+	const id = validate(nanocoderSessionIdSchema, session.id);
+	if (id !== expected)
+		throw new IpcFailure('DENIED', 'The resumed session changed');
 }
 
 interface ThreadOptions {
@@ -106,6 +136,14 @@ class PreparationCancelled extends IpcFailure {
 	}
 }
 
+interface DiscoverySnapshot {
+	connection: NanocoderConnection;
+	canonicalRoot: string;
+	sessionCwd: string;
+	signal: AbortSignal;
+	candidates: Map<string, DiscoveredSessionProof>;
+}
+
 export function createThreadService(
 	options: ThreadOptions,
 ): ThreadRuntimeService {
@@ -137,6 +175,35 @@ export function createThreadService(
 		string,
 		Pick<ThreadSnapshot, 'sequence' | 'events' | 'result'>
 	>();
+	const replays = new Map<
+		string,
+		ThreadReplay & {
+			threadId: string;
+			sessionId: string;
+			lease: ProjectOperationLease;
+		}
+	>();
+	const historyObservers = new Map<
+		string,
+		{
+			sessionId: string;
+			observer: ReturnType<typeof createThreadHistoryObserver>;
+		}
+	>();
+	const liveTurns = new Map<
+		string,
+		{
+			lease: ProjectOperationLease;
+			scope: ThreadHistoryScope;
+			turnId: string;
+			history?: ThreadHistory;
+			complete: boolean;
+			accepted: boolean;
+			observer: ReturnType<typeof createThreadHistoryObserver>;
+			failure?: IpcFailure;
+			outcome?: 'failed' | 'cancelled';
+		}
+	>();
 	const prepared = new Map<string, NanocoderConnection>();
 	const preparedSessions = new Map<
 		string,
@@ -162,6 +229,7 @@ export function createThreadService(
 	>();
 	const restoring = new Map<string, AbortSignal>();
 	const operations = new Map<string, Set<Promise<unknown>>>();
+	const discoveries = new Map<string, DiscoverySnapshot>();
 	let attachment = new AbortController();
 	let disposed = false;
 	const finishPreparation = (
@@ -214,6 +282,13 @@ export function createThreadService(
 			projectId,
 			kind,
 			async lease => {
+				const replay = replays.get(projectId);
+				if (
+					(kind === 'mode' || kind === 'config') &&
+					replay &&
+					replay.phase !== 'complete'
+				)
+					throw new IpcFailure('UNAVAILABLE', REPLAY_FAILURE_REASON);
 				const active = {lease, threadId: scope.threadId};
 				activeLeases.set(projectId, active);
 				try {
@@ -227,6 +302,32 @@ export function createThreadService(
 		);
 		return trackOperation(projectId, task);
 	};
+	const runMetadataOperation: typeof projectOperations.runMetadataOperation = (
+		projectId,
+		kind,
+		work,
+		scope = {},
+	) =>
+		trackOperation(
+			projectId,
+			projectOperations.runMetadataOperation(projectId, kind, work, {
+				...scope,
+				signal: scope.signal
+					? AbortSignal.any([attachment.signal, scope.signal])
+					: attachment.signal,
+			}),
+		);
+	const runConfirmationOperation: typeof projectOperations.runConfirmationOperation =
+		(projectId, kind, work, scope = {}) =>
+			trackOperation(
+				projectId,
+				projectOperations.runConfirmationOperation(projectId, kind, work, {
+					...scope,
+					signal: scope.signal
+						? AbortSignal.any([attachment.signal, scope.signal])
+						: attachment.signal,
+				}),
+			);
 	const now = () => (options.now?.() ?? new Date()).toISOString();
 	const presentThread = (thread: ThreadInfo) => {
 		const connection = connectionBinding(thread.projectId);
@@ -247,6 +348,13 @@ export function createThreadService(
 		return {...thread, ...(mode && {mode})};
 	};
 	const publishThread = (thread: ThreadInfo) => {
+		const replay = replays.get(thread.projectId);
+		if (
+			replay?.threadId === thread.id &&
+			replay.phase === 'begin' &&
+			thread.runState === 'ready'
+		)
+			return thread;
 		options.supervisor.publishThread(presentThread(thread));
 		return thread;
 	};
@@ -261,12 +369,40 @@ export function createThreadService(
 		if (!project) throw new IpcFailure('NOT_FOUND', 'Project not found');
 		return project;
 	};
+	const currentDiscovery = (
+		projectId: string,
+		discovery: DiscoverySnapshot,
+	): boolean => {
+		if (
+			disposed ||
+			discovery.signal.aborted ||
+			discovery.signal !== attachment.signal ||
+			discoveries.get(projectId) !== discovery
+		)
+			return false;
+		try {
+			const project = getProject(projectId);
+			return (
+				project.canonicalRoot === discovery.canonicalRoot &&
+				project.sessionCwd === discovery.sessionCwd &&
+				project.sessionCwd === project.canonicalRoot &&
+				discovery.connection.agent.root === project.canonicalRoot &&
+				options.supervisor.getState(projectId).status === 'ready' &&
+				options.supervisor.getConnection(projectId) === discovery.connection &&
+				options.supervisor.getCapabilityGates(projectId).features.list.enabled
+			);
+		} catch {
+			return false;
+		}
+	};
 	const attachProject = (projectId: string) => {
 		getProject(projectId);
 		attached.add(projectId);
 		lastActivity.set(projectId, (options.clock ?? systemClock).now());
 	};
 	const remember = (thread: ThreadInfo, connection: NanocoderConnection) => {
+		if (replays.get(thread.projectId)?.threadId !== thread.id)
+			replays.delete(thread.projectId);
 		prepared.set(thread.id, connection);
 		currentSessions.set(thread.projectId, {
 			thread: structuredClone(thread),
@@ -325,39 +461,188 @@ export function createThreadService(
 		)
 			throw new IpcFailure('BUSY', 'Wait for this thread to finish', true);
 	};
-	const snapshot = (request: ThreadRequest) => ({
-		thread: presentThread(getThread(request)),
-		...(snapshots.get(request.threadId) ?? {sequence: 0, events: []}),
-		replaying: false,
-	});
+	const snapshot = (request: ThreadRequest) => {
+		const thread = presentThread(getThread(request));
+		const candidate = replays.get(request.projectId);
+		const replay =
+			candidate?.threadId === thread.id &&
+			candidate.sessionId === thread.nanocoderSessionId
+				? candidate
+				: undefined;
+		return {
+			thread,
+			...(snapshots.get(request.threadId) ?? {sequence: 0, events: []}),
+			replaying: replay ? replay.phase !== 'complete' : false,
+			...(replay && {replayEpoch: replay.epoch}),
+		};
+	};
 	const append = (
 		thread: ThreadInfo,
 		events: TurnEvent[],
 		result?: IpcResult<TurnResult>,
+		persist = true,
+		cancelledOwner?: ProjectOperationLease,
+		replay?: ThreadReplay,
 	) => {
+		const live = liveTurns.get(thread.id);
+		const cancelling =
+			live &&
+			cancelledOwner === live.lease &&
+			result?.ok === true &&
+			result.value.stopReason === 'cancelled' &&
+			events.length === 0;
+		if (cancelledOwner && !cancelling)
+			throw new IpcFailure('DENIED', 'The cancelled turn changed');
+		if (live && !cancelling) projectOperations.assertCurrent(live.lease);
 		const state: Pick<ThreadSnapshot, 'sequence' | 'events' | 'result'> =
 			snapshots.get(thread.id) ?? {sequence: 0, events: []};
-		if (events.some(event => event.type === 'user')) delete state.result;
-		if (result) state.result = structuredClone(result);
-		state.events.push(...structuredClone(events));
-		state.sequence++;
-		snapshots.set(thread.id, state);
-		options.onEvent?.({
-			type: 'turn',
-			projectId: thread.projectId,
-			threadId: thread.id,
+		const allocator = createThreadSequence({
 			sequence: state.sequence,
-			events: structuredClone(events),
-			...(result && {result: structuredClone(result)}),
+			highWaterMark: live?.history?.sequence,
+		});
+		const batches = allocator.reserve(events.length);
+		let offset = 0;
+		for (const [index, batch] of batches.entries()) {
+			const chunk = events.slice(offset, offset + batch.count);
+			offset += batch.count;
+			const terminal = index === batches.length - 1 ? result : undefined;
+			if (live && !live.outcome)
+				for (const event of chunk)
+					if (
+						event.type === 'metadata' &&
+						(event.metadata.outcome === 'failed' ||
+							event.metadata.outcome === 'cancelled')
+					) {
+						live.outcome = event.metadata.outcome;
+						break;
+					}
+			if (
+				persist &&
+				live &&
+				(live.accepted || chunk.some(event => event.type === 'user')) &&
+				(terminal || chunk.some(event => ['user', 'tool'].includes(event.type)))
+			) {
+				const mapped = mapThreadLive({
+					scope: live.scope,
+					history: live.history,
+					turnId: live.turnId,
+					complete: live.complete,
+					firstSequence: batch.firstSlot,
+					highWaterMark: batch.highWaterMark,
+					events: chunk,
+					outcome: terminal
+						? terminal.ok
+							? (live.outcome ??
+								(terminal.value.stopReason === 'cancelled'
+									? 'cancelled'
+									: 'completed'))
+							: 'failed'
+						: undefined,
+				});
+				if (!cancelling) projectOperations.assertCurrent(live.lease);
+				const revision = live.observer.commitLive(
+					mapped.patch,
+					mapped.observations,
+					mapped.terminal,
+				);
+				live.history = {...mapped.history, revision};
+				live.accepted = true;
+				const previous = historyObservers.get(thread.id);
+				if (previous?.observer !== live.observer) previous?.observer.dispose();
+				historyObservers.set(thread.id, {
+					sessionId: live.scope.sessionId,
+					observer: live.observer,
+				});
+			}
+			if (chunk.some(event => event.type === 'user')) delete state.result;
+			if (terminal) state.result = structuredClone(terminal);
+			state.events.push(...structuredClone(chunk));
+			state.sequence = batch.sequence;
+			snapshots.set(thread.id, state);
+			options.onEvent?.({
+				type: 'turn',
+				projectId: thread.projectId,
+				threadId: thread.id,
+				sequence: state.sequence,
+				events: structuredClone(chunk),
+				...(terminal && {result: structuredClone(terminal)}),
+				...(replay && {replay: threadReplaySchema.parse(replay)}),
+			});
+		}
+	};
+	const beginReplay = (thread: ThreadInfo, lease: ProjectOperationLease) => {
+		projectOperations.assertCurrent(lease);
+		if (!thread.nanocoderSessionId)
+			throw new IpcFailure('AGENT_UNAVAILABLE', 'No saved session is ready');
+		if (!snapshots.has(thread.id)) {
+			const history = options.store.threadHistory.read({
+				projectId: thread.projectId,
+				threadId: thread.id,
+				sessionId: thread.nanocoderSessionId,
+			});
+			const allocator = createThreadSequence({
+				highWaterMark: history?.sequence,
+			});
+			projectOperations.assertCurrent(lease);
+			snapshots.set(thread.id, {sequence: allocator.current(), events: []});
+		}
+		const replay = {
+			epoch: randomUUID(),
+			phase: 'begin' as ThreadReplay['phase'],
+			threadId: thread.id,
+			sessionId: thread.nanocoderSessionId,
+			lease,
+		};
+		replays.set(thread.projectId, replay);
+		append(thread, [], undefined, false, undefined, {
+			epoch: replay.epoch,
+			phase: 'begin',
+		});
+		return replay;
+	};
+	const finishReplay = (
+		thread: ThreadInfo,
+		replay: ReturnType<typeof beginReplay>,
+		phase: 'complete' | 'failed',
+	) => {
+		if (replays.get(thread.projectId) !== replay) return;
+		replay.phase = phase;
+		if (phase === 'failed') {
+			prepared.delete(thread.id);
+			preparedSessions.delete(thread.id);
+			prompted.delete(thread.id);
+		}
+		try {
+			projectOperations.assertCurrent(replay.lease);
+		} catch (error) {
+			if (phase === 'complete') throw error;
+			return;
+		}
+		append(thread, [], undefined, false, undefined, {
+			epoch: replay.epoch,
+			phase,
 		});
 	};
 	const unsubscribe = options.supervisor.subscribe(event => {
+		if (event.type === 'supervisor') {
+			const discovery = discoveries.get(event.projectId);
+			if (discovery && !currentDiscovery(event.projectId, discovery))
+				discoveries.delete(event.projectId);
+			return;
+		}
 		if (event.type !== 'turn') return;
 		const thread = [
 			...options.store.threads.list(event.projectId, 'active'),
 			...options.store.threads.list(event.projectId, 'archived'),
 		].find(thread => thread.nanocoderSessionId === event.threadId);
 		if (!thread) return;
+		const live = liveTurns.get(thread.id);
+		if (!live || live.failure) return;
+		try {
+			projectOperations.assertCurrent(live.lease);
+		} catch {
+			return;
+		}
 		if (
 			(pending.get(event.projectId) === thread.id &&
 				options.supervisor.getState(event.projectId).activeThreadId !==
@@ -383,7 +668,16 @@ export function createThreadService(
 			if (thread.runState !== runState)
 				saveThread({...thread, runState, lastActivityAt: now()});
 		}
-		append(thread, event.events);
+		try {
+			append(thread, event.events);
+		} catch (error) {
+			live.failure = requestFailure(error);
+			live.complete = false;
+			const cancelled = projectOperations.runCancellationStep(live.lease, () =>
+				options.supervisor.cancel(thread.projectId, live.scope.sessionId),
+			);
+			void trackOperation(thread.projectId, cancelled).catch(() => undefined);
+		}
 	});
 	const unsubscribeTitles = options.supervisor.subscribeTitles(change => {
 		const thread = [
@@ -428,11 +722,24 @@ export function createThreadService(
 		}
 		return project;
 	};
-	const removeMetadata = (request: ThreadRequest) => {
-		options.store.threads.remove(request.projectId, request.threadId);
+	const removeMetadata = (
+		request: ThreadRequest,
+		lease: ProjectOperationLease | MetadataOperationLease,
+	) => {
+		projectOperations.removeOwnedThread(lease, () => {
+			options.store.threads.remove(request.projectId, request.threadId);
+		});
+		projectOperations.invalidateThread(request.projectId, request.threadId);
 		if (currentSessions.get(request.projectId)?.thread.id === request.threadId)
 			currentSessions.delete(request.projectId);
 		snapshots.delete(request.threadId);
+		if (replays.get(request.projectId)?.threadId === request.threadId)
+			replays.delete(request.projectId);
+		const history = historyObservers.get(request.threadId);
+		history?.observer.forgetThread(request.threadId);
+		history?.observer.dispose();
+		historyObservers.delete(request.threadId);
+		liveTurns.delete(request.threadId);
 		prepared.delete(request.threadId);
 		preparedSessions.delete(request.threadId);
 		prompted.delete(request.threadId);
@@ -547,6 +854,58 @@ export function createThreadService(
 		});
 		prompted.delete(thread.id);
 	};
+	const commitHistory = (
+		thread: ThreadInfo,
+		events: TurnEvent[],
+		lease: ProjectOperationLease,
+		epoch: string,
+	) => {
+		projectOperations.assertCurrent(lease);
+		const sessionId = thread.nanocoderSessionId;
+		if (!sessionId)
+			throw new IpcFailure('AGENT_UNAVAILABLE', 'No session is ready');
+		const scope = {projectId: thread.projectId, threadId: thread.id, sessionId};
+		const owner = historyObservers.get(thread.id);
+		let observer: ReturnType<typeof createThreadHistoryObserver> | undefined;
+		try {
+			const previous = options.store.threadHistory.read(scope);
+			observer =
+				owner?.sessionId === sessionId
+					? owner.observer
+					: createThreadHistoryObserver({
+							scope,
+							history: options.store.threadHistory,
+							runs: options.store.agentRuns,
+						});
+			const allocator = createThreadSequence({
+				sequence: snapshots.get(thread.id)?.sequence ?? 0,
+				highWaterMark: previous?.sequence,
+			});
+			const batches = allocator.reserve(events.length);
+			const mapped = mapThreadReplay({
+				scope,
+				history: previous,
+				generation: (previous?.generation ?? 0) + 1,
+				firstSequence: batches[0].firstSlot,
+				epoch,
+				events,
+			});
+			projectOperations.assertCurrent(lease);
+			observer.commitReplay(mapped.patch, mapped.observations);
+			if (owner?.observer !== observer) owner?.observer.dispose();
+			historyObservers.set(thread.id, {sessionId, observer});
+			snapshots.set(thread.id, {
+				sequence: allocator.current(),
+				events: structuredClone(mapped.events),
+			});
+		} catch (error) {
+			if (observer && owner?.observer !== observer) observer.dispose();
+			prepared.delete(thread.id);
+			preparedSessions.delete(thread.id);
+			prompted.delete(thread.id);
+			throw error;
+		}
+	};
 	const resume = async (
 		thread: ThreadInfo,
 		connection: NanocoderConnection,
@@ -557,56 +916,65 @@ export function createThreadService(
 	) => {
 		const sessionId = thread.nanocoderSessionId;
 		if (!sessionId) return;
-		const restored = await projectOperations.runOwnedStep(lease, () =>
-			connection.resumeSession(sessionId, startingMode(thread, project)),
-		);
-		signal.throwIfAborted();
-		const request = {projectId: thread.projectId, threadId: thread.id};
-		const current = getThread(request);
-		if (current.nanocoderSessionId !== sessionId)
-			throw new IpcFailure('DENIED', 'The thread session changed');
-		await validateProject(current);
-		signal.throwIfAborted();
-		if (options.supervisor.getConnection(project.id) !== connection)
-			throw new IpcFailure('AGENT_UNAVAILABLE', 'The project process changed');
-		const fresh = getThread(request);
-		if (
-			fresh.nanocoderSessionId !== sessionId ||
-			fresh.sessionCwd !== current.sessionCwd
-		)
-			throw new IpcFailure('DENIED', 'The thread session changed');
-		const acknowledged = updateThread(fresh, () => ({
-			mode: restored.session.mode,
-		}));
-		await handoffSession(
-			lease,
-			acknowledged,
-			connection,
-			restored.session,
-			'resume',
-			requestedMode,
-		);
-		signal.throwIfAborted();
-		const ready = updateThread(acknowledged, () => ({
-			runState: 'ready',
-			viewOnlyReason: null,
-		}));
-		remember(ready, connection);
-		snapshots.set(thread.id, {
-			sequence: (snapshots.get(thread.id)?.sequence ?? 0) + 1,
-			events: structuredClone(restored.history),
-		});
+		const replay = beginReplay(thread, lease);
+		try {
+			const restored = await projectOperations.runOwnedStep(lease, () =>
+				connection.resumeSession(sessionId, startingMode(thread, project)),
+			);
+			signal.throwIfAborted();
+			assertResumedIdentity(sessionId, restored.session);
+			const request = {projectId: thread.projectId, threadId: thread.id};
+			const current = getThread(request);
+			if (current.nanocoderSessionId !== sessionId)
+				throw new IpcFailure('DENIED', 'The thread session changed');
+			await validateProject(current);
+			signal.throwIfAborted();
+			if (options.supervisor.getConnection(project.id) !== connection)
+				throw new IpcFailure(
+					'AGENT_UNAVAILABLE',
+					'The project process changed',
+				);
+			const fresh = getThread(request);
+			if (
+				fresh.nanocoderSessionId !== sessionId ||
+				fresh.sessionCwd !== current.sessionCwd
+			)
+				throw new IpcFailure('DENIED', 'The thread session changed');
+			const acknowledged = updateThread(fresh, () => ({
+				mode: restored.session.mode,
+			}));
+			await handoffSession(
+				lease,
+				acknowledged,
+				connection,
+				restored.session,
+				'resume',
+				requestedMode,
+			);
+			signal.throwIfAborted();
+			commitHistory(acknowledged, restored.history, lease, replay.epoch);
+			finishReplay(acknowledged, replay, 'complete');
+			const ready = updateThread(acknowledged, () => ({
+				runState: 'ready',
+				viewOnlyReason: null,
+			}));
+			remember(ready, connection);
+		} catch (error) {
+			finishReplay(thread, replay, 'failed');
+			throw error;
+		}
 	};
-	const viewOnly = (request: ThreadRequest, error: unknown) => {
-		const reason =
-			error instanceof NanocoderFailure && error.code === 'NOT_FOUND'
-				? 'Nanocoder has no saved history for this thread. An empty session may not have been saved before the process ended, or its history was deleted or expired.'
-				: error instanceof IpcFailure || error instanceof NanocoderFailure
-					? error.message
-					: 'Nanocoder could not resume this thread';
+	const markResumeFailure = (request: ThreadRequest, error: unknown) => {
+		const missing =
+			error instanceof NanocoderFailure && error.code === 'NOT_FOUND';
+		const reason = missing
+			? REPLAY_MISSING_REASON
+			: error instanceof IpcFailure || error instanceof NanocoderFailure
+				? error.message
+				: 'Nanocoder could not resume this thread';
 		saveThread({
 			...getThread(request),
-			runState: 'view-only',
+			runState: missing ? 'view-only' : 'failed',
 			viewOnlyReason: reason,
 		});
 	};
@@ -614,6 +982,15 @@ export function createThreadService(
 		getControlConnection: projectId => {
 			if (disposed) return undefined;
 			const active = activeLeases.get(projectId);
+			const replay = replays.get(projectId);
+			if (
+				replay?.phase === 'failed' &&
+				(!active ||
+					active.lease.kind !== 'prompt' ||
+					!active.threadId ||
+					active.threadId === replay.threadId)
+			)
+				return undefined;
 			if (active) {
 				try {
 					projectOperations.assertCurrent(active.lease);
@@ -684,6 +1061,7 @@ export function createThreadService(
 			const binding = {connection, signal};
 			recoveringConnections.set(project.id, binding);
 			const restoreOwned = async (lease: ProjectOperationLease) => {
+				let replay: ReturnType<typeof beginReplay> | undefined;
 				binding.signal = AbortSignal.any([signal, lease.signal]);
 				restoring.set(project.id, signal);
 				try {
@@ -693,12 +1071,14 @@ export function createThreadService(
 					);
 					const thread = await check();
 					const requestedMode = thread.mode;
+					replay = beginReplay(thread, lease);
 					const restored = await projectOperations.runOwnedStep(lease, () =>
 						connection.resumeSession(
 							thread.nanocoderSessionId,
 							startingMode(thread, project),
 						),
 					);
+					assertResumedIdentity(thread.nanocoderSessionId, restored.session);
 					const fresh = await check();
 					const acknowledged = updateThread(fresh, () => ({
 						mode: restored.session.mode,
@@ -711,16 +1091,28 @@ export function createThreadService(
 						'resume',
 						requestedMode,
 					);
-					const ready = await check();
-					snapshots.set(thread.id, {
-						sequence: (snapshots.get(thread.id)?.sequence ?? 0) + 1,
-						events: structuredClone(restored.history),
-					});
-					remember(ready, connection);
-					updateThread(ready, () => ({
+					const current = await check();
+					commitHistory(current, restored.history, lease, replay.epoch);
+					finishReplay(current, replay, 'complete');
+					const ready = updateThread(current, () => ({
 						runState: 'ready',
 						viewOnlyReason: null,
 					}));
+					remember(ready, connection);
+				} catch (error) {
+					if (replay) finishReplay(cached.thread, replay, 'failed');
+					if (
+						replay &&
+						!binding.signal.aborted &&
+						!(
+							error instanceof IpcFailure &&
+							['DENIED', 'BUSY', 'VALIDATION'].includes(error.code)
+						)
+					) {
+						projectOperations.assertCurrent(lease);
+						markResumeFailure(request, error);
+					}
+					throw error;
 				} finally {
 					if (restoring.get(project.id) === signal)
 						restoring.delete(project.id);
@@ -745,6 +1137,7 @@ export function createThreadService(
 			}
 		},
 		detach: async projects => {
+			discoveries.clear();
 			const tasks = [...operations.values()].flatMap(values => [...values]);
 			const ids = new Set([
 				...pending.keys(),
@@ -776,15 +1169,28 @@ export function createThreadService(
 			mutations.clear();
 			restoring.clear();
 			permissionIds.clear();
+			for (const [threadId, state] of snapshots)
+				snapshots.set(threadId, {
+					...state,
+					events: state.events.filter(
+						event =>
+							event.type !== 'permission' && event.type !== 'permission-closed',
+					),
+				});
 			const stopped = [...ids].map(id => {
 				const stop = Promise.resolve().then(() => options.supervisor.stop(id));
 				projectOperations.invalidate(id, stop);
 				return stop;
 			});
 			await Promise.allSettled([...stopped, ...tasks]);
+			for (const {observer} of historyObservers.values()) observer.dispose();
+			historyObservers.clear();
+			liveTurns.clear();
+			replays.clear();
 		},
 		dispose: () => {
 			disposed = true;
+			discoveries.clear();
 			projectOperations.dispose();
 			attachment.abort(
 				new IpcFailure('AGENT_UNAVAILABLE', 'The thread service stopped'),
@@ -792,6 +1198,10 @@ export function createThreadService(
 			unsubscribe();
 			unsubscribeTitles();
 			permissionIds.clear();
+			for (const {observer} of historyObservers.values()) observer.dispose();
+			historyObservers.clear();
+			liveTurns.clear();
+			replays.clear();
 		},
 		listThreads: async ({projectId, archiveState}) => {
 			getProject(projectId);
@@ -876,152 +1286,199 @@ export function createThreadService(
 					if (signal.aborted) return failure(signal.reason);
 					if (
 						error instanceof IpcFailure &&
-						['DENIED', 'BUSY'].includes(error.code)
+						['DENIED', 'BUSY', 'VALIDATION'].includes(error.code)
 					)
 						return failure(error);
-					viewOnly(request, error);
+					markResumeFailure(request, error);
 				} finally {
 					finishPreparation(thread, abort, scope);
 				}
 				return structuredClone(snapshot(request));
 			}),
 		getThreadSnapshot: async request => structuredClone(snapshot(request)),
-		renameThread: request =>
-			operation(request.projectId, async signal => {
-				const patch = validate(threadTitlePatch, {
-					...request,
-					manuallySet: true,
-				});
-				const thread = getThread(request);
-				assertMutable(thread);
-				const sessionId = thread.nanocoderSessionId;
-				if (!sessionId)
-					return presentThread(
-						publishThread(options.store.threads.setTitle(patch)),
-					);
-				const project = getProject(thread.projectId);
-				const unchanged = () => {
-					const current = getThread(request);
-					const owner = getProject(thread.projectId);
-					if (
-						current.nanocoderSessionId !== sessionId ||
-						current.sessionCwd !== thread.sessionCwd ||
-						owner.canonicalRoot !== project.canonicalRoot ||
-						owner.sessionCwd !== project.sessionCwd
-					)
+		renameThread: async request => {
+			const patch = validate(threadTitlePatch, {
+				...request,
+				manuallySet: true,
+			});
+			const initial = getThread(request);
+			if (initial.nanocoderSessionId === null)
+				return runMetadataOperation(
+					request.projectId,
+					'rename-unsaved-thread',
+					async lease => {
+						assertMutable(getThread(request));
+						projectOperations.assertMetadataCurrent(lease);
+						return presentThread(
+							publishThread(options.store.threads.setTitle(patch)),
+						);
+					},
+					{threadId: request.threadId},
+				);
+			return runProjectOperation(
+				request.projectId,
+				'rename-thread',
+				async lease => {
+					const thread = getThread(request);
+					assertMutable(thread);
+					const sessionId = thread.nanocoderSessionId;
+					if (!sessionId)
 						throw new IpcFailure('DENIED', 'The thread session changed');
-					return current;
-				};
-				mutations.add(thread.id);
-				try {
-					const owner = await validateProject(unchanged());
-					signal.throwIfAborted();
-					await options.supervisor.ensureProcess(owner);
-					signal.throwIfAborted();
-					await validateProject(unchanged());
-					signal.throwIfAborted();
-					const gate = options.supervisor.getCapabilityGates(owner.id).features
-						.rename;
-					if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
-					const connection = options.supervisor.getConnection(owner.id);
-					const title = await untilAborted(
-						connection.renameSession(sessionId, patch.title),
-						signal,
-					);
-					signal.throwIfAborted();
-					await validateProject(unchanged());
-					signal.throwIfAborted();
-					if (options.supervisor.getConnection(owner.id) !== connection)
-						throw new IpcFailure(
-							'AGENT_UNAVAILABLE',
-							'The project process changed',
+					const project = getProject(thread.projectId);
+					const unchanged = () => {
+						const current = getThread(request);
+						const owner = getProject(thread.projectId);
+						if (
+							current.nanocoderSessionId !== sessionId ||
+							current.sessionCwd !== thread.sessionCwd ||
+							owner.canonicalRoot !== project.canonicalRoot ||
+							owner.sessionCwd !== project.sessionCwd
+						)
+							throw new IpcFailure('DENIED', 'The thread session changed');
+						return current;
+					};
+					mutations.add(thread.id);
+					try {
+						const owner = await projectOperations.runOwnedStep(lease, () =>
+							validateProject(unchanged()),
 						);
-					return presentThread(
-						publishThread(options.store.threads.setTitle({...patch, title})),
-					);
-				} catch (error) {
-					return failure(error);
-				} finally {
-					if (!signal.aborted) mutations.delete(thread.id);
-				}
-			}),
-		archiveThread: async request => {
-			const previous = getThread(request);
-			assertMutable(previous);
-			const thread = {
-				...previous,
-				archiveState: request.archived ? 'archived' : 'active',
-			} satisfies ThreadInfo;
-			saveThread(thread);
-			return presentThread(thread);
+						await projectOperations.runOwnedStep(lease, () =>
+							options.supervisor.ensureProcess(owner),
+						);
+						await projectOperations.runOwnedStep(lease, () =>
+							validateProject(unchanged()),
+						);
+						const gate = options.supervisor.getCapabilityGates(owner.id)
+							.features.rename;
+						if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
+						const connection = options.supervisor.getConnection(owner.id);
+						projectOperations.bindConnection(lease, connection);
+						const title = await projectOperations.runOwnedStep(lease, () =>
+							connection.renameSession(sessionId, patch.title),
+						);
+						await projectOperations.runOwnedStep(lease, () =>
+							validateProject(unchanged()),
+						);
+						return presentThread(
+							publishThread(options.store.threads.setTitle({...patch, title})),
+						);
+					} catch (error) {
+						return failure(error);
+					} finally {
+						mutations.delete(thread.id);
+					}
+				},
+				{threadId: request.threadId},
+			);
 		},
-		removeThread: async request => {
-			assertMutable(getThread(request));
-			removeMetadata(request);
-			return null;
-		},
+		archiveThread: request =>
+			runMetadataOperation(
+				request.projectId,
+				'archive-thread',
+				async lease => {
+					const previous = getThread(request);
+					assertMutable(previous);
+					projectOperations.assertMetadataCurrent(lease);
+					const thread = {
+						...previous,
+						archiveState: request.archived ? 'archived' : 'active',
+					} satisfies ThreadInfo;
+					saveThread(thread);
+					return presentThread(thread);
+				},
+				{threadId: request.threadId},
+			),
+		removeThread: request =>
+			runMetadataOperation(
+				request.projectId,
+				'remove-thread',
+				async lease => {
+					assertMutable(getThread(request));
+					removeMetadata(request, lease);
+					return null;
+				},
+				{threadId: request.threadId},
+			),
 		deleteThreadHistory: request =>
-			operation(request.projectId, async signal => {
-				const thread = getThread(request);
-				assertMutable(thread);
-				const project = getProject(thread.projectId);
-				const sessionId = thread.nanocoderSessionId;
-				if (!sessionId)
-					throw new IpcFailure(
-						'UNSUPPORTED',
-						'This thread has no Nanocoder history; remove its desktop row instead',
-					);
-				const unchanged = () => {
-					const current = getThread(request);
-					const owner = getProject(thread.projectId);
-					if (
-						current.nanocoderSessionId !== sessionId ||
-						current.sessionCwd !== thread.sessionCwd ||
-						current.title !== thread.title ||
-						owner.canonicalRoot !== project.canonicalRoot ||
-						owner.sessionCwd !== project.sessionCwd
-					)
+			runConfirmationOperation(
+				request.projectId,
+				'delete-history',
+				async pendingLease => {
+					const thread = getThread(request);
+					assertMutable(thread);
+					const project = getProject(thread.projectId);
+					const sessionId = thread.nanocoderSessionId;
+					if (!sessionId)
 						throw new IpcFailure(
-							'DENIED',
-							'The thread changed; confirm its history deletion again',
+							'UNSUPPORTED',
+							'This thread has no Nanocoder history; remove its desktop row instead',
 						);
-					return current;
-				};
-				mutations.add(thread.id);
-				try {
-					const confirmed = await untilAborted(
-						Promise.resolve(
-							options.confirmDeleteHistory?.(
-								structuredClone({project, thread}),
-							),
-						),
-						signal,
-					);
-					signal.throwIfAborted();
-					if (confirmed !== true) return {status: 'cancelled'};
-					const owner = await validateProject(unchanged());
-					signal.throwIfAborted();
-					await options.supervisor.ensureProcess(owner);
-					signal.throwIfAborted();
-					await validateProject(unchanged());
-					signal.throwIfAborted();
-					const gate = options.supervisor.getCapabilityGates(owner.id).features
-						.delete;
-					if (!gate.enabled) throw new IpcFailure('UNSUPPORTED', gate.reason);
-					await untilAborted(
-						options.supervisor.getConnection(owner.id).deleteSession(sessionId),
-						signal,
-					);
-					signal.throwIfAborted();
-					unchanged();
-					removeMetadata(request);
-					return {status: 'deleted'};
-				} catch (error) {
-					return failure(error);
-				} finally {
-					if (!signal.aborted) mutations.delete(thread.id);
-				}
-			}),
+					const unchanged = () => {
+						const current = getThread(request);
+						const owner = getProject(thread.projectId);
+						if (
+							current.nanocoderSessionId !== sessionId ||
+							current.sessionCwd !== thread.sessionCwd ||
+							current.title !== thread.title ||
+							owner.canonicalRoot !== project.canonicalRoot ||
+							owner.sessionCwd !== project.sessionCwd
+						)
+							throw new IpcFailure(
+								'DENIED',
+								'The thread changed; confirm its history deletion again',
+							);
+						return current;
+					};
+					mutations.add(thread.id);
+					try {
+						const confirmed = await projectOperations.runConfirmationStep(
+							pendingLease,
+							() =>
+								Promise.resolve(
+									options.confirmDeleteHistory?.(
+										structuredClone({project, thread}),
+									),
+								),
+						);
+						if (confirmed !== true) return {status: 'cancelled' as const};
+						unchanged();
+						const lease = projectOperations.confirmExecution(pendingLease);
+						const active = {lease, threadId: thread.id};
+						activeLeases.set(thread.projectId, active);
+						try {
+							const owner = await projectOperations.runOwnedStep(lease, () =>
+								validateProject(unchanged()),
+							);
+							await projectOperations.runOwnedStep(lease, () =>
+								options.supervisor.ensureProcess(owner),
+							);
+							await projectOperations.runOwnedStep(lease, () =>
+								validateProject(unchanged()),
+							);
+							const gate = options.supervisor.getCapabilityGates(owner.id)
+								.features.delete;
+							if (!gate.enabled)
+								throw new IpcFailure('UNSUPPORTED', gate.reason);
+							const connection = options.supervisor.getConnection(owner.id);
+							projectOperations.bindConnection(lease, connection);
+							await projectOperations.runOwnedStep(lease, () =>
+								connection.deleteSession(sessionId),
+							);
+							unchanged();
+							removeMetadata(request, lease);
+							return {status: 'deleted' as const};
+						} finally {
+							if (activeLeases.get(thread.projectId) === active)
+								activeLeases.delete(thread.projectId);
+						}
+					} catch (error) {
+						return failure(error);
+					} finally {
+						mutations.delete(thread.id);
+					}
+				},
+				{threadId: request.threadId},
+			),
 		promptThread: async request => {
 			const scope = attachment.signal;
 			const requestedMode = getThread(request).mode;
@@ -1033,6 +1490,9 @@ export function createThreadService(
 					const abort = new AbortController();
 					const signal = AbortSignal.any([scope, abort.signal, lease.signal]);
 					let thread = getThread(request);
+					const replay = replays.get(thread.projectId);
+					if (replay?.threadId === thread.id && replay.phase !== 'complete')
+						throw new IpcFailure('UNAVAILABLE', REPLAY_FAILURE_REASON);
 					assertMutable(thread);
 					options.validateBeforePrepare?.(lease, structuredClone(thread));
 					if (thread.runState === 'view-only')
@@ -1088,11 +1548,15 @@ export function createThreadService(
 							);
 							signal.throwIfAborted();
 							try {
+								const sessionId = validate(
+									nanocoderSessionIdSchema,
+									session.id,
+								);
 								thread = updateThread(thread, () => ({
-									nanocoderSessionId: session.id,
+									nanocoderSessionId: sessionId,
 									mode: session.mode,
 								}));
-								projectOperations.bindSession(lease, session.id);
+								projectOperations.bindSession(lease, sessionId);
 							} catch (error) {
 								await options.supervisor
 									.stop(project.id)
@@ -1166,6 +1630,32 @@ export function createThreadService(
 								'AGENT_UNAVAILABLE',
 								'The session must be prepared again',
 							);
+						projectOperations.assertCurrent(lease);
+						const historyScope = {
+							projectId: thread.projectId,
+							threadId: thread.id,
+							sessionId,
+						};
+						const previous = options.store.threadHistory.read(historyScope);
+						const observer = historyObservers.get(thread.id);
+						liveTurns.set(thread.id, {
+							lease,
+							scope: historyScope,
+							turnId: randomUUID(),
+							history: previous,
+							complete:
+								previous?.complete ??
+								preparedSessions.get(thread.id)?.source === 'new',
+							accepted: false,
+							observer:
+								observer?.sessionId === sessionId
+									? observer.observer
+									: createThreadHistoryObserver({
+											scope: historyScope,
+											history: options.store.threadHistory,
+											runs: options.store.agentRuns,
+										}),
+						});
 						thread = updateThread(thread, current => ({
 							title:
 								current.title === 'new thread' &&
@@ -1190,22 +1680,39 @@ export function createThreadService(
 							sessionId,
 							request.text,
 						);
+						const liveFailure = liveTurns.get(thread.id)?.failure;
+						if (liveFailure) throw liveFailure;
 						const current = getThread(request);
 						if (!owns(current))
 							throw new IpcFailure(
 								'AGENT_UNAVAILABLE',
 								'The thread session changed before the turn finished',
 							);
-						if (result.metadata && !signal.aborted)
+						if (
+							result.metadata &&
+							!signal.aborted &&
+							result.stopReason !== 'cancelled'
+						)
 							append(current, [{type: 'metadata', metadata: result.metadata}]);
-						if (!signal.aborted)
-							append(current, [], {
+						if (!signal.aborted) {
+							const terminal: IpcResult<TurnResult> = {
 								ok: true,
 								value: {stopReason: result.stopReason},
-							});
+							};
+							if (result.stopReason === 'cancelled')
+								await projectOperations.runCancellationStep(lease, async () => {
+									append(current, [], terminal, true, lease);
+								});
+							else append(current, [], terminal);
+						}
 						updateThread(current, () => ({
 							runState:
-								result.stopReason === 'cancelled' ? 'interrupted' : 'ready',
+								liveTurns.get(thread.id)?.outcome === 'failed'
+									? 'failed'
+									: result.stopReason === 'cancelled' ||
+											liveTurns.get(thread.id)?.outcome === 'cancelled'
+										? 'interrupted'
+										: 'ready',
 							lastActivityAt: now(),
 						}));
 						completed = {stopReason: result.stopReason};
@@ -1231,14 +1738,19 @@ export function createThreadService(
 							if (owns(current)) {
 								if (!signal.aborted) {
 									const safe = requestFailure(error);
-									append(current, [], {
+									const terminal: IpcResult<TurnResult> = {
 										ok: false,
 										error: {
 											code: safe.code,
 											message: safe.message,
 											retryable: safe.retryable,
 										},
-									});
+									};
+									try {
+										append(current, [], terminal);
+									} catch {
+										append(current, [], terminal, false);
+									}
 								}
 								updateThread(current, () => ({
 									runState: 'failed',
@@ -1248,6 +1760,12 @@ export function createThreadService(
 						}
 						return failure(error);
 					} finally {
+						const live = liveTurns.get(thread.id);
+						if (live?.lease === lease) {
+							if (historyObservers.get(thread.id)?.observer !== live.observer)
+								live.observer.dispose();
+							liveTurns.delete(thread.id);
+						}
 						finishPreparation(thread, abort, scope);
 					}
 				},
@@ -1263,21 +1781,31 @@ export function createThreadService(
 		},
 		cancelThread: async request => {
 			const thread = getThread(request);
+			const owner = activeLeases.get(thread.projectId);
+			if (owner?.threadId !== thread.id || owner.lease.kind !== 'prompt')
+				return null;
 			const sessionId = thread.nanocoderSessionId;
 			const active = options.supervisor.getState(
 				thread.projectId,
 			).activeThreadId;
 			try {
 				if (sessionId && active === sessionId) {
-					await options.supervisor.cancel(thread.projectId, sessionId);
+					await projectOperations.runCancellationStep(owner.lease, () =>
+						options.supervisor.cancel(thread.projectId, sessionId),
+					);
 				} else if (
 					active === null &&
 					pending.get(thread.projectId) === thread.id
 				) {
 					const preparation = preparationAborts.get(thread.projectId);
 					if (preparation?.threadId === thread.id && !preparation.turnStarted) {
-						preparation.abort.abort(new PreparationCancelled());
-						await options.supervisor.stop(thread.projectId);
+						await projectOperations.runCancellationStep(
+							owner.lease,
+							async () => {
+								preparation.abort.abort(new PreparationCancelled());
+								await options.supervisor.stop(thread.projectId);
+							},
+						);
 					}
 				}
 			} catch (error) {
@@ -1288,6 +1816,10 @@ export function createThreadService(
 		setThreadMode: unavailable,
 		answerThreadPermission: async request => {
 			const thread = getThread(request);
+			const replay = replays.get(thread.projectId);
+			if (replay?.threadId === thread.id && replay.phase !== 'complete')
+				throw new IpcFailure('DENIED', REPLAY_FAILURE_REASON);
+			const active = activeLeases.get(thread.projectId);
 			const sessionId = thread.nanocoderSessionId;
 			const denied = () =>
 				new IpcFailure(
@@ -1295,33 +1827,165 @@ export function createThreadService(
 					'This permission request is not waiting for this thread',
 				);
 			if (
+				active?.threadId !== thread.id ||
+				active.lease.kind !== 'prompt' ||
 				!sessionId ||
 				options.supervisor.getState(thread.projectId).activeThreadId !==
 					sessionId
 			)
 				throw denied();
-			const owner = await validateProject(thread);
-			const current = getThread(request);
-			const project = getProject(thread.projectId);
-			if (
-				!project.trusted ||
-				current.nanocoderSessionId !== sessionId ||
-				current.sessionCwd !== thread.sessionCwd ||
-				project.canonicalRoot !== owner.canonicalRoot ||
-				project.sessionCwd !== owner.sessionCwd ||
-				options.supervisor.getState(thread.projectId).activeThreadId !==
-					sessionId ||
-				!options.supervisor.answerPermission(
-					thread.projectId,
-					sessionId,
-					request.requestId,
-					request.optionId,
+			return projectOperations.runOwnedStep(active.lease, async () => {
+				const owner = await validateProject(thread);
+				projectOperations.assertCurrent(active.lease);
+				const current = getThread(request);
+				const project = getProject(thread.projectId);
+				if (
+					activeLeases.get(thread.projectId) !== active ||
+					!project.trusted ||
+					current.nanocoderSessionId !== sessionId ||
+					current.sessionCwd !== thread.sessionCwd ||
+					project.canonicalRoot !== owner.canonicalRoot ||
+					project.sessionCwd !== owner.sessionCwd ||
+					options.supervisor.getState(thread.projectId).activeThreadId !==
+						sessionId ||
+					!options.supervisor.answerPermission(
+						thread.projectId,
+						sessionId,
+						request.requestId,
+						request.optionId,
+					)
 				)
-			)
-				throw denied();
-			return null;
+					throw denied();
+				return null;
+			});
 		},
-		discoverSessions: unavailable,
-		importSession: unavailable,
+		discoverSessions: async ({projectId}) => {
+			const project = getProject(projectId);
+			return operation(projectId, async signal => {
+				discoveries.delete(projectId);
+				let discovery: DiscoverySnapshot | undefined;
+				try {
+					if (
+						project.sessionCwd !== project.canonicalRoot ||
+						options.supervisor.getState(projectId).status !== 'ready' ||
+						!options.supervisor.getCapabilityGates(projectId).features.list
+							.enabled
+					)
+						return [];
+					const connection = options.supervisor.getConnection(projectId);
+					if (
+						!connection.listSessions ||
+						connection.agent.root !== project.canonicalRoot
+					)
+						return [];
+					discovery = {
+						connection,
+						canonicalRoot: project.canonicalRoot,
+						sessionCwd: project.sessionCwd,
+						signal,
+						candidates: new Map(),
+					};
+					discoveries.set(projectId, discovery);
+					const response = await untilAborted(
+						connection.listSessions(),
+						signal,
+					);
+					const candidates = await untilAborted(
+						sessionDiscovery(response, project.canonicalRoot),
+						signal,
+					);
+					if (!currentDiscovery(projectId, discovery)) return [];
+					const visible: DiscoveredSession[] = [];
+					for (const candidate of candidates) {
+						const owner = options.store.threads.getBySessionId(
+							candidate.session.id,
+						);
+						if (owner && owner.projectId !== projectId) continue;
+						discovery.candidates.set(candidate.session.id, candidate);
+						if (!owner) visible.push(candidate.session);
+					}
+					return structuredClone(visible);
+				} catch {
+					if (discovery && discoveries.get(projectId) === discovery)
+						discoveries.delete(projectId);
+					return [];
+				}
+			}).catch(() => []);
+		},
+		importSession: async ({projectId, sessionId: input}) => {
+			const sessionId = validate(nanocoderSessionIdSchema, input);
+			getProject(projectId);
+			return runMetadataOperation(projectId, 'import-session', async lease => {
+				const existingOwner = () => {
+					const existing = options.store.threads.getBySessionId(sessionId);
+					if (existing && existing.projectId !== projectId)
+						throw new IpcFailure(
+							'DENIED',
+							'This saved session belongs to another project',
+						);
+					return existing;
+				};
+				existingOwner();
+				const discovery = discoveries.get(projectId);
+				if (!discovery || !currentDiscovery(projectId, discovery))
+					throw new IpcFailure(
+						'UNAVAILABLE',
+						'Refresh saved sessions before importing',
+					);
+				const candidate = discovery.candidates.get(sessionId);
+				if (!candidate)
+					throw new IpcFailure(
+						'DENIED',
+						'This saved session is not available for this project',
+					);
+				let root: string;
+				let cwd: string;
+				try {
+					[root, cwd] = await Promise.all([
+						canonicalPath(discovery.canonicalRoot),
+						canonicalPath(candidate.reportedCwd),
+					]);
+				} catch {
+					if (discoveries.get(projectId) === discovery)
+						discoveries.delete(projectId);
+					throw new IpcFailure(
+						'DENIED',
+						'The saved session folder is no longer available',
+					);
+				}
+				if (root !== discovery.canonicalRoot || cwd !== root) {
+					if (discoveries.get(projectId) === discovery)
+						discoveries.delete(projectId);
+					throw new IpcFailure(
+						'OUTSIDE_ROOT',
+						'The saved session folder changed',
+					);
+				}
+				projectOperations.assertMetadataCurrent(lease);
+				if (
+					!currentDiscovery(projectId, discovery) ||
+					discovery.candidates.get(sessionId) !== candidate
+				)
+					throw new IpcFailure(
+						'UNAVAILABLE',
+						'Refresh saved sessions before importing',
+					);
+				const existing = existingOwner();
+				if (existing) return structuredClone(existing);
+				const project = getProject(projectId);
+				return saveThread({
+					id: randomUUID(),
+					projectId,
+					nanocoderSessionId: sessionId,
+					title: candidate.session.title,
+					archiveState: 'active',
+					runState: 'ready',
+					lastActivityAt: candidate.session.lastActivityAt ?? now(),
+					sessionCwd: root,
+					mode: project.defaultMode,
+					viewOnlyReason: null,
+				});
+			});
+		},
 	};
 }

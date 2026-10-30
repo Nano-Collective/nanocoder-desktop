@@ -70,6 +70,7 @@ export interface NanocoderConnection {
 	readonly agent: ConnectedAgent;
 	readonly stderr: StderrRing;
 	readonly exited: Promise<Exit>;
+	listSessions?(): Promise<unknown>;
 	newSession(mode: NanocoderMode): Promise<SessionInfo>;
 	resumeSession(
 		sessionId: string,
@@ -180,7 +181,20 @@ export async function connectNanocoder(
 	child.stderr.on('end', () => stderr.flush());
 
 	// Set while session/resume replays history, so replayed updates are not shown as new activity.
-	let replay: SessionNotification['update'][] | undefined;
+	let replay:
+		| {
+				sessionId: string;
+				updates: SessionNotification['update'][];
+				bytes: number;
+				failed: boolean;
+		  }
+		| undefined;
+	let disposed = false;
+	const clearReplay = () => {
+		if (!replay) return;
+		replay.updates.length = 0;
+		replay.bytes = 0;
+	};
 	const readySessions = new Set<string>();
 	const activePrompts = new Set<Promise<unknown>>();
 	let notificationControls:
@@ -200,8 +214,22 @@ export async function connectNanocoder(
 				: {outcome: {outcome: 'cancelled'}},
 		)
 		.onNotification(methods.client.session.update, ({params}) => {
-			if (replay) replay.push(params.update);
-			else {
+			if (replay) {
+				if (disposed || params.sessionId !== replay.sessionId || replay.failed)
+					return;
+				const bytes = Buffer.byteLength(JSON.stringify(params.update), 'utf8');
+				if (
+					replay.updates.length >= 100_000 ||
+					replay.bytes + bytes > 16 * 1024 * 1024
+				) {
+					replay.failed = true;
+					clearReplay();
+					void close();
+					return;
+				}
+				replay.bytes += bytes;
+				replay.updates.push(params.update);
+			} else {
 				options.onUpdate?.(params.update);
 				options.onSessionUpdate?.(params);
 			}
@@ -235,6 +263,8 @@ export async function connectNanocoder(
 
 	let closing: Promise<void> | undefined;
 	const close = (): Promise<void> => {
+		disposed = true;
+		clearReplay();
 		notificationControls?.dispose();
 		closing ??= (async () => {
 			const grace = options.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
@@ -266,7 +296,11 @@ export async function connectNanocoder(
 	};
 	options.signal?.addEventListener('abort', abort, {once: true});
 	void exited.then(() => options.signal?.removeEventListener('abort', abort));
-	void exited.then(() => notificationControls?.dispose());
+	void exited.then(() => {
+		disposed = true;
+		clearReplay();
+		notificationControls?.dispose();
+	});
 
 	const timeoutMs = options.initializeTimeoutMs ?? INITIALIZE_TIMEOUT_MS;
 	let timedOut = false;
@@ -397,15 +431,27 @@ export async function connectNanocoder(
 		mode: NanocoderMode,
 	): Promise<ResumedSession> => {
 		if (mode === 'yolo') mode = 'normal';
+		if (disposed) throw failedToResume();
+		if (replay)
+			throw new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				'A session replay is already active',
+			);
 		if (!agent.capabilities.sessions.resume) {
 			throw new NanocoderFailure(
 				'UNSUPPORTED',
 				'This version of Nanocoder cannot resume sessions',
 			);
 		}
-		const replayed: SessionNotification['update'][] = [];
+		const replayed = {
+			sessionId,
+			updates: [] as SessionNotification['update'][],
+			bytes: 0,
+			failed: false,
+		};
 		replay = replayed;
 		let resumed: ResumeSessionResponse;
+		let history: TurnEvent[];
 		try {
 			resumed = await connection.agent.request(methods.agent.session.resume, {
 				sessionId,
@@ -414,12 +460,30 @@ export async function connectNanocoder(
 			});
 			// Replayed updates are handled in the same turn of the event loop as the answer.
 			await new Promise(resolve => setImmediate(resolve));
+			if (replayed.failed || disposed || replay !== replayed)
+				throw failedToResume();
+			history = replayed.updates.flatMap(
+				update => toTurnEvent(update, {history: true}) ?? [],
+			);
 		} catch (error) {
+			if (replayed.failed) {
+				await close();
+				throw new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'Nanocoder replay exceeded the safe history limit',
+				);
+			}
 			throw missingSession(error) ?? failedToResume();
 		} finally {
-			replay = undefined;
+			replayed.updates.length = 0;
+			replayed.bytes = 0;
+			if (replay === replayed) replay = undefined;
 		}
 		await applyMode(sessionId, mode, resumed.modes?.availableModes);
+		if (disposed) {
+			history.length = 0;
+			throw failedToResume();
+		}
 		sessionControls.remember(
 			sessionId,
 			resumed.modes?.availableModes,
@@ -428,10 +492,27 @@ export async function connectNanocoder(
 		readySessions.add(sessionId);
 		return {
 			session: {id: sessionId, mode},
-			history: replayed.flatMap(
-				update => toTurnEvent(update, {history: true}) ?? [],
-			),
+			history,
 		};
+	};
+
+	const listSessions = async (): Promise<unknown> => {
+		const failed = () =>
+			new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				'Nanocoder could not list saved sessions',
+			);
+		if (disposed) throw failed();
+		if (!agent.capabilities.sessions.list)
+			throw new NanocoderFailure(
+				'UNSUPPORTED',
+				'This version of Nanocoder cannot list saved sessions',
+			);
+		return connection.agent
+			.request(methods.agent.session.list, {cwd: options.root})
+			.catch(() => {
+				throw failed();
+			});
 	};
 
 	const deleteSession = async (sessionId: string): Promise<void> => {
@@ -589,6 +670,7 @@ export async function connectNanocoder(
 		agent,
 		stderr,
 		exited,
+		listSessions,
 		newSession,
 		resumeSession,
 		deleteSession,

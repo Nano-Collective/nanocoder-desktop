@@ -1,3 +1,5 @@
+import type {AgentRunRepository} from '@/main/store/agent-runs';
+import type {ThreadHistoryRepository} from '@/main/store/thread-execution-identities';
 import type {
 	DesktopSettings,
 	ProjectInfo,
@@ -44,6 +46,7 @@ export interface ThreadRepository {
 		archiveState: ThreadInfo['archiveState'],
 	): ThreadInfo[];
 	get(projectId: string, threadId: string): ThreadInfo | undefined;
+	getBySessionId(sessionId: string): ThreadInfo | undefined;
 	getTitleManuallySet(projectId: string, threadId: string): boolean | undefined;
 	setTitle(input: {
 		projectId: string;
@@ -62,6 +65,8 @@ export interface DesktopStore {
 	updateUiState(patch: UiStatePatch): UiState;
 	projects: ProjectRepository;
 	threads: ThreadRepository;
+	threadHistory: ThreadHistoryRepository;
+	agentRuns: AgentRunRepository;
 	close(): void;
 }
 
