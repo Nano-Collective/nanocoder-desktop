@@ -22,9 +22,7 @@ import {qaEnvironment} from './qa/environment';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 const root = path.resolve(import.meta.dirname, '..');
-const work = realpathSync.native(
-	mkdtempSync(path.join(tmpdir(), 'nd-stream-')),
-);
+let work: string;
 const evidence = path.join(root, '.qa/wave-3');
 let app: ElectronApplication;
 let page: Page;
@@ -46,7 +44,9 @@ interface StreamWindow extends Window {
 	desktop: DesktopApi;
 }
 
-test.beforeAll(async () => {
+test.beforeEach(async () => {
+	work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-stream-')));
+	remoteRequests.length = 0;
 	mkdirSync(evidence, {recursive: true});
 	const fakeCli = path.join(work, 'nanocoder/dist/cli.js');
 	const project = path.join(work, 'project');
@@ -97,9 +97,12 @@ test.beforeAll(async () => {
 	).toBeEnabled();
 });
 
-test.afterAll(async () => {
-	await app?.close();
-	rmSync(work, {recursive: true, force: true});
+test.afterEach(async () => {
+	try {
+		await app?.close();
+	} finally {
+		rmSync(work, {recursive: true, force: true});
+	}
 });
 
 test('100 updates per second keep ordered content and input and scroll response within 100ms (PERF-04)', async () => {
@@ -338,6 +341,12 @@ test('100 updates per second keep ordered content and input and scroll response 
 test('stream semantics keyboard disclosure reduced motion and both themes at three widths (CHAT-05 CHAT-19 CHAT-20)', async () => {
 	expect(page.url()).toMatch(/^app:\/\/renderer\//);
 	const input = page.getByRole('textbox', {name: 'message', exact: true});
+	await input.fill('first visual fixture');
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	await expect(
+		page.getByText('turn ended: end_turn', {exact: true}),
+	).toBeVisible();
+	await expect(page.locator('.gate-message-tool details')).toHaveCount(1);
 	await input.fill('second visual fixture');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
 	await expect(page.locator('.stream-cursor')).toBeVisible();

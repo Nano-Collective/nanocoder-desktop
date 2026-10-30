@@ -34,6 +34,7 @@ async function fixture(
 	run: (app: ElectronApplication, page: Page, project: string) => Promise<void>,
 	realCli?: string,
 ) {
+	realCli = realCli?.trim() || undefined;
 	const work = realpathSync.native(
 		mkdtempSync(path.join(tmpdir(), 'nd-exit-checks-')),
 	);
@@ -169,7 +170,7 @@ test('five fresh processes expose a usable project list within the startup media
 });
 
 test('records open-action to rendered ACP ready without claiming spawn breakdown (PERF-02)', async () => {
-	const realCli = process.env.NANOCODER_EXIT_CHECK_CLI;
+	const realCli = process.env.NANOCODER_EXIT_CHECK_CLI?.trim() || undefined;
 	await fixture(async (app, page, project) => {
 		await selectFolder(app, project);
 		const open = page.getByRole('button', {
@@ -207,6 +208,22 @@ test('records open-action to rendered ACP ready without claiming spawn breakdown
 		);
 		await expect(page.getByRole('textbox', {name: 'message'})).toBeEnabled();
 	}, realCli);
+});
+
+test('empty and whitespace exit-check overrides select only the fake runtime', async () => {
+	for (const realCli of ['', ' \t\r\n ']) {
+		await fixture(async (app, page, project) => {
+			const cli = path.join(path.dirname(project), 'nanocoder/dist/cli.js');
+			await expect(page.locator('.runtime-details')).toContainText(
+				`Nanocoder 9.9.9 at ${cli}`,
+			);
+			await selectFolder(app, project);
+			await page
+				.getByRole('button', {name: 'open a project folder', exact: true})
+				.click();
+			await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+		}, realCli);
+	}
 });
 
 test('keyboard project, palette and approval journey exposes named roles and states (A11Y-01/02/03)', async () => {
