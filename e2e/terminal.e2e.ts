@@ -390,6 +390,19 @@ test('TERM-12 agent command approval metadata never starts or writes the user PT
 			expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.width);
 			expect(geometry.height).toBeGreaterThan(240);
 			expect(geometry.ligatures).toBe('none');
+			const viewportColors = await page
+				.locator('.xterm-viewport')
+				.evaluate(viewport => ({
+					actual: getComputedStyle(viewport).backgroundColor,
+					expected: getComputedStyle(
+						viewport.closest('.terminal-panel') ?? viewport,
+					).backgroundColor,
+					token: getComputedStyle(viewport)
+						.getPropertyValue('--colors-surface-panel')
+						.trim(),
+				}));
+			expect(viewportColors.actual).toBe(viewportColors.expected);
+			console.info(`[terminal-ui] viewport ${theme} ${width}`, viewportColors);
 			await page.screenshot({
 				path: path.join(screenshots, `terminal-${theme}-${width}.png`),
 			});

@@ -94,6 +94,9 @@
 .terminal-view .xterm {
 	height: 100%;
 }
+.terminal-view .xterm-viewport {
+	background-color: var(--colors-surface-panel);
+}
 .terminal-view .xterm-helper-textarea:focus-visible {
 	outline: none;
 }
