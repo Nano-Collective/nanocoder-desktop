@@ -85,6 +85,66 @@ ThreadService live production calls `commitLive`, including owning turn
 completion. This is a separate integration from replay's `commitReplay`:
 live candidates fork the committed observer rather than starting a new one.
 
+## Replay readiness
+
+The ACP collector belongs to one exact requested session at a time. Foreign
+updates cannot enter its prefix or become live activity during collection.
+It accepts at most 100,000 updates and 16 MiB of their serialized JSON UTF-8,
+including exact boundary values. Overflow drops the entire candidate, stops
+and awaits the actual connection/child, and refuses readiness. It never
+truncates a candidate into a successful prefix. Completion, error, close and
+exit clear collection memory. Existing raw config capture and authoritative
+session-control ownership remain unchanged; replayed config stays display only.
+
+Main allocates an opaque UUID for each attempt and reuses it for the atomic
+observer's replay epoch. The existing mapped turn event has an optional
+`replay: {epoch, phase}` with only `begin`, `complete` and `failed`. These are
+empty, nonterminal packets ordered by the same batch allocator. Snapshots
+optionally carry `replayEpoch`. No request accepts either an epoch or phase.
+Strict schemas reject malformed or unlisted marker fields. Epochs carry no
+authority: the renderer compares them only.
+Before its first begin marker, a recreated owner recovers the stored private
+sequence floor. Even an exact batch-boundary high-water mark cannot be reused.
+
+Only safe acknowledgement, owned control handoff, successful history commit
+and atomic prefix replacement permit `complete`, followed by ready publication.
+The snapshot's `replaying` flag is a readiness gate, not a process-running
+assertion: it stays true after an unsuccessful attempt until a successful
+completion. Failed or aborted replay does not replace the readable prefix,
+persist a synthetic terminal, or change a cancelled turn into a failed one.
+Native prompt, mode, model and permission mutations refuse while gated.
+Mode/config work is checked before its control callback, including the existing
+offline metadata-mode path. Explicit retry uses the same saved ID and a new
+epoch, never a replacement session.
+
+The renderer retires superseded epochs and uses its existing request and
+sequence guards. Completion requests only the main cache snapshot, never
+another resume. A prefix older than its complete marker cannot enable input.
+One stale in-progress response may trigger one fresh completion read, not an
+automatic retry loop. Project changes and reentrant prefix flushes cannot
+restore retired buffered live events.
+
+Existing synchronous 16 ms batcher flushes settle the old prefix before atomic
+snapshot replacement. Only after that callback finishes may the matching
+successful epoch release the renderer gate. The batcher, conversation stream
+and subagent card do not acquire replay logic. The existing composer and
+control-reason props explain loading or failure in lowercase while keeping
+the draft editable and memory only. Nothing queues an automatic send.
+Retryable recovery failures keep that draft editable. A confirmed `NOT_FOUND`
+recovery instead retains and disables it, using the same main-owned missing
+history reason in the existing thread metadata and composer. The reason lists
+possible causes without claiming which occurred. Full view-only composition
+remains separate. A distinct new thread's exact prompt owner may still prepare
+fresh controls; the failed thread, unowned callers and stale owners stay refused.
+
+The mounted fake test holds replay until an event-driven fixture release. It
+checks native prompt/mode/model/permission refusals, failure remaining gated
+and usable controls after success. `PERF-03` measures 200 rendered messages
+from receipt of replay completion to prefix display and usable composer/model/
+mode controls, with a 2 s limit. Separate input, scroll, frame and event-loop
+samples remain within 100 ms. This excludes process startup and makes no claim
+about model-context continuation.
+
 ## Live production
 
 The existing exact prompt lease owns one transient live record. A turn UUID
@@ -151,11 +211,10 @@ ID with deterministic synthetic history and no transcript file. The test
 asserts unchanged execution UUIDs and safe rows, retained failure, unknown
 synthetic completion, exactly two inert cards and both-theme contrast checks.
 It also rejects a replacement `session/new` or `session/load` in that process.
-This positive proof does not complete missing-history, import or replay-gate
+This positive proof does not complete missing-history or import
 acceptance.
 
-Still pending: bounded session-specific ACP replay collection; strict optional replay
-markers and renderer epoch/16 ms flush gates; view-only/retry actions; discovery/import;
-app-and-child restart continuation; PERF-03 and full phase 1.8/SUB-05
+Still pending: view-only/retry actions; discovery/import;
+app-and-child restart continuation and full phase 1.8/SUB-05
 acceptance. Existing streaming and subagent views must retain their guards.
 SUB-08/OQ-03 and the pinned 1.31 versus provisional 1.32 OQ-02 are not waived.

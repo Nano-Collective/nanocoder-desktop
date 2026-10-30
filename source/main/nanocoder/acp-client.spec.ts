@@ -39,6 +39,32 @@ const failure = (root: string, options?: Partial<ConnectOptions>) =>
 
 test.after.always(removeFakeProjects);
 
+test('ACP-14 replay cleanup preserves closing config display without restoring control authority', async t => {
+	let displayed = 0;
+	const published: string[] = [];
+	const connection = await connect(fakeProject('config-notify-close'), {
+		runtime: {
+			nodePath: process.execPath,
+			cliPath: path.join(
+				import.meta.dirname,
+				'fixtures/fake-control-nanocoder.mjs',
+			),
+		},
+		onUpdate: update => {
+			if (update.sessionUpdate === 'config_option_update') displayed++;
+		},
+	});
+	const session = await connection.newSession('normal');
+	connection.observeConfigOptions?.({
+		isCurrentSession: id => id === session.id,
+		onChange: id => published.push(id),
+	});
+	await connection.close();
+	t.is(displayed, 1);
+	t.deepEqual(published, []);
+	t.is(connection.getSessionOffers(session.id), undefined);
+});
+
 test('retains validated prompt-response tokens and vendor cost in main only (CHAT-19)', async t => {
 	const connection = await connect(fakeProject('reported-usage'));
 	t.teardown(() => connection.close());
@@ -286,6 +312,73 @@ test('tells an error Nanocoder reports apart from Nanocoder stopping', async t =
 		error.message,
 		`Nanocoder could not finish the turn: Provider failed for ~${path.sep}${path.basename(root)}`,
 	);
+});
+
+test('CHAT-08 resume collects only the exact saved session, without forwarding foreign replay as live', async t => {
+	const live: string[] = [];
+	const connection = await connect(fakeProject('replay-foreign'), {
+		onUpdate: update => live.push(update.sessionUpdate),
+	});
+	t.teardown(() => connection.close());
+	const {history} = await connection.resumeSession('fake-session', 'normal');
+	t.deepEqual(
+		history.filter(event => event.type === 'user').map(event => event.text),
+		['Earlier question'],
+	);
+	t.deepEqual(live, []);
+});
+
+for (const limit of ['count', 'bytes', 'utf8']) {
+	test(`CHAT-08 resume ${limit} overflow refuses the whole prefix and never marks the session ready`, async t => {
+		const connection = await connect(fakeProject(`replay-${limit}-overflow`));
+		t.teardown(() => connection.close());
+		const error = await connection.resumeSession('fake-session', 'normal').then(
+			() => undefined,
+			(error: unknown) => error,
+		);
+		t.true(error instanceof NanocoderFailure);
+		if (!(error instanceof NanocoderFailure)) return;
+		t.is(error.code, 'AGENT_UNAVAILABLE');
+		t.is(error.message, 'Nanocoder replay exceeded the safe history limit');
+		t.is(connection.getSessionOffers('fake-session'), undefined);
+		t.false(
+			fakeEvents(connection.stderr.lines()).some(
+				event => event.method === 'session/set_mode',
+			),
+		);
+	});
+}
+
+for (const limit of ['count', 'bytes']) {
+	test(`CHAT-08 resume accepts the exact ${limit} limit without truncating the complete prefix`, async t => {
+		const connection = await connect(fakeProject(`replay-${limit}-limit`));
+		t.teardown(() => connection.close());
+		const resumed = await connection.resumeSession('fake-session', 'normal');
+		if (limit === 'count') t.is(resumed.history.length, 100_000);
+		else {
+			t.is(resumed.history.length, 1);
+			t.is(resumed.history[0].type, 'text');
+		}
+		t.is(resumed.session.mode, 'normal');
+		t.truthy(connection.getSessionOffers('fake-session'));
+	});
+}
+
+test('CHAT-08 one in-flight replay cannot be overwritten by a second collector and close retires both requests', async t => {
+	const connection = await connect(fakeProject('slow-resume'));
+	const first = connection
+		.resumeSession('fake-session', 'normal')
+		.catch(() => undefined);
+	const duplicate = connection.resumeSession('foreign-session', 'normal');
+	const error = rejection(duplicate);
+	await connection.close();
+	await first;
+	t.is((await error).message, 'A session replay is already active');
+	t.is(connection.getSessionOffers('fake-session'), undefined);
+	const closed = await rejection(
+		connection.resumeSession('fake-session', 'normal'),
+	);
+	t.is(closed.message, 'Nanocoder could not resume the session');
 });
 
 test('resumes a session, rebuilds it from the replay and sets its mode', async t => {

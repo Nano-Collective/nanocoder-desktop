@@ -63,7 +63,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/subagent-display.ts`, `source/shared/subagents.ts` | Bounded display-only delegation and permission source hints, never routing or answer authority |
 | `source/main/store/agent-runs.ts`, `source/main/nanocoder/subagent-runs.ts` | Metadata-only repository and forkable passive observer; ThreadService owns atomic live/replay association |
 | `source/main/threads/thread-history-observer.ts` | Scoped atomic live/replay observation, disposable staging, strict slot/epoch guards and post-commit-only observer activation |
-| `source/main/threads/thread-history-mapping.ts`, `source/main/threads/thread-live-mapping.ts`, `source/main/threads/thread-sequence.ts`, `planning/durable-replay.md` | Structural replay and live identities through one main-only batch allocator; renderer replay gates remain pending |
+| `source/main/threads/thread-history-mapping.ts`, `source/main/threads/thread-live-mapping.ts`, `source/main/threads/thread-sequence.ts`, `planning/durable-replay.md` | Structural replay and live identities through one main-only batch allocator, bounded session replay and opaque readiness gates |
 | `source/renderer/transcript.ts`, `source/renderer/stream-batcher.ts` | Ordered immutable transcript patches and cancellable 16ms renderer batching |
 | `source/renderer/conversation-stream.tsx`, `source/renderer/agent-markdown.tsx`, `source/renderer/stream-commands.tsx` | U.4 stream rows, isolated inert Markdown and advertised-command draft suggestions |
 | `source/renderer/composer.tsx`, `source/renderer/project-controls.ts`, `source/renderer/use-project-controls.ts` | Mounted plain-props multiline composer and scoped acknowledged project-control state; no renderer live-mode cache |
@@ -93,6 +93,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/capabilities.ts` | Records `initialize` capabilities and builds feature gates with reasons; extensions need safe probes |
 | `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp`, a scripted model provider and test helpers, including the setup shared by the `*.acp.ts` tests |
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
+| `source/shared/thread-replay.ts` | Strict optional display-only replay markers and readiness refusal copy; epochs never enter a request or authorise an action |
 | `source/preload/index.ts` | The `window.desktop` bridge |
 | `e2e/*.e2e.ts` | Playwright tests against the built app |
 | `e2e/store.e2e.ts` | Built-main persistence, migration backup, corruption recovery and storage refusal tests |
@@ -100,6 +101,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `e2e/supervisor.e2e.ts` | Built-main quit while a child is still initialising, including child-exit verification |
 | `e2e/supervisor-recovery.e2e.ts` | Crash/retry, saved-history replay, crash-loop limits and reviewed diagnostics refusals |
 | `e2e/streaming.e2e.ts` | Fake stream cadence, ordered rendering, input/scroll/frame response, safe resources and multi-width stream QA |
+| `e2e/replay-gates.e2e.ts` | Mounted replay success/failure refusals, editable unqueued drafts and 200-message post-replay usability timing (`PERF-03`) |
 | `e2e/subagents.e2e.ts`, `e2e/qa/subagent-harness.ts` | Fake delegation/approval/cancel, card focus and stop-owner/refusal tests; `subagents.acp.ts` checks real pinned ACP |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |
 | `e2e/qa/approval-harness.ts` | Browser-only component fixture for failed answers and atomic same-size approval queue replacement |

@@ -1,6 +1,6 @@
 // Stands in for `nanocoder --acp` in tests. A .fake-nanocoder file in the working directory picks the behaviour.
 import {createHash, randomUUID} from 'node:crypto';
-import {existsSync, readFileSync, writeFileSync} from 'node:fs';
+import {existsSync, readFileSync, watch, writeFileSync} from 'node:fs';
 import {createInterface} from 'node:readline';
 
 const mode = existsSync('.fake-nanocoder')
@@ -14,6 +14,20 @@ const TRUST_REASONS = {
 let nextSession = 0;
 const scopedSessions = process.env.NANOCODER_TEST_SCOPED_SESSIONS === '1';
 const sessionPrefix = `fake-session-${createHash('sha256').update(process.cwd()).digest('hex').slice(0, 12)}`;
+let replayModel = 'old';
+const replayConfig = () => [
+	{
+		id: 'model',
+		name: 'model',
+		type: 'select',
+		category: 'model',
+		currentValue: replayModel,
+		options: [
+			{name: 'old', value: 'old'},
+			{name: 'confirmed', value: 'confirmed'},
+		],
+	},
+];
 
 const log = event => process.stderr.write(`${JSON.stringify(event)}\n`);
 const send = message =>
@@ -64,6 +78,7 @@ const results = {
 							? `fake-session-${++nextSession}`
 							: 'fake-session',
 					modes: modeState(),
+					...(mode === 'replay-gates' && {configOptions: replayConfig()}),
 				},
 	'session/set_mode': () => (mode === 'mode-fails' ? undefined : {}),
 	'session/close': () => ({}),
@@ -106,7 +121,7 @@ function durableDelegations(sessionId, history) {
 }
 
 // Replays an earlier exchange, as Nanocoder does, then answers with the mode state.
-function resume(id, {sessionId}) {
+async function resume(id, {sessionId}) {
 	if (mode === 'die-in-resume') process.exit(3);
 	const knownSession = scopedSessions
 		? typeof sessionId === 'string' &&
@@ -130,12 +145,105 @@ function resume(id, {sessionId}) {
 		send({id, error: {code: -32603, message: 'Internal error'}});
 		return;
 	}
+	if (mode === 'replay-gates') {
+		await new Promise(resolve => {
+			if (existsSync('.fake-replay-release')) return resolve();
+			const watcher = watch('.', {persistent: false}, () => {
+				if (!existsSync('.fake-replay-release')) return;
+				watcher.close();
+				resolve();
+			});
+			if (existsSync('.fake-replay-release')) {
+				watcher.close();
+				resolve();
+			}
+		});
+		if (readFileSync('.fake-replay-release', 'utf8') === 'fail') {
+			send({id, error: {code: -32603, message: 'fixture replay failure'}});
+			return;
+		}
+		if (readFileSync('.fake-replay-release', 'utf8') === 'missing') {
+			send({
+				id,
+				error: {
+					code: -32603,
+					message: 'Internal error',
+					data: {details: `Session not found on disk: ${sessionId}`},
+				},
+			});
+			return;
+		}
+		for (let index = 0; index < 100; index++) {
+			notify('session/update', {
+				sessionId,
+				update: {
+					sessionUpdate: 'user_message_chunk',
+					content: {type: 'text', text: `restored user ${index}`},
+				},
+			});
+			notify('session/update', {
+				sessionId,
+				update: {
+					sessionUpdate: 'agent_message_chunk',
+					content: {type: 'text', text: `restored answer ${index}`},
+				},
+			});
+		}
+		send({id, result: {modes: modeState(), configOptions: replayConfig()}});
+		return;
+	}
 	if (mode === 'durable-replay') {
 		durableDelegations(sessionId, true);
 		send({id, result: {modes: modeState()}});
 		return;
 	}
 	const update = body => notify('session/update', {sessionId, update: body});
+	if (mode === 'replay-foreign')
+		notify('session/update', {
+			sessionId: 'foreign-session',
+			update: {
+				sessionUpdate: 'user_message_chunk',
+				content: {type: 'text', text: 'private foreign history'},
+			},
+		});
+	if (
+		[
+			'replay-count-overflow',
+			'replay-count-limit',
+			'replay-bytes-overflow',
+			'replay-utf8-overflow',
+			'replay-bytes-limit',
+		].includes(mode)
+	) {
+		const empty = {
+			sessionUpdate: 'agent_message_chunk',
+			content: {type: 'text', text: ''},
+		};
+		const count =
+			mode === 'replay-count-limit'
+				? 100000
+				: mode === 'replay-count-overflow'
+					? 100001
+					: mode === 'replay-utf8-overflow'
+						? 6
+						: mode === 'replay-bytes-limit'
+							? 1
+							: 17;
+		const text = mode.startsWith('replay-count-')
+			? 'x'
+			: mode === 'replay-bytes-limit'
+				? 'x'.repeat(
+						16 * 1024 * 1024 - Buffer.byteLength(JSON.stringify(empty), 'utf8'),
+					)
+				: (mode === 'replay-utf8-overflow' ? '€' : 'x').repeat(1024 * 1024);
+		for (let index = 0; index < count; index++)
+			update({
+				sessionUpdate: 'agent_message_chunk',
+				content: {type: 'text', text},
+			});
+		send({id, result: {modes: modeState()}});
+		return;
+	}
 	update({
 		sessionUpdate: 'user_message_chunk',
 		content: {type: 'text', text: 'Earlier question'},
@@ -363,6 +471,11 @@ async function subagentFixture(id, {sessionId, prompt}) {
 // One turn: some text, protected tool calls that wait for the client's answers, more text.
 async function runTurn(id, params) {
 	const {sessionId} = params;
+	if (mode === 'replay-gates') {
+		say(sessionId, 'live replay gate fixture');
+		send({id, result: {stopReason: 'end_turn'}});
+		return;
+	}
 	if (mode === 'die-in-turn') process.exit(3);
 	if (mode === 'durable-replay') {
 		durableDelegations(sessionId, false);
@@ -525,6 +638,11 @@ function serve() {
 			}
 			if (method === 'session/prompt') {
 				void runTurn(id, params);
+				return;
+			}
+			if (method === 'session/set_config_option' && mode === 'replay-gates') {
+				replayModel = params.value;
+				send({id, result: {configOptions: replayConfig()}});
 				return;
 			}
 			if (method === 'session/cancel') {

@@ -173,6 +173,75 @@ function fixture() {
 	};
 }
 
+test('CHAT-08 replay snapshot refuses send, mode and approval without clearing an editable memory draft', async t => {
+	const {model, bridge, calls} = fixture();
+	bridge.getThreadSnapshot = async request =>
+		ok(
+			Object.assign(snap(request.threadId, request.projectId), {
+				replaying: true,
+				replayEpoch: 'b60c4d2a-f55e-4e8f-b397-84f65adc1aac',
+			}),
+		);
+	await model.selectProject('project-a');
+	model.setDraft('unsent memory-only draft');
+	const before = structuredClone(calls);
+	t.is(await model.send(), null);
+	t.false(await model.setMode('a', 'plan'));
+	t.false((await model.answer('a', 'request', 'allow')).ok);
+	t.is(model.getState().conversation.draft, 'unsent memory-only draft');
+	t.deepEqual(calls, before);
+});
+
+test('CHAT-08 complete waits for the exact snapshot prefix and synchronous renderer flush before enabling a send', async t => {
+	const {model, bridge, emit, calls, changes} = fixture();
+	await model.selectProject('project-a');
+	model.setDraft('keep my draft');
+	const epoch = 'b60c4d2a-f55e-4e8f-b397-84f65adc1aac';
+	const prefix = deferred<IpcResult<ThreadSnapshot>>();
+	bridge.getThreadSnapshot = () => prefix.promise;
+	emit({
+		type: 'turn',
+		projectId: 'project-a',
+		threadId: 'a',
+		sequence: 1,
+		events: [],
+		replay: {epoch, phase: 'begin'},
+	});
+	emit({
+		type: 'turn',
+		projectId: 'project-a',
+		threadId: 'a',
+		sequence: 2,
+		events: [],
+		replay: {epoch, phase: 'complete'},
+	});
+	t.is(await model.send(), null);
+	t.false(calls.some(call => Array.isArray(call) && call[0] === 'prompt'));
+	prefix.resolve(
+		ok(
+			Object.assign(snap('a'), {
+				sequence: 2,
+				replayEpoch: epoch,
+				events: [{type: 'user', text: 'restored prefix'}],
+			}),
+		),
+	);
+	await prefix.promise;
+	await Promise.resolve();
+	t.deepEqual(model.getState().conversation.transcript.items, [
+		{kind: 'user', text: 'restored prefix'},
+	]);
+	const enabled = changes.filter(
+		state =>
+			state.workspace.replay?.a === undefined &&
+			state.conversation.transcript.items.some(
+				item => item.kind === 'user' && item.text === 'restored prefix',
+			),
+	);
+	t.true(enabled.length > 0);
+	t.true((await model.send())?.ok);
+});
+
 test('initial selection reads main cache only and restores only a desktop thread belonging to the selected project (CHAT-03, CHAT-04)', async t => {
 	const {model, calls} = fixture();
 	await model.selectProject('project-a');

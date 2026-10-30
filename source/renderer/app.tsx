@@ -29,6 +29,7 @@ import type {
 	NanocoderRuntime,
 	ThreadInfo,
 } from '@/shared/ipc';
+import {REPLAY_FAILURE_REASON, REPLAY_REASON} from '@/shared/thread-replay';
 
 function FeatureDetails({gates}: {gates: CapabilityGates}) {
 	return (
@@ -135,19 +136,30 @@ export function App() {
 				thread.nanocoderSessionId === processState?.activeThreadId));
 	const stopping =
 		thread !== null && workspace.cancellingThreadIds.includes(thread.id);
+	const activeReplay = workspace.replay?.[thread?.id ?? ''];
+	const replayReason =
+		activeReplay === 'failed'
+			? (thread?.viewOnlyReason ?? REPLAY_FAILURE_REASON)
+			: Object.values(workspace.replay ?? {}).includes('replaying')
+				? processState?.status === 'failed'
+					? REPLAY_FAILURE_REASON
+					: REPLAY_REASON
+				: null;
 	const editable =
-		accepting &&
+		(accepting || activeReplay !== undefined) &&
 		thread?.archiveState === 'active' &&
 		thread.runState !== 'view-only' &&
-		!workspace.loading &&
-		!workspace.pending;
-	const rootControlReason = rootBusy
-		? 'stop the project turn before changing controls'
-		: !accepting
-			? 'Nanocoder is not ready'
-			: workspace.loading || workspace.pending
-				? 'another thread request is pending'
-				: null;
+		!(activeReplay === 'failed' && thread.viewOnlyReason) &&
+		(activeReplay !== undefined || (!workspace.loading && !workspace.pending));
+	const rootControlReason =
+		replayReason ??
+		(rootBusy
+			? 'stop the project turn before changing controls'
+			: !accepting
+				? 'Nanocoder is not ready'
+				: workspace.loading || workspace.pending
+					? 'another thread request is pending'
+					: null);
 	const modelControls = useProjectControls(
 		projectId,
 		rootControlReason,
@@ -248,6 +260,7 @@ export function App() {
 	const send = () => {
 		if (
 			editable &&
+			!replayReason &&
 			!rootBusy &&
 			!modelControls.pending &&
 			!configUncertain &&
@@ -282,21 +295,23 @@ export function App() {
 		connecting ||
 		projectControls.pending ||
 		modelControls.pending;
-	const sendReason = !accepting
-		? 'Nanocoder is not ready. retry before sending.'
-		: thread?.archiveState === 'archived'
-			? 'this thread is archived; unarchive it before sending'
-			: sending
-				? 'waiting for Nanocoder to finish the turn'
-				: rootBusy
-					? 'another thread is running'
-					: modelControls.pending
-						? 'a project control change is pending'
-						: configUncertain
-							? CONFIG_UNCERTAINTY_REASON
-							: draft.trim() === ''
-								? 'enter a message to send'
-								: null;
+	const sendReason =
+		replayReason ??
+		(!accepting
+			? 'Nanocoder is not ready. retry before sending.'
+			: thread?.archiveState === 'archived'
+				? 'this thread is archived; unarchive it before sending'
+				: sending
+					? 'waiting for Nanocoder to finish the turn'
+					: rootBusy
+						? 'another thread is running'
+						: modelControls.pending
+							? 'a project control change is pending'
+							: configUncertain
+								? CONFIG_UNCERTAINTY_REASON
+								: draft.trim() === ''
+									? 'enter a message to send'
+									: null);
 
 	return (
 		<OverlayProvider

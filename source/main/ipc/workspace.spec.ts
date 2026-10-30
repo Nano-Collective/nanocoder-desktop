@@ -136,6 +136,24 @@ function registered(services?: WorkspaceServices) {
 	};
 }
 
+test('CHAT-08 no workspace IPC request accepts a replay epoch or phase as authority', async t => {
+	const request = registered();
+	for (const [method, payload] of Object.entries(payloads)) {
+		for (const extra of [
+			{epoch: threadId},
+			{replayEpoch: threadId},
+			{replay: {epoch: threadId, phase: 'complete'}},
+		]) {
+			const result = await request(method as WorkspaceMethod, {
+				...payload,
+				...extra,
+			});
+			t.false(result.ok);
+			if (!result.ok) t.is(result.error.code, 'VALIDATION');
+		}
+	}
+});
+
 test('cancelThread refuses renderer session identities and malformed scopes before invoking the thread service (ACP-10)', async t => {
 	let calls = 0;
 	const request = registered({

@@ -37,11 +37,17 @@ import type {
 	ProjectInfo,
 	SessionInfo,
 	ThreadInfo,
+	ThreadReplay,
 	ThreadRequest,
 	ThreadSnapshot,
 	TurnEvent,
 	TurnResult,
 } from '@/shared/ipc';
+import {
+	REPLAY_FAILURE_REASON,
+	REPLAY_MISSING_REASON,
+	threadReplaySchema,
+} from '@/shared/thread-replay';
 
 export interface OwnedSessionContext {
 	lease: ProjectOperationLease;
@@ -155,6 +161,14 @@ export function createThreadService(
 		string,
 		Pick<ThreadSnapshot, 'sequence' | 'events' | 'result'>
 	>();
+	const replays = new Map<
+		string,
+		ThreadReplay & {
+			threadId: string;
+			sessionId: string;
+			lease: ProjectOperationLease;
+		}
+	>();
 	const historyObservers = new Map<
 		string,
 		{
@@ -253,6 +267,13 @@ export function createThreadService(
 			projectId,
 			kind,
 			async lease => {
+				const replay = replays.get(projectId);
+				if (
+					(kind === 'mode' || kind === 'config') &&
+					replay &&
+					replay.phase !== 'complete'
+				)
+					throw new IpcFailure('UNAVAILABLE', REPLAY_FAILURE_REASON);
 				const active = {lease, threadId: scope.threadId};
 				activeLeases.set(projectId, active);
 				try {
@@ -312,6 +333,13 @@ export function createThreadService(
 		return {...thread, ...(mode && {mode})};
 	};
 	const publishThread = (thread: ThreadInfo) => {
+		const replay = replays.get(thread.projectId);
+		if (
+			replay?.threadId === thread.id &&
+			replay.phase === 'begin' &&
+			thread.runState === 'ready'
+		)
+			return thread;
 		options.supervisor.publishThread(presentThread(thread));
 		return thread;
 	};
@@ -332,6 +360,8 @@ export function createThreadService(
 		lastActivity.set(projectId, (options.clock ?? systemClock).now());
 	};
 	const remember = (thread: ThreadInfo, connection: NanocoderConnection) => {
+		if (replays.get(thread.projectId)?.threadId !== thread.id)
+			replays.delete(thread.projectId);
 		prepared.set(thread.id, connection);
 		currentSessions.set(thread.projectId, {
 			thread: structuredClone(thread),
@@ -390,17 +420,28 @@ export function createThreadService(
 		)
 			throw new IpcFailure('BUSY', 'Wait for this thread to finish', true);
 	};
-	const snapshot = (request: ThreadRequest) => ({
-		thread: presentThread(getThread(request)),
-		...(snapshots.get(request.threadId) ?? {sequence: 0, events: []}),
-		replaying: false,
-	});
+	const snapshot = (request: ThreadRequest) => {
+		const thread = presentThread(getThread(request));
+		const candidate = replays.get(request.projectId);
+		const replay =
+			candidate?.threadId === thread.id &&
+			candidate.sessionId === thread.nanocoderSessionId
+				? candidate
+				: undefined;
+		return {
+			thread,
+			...(snapshots.get(request.threadId) ?? {sequence: 0, events: []}),
+			replaying: replay ? replay.phase !== 'complete' : false,
+			...(replay && {replayEpoch: replay.epoch}),
+		};
+	};
 	const append = (
 		thread: ThreadInfo,
 		events: TurnEvent[],
 		result?: IpcResult<TurnResult>,
 		persist = true,
 		cancelledOwner?: ProjectOperationLease,
+		replay?: ThreadReplay,
 	) => {
 		const live = liveTurns.get(thread.id);
 		const cancelling =
@@ -484,8 +525,62 @@ export function createThreadService(
 				sequence: state.sequence,
 				events: structuredClone(chunk),
 				...(terminal && {result: structuredClone(terminal)}),
+				...(replay && {replay: threadReplaySchema.parse(replay)}),
 			});
 		}
+	};
+	const beginReplay = (thread: ThreadInfo, lease: ProjectOperationLease) => {
+		projectOperations.assertCurrent(lease);
+		if (!thread.nanocoderSessionId)
+			throw new IpcFailure('AGENT_UNAVAILABLE', 'No saved session is ready');
+		if (!snapshots.has(thread.id)) {
+			const history = options.store.threadHistory.read({
+				projectId: thread.projectId,
+				threadId: thread.id,
+				sessionId: thread.nanocoderSessionId,
+			});
+			const allocator = createThreadSequence({
+				highWaterMark: history?.sequence,
+			});
+			projectOperations.assertCurrent(lease);
+			snapshots.set(thread.id, {sequence: allocator.current(), events: []});
+		}
+		const replay = {
+			epoch: randomUUID(),
+			phase: 'begin' as ThreadReplay['phase'],
+			threadId: thread.id,
+			sessionId: thread.nanocoderSessionId,
+			lease,
+		};
+		replays.set(thread.projectId, replay);
+		append(thread, [], undefined, false, undefined, {
+			epoch: replay.epoch,
+			phase: 'begin',
+		});
+		return replay;
+	};
+	const finishReplay = (
+		thread: ThreadInfo,
+		replay: ReturnType<typeof beginReplay>,
+		phase: 'complete' | 'failed',
+	) => {
+		if (replays.get(thread.projectId) !== replay) return;
+		replay.phase = phase;
+		if (phase === 'failed') {
+			prepared.delete(thread.id);
+			preparedSessions.delete(thread.id);
+			prompted.delete(thread.id);
+		}
+		try {
+			projectOperations.assertCurrent(replay.lease);
+		} catch (error) {
+			if (phase === 'complete') throw error;
+			return;
+		}
+		append(thread, [], undefined, false, undefined, {
+			epoch: replay.epoch,
+			phase,
+		});
 	};
 	const unsubscribe = options.supervisor.subscribe(event => {
 		if (event.type !== 'turn') return;
@@ -591,6 +686,8 @@ export function createThreadService(
 		if (currentSessions.get(request.projectId)?.thread.id === request.threadId)
 			currentSessions.delete(request.projectId);
 		snapshots.delete(request.threadId);
+		if (replays.get(request.projectId)?.threadId === request.threadId)
+			replays.delete(request.projectId);
 		const history = historyObservers.get(request.threadId);
 		history?.observer.forgetThread(request.threadId);
 		history?.observer.dispose();
@@ -714,6 +811,7 @@ export function createThreadService(
 		thread: ThreadInfo,
 		events: TurnEvent[],
 		lease: ProjectOperationLease,
+		epoch: string,
 	) => {
 		projectOperations.assertCurrent(lease);
 		const sessionId = thread.nanocoderSessionId;
@@ -742,7 +840,7 @@ export function createThreadService(
 				history: previous,
 				generation: (previous?.generation ?? 0) + 1,
 				firstSequence: batches[0].firstSlot,
-				epoch: randomUUID(),
+				epoch,
 				events,
 			});
 			projectOperations.assertCurrent(lease);
@@ -771,43 +869,53 @@ export function createThreadService(
 	) => {
 		const sessionId = thread.nanocoderSessionId;
 		if (!sessionId) return;
-		const restored = await projectOperations.runOwnedStep(lease, () =>
-			connection.resumeSession(sessionId, startingMode(thread, project)),
-		);
-		signal.throwIfAborted();
-		assertResumedIdentity(sessionId, restored.session);
-		const request = {projectId: thread.projectId, threadId: thread.id};
-		const current = getThread(request);
-		if (current.nanocoderSessionId !== sessionId)
-			throw new IpcFailure('DENIED', 'The thread session changed');
-		await validateProject(current);
-		signal.throwIfAborted();
-		if (options.supervisor.getConnection(project.id) !== connection)
-			throw new IpcFailure('AGENT_UNAVAILABLE', 'The project process changed');
-		const fresh = getThread(request);
-		if (
-			fresh.nanocoderSessionId !== sessionId ||
-			fresh.sessionCwd !== current.sessionCwd
-		)
-			throw new IpcFailure('DENIED', 'The thread session changed');
-		const acknowledged = updateThread(fresh, () => ({
-			mode: restored.session.mode,
-		}));
-		await handoffSession(
-			lease,
-			acknowledged,
-			connection,
-			restored.session,
-			'resume',
-			requestedMode,
-		);
-		signal.throwIfAborted();
-		const ready = updateThread(acknowledged, () => ({
-			runState: 'ready',
-			viewOnlyReason: null,
-		}));
-		commitHistory(ready, restored.history, lease);
-		remember(ready, connection);
+		const replay = beginReplay(thread, lease);
+		try {
+			const restored = await projectOperations.runOwnedStep(lease, () =>
+				connection.resumeSession(sessionId, startingMode(thread, project)),
+			);
+			signal.throwIfAborted();
+			assertResumedIdentity(sessionId, restored.session);
+			const request = {projectId: thread.projectId, threadId: thread.id};
+			const current = getThread(request);
+			if (current.nanocoderSessionId !== sessionId)
+				throw new IpcFailure('DENIED', 'The thread session changed');
+			await validateProject(current);
+			signal.throwIfAborted();
+			if (options.supervisor.getConnection(project.id) !== connection)
+				throw new IpcFailure(
+					'AGENT_UNAVAILABLE',
+					'The project process changed',
+				);
+			const fresh = getThread(request);
+			if (
+				fresh.nanocoderSessionId !== sessionId ||
+				fresh.sessionCwd !== current.sessionCwd
+			)
+				throw new IpcFailure('DENIED', 'The thread session changed');
+			const acknowledged = updateThread(fresh, () => ({
+				mode: restored.session.mode,
+			}));
+			await handoffSession(
+				lease,
+				acknowledged,
+				connection,
+				restored.session,
+				'resume',
+				requestedMode,
+			);
+			signal.throwIfAborted();
+			commitHistory(acknowledged, restored.history, lease, replay.epoch);
+			finishReplay(acknowledged, replay, 'complete');
+			const ready = updateThread(acknowledged, () => ({
+				runState: 'ready',
+				viewOnlyReason: null,
+			}));
+			remember(ready, connection);
+		} catch (error) {
+			finishReplay(thread, replay, 'failed');
+			throw error;
+		}
 	};
 	const viewOnly = (request: ThreadRequest, error: unknown) => {
 		const reason =
@@ -826,6 +934,15 @@ export function createThreadService(
 		getControlConnection: projectId => {
 			if (disposed) return undefined;
 			const active = activeLeases.get(projectId);
+			const replay = replays.get(projectId);
+			if (
+				replay?.phase === 'failed' &&
+				(!active ||
+					active.lease.kind !== 'prompt' ||
+					!active.threadId ||
+					active.threadId === replay.threadId)
+			)
+				return undefined;
 			if (active) {
 				try {
 					projectOperations.assertCurrent(active.lease);
@@ -896,6 +1013,7 @@ export function createThreadService(
 			const binding = {connection, signal};
 			recoveringConnections.set(project.id, binding);
 			const restoreOwned = async (lease: ProjectOperationLease) => {
+				let replay: ReturnType<typeof beginReplay> | undefined;
 				binding.signal = AbortSignal.any([signal, lease.signal]);
 				restoring.set(project.id, signal);
 				try {
@@ -905,6 +1023,7 @@ export function createThreadService(
 					);
 					const thread = await check();
 					const requestedMode = thread.mode;
+					replay = beginReplay(thread, lease);
 					const restored = await projectOperations.runOwnedStep(lease, () =>
 						connection.resumeSession(
 							thread.nanocoderSessionId,
@@ -924,12 +1043,27 @@ export function createThreadService(
 						'resume',
 						requestedMode,
 					);
-					const ready = updateThread(await check(), () => ({
+					const current = await check();
+					commitHistory(current, restored.history, lease, replay.epoch);
+					finishReplay(current, replay, 'complete');
+					const ready = updateThread(current, () => ({
 						runState: 'ready',
 						viewOnlyReason: null,
 					}));
-					commitHistory(ready, restored.history, lease);
 					remember(ready, connection);
+				} catch (error) {
+					if (replay) finishReplay(cached.thread, replay, 'failed');
+					if (
+						replay &&
+						error instanceof NanocoderFailure &&
+						error.code === 'NOT_FOUND'
+					) {
+						projectOperations.assertCurrent(lease);
+						updateThread(cached.thread, () => ({
+							viewOnlyReason: REPLAY_MISSING_REASON,
+						}));
+					}
+					throw error;
 				} finally {
 					if (restoring.get(project.id) === signal)
 						restoring.delete(project.id);
@@ -1002,6 +1136,7 @@ export function createThreadService(
 			for (const {observer} of historyObservers.values()) observer.dispose();
 			historyObservers.clear();
 			liveTurns.clear();
+			replays.clear();
 		},
 		dispose: () => {
 			disposed = true;
@@ -1015,6 +1150,7 @@ export function createThreadService(
 			for (const {observer} of historyObservers.values()) observer.dispose();
 			historyObservers.clear();
 			liveTurns.clear();
+			replays.clear();
 		},
 		listThreads: async ({projectId, archiveState}) => {
 			getProject(projectId);
@@ -1303,6 +1439,9 @@ export function createThreadService(
 					const abort = new AbortController();
 					const signal = AbortSignal.any([scope, abort.signal, lease.signal]);
 					let thread = getThread(request);
+					const replay = replays.get(thread.projectId);
+					if (replay?.threadId === thread.id && replay.phase !== 'complete')
+						throw new IpcFailure('UNAVAILABLE', REPLAY_FAILURE_REASON);
 					assertMutable(thread);
 					options.validateBeforePrepare?.(lease, structuredClone(thread));
 					if (thread.runState === 'view-only')
@@ -1626,6 +1765,9 @@ export function createThreadService(
 		setThreadMode: unavailable,
 		answerThreadPermission: async request => {
 			const thread = getThread(request);
+			const replay = replays.get(thread.projectId);
+			if (replay?.threadId === thread.id && replay.phase !== 'complete')
+				throw new IpcFailure('DENIED', REPLAY_FAILURE_REASON);
 			const active = activeLeases.get(thread.projectId);
 			const sessionId = thread.nanocoderSessionId;
 			const denied = () =>

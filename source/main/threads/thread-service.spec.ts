@@ -32,6 +32,315 @@ import type {
 	TurnEvent,
 } from '@/shared/ipc';
 
+for (const kind of ['mode', 'config'] as const) {
+	test(`CHAT-08 failed replay refuses shared ${kind} work before any control callback`, async t => {
+		const f = await fixture(t, true);
+		const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+		f.store.threads.save(thread);
+		f.store.threadHistory.apply = () => {
+			throw new IpcFailure('AGENT_UNAVAILABLE', 'fixture commit refusal');
+		};
+		await f.service.openThread({projectId: f.project.id, threadId: thread.id});
+		let changes = 0;
+		const result = await f.service
+			.runProjectOperation(f.project.id, kind, async () => {
+				changes++;
+				return null;
+			})
+			.then(
+				() => 'accepted',
+				(error: unknown) =>
+					error instanceof IpcFailure ? error.code : 'unknown',
+			);
+		t.is(result, 'UNAVAILABLE');
+		t.is(changes, 0);
+	});
+}
+
+test('CHAT-08 failed replay keeps controls hidden except inside a distinct new-thread prompt owner', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	f.store.threadHistory.apply = () => {
+		throw new IpcFailure('AGENT_UNAVAILABLE', 'fixture commit refusal');
+	};
+	await f.service.openThread({projectId: f.project.id, threadId: thread.id});
+	const next = await f.service.createThread({projectId: f.project.id});
+	t.is(f.service.getControlConnection(f.project.id), undefined);
+	await f.service.runProjectOperation(
+		f.project.id,
+		'prompt',
+		async () => {
+			t.is(f.service.getControlConnection(f.project.id), undefined);
+		},
+		{threadId: thread.id},
+	);
+	await t.throwsAsync(
+		f.service.promptThread({
+			projectId: f.project.id,
+			threadId: thread.id,
+			text: 'must not enter the failed session',
+		}),
+		{code: 'UNAVAILABLE'},
+	);
+	await f.service
+		.runProjectOperation(
+			f.project.id,
+			'prompt',
+			async lease => {
+				f.service.projectOperations.assertCurrent(lease);
+				t.is(
+					f.service.getControlConnection(f.project.id),
+					f.supervisor.getConnection(f.project.id),
+				);
+				f.service.projectOperations.invalidate(f.project.id);
+				t.is(f.service.getControlConnection(f.project.id), undefined);
+			},
+			{threadId: next.id},
+		)
+		.catch(error => {
+			if (!(error instanceof IpcFailure) || error.code !== 'AGENT_UNAVAILABLE')
+				throw error;
+		});
+	t.is(f.service.getControlConnection(f.project.id), undefined);
+	const failed = await f.service.getThreadSnapshot({
+		projectId: f.project.id,
+		threadId: thread.id,
+	});
+	t.true(failed.replaying);
+	t.is(failed.thread.nanocoderSessionId, 'fake-session');
+	t.deepEqual(failed.events, []);
+});
+
+test('CHAT-08 a recreated owner recovers the stored sequence floor before publishing begin', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	await f.service.openThread(request);
+	const scope = {...request, sessionId: 'fake-session'};
+	const before = f.store.threadHistory.read(scope);
+	if (!before) throw new Error('Missing first committed history');
+	f.service.dispose();
+	const packets: ProjectEvent[] = [];
+	const restarted = createThreadService({
+		store: f.store,
+		supervisor: f.supervisor,
+		onEvent: event => packets.push(event),
+	});
+	t.teardown(() => restarted.dispose());
+	const snapshot = await restarted.openThread(request);
+	const floor = Math.floor(before.sequence / 10001);
+	assertReplayMarkers(
+		t,
+		packets,
+		thread,
+		[
+			['begin', floor + 1],
+			['complete', floor + 3],
+		],
+		snapshot.replayEpoch,
+	);
+	t.is(snapshot.sequence, floor + 3);
+	const after = f.store.threadHistory.read(scope);
+	t.deepEqual(after?.turns, before.turns);
+	t.deepEqual(after?.executions, before.executions);
+});
+
+test('CHAT-08 a fresh marker never reuses a stored slot on an exact batch boundary', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const scope = {...request, sessionId: 'fake-session'};
+	await f.service.openThread(request);
+	const before = f.store.threadHistory.read(scope);
+	if (!before) throw new Error('Missing committed fixture history');
+	const boundary = 5 * 10001;
+	f.store.threadHistory.apply(scope, {
+		expectedRevision: before.revision,
+		source: 'live',
+		generation: before.generation,
+		sequence: boundary,
+		complete: before.complete,
+		turns: [],
+		executions: [],
+		agentRuns: [],
+	});
+	t.is(f.store.threadHistory.read(scope)?.sequence, boundary);
+	f.service.dispose();
+	const packets: ProjectEvent[] = [];
+	const restarted = createThreadService({
+		store: f.store,
+		supervisor: f.supervisor,
+		onEvent: event => packets.push(event),
+	});
+	t.teardown(() => restarted.dispose());
+	const snapshot = await restarted.openThread(request);
+	const floor = Math.floor(boundary / 10001);
+	assertReplayMarkers(
+		t,
+		packets,
+		thread,
+		[
+			['begin', floor + 1],
+			['complete', floor + 3],
+		],
+		snapshot.replayEpoch,
+	);
+	t.true((packets[0]?.sequence ?? 0) * 10001 > boundary);
+	t.deepEqual(f.store.threadHistory.read(scope)?.turns, before.turns);
+	t.deepEqual(f.store.threadHistory.read(scope)?.executions, before.executions);
+});
+
+test('CHAT-08 failed commit publishes only failed, keeps the gate closed and retries the same ID with a fresh epoch', async t => {
+	const packets: ProjectEvent[] = [];
+	const f = await fixture(t, true, event => packets.push(event));
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const scope = {...request, sessionId: 'fake-session'};
+	const apply = f.store.threadHistory.apply.bind(f.store.threadHistory);
+	f.store.threadHistory.apply = () => {
+		throw new IpcFailure('AGENT_UNAVAILABLE', 'fixture commit refused');
+	};
+	const failed = await f.service.openThread(request);
+	assertReplayMarkers(
+		t,
+		packets,
+		thread,
+		[
+			['begin', 1],
+			['failed', 2],
+		],
+		failed.replayEpoch,
+	);
+	t.true(failed.replaying);
+	t.deepEqual(failed.events, []);
+	t.is(f.store.threadHistory.read(scope), undefined);
+	t.deepEqual(f.store.agentRuns.list(f.project.id, thread.id), []);
+	t.is(f.service.getControlConnection(f.project.id), undefined);
+	f.store.threadHistory.apply = apply;
+	const retried = await f.service.openThread(request);
+	assertReplayMarkers(
+		t,
+		packets.slice(2),
+		thread,
+		[
+			['begin', 3],
+			['complete', 5],
+		],
+		retried.replayEpoch,
+	);
+	t.not(retried.replayEpoch, failed.replayEpoch);
+	t.false(retried.replaying);
+	t.is(retried.thread.nanocoderSessionId, 'fake-session');
+	t.is(retried.thread.runState, 'ready');
+	t.truthy(f.store.threadHistory.read(scope));
+	t.truthy(f.service.getControlConnection(f.project.id));
+	const methods = fakeEvents(
+		f.supervisor.getConnection(f.project.id).stderr.lines(),
+	).map(event => event.method);
+	t.is(methods.filter(method => method === 'session/resume').length, 2);
+	t.false(methods.includes('session/new'));
+	t.false(methods.includes('session/prompt'));
+});
+
+test('CHAT-08 cancelling a replay handoff preserves interrupted rather than inventing a failed turn', async t => {
+	const entered = deferred<void>();
+	const release = deferred<void>();
+	const f = await fixture(t, true, undefined, false, {
+		onSessionPrepared: async () => {
+			entered.resolve();
+			await release.promise;
+		},
+	});
+	const thread = seed(f.project, {nanocoderSessionId: 'fake-session'});
+	f.store.threads.save(thread);
+	const request = {projectId: f.project.id, threadId: thread.id};
+	const turning = f.service.promptThread({...request, text: 'not sent'});
+	await entered.promise;
+	const cancelled = f.service.cancelThread(request);
+	release.resolve();
+	await cancelled;
+	t.deepEqual(await turning, {stopReason: 'cancelled'});
+	const snapshot = await f.service.getThreadSnapshot(request);
+	t.is(snapshot.thread.runState, 'interrupted');
+	t.deepEqual(snapshot.events, []);
+	t.false(f.calls.some(call => call.startsWith('prompt')));
+});
+
+test('CHAT-08 opaque replay boundaries surround commit before ready publication', async t => {
+	const stages: string[] = [];
+	const markers: Extract<ProjectEvent, {type: 'turn'}>[] = [];
+	const f = await fixture(t, true, event => {
+		if (event.type === 'turn' && event.replay) {
+			markers.push(event);
+			stages.push(event.replay.phase);
+		}
+	});
+	const thread = seed(f.project, {
+		nanocoderSessionId: 'fake-session',
+		runState: 'interrupted',
+	});
+	f.store.threads.save(thread);
+	const apply = f.store.threadHistory.apply.bind(f.store.threadHistory);
+	f.store.threadHistory.apply = (...args) => {
+		const revision = apply(...args);
+		stages.push('commit');
+		return revision;
+	};
+	const unsubscribe = f.supervisor.subscribe(event => {
+		if (
+			event.type === 'thread' &&
+			event.thread.id === thread.id &&
+			event.thread.runState === 'ready'
+		)
+			stages.push('ready');
+	});
+	t.teardown(unsubscribe);
+	const snapshot = await f.service.openThread({
+		projectId: f.project.id,
+		threadId: thread.id,
+	});
+	t.deepEqual(stages, ['begin', 'commit', 'complete', 'ready']);
+	t.is(markers[0].replay?.epoch, markers[1].replay?.epoch);
+	t.is(snapshot.replayEpoch, markers[0].replay?.epoch);
+	t.false(snapshot.replaying);
+	t.deepEqual(
+		markers.map(event => event.events),
+		[[], []],
+	);
+	t.true(markers.every(event => event.result === undefined));
+});
+
+test('CHAT-08 ready publication follows the committed replay prefix', async t => {
+	const f = await fixture(t, true);
+	const thread = seed(f.project, {
+		nanocoderSessionId: 'fake-session',
+		runState: 'interrupted',
+	});
+	f.store.threads.save(thread);
+	const stages: string[] = [];
+	const apply = f.store.threadHistory.apply.bind(f.store.threadHistory);
+	f.store.threadHistory.apply = (...args) => {
+		const revision = apply(...args);
+		stages.push('commit');
+		return revision;
+	};
+	const unsubscribe = f.supervisor.subscribe(event => {
+		if (
+			event.type === 'thread' &&
+			event.thread.id === thread.id &&
+			event.thread.runState === 'ready'
+		)
+			stages.push('ready');
+	});
+	t.teardown(unsubscribe);
+	await f.service.openThread({projectId: f.project.id, threadId: thread.id});
+	t.deepEqual(stages, ['commit', 'ready']);
+});
+
 for (const control of ['mode', 'config'] as const) {
 	for (const action of [
 		'archive',
@@ -1095,7 +1404,8 @@ for (const outcome of ['cancelled', 'failed'] as const) {
 }
 
 test('SUB-05 successful resume persists structural IDs before exposing synthetic tools', async t => {
-	const f = await fixture(t, true);
+	const packets: ProjectEvent[] = [];
+	const f = await fixture(t, true, event => packets.push(event));
 	const thread = seed(f.project, {nanocoderSessionId: 'mapped-history'});
 	f.store.threads.save(thread);
 	await f.supervisor.ensureProcess(f.project);
@@ -1131,7 +1441,17 @@ test('SUB-05 successful resume persists structural IDs before exposing synthetic
 	t.is(history?.turns.length, 1);
 	t.is(history?.executions.length, 1);
 	t.is(history?.executions[0].toolCallId, 'opaque/delegation');
-	t.is(opened.sequence, 1);
+	t.is(opened.sequence, 3);
+	assertReplayMarkers(
+		t,
+		packets,
+		thread,
+		[
+			['begin', 1],
+			['complete', 3],
+		],
+		opened.replayEpoch,
+	);
 	t.true((history?.sequence ?? -1) > opened.sequence);
 	for (const privateField of [
 		'firstSlot',
@@ -1184,15 +1504,29 @@ test('SUB-05 recreated ThreadService reuses committed UUIDs and recovers the pri
 	const first = await f.service.openThread(request);
 	const before = f.store.threadHistory.read(scope);
 	f.service.dispose();
+	const packets: ProjectEvent[] = [];
 	const restarted = createThreadService({
 		store: f.store,
 		supervisor: f.supervisor,
+		onEvent: event => packets.push(event),
 	});
 	t.teardown(() => restarted.dispose());
 	const second = await restarted.openThread(request);
 	const after = f.store.threadHistory.read(scope);
 	t.is(resumes, 2);
-	t.is(second.sequence, first.sequence + 1);
+	t.truthy(before);
+	const floor = Math.floor((before?.sequence ?? 0) / 10_001);
+	t.is(second.sequence, floor + 3);
+	assertReplayMarkers(
+		t,
+		packets,
+		second.thread,
+		[
+			['begin', floor + 1],
+			['complete', floor + 3],
+		],
+		second.replayEpoch,
+	);
 	t.true((after?.sequence ?? -1) > (before?.sequence ?? -1));
 	t.deepEqual(after?.turns, before?.turns);
 	t.deepEqual(after?.executions, before?.executions);
@@ -1491,6 +1825,35 @@ function nextFailure(supervisor: ProjectSupervisor) {
 		}
 	});
 	return failed.promise;
+}
+
+function assertReplayMarkers(
+	t: ExecutionContext,
+	events: ProjectEvent[],
+	thread: Pick<ThreadInfo, 'id' | 'projectId'>,
+	markers: Array<['begin' | 'complete' | 'failed', number]>,
+	expectedEpoch?: string,
+) {
+	const first = events[0];
+	const epoch = first?.type === 'turn' ? first.replay?.epoch : undefined;
+	if (markers.length) {
+		t.regex(
+			epoch ?? '',
+			/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+		);
+		if (expectedEpoch !== undefined) t.is(epoch, expectedEpoch);
+	}
+	t.deepEqual(
+		events,
+		markers.map(([phase, sequence]) => ({
+			type: 'turn',
+			projectId: thread.projectId,
+			threadId: thread.id,
+			sequence,
+			events: [],
+			replay: {epoch, phase},
+		})),
+	);
 }
 
 function seed(
@@ -1797,10 +2160,13 @@ test('thread recovery remains starting through slow mode confirmation and detach
 				event.method === 'session/new' || event.method === 'session/prompt',
 		),
 	);
-	t.deepEqual(
-		mapped.slice(before).filter(event => event.type === 'turn'),
-		[],
-	);
+	const previous = mapped
+		.slice(0, before)
+		.filter(event => event.type === 'turn')
+		.at(-1);
+	assertReplayMarkers(t, mapped.slice(before), thread, [
+		['begin', (previous?.sequence ?? 0) + 1],
+	]);
 	t.false(service.activity(project.id).preparing);
 });
 
@@ -2157,7 +2523,19 @@ test('thread recovery uses the supplied starting connection and replaces its map
 	t.is(snapshot.result, undefined);
 	t.is(snapshot.thread.mode, 'normal');
 	t.is(snapshot.thread.nanocoderSessionId, 'fake-session');
-	t.is(snapshot.sequence, before.sequence + 1);
+	t.is(snapshot.sequence, before.sequence + 3);
+	assertReplayMarkers(
+		t,
+		mapped.filter(
+			event => event.type === 'turn' && event.sequence > before.sequence,
+		),
+		thread,
+		[
+			['begin', before.sequence + 1],
+			['complete', before.sequence + 3],
+		],
+		snapshot.replayEpoch,
+	);
 	t.true(
 		snapshot.events.some(
 			event => event.type === 'user' && event.text === 'Earlier question',
@@ -2688,7 +3066,10 @@ test('detached turn response metadata cannot publish into a later renderer attac
 });
 
 test('resumed metadata remains part of the owned in-memory snapshot prefix (CHAT-19, CHAT-04)', async t => {
-	const {service, supervisor, store, project} = await fixture(t, true);
+	const packets: ProjectEvent[] = [];
+	const {service, supervisor, store, project} = await fixture(t, true, event =>
+		packets.push(event),
+	);
 	const thread = seed(project, {nanocoderSessionId: 'fake-session'});
 	store.threads.save(thread);
 	await supervisor.ensureProcess(project);
@@ -2707,7 +3088,17 @@ test('resumed metadata remains part of the owned in-memory snapshot prefix (CHAT
 		threadId: thread.id,
 	});
 	t.deepEqual(snapshot.events.at(-1), metadata);
-	t.is(snapshot.sequence, 1);
+	t.is(snapshot.sequence, 3);
+	assertReplayMarkers(
+		t,
+		packets,
+		thread,
+		[
+			['begin', 1],
+			['complete', 3],
+		],
+		snapshot.replayEpoch,
+	);
 });
 
 test('removed desktop metadata also forgets the remembered recovery session without resuming it (CHAT-14, ACP-13)', async t => {
@@ -2848,11 +3239,19 @@ test('thread recovery refuses a located root or mismatched supplied connection b
 
 test('thread recovery refuses already-aborted and late-aborted mode results without replacing history (ACP-13)', async t => {
 	for (const late of [false, true]) {
-		const {service, supervisor, store, project} = await fixture(t, true);
+		const packets: ProjectEvent[] = [];
+		const {service, supervisor, store, project} = await fixture(
+			t,
+			true,
+			event => packets.push(event),
+		);
 		const thread = seed(project, {nanocoderSessionId: 'fake-session'});
 		store.threads.save(thread);
 		const request = {projectId: project.id, threadId: thread.id};
 		const before = await service.openThread(request);
+		const identityScope = {...request, sessionId: 'fake-session'};
+		const history = store.threadHistory.read(identityScope);
+		const runs = store.agentRuns.list(project.id, thread.id);
 		const connection = supervisor.getConnection(project.id);
 		const entered = deferred<void>();
 		const release = deferred<void>();
@@ -2873,7 +3272,27 @@ test('thread recovery refuses already-aborted and late-aborted mode results with
 		}
 		release.resolve();
 		await rejected;
-		t.deepEqual(await service.getThreadSnapshot(request), before);
+		const after = await service.getThreadSnapshot(request);
+		t.deepEqual(after, {
+			...before,
+			...(late && {
+				sequence: before.sequence + 1,
+				replayEpoch: after.replayEpoch,
+				replaying: true,
+			}),
+		});
+		assertReplayMarkers(
+			t,
+			packets.filter(
+				event => event.type === 'turn' && event.sequence > before.sequence,
+			),
+			thread,
+			late ? [['begin', before.sequence + 1]] : [],
+			late ? after.replayEpoch : undefined,
+		);
+		if (late) t.not(after.replayEpoch, before.replayEpoch);
+		t.deepEqual(store.threadHistory.read(identityScope), history);
+		t.deepEqual(store.agentRuns.list(project.id, thread.id), runs);
 		t.false(service.activity(project.id).preparing);
 	}
 });
@@ -3958,7 +4377,16 @@ test('opening a stored session delegates replay and never restores yolo (CHAT-04
 			history: {outcome: 'unknown'},
 		},
 	]);
-	t.deepEqual(events, []);
+	assertReplayMarkers(
+		t,
+		events,
+		thread,
+		[
+			['begin', 1],
+			['complete', 3],
+		],
+		snapshot.replayEpoch,
+	);
 	const connection = supervisor.getConnection(project.id);
 	await supervisor.close();
 	const modes = fakeEvents(connection.stderr.lines())
