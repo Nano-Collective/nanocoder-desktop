@@ -2,6 +2,7 @@ import {createThreadStream} from '@/renderer/thread-stream';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {
 	IpcResult,
+	NanocoderMode,
 	ProjectEvent,
 	ThreadInfo,
 	ThreadSnapshot,
@@ -13,6 +14,7 @@ type ThreadBridge = Pick<
 	| 'createThread'
 	| 'onProjectEvent'
 	| 'renameThread'
+	| 'setThreadMode'
 	| 'archiveThread'
 	| 'removeThread'
 	| 'deleteThreadHistory'
@@ -360,6 +362,26 @@ export function createThreadController(options: {
 				projectId => options.bridge.renameThread({projectId, threadId, title}),
 				(thread, started) => accept(thread, started, threadId),
 			),
+		setMode: (threadId: string, mode: NanocoderMode) => {
+			const selected = state.threads.find(thread => thread.id === threadId);
+			if (
+				selected?.archiveState !== 'active' ||
+				selected.runState === 'view-only' ||
+				state.promptingThreadId !== null ||
+				state.cancellingThreadIds.length > 0 ||
+				state.threads.some(
+					thread =>
+						thread.runState === 'running' ||
+						thread.runState === 'waiting-approval',
+				)
+			)
+				return Promise.resolve(false);
+			return run(
+				threadId,
+				projectId => options.bridge.setThreadMode({projectId, threadId, mode}),
+				(thread, started) => accept(thread, started, threadId),
+			);
+		},
 		archive: (threadId: string, archived: boolean) =>
 			run(
 				threadId,

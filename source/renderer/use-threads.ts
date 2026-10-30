@@ -4,7 +4,7 @@ import {
 	type ThreadWorkspaceState,
 	threadWorkspaceForProject,
 } from '@/renderer/thread-workspace';
-import type {IpcResult} from '@/shared/ipc';
+import type {IpcResult, NanocoderMode} from '@/shared/ipc';
 
 export function useThreads(projectId: string | null, ready: boolean) {
 	const [state, setState] = useState<ThreadWorkspaceState | null>(null);
@@ -70,6 +70,8 @@ export function useThreads(projectId: string | null, ready: boolean) {
 			}),
 		rename: (id: string, title: string) =>
 			model.current?.rename(id, title) ?? Promise.resolve(false),
+		setMode: (id: string, mode: NanocoderMode) =>
+			model.current?.setMode(id, mode) ?? Promise.resolve(false),
 		archive: (id: string, archived: boolean) =>
 			model.current?.archive(id, archived) ?? Promise.resolve(false),
 		remove: (id: string) => model.current?.remove(id) ?? Promise.resolve(false),

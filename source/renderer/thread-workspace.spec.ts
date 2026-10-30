@@ -121,6 +121,17 @@ function fixture() {
 		},
 		renameThread: async (request: WorkspaceRequests['renameThread']) =>
 			ok({...row(request.threadId, request.projectId), title: request.title}),
+		setThreadMode: async (request: WorkspaceRequests['setThreadMode']) => {
+			calls.push(['mode', request]);
+			return ok({
+				...(rows.find(
+					thread =>
+						thread.id === request.threadId &&
+						thread.projectId === request.projectId,
+				) ?? row(request.threadId, request.projectId)),
+				mode: request.mode,
+			});
+		},
 		archiveThread: async (request: WorkspaceRequests['archiveThread']) =>
 			ok({
 				...row(request.threadId, request.projectId),
@@ -181,6 +192,21 @@ test('initial selection reads main cache only and restores only a desktop thread
 				Array.isArray(call) && ['open', 'create', 'prompt'].includes(call[0]),
 		),
 	);
+});
+
+test('mode action uses main metadata and preserves a new thread draft without starting a session (CHAT-04 DEC-31)', async t => {
+	const {model, calls} = fixture();
+	await model.selectProject('empty');
+	await model.ensureThread();
+	model.setDraft('keep this draft');
+	calls.length = 0;
+	t.true(await model.setMode('new-1', 'plan'));
+	t.is(model.getState().workspace.threads[0]?.mode, 'plan');
+	t.is(model.getState().workspace.threads[0]?.nanocoderSessionId, null);
+	t.is(model.getState().conversation.draft, 'keep this draft');
+	t.deepEqual(calls, [
+		['mode', {projectId: 'empty', threadId: 'new-1', mode: 'plan'}],
+	]);
 });
 
 test('an empty ready workspace creates one metadata-only default and never opens an ACP session or queues another creation (CHAT-04)', async t => {

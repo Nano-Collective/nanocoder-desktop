@@ -51,6 +51,8 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/session-title.ts` | Bounded, allowlisted parsing for main-only Nanocoder title notifications |
 | `source/main/threads/thread-service.ts` | Metadata-first threads, mapped transient events, main-only activity/recovery/detach adapters and separately confirmed history deletion |
 | `source/main/threads/project-operations.ts`, `planning/project-operations.md` | Shared main-only leases, ThreadService preparation/prompt/recovery hooks, live-mode projection and detach settlement barriers |
+| `source/main/controls/`, `planning/model-and-mode-controls.md` | Shared-authority model offers, memory-only pending/live modes, cancel-default native yolo consent and owned hooks; preserve their wiring in phase 1.8 composition |
+| `source/main/nanocoder/control-options.ts`, `source/main/nanocoder/session-controls.ts` | Bounded known offers, acknowledgement-gated modes and process-wide config uncertainty |
 | `source/main/nanocoder/trust.ts` | Reads Nanocoder's trust refusals and runs the short trust launch (`DEC-30`) |
 | `source/main/nanocoder/open-project.ts` | Connects, asks before trusting a folder, then opens or resumes a session in the starting mode |
 | `source/main/nanocoder/protocol-stream.ts` | Reads stdout as ACP only; anything else ends the connection |
@@ -61,6 +63,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/store/agent-runs.ts`, `source/main/nanocoder/subagent-runs.ts` | Passive metadata-only repository and lifecycle consumer; application composition awaits phase 1.8 identity/replay |
 | `source/renderer/transcript.ts`, `source/renderer/stream-batcher.ts` | Ordered immutable transcript patches and cancellable 16ms renderer batching |
 | `source/renderer/conversation-stream.tsx`, `source/renderer/agent-markdown.tsx`, `source/renderer/stream-commands.tsx` | U.4 stream rows, isolated inert Markdown and advertised-command draft suggestions |
+| `source/renderer/composer.tsx`, `source/renderer/project-controls.ts` | Plain-props multiline composer and scoped acknowledged project-control state |
 | `planning/streaming-conversation.md` | Phase 1.6 stream semantics, metadata boundaries, performance and remaining integration seams |
 | `source/renderer/subagent-run-card.tsx`, `source/renderer/styles/subagents.css` | U.7 flat reported progress, truthful fallback and the owner's whole-turn stop callback |
 | `planning/subagents.md` | Phase 1.10 source limits, SUB-05 composition contract and subagent verification gaps |
