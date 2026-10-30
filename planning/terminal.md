@@ -19,7 +19,7 @@ step. No terminal capability is advertised to Nanocoder (`TERM-08`).
   cannot publish or remain alive after a switch.
 - Input is bounded to 65,536 UTF-16 code units per request, with malformed
   surrogate pairs refused. Dimensions are integers from 2 to 500.
-- Scrollback retains at most 10,000 lines and 1 MiB of UTF-16 code units,
+- Scrollback retains at most 10,000 lines and 1,048,576 UTF-16 code units,
   with a truncation flag. Clear and stop discard it. Output uses
   acknowledgement-gated 16 ms utility-process batches, capped at 64 KiB
   of code units. Neither output nor input enters desktop storage or logs.
@@ -28,9 +28,8 @@ step. No terminal capability is advertised to Nanocoder (`TERM-08`).
   by forced termination after a 200 ms grace deadline. Main refreshes
   membership before delivering output and every 250 ms, retaining the
   last live membership so utility crashes cannot erase ownership.
-  Windows uses the
-  absolute system `taskkill.exe` with `/T /F`. System utilities never use
-  a shell or project executable. The native module and spawn helper are
+  Windows uses the absolute system `taskkill.exe` with `/T /F`. System
+  utilities never use a shell or project executable. The native module and spawn helper are
   unpacked from asar and rebuilt from source for Electron's ABI.
 
 ## Bounded local details, not upstream policy changes
@@ -62,6 +61,17 @@ start real nested Node servers which ignore HUP and TERM. They prove
 stop, project switch, quit and a killed utility process leave neither
 parent nor child alive. Main survives the utility crash and permits
 explicit restart. A restarted terminal accepts UTF-8 text.
+
+Local macOS arm64 checks on 2026-10-31:
+
+- `pnpm test:all`: format, types, lint, AVA, Knip and audit pass.
+- `pnpm test:ava:coverage`: 96.50% aggregate configured lines, above 80%.
+  This is plain-Node unit coverage, not native-worker branch coverage.
+- `pnpm package:dir`: source rebuild and unsigned packaging pass.
+- `pnpm exec playwright test e2e/terminal.e2e.ts`: seven hidden tests pass.
+  The packaged-worker test loads the actual asar worker and unpacked native
+  addon/spawn helper inside a hidden test app's utility process. It does
+  not launch a visible packaged app or claim signing acceptance.
 
 All-platform acceptance is not established by local macOS checks. A
 process that deliberately leaves its terminal session, for example through

@@ -1,5 +1,11 @@
+import path from 'node:path';
 import test from 'ava';
-import {descendantPids, terminalProcesses} from '@/main/terminal/process-tree';
+import {
+	captureTerminalProcesses,
+	descendantPids,
+	terminalProcesses,
+	terminateTree,
+} from '@/main/terminal/process-tree';
 import {Scrollback} from '@/main/terminal/scrollback';
 
 test('TERM-09 scrollback bounds long lines, line counts and Unicode without disk', t => {
@@ -38,5 +44,34 @@ test('TERM-07 process descendants include nested and detached groups, leaves fir
 	t.deepEqual(
 		descendantPids(10, '10 1\n11 10\n12 11\n13 1\n14 10\nbad\n15 15'),
 		[14, 12, 11, 10],
+	);
+});
+
+test('SEC-05 teardown refuses invalid or main-process IDs and project-owned system utilities', async t => {
+	for (const pid of [0, 1, -1, Number.NaN, process.pid]) {
+		await t.throwsAsync(terminateTree(pid, []), {
+			message: 'Invalid terminal process',
+		});
+	}
+	const root = path.parse(process.execPath).root;
+	await t.throwsAsync(terminateTree(987_654_321, [root]), {
+		message: 'Unsafe system executable',
+	});
+	if (process.platform !== 'win32') {
+		await t.throwsAsync(
+			captureTerminalProcesses(987_654_321, [root], '/dev/ttys123'),
+			{message: 'Unsafe system executable'},
+		);
+	}
+});
+
+test('TERM-07 malformed terminal identity cannot select unrelated terminal sessions', t => {
+	const rows = `10 1 10 ttys123\n${process.pid} 1 ${process.pid} ttys123\n12 1 12 ??`;
+	t.deepEqual(terminalProcesses(10, undefined, rows), {
+		pids: [10],
+		groups: [10],
+	});
+	t.false(
+		terminalProcesses(10, '/dev/ttys123', rows).pids.includes(process.pid),
 	);
 });

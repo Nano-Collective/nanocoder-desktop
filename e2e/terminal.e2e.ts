@@ -1,5 +1,6 @@
 import {
 	copyFileSync,
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	realpathSync,
@@ -284,6 +285,78 @@ test('TERM-12 agent command approval metadata never starts or writes the user PT
 			agentCommand: {command: 'echo hi', approval: 'allowed'},
 		},
 	});
+});
+
+test('TERM-01 packaged asar worker loads its native addon and spawn helper without showing a window', async () => {
+	test.skip(process.platform !== 'darwin', 'Local macOS packaged-worker proof');
+	const workerPath = path.resolve(
+		'release/mac-arm64/Nanocoder Desktop.app/Contents/Resources/app.asar/out/main/pty-worker.js',
+	);
+	test.skip(
+		!existsSync(path.dirname(path.dirname(path.dirname(workerPath)))),
+		'Run pnpm package:dir first',
+	);
+	const loaded = await app.evaluate(
+		async ({utilityProcess}, {workerPath, root}) => {
+			const worker = utilityProcess.fork(workerPath, [], {
+				stdio: 'ignore',
+				execArgv: [],
+				env: {PATH: '/usr/bin:/bin'},
+			});
+			return new Promise<boolean>((resolve, reject) => {
+				let pid: number | undefined;
+				let completed = false;
+				const finish = (success: boolean) => {
+					if (completed) return;
+					completed = true;
+					clearTimeout(deadline);
+					if (pid) {
+						try {
+							process.kill(pid, 'SIGKILL');
+						} catch {}
+					}
+					worker.kill();
+					if (success) resolve(true);
+					else
+						reject(
+							new Error('The packaged PTY did not produce fixture output'),
+						);
+				};
+				const deadline = setTimeout(() => finish(false), 5000);
+				worker.once('spawn', () =>
+					worker.postMessage({
+						type: 'start',
+						launch: {
+							root,
+							roots: [root],
+							shell: {file: '/bin/sh', args: ['-i']},
+							env: {PATH: '/usr/bin:/bin', TERM: 'xterm-256color'},
+							cols: 80,
+							rows: 24,
+						},
+					}),
+				);
+				worker.on(
+					'message',
+					(event: {type: string; pid?: number; data?: string}) => {
+						if (event.type === 'ready') {
+							pid = event.pid;
+							worker.postMessage({
+								type: 'write',
+								data: "printf '\\120\\101\\103\\113\\101\\107\\105\\104\\137\\120\\124\\131\\137\\117\\113\\n'\r",
+							});
+						} else if (event.type === 'data') {
+							if (event.data?.includes('PACKAGED_PTY_OK')) finish(true);
+							else worker.postMessage({type: 'ack'});
+						} else if (event.type === 'failed') finish(false);
+					},
+				);
+				worker.once('exit', () => finish(false));
+			});
+		},
+		{workerPath, root: path.join(work, 'project')},
+	);
+	expect(loaded).toBe(true);
 });
 
 test('TERM-01/04/07 built main hosts a real UTF-8 PTY and stop leaves no nested server', async () => {
