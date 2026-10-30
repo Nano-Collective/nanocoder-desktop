@@ -22,7 +22,17 @@ export function AppShell({
 	return (
 		<div className="app-shell">
 			<header className="shell-title-bar">
-				<h1>{title}</h1>
+				<h1 className="shell-brand">
+					<img
+						className="official-logo"
+						src={
+							new URL('./assets/nano-collective-avatar.png', import.meta.url)
+								.href
+						}
+						alt=""
+					/>
+					{title}
+				</h1>
 				<div
 					className="shell-session-tabs"
 					role="group"

@@ -3,9 +3,9 @@
 Implementation notes for U.0 and U.1 from [work list #17](https://github.com/Nano-Collective/nanocoder-desktop/issues/17).
 
 - Status: Draft
-- Last updated: 2026-10-29
+- Last updated: 2026-10-31
 
-Visual decisions remain in [`DESIGN.md`](../DESIGN.md), which is not changed by the implementation. The foundations style the technical-gate renderer, now composed inside the [U.2 app shell](app-shell.md).
+Visual decisions remain in [`DESIGN.md`](../DESIGN.md). The user approved revision 4 as designer on 31 October 2026 (`DEC-40`), including its token and local-logo update. The foundations style the technical-gate renderer, now composed inside the [U.2 app shell](app-shell.md).
 
 ## Token pipeline
 
@@ -24,16 +24,9 @@ document.documentElement.dataset.theme = 'dark';
 
 No main-process test hook or IPC is needed. The switch is transient, and reload returns to dark. Persistent theme settings belong to the later settings UI.
 
-For a fake-fixture-only visual check:
+For fake-fixture-only visual QA, use the hidden Electron wrapper in `e2e/qa/electron.ts`, temporary profiles and both themes at 1240, 1020 and 840px. Capture under `.qa/`, never real content. Port 9333 is not needed. Routine checks never take native focus or show a Dock icon.
 
-1. Run `pnpm build`, then `pnpm qa:launch`. Note the printed launcher PID.
-2. Run `agent-browser connect 9333`. On Factory hosts, pass `--cdp 9333` on every later command too, so it does not select the Factory pane.
-3. Run `agent-browser --cdp 9333 set viewport 1240 900` (repeat at 1020 and 840).
-4. Use `agent-browser --cdp 9333 eval "document.documentElement.dataset.theme = 'light'"` to switch themes. Wait for both the target background and every descendant colour transition to finish with `agent-browser --cdp 9333 wait --fn "getComputedStyle(document.documentElement).backgroundColor === 'rgb(246, 246, 249)' && document.getAnimations().filter(animation => animation instanceof CSSTransition).every(animation => animation.playState === 'finished')"`. Dark's target background is `rgb(22, 22, 24)`. The background check alone is not enough: child controls can still be transitioning.
-5. Press `Tab` from the initial screen to focus `open a project folder`. Press `Enter` to use the stubbed folder picker and trust confirmation, then `Tab` to focus `message`. Enter synthetic text, then `Tab` to focus `send`. Send it to show the approval card, whose `Allow` and `Deny` labels come unchanged from fake Nanocoder.
-6. Run `agent-browser --cdp 9333 a11y`. Save screenshots under `.qa/` only, and stop the printed launcher PID with `kill -TERM <pid>`.
-
-There are 200ms colour transitions. Playwright uses `page.emulateMedia({reducedMotion: 'reduce'})` to verify that transitions are instant and spinner, cursor and approval-pulse animations stop. It also checks keyboard focus, both themes, local font loading and the three widths. Tests wait for conditions rather than fixed delays.
+Theme changes are instant, so text and selected backgrounds change together. Reduced motion also stops spinner, cursor and approval pulse. The official coloured logo is bundled under `source/renderer/assets/`, unchanged, and loaded through the same local resource policy as fonts.
 
 ## Shared parts
 
@@ -41,9 +34,9 @@ There are 200ms colour transitions. Playwright uses `page.emulateMedia({reducedM
 
 The turn badge uses received turn updates and prompt results. The app-shell ACP badge now consumes phase 1.3 supervisor state, never the historical connect result, to avoid claiming that an exited child is ready. See [app-shell status](app-shell.md#acp-status).
 
-The button has an optional key-hint slot, but no technical-gate control uses it. The prescribed 55% hint opacity creates an unlisted contrast gap in light mode. It needs the designer's decision before use. Hiding text from assistive technology does not exempt it from contrast checks. The rendered-text e2e audit deliberately inserts such a hint and proves it is caught. Do not enable hints without extending the pairing inventory and passing that audit.
+The button has an optional key-hint slot using full-opacity muted ink. The old 55% style is retired. A deliberately faded test fixture still proves that rendered low-contrast text is detected even when marked `aria-hidden`.
 
-Contrast tests compute WCAG ratios from the design tokens for every pairing used here. The only exceptions come from `DESIGN.md`'s known-gaps table, with its measured ratios checked too. E2e also checks actual visible text, including text marked `aria-hidden`, in both themes. Running and failed light badges use their explicit panel-background tokens. The used known gaps are light allow buttons and running badges, light approval titles, and failure banners in both themes. These exceptions still need fixing before public release.
+Contrast tests compute WCAG ratios for used token pairs and actual visible text in both themes. `DEC-40` retires the twelve original design exceptions: all approved M1 pairings now pass AA without a waiver. Future surfaces must extend the inventory and pass the same gate.
 
 ## Font and notices
 

@@ -1,84 +1,84 @@
 ---
 version: alpha
 name: Nanocoder Desktop
-description: Dense, monospace, terminal-native workspace around Nanocoder. Neutral hue-240 chassis, hairline strokes, one blue accent, dark first.
+description: Dense, monospace, terminal-native workspace around Nanocoder. Neutral-black chassis, hairline strokes, one blue accent, dark first.
 colors:
-  primary: "#459bf7"
-  primary-soft: "#232f3e"
-  surface: "#161618"
-  surface-panel: "#1d1d20"
-  surface-elevated: "#242429"
-  on-surface: "#e6e6ea"
-  on-surface-muted: "#9797a5"
-  stroke: "#e6e6ea14"
-  stroke-soft: "#e6e6ea0d"
-  success: "#5eba7d"
-  error: "#e25a68"
-  warning: "#dda73c"
-  skill: "#e8c547"
-  mention: "#38bdf8"
-  heading: "#f9a8c9"
-  diff-add: "#202d26"
-  diff-del: "#332023"
+  primary: "#7aa2f7"
+  primary-soft: "#202a3b"
+  surface: "#161616"
+  surface-panel: "#1d1d1d"
+  surface-elevated: "#262626"
+  on-surface: "#e6e6e6"
+  on-surface-muted: "#a8a8a8"
+  stroke: "#e6e6e626"
+  stroke-soft: "#e6e6e614"
+  success: "#9ece6a"
+  error: "#f7768e"
+  warning: "#e0af68"
+  skill: "#e0af68"
+  mention: "#7aa2f7"
+  heading: "#7aa2f7"
+  diff-add: "#202020"
+  diff-del: "#242424"
   primary-light: "#0000ee"
-  primary-soft-light: "#dadaf2"
-  surface-light: "#f6f6f9"
-  surface-panel-light: "#ededf2"
-  surface-elevated-light: "#e5e5eb"
-  on-surface-light: "#1b2132"
-  on-surface-muted-light: "#5c6170"
-  stroke-light: "#1b21321a"
-  stroke-soft-light: "#1b21320f"
-  success-light: "#1a7f37"
-  error-light: "#cf222e"
-  warning-light: "#9a6700"
-  skill-light: "#a07c10"
-  mention-light: "#0284c7"
-  heading-light: "#be185d"
-  diff-add-light: "#dce8e2"
-  diff-del-light: "#f1dde1"
+  primary-soft-light: "#dce6fa"
+  surface-light: "#f5f6fb"
+  surface-panel-light: "#ebedf5"
+  surface-elevated-light: "#e0e4f0"
+  on-surface-light: "#24283b"
+  on-surface-muted-light: "#4f5678"
+  stroke-light: "#24283b26"
+  stroke-soft-light: "#24283b14"
+  success-light: "#28633d"
+  error-light: "#a1284c"
+  warning-light: "#76510b"
+  skill-light: "#76510b"
+  mention-light: "#185b7b"
+  heading-light: "#0000ee"
+  diff-add-light: "#dfede3"
+  diff-del-light: "#f4e0e7"
 typography:
   body-md:
     fontFamily: Fira Code
-    fontSize: 12px
+    fontSize: 13px
     fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.8
   body-sm:
     fontFamily: Fira Code
-    fontSize: 11.5px
+    fontSize: 11px
     fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.8
   tab:
     fontFamily: Fira Code
     fontSize: 11px
     fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.8
   code-sm:
     fontFamily: Fira Code
     fontSize: 11px
     fontWeight: 400
-    lineHeight: 1.5
+    lineHeight: 1.6
   meta:
     fontFamily: Fira Code
-    fontSize: 10.5px
+    fontSize: 11px
     fontWeight: 400
-    lineHeight: 1.5
+    lineHeight: 1.6
   caption:
     fontFamily: Fira Code
     fontSize: 10px
     fontWeight: 400
-    lineHeight: 1.5
+    lineHeight: 1.6
   label-section:
     fontFamily: Fira Code
-    fontSize: 9.5px
+    fontSize: 9px
     fontWeight: 400
-    lineHeight: 1.5
+    lineHeight: 1.6
     letterSpacing: 0.12em
   label-inline:
     fontFamily: Fira Code
-    fontSize: 9.5px
+    fontSize: 10px
     fontWeight: 400
-    lineHeight: 1.5
+    lineHeight: 1.6
     letterSpacing: 0.1em
 rounded:
   none: 0px
@@ -309,273 +309,159 @@ components:
 
 # Nanocoder Desktop design
 
-How Nanocoder Desktop looks. Behaviour, states, data, keyboard access and accessibility rules live in [`planning/`](planning/index.md); this file only says how they are drawn.
+How Nanocoder Desktop looks. Behaviour, authority and accessibility requirements remain in [`planning/`](planning/index.md).
 
-- Status: Draft
-- Last updated: 2026-10-26
-- Source: the [design sheet mockup][mockup] (version 12, 27 September 2026), which renders seven scenarios at three widths in both themes.
-- Format: the [DESIGN.md format][spec] (version `alpha`). Tokens live in the YAML front matter; the prose says how to use them. Section headings follow the format's fixed names, so they keep its American spelling ("Colors"). The prose uses British spelling.
-
-The tokens are normative. Where the prose and a token disagree, the token wins and the prose should be fixed.
+- Status: Approved by the user as designer, 31 October 2026 (`DEC-40`).
+- Last updated: 2026-10-31
+- Source: [UI exploration][mockup], revision 4, main direction only. Alternatives and anything labelled new idea or later are not implementation scope.
+- Format: [DESIGN.md alpha][spec]. Front-matter tokens are normative; generated CSS is never edited by hand.
 
 ## Overview
 
-Nanocoder Desktop is a workspace for handing a task to an agent and reviewing the result, not an editor. The look follows from that and from Nanocoder's terminal roots.
+One quiet project workspace, with the conversation at its centre. The official coloured Nano Collective logo is bundled locally, unchanged. Fira Code is the only UI typeface; the logo is artwork, not a recreated wordmark.
 
-- **Terminal-native.** Every surface is set in one monospace face. Icons are text glyphs, not an icon font. The window should feel like a well-organised terminal session, not a web dashboard.
-- **Dense and calm.** Small type, tight rows and hairline strokes, so a long turn with many tool calls fits on screen. Colour is rare and always means something.
-- **One accent.** Blue marks the active thing: the selected thread, the running turn, the current mode, focus. Green, red and amber are reserved for result states.
-- **Dark first.** Dark is the default theme. Light is a full theme, not an afterthought, and every token has a light pair.
-- **Honest states.** Running, waiting for approval, failed and view-only each look different at a glance, in both the rail and the title bar.
-
-The chassis is the "monocode" language named in the mockup: a neutral hue-240 grey ramp with no saturation in the surfaces. The accent comes from the mockup, which took its look from the Nanocoder landing page and modern agent workspaces rather than the CLI's default theme. The light accent `#0000ee` matches the docs site link colour. The Brand Guidelines do not publish a palette yet, so the mockup is the source.
+Navigation is compact, reading is comfortable, and secondary work surfaces open only when useful. Nanocoder owns messages, tools, modes and approval options. The desktop never invents activity, context use or capabilities to fill a design.
 
 ## Colors
 
-Three tonal surfaces, two ink levels, one accent, three result colours and three syntax colours. Dark tokens have no suffix; each light token has the same name with `-light`. Soft fills are stored as solid colours (the mockup's translucent value composited over its usual surface) so contrast can be checked; strokes stay translucent because they never sit behind text.
+Dark surfaces, ink and strokes are neutral black and grey, with equal RGB channels. The refined light palette is a full counterpart. Blue is the single interactive accent, not a decorative second status colour.
 
 | Role | Dark | Light | Used for |
 |---|---|---|---|
-| `surface` | `#161618` (hsl 240 6% 9%) | `#f6f6f9` (hsl 240 20% 97%) | Window background, chat stream, browser viewport. |
-| `surface-panel` | `#1d1d20` (hsl 240 6% 12%) | `#ededf2` (hsl 240 16% 94%) | Title bar, project rail, inspector, composer, cards. |
-| `surface-elevated` | `#242429` (hsl 240 6% 15%) | `#e5e5eb` (hsl 240 14% 91%) | Active tab, approval card, bottom panel, palette, toast. |
-| `on-surface` | `#e6e6ea` (hsl 240 10% 91%) | `#1b2132` (hsl 225 30% 15%) | Primary text. |
-| `on-surface-muted` | `#9797a5` (hsl 240 7% 62%) | `#5c6170` (hsl 225 10% 40%) | Secondary text, labels, inactive items. |
-| `stroke` | ink at 8% | ink at 10% | Every border and divider. |
-| `stroke-soft` | ink at 5% | ink at 6% | Row dividers inside cards and lists. |
-| `primary` | `#459bf7` (hsl 211 92% 62%) | `#0000ee` | The accent. See below. |
-| `primary-soft` | `#232f3e` (accent at 14% over panel) | `#dadaf2` (accent at 8% over panel) | Selected rail item, selected palette row. |
-| `success` | `#5eba7d` | `#1a7f37` | Completed tool rows, allow buttons, added lines, `acp · ready`. |
-| `error` | `#e25a68` | `#cf222e` | Failures, reject buttons, removed lines, cancel. |
-| `warning` | `#dda73c` | `#9a6700` | Approval required, modified files, pending browser actions. |
-| `skill` | `#e8c547` | `#a07c10` | Skill names in the stream and composer. |
-| `mention` | `#38bdf8` | `#0284c7` | `@` mentions, URLs in the terminal, diff hunk headers. |
-| `heading` | `#f9a8c9` | `#be185d` | Markdown headings in agent messages. |
-| `diff-add`, `diff-del` | `#202d26`, `#332023` (14% over surface) | `#dce8e2`, `#f1dde1` (12% over surface) | Diff line backgrounds. |
+| `surface` | `#161616` | `#f5f6fb` | Window and conversation. |
+| `surface-panel` | `#1d1d1d` | `#ebedf5` | Sidebar, composer, cards and workbench. |
+| `surface-elevated` | `#262626` | `#e0e4f0` | Dialogs, menus and raised controls. |
+| `on-surface` | `#e6e6e6` | `#24283b` | Primary text. |
+| `on-surface-muted` | `#a8a8a8` | `#4f5678` | Secondary text and labels. |
+| `stroke` / `stroke-soft` | `#e6e6e626` / `#e6e6e614` | `#24283b26` / `#24283b14` | Hairline edges and row dividers. |
+| `primary` | `#7aa2f7` | `#0000ee` | Selection, focus, mode, links and ready send. |
+| `primary-soft` | `#202a3b` | `#dce6fa` | Selected rows. |
+| `success` | `#9ece6a` | `#28633d` | Reported success and allow actions. |
+| `error` | `#f7768e` | `#a1284c` | Failure, reject and stop. |
+| `warning` | `#e0af68` | `#76510b` | Approval and warnings. |
+| `skill` | `#e0af68` | `#76510b` | Skill labels. |
+| `mention` | `#7aa2f7` | `#185b7b` | Reported resource references. Dark links use the same blue accent. |
+| `heading` | `#7aa2f7` | `#0000ee` | Heading accent, sparingly. |
+| `diff-add` / `diff-del` | `#202020` / `#242424` | `#dfede3` / `#f4e0e7` | Later read-only review surfaces. |
 
-Rules for the accent:
+Every state has a glyph and word. Success, warning and error are reserved for results, not decoration. Selected text uses primary ink; muted text is never faded through opacity.
 
-- Use `primary` for at most one "you are here" signal per region: the active thread, the active tab underline, the current mode pill, the focused composer border, the send button.
-- A running state uses `primary` in the rail and stream (`●`, spinner) and `success` in the title bar badge.
-- Never use `primary` for a destructive or approval action.
-
-Result colours are always paired with a glyph (`✓`, `✕`, `▲`), so state never depends on colour alone.
-
-Every text pairing must meet WCAG 2.2 AA (4.5:1 for normal text). Small sizes make this strict: `on-surface-muted` is the lightest ink allowed for text, and `stroke` is never used as a text colour.
-
-Known contrast gaps. These are the mockup's values and they fall short of AA. Fix them before the first public release; the linter reports each one.
+### Known contrast gaps
 
 | Pairing | Theme | Ratio |
 |---|---|---|
-| `mention` on `surface-panel` | light | 3.51:1 |
-| `skill` on `surface` | light | 3.62:1 |
-| `warning` on `surface-elevated` (approval card title) | light | 3.88:1 |
-| `success` on `diff-add` | light | 4.03:1 |
-| `error` on `diff-del` | light | 4.12:1 |
-| `error` on `diff-del` | dark | 4.30:1 |
-| `success` on `surface-panel` | light | 4.35:1 |
-| `warning` on `surface-panel` (file tree status letters) | light | 4.17:1 |
-| `success` on `surface-elevated` | light | 4.05:1 |
-| `error` on `surface-elevated` | light | 4.27:1 |
-| `error` on `surface-elevated` | dark | 4.34:1 |
-| `on-surface-muted` on `primary-soft` (selected rail row) | light | 4.499:1 |
+| None in the approved pairing inventory | both | All at least 4.5:1 |
 
-The table lists the pairings the design is known to use. Checking every text colour on every surface finds more pairs under 4.5:1 (for example `skill` on `surface-elevated`, light, 3.11:1); they matter only if the design puts that text on that surface. Recheck the ratios whenever a token changes.
+The twelve previous exceptions are retired. Tests check semantic colours on window, panel and elevated backgrounds, selected text, reading text and rendered controls. The 55% key-hint style is retired: key hints use muted ink at full opacity. Disabled controls keep readable ink and explain the refusal locally. Future rendered pairings must pass AA, rather than inheriting an exception from the old palette.
 
 ## Typography
 
-One family: **Fira Code**, with Consolas, Menlo and the system monospace as fallbacks. Weight is 400 throughout; hierarchy comes from size, colour, case and letter spacing, not bold. Ligatures are allowed in prose and off in diffs and the terminal, so code reads exactly as written.
+Only locally bundled Fira Code 400, with Consolas, Menlo and monospace fallbacks. Hierarchy comes from size, spacing and colour, never bold. Code disables ligatures.
 
-| Token | Size | Used for |
+| Token | Size and line height | Used for |
 |---|---|---|
-| `body-md` | 12px, line height 1.55 | Messages, the composer, the default for the window. |
-| `body-sm` | 11.5px | Tool rows, reasoning, file tree, cards, banners, terminal. |
-| `tab` | 11px | Session tabs, the title bar, the browser bar, toasts. |
-| `code-sm` | 11px, line height 1.5 | Diffs. |
-| `meta` | 10.5px | Buttons, expanded tool detail, approval notes. |
-| `caption` | 10px | Badges, composer pills, hints, token counts. |
-| `label-section` | 9.5px, uppercase, 0.12em tracking | Rail and inspector section headings ("history · today", "working tree"). |
-| `label-inline` | 9.5px, uppercase, 0.1em tracking | Message authors, approval card titles, inspector tabs. |
+| `body-md` | 13px / 1.8 | Agent/user reading text and composer input. |
+| `body-sm` | 11px / 1.8 | Tool detail, reasoning, cards and notices. |
+| `tab` | 11px / 1.55 | Chrome, menu rows and toasts. |
+| `code-sm` | 11px / 1.8 | Reported code and tool output. |
+| `meta` | 11px / 1.6 | Actions and supporting copy. |
+| `caption` | 10px / 1.6 | Sidebar rows, badges and composer controls. |
+| `label-section` | 9px / 1.6 | Compact sidebar group labels. |
+| `label-inline` | 10px / 1.6 | Authors and small section labels. |
 
-Reasoning text is italic. Nothing else is.
-
-UI copy is lowercase, as in the Nanocoder CLI ("ask anything…", "approval required"). Paths, commands and model names keep their real case. The product name is always "Nanocoder", as the [Brand Guidelines][brand] require; NC docs take precedence over the mockup here. The middle dot (`·`) separates facts on one line, for example `read src/auth/login.ts · +18 −6`.
-
-The font ships inside the app. It is never loaded from a font CDN, since the app is local-first and its content security policy blocks remote fonts.
+Chat headings may step up to 16px. The centred first action uses a 26px heading. Product copy is lowercase except Nanocoder, paths, commands and model names, which retain their real spelling. Use a middle dot to separate facts. British spelling applies.
 
 ## Layout
 
-A fixed desktop grid with three columns over an optional bottom panel, under a title bar.
+A compact full-height sidebar beside the conversation canvas. The title bar belongs to the canvas, not above the sidebar. No static session tabs, empty inspector or unfinished-feature placeholders.
 
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ title bar: session tabs · turn badge · acp badge · ⌘K       │
-├────────────┬──────────────────────────────┬──────────────────┤
-│ project    │ stream                       │ inspector        │
-│ rail       │                              │ files | review   │
-│ 190px      │ flexible                     │ 240px            │
-│            │ composer                     │                  │
-├────────────┴──────────────────────────────┴──────────────────┤
-│ bottom panel: terminal | browser (164px, shown when open)    │
-└──────────────────────────────────────────────────────────────┘
-```
+- Sidebar: official logo, compact project switcher, new-thread action, a title-only filter of the active project's desktop metadata, then today/earlier threads in last-activity order. Archived threads stay separate. One glyph, compact age and selected-thread state copy, without attention reordering.
+- Header: project/thread identity, distinct turn and ACP states, command palette and purposeful available actions.
+- Conversation: constrained to 740px, centred in spare space. Transcript scrolls independently. The approval shelf sits above the composer within that same column, not in scrollback.
+- Empty workspace: a centred useful first action, choose a folder. After opening a new thread, centre the draft composer until there is conversation content. Never invent prompt starters.
+- Workbench: an optional right slot for later files/review/browser tools. It is absent when unused. At 840px and below an open workbench owns the conversation canvas and has an explicit back-to-chat action, while project navigation remains reachable.
+- Bottom area: optional terminal slot, absent when unused. No Milestone 2 or 3 controls ship as part of this overhaul.
 
-- **Title bar.** Session tabs on the left (tabs are threads), then the turn state badge, the ACP process badge and the palette shortcut on the right.
-- **Project rail.** The project and branch, then threads grouped by "today", "earlier" and "archived". A footer shows the Nanocoder version, the ACP process state and settings.
-- **Stream.** The conversation, with the composer pinned to the bottom. The composer has a control rail below the input for model, mode and context use.
-- **Inspector.** Two tabs: "files" (the tree) and "review" (the review list and diffs).
-- **Bottom panel.** The terminal or the browser, switched by a two-tab strip, as the whitepaper's information architecture sets. It spans all three columns and is hidden when closed.
+Reference sidebar widths are 222px at 1240, 204px at 1020 and 188px at 840. Reading-region horizontal padding is 40px, 30px and 24px. Do not squeeze three reading surfaces together at narrow widths.
 
-Widths tested in the mockup: 1240px, 1020px and 840px. At 840px and below, the inspector is hidden and its content opens on demand. The stream column never drops below a readable line length.
-
-Spacing uses a small scale (`xxs` 2px to `xxl` 18px) because the type is small. Common values: 5px rows in the rail and lists, 9px between stream items, 16px by 18px stream padding, 10px by 14px composer padding.
+Browser placement in the right workbench is the approved visual direction only. Browser capabilities and any upstream whitepaper placement change remain with Milestone 3; this change builds no browser.
 
 ## Elevation & Depth
 
-Flat. Depth comes from the three tonal surfaces and hairline strokes, not shadows.
-
-- `surface` is the floor. `surface-panel` holds chrome and cards. `surface-elevated` marks what is in front: the active tab, the approval card, the bottom panel and overlays.
-- Every edge is a 1px `stroke`. Row dividers inside a card use `stroke-soft`.
-- Only overlays cast a shadow: the command palette and shortcut sheet use `0 18px 48px` black at 35%, over a scrim of `surface` at 55%.
-- Dashed strokes mean "not live": the new-tab button, the view-only notice, the context pill, review comments, the "touched this turn" strip.
+Flat tonal surfaces and hairlines. Cards use panel; dialogs use elevated. Only overlays cast shadows. Dialog scrims use the window surface at 80%. Avoid colour transitions on theme changes so text and its background change together.
 
 ## Shapes
 
-Soft but small radii, scaled with the size of the element.
-
-| Token | Radius | Used for |
-|---|---|---|
-| `sm` | 4px | Inline chips ("turn", subagent depth). |
-| `md` | 6px | Tabs, buttons, the browser address field. |
-| `lg` | 8px | Cards: subagent, approval, failure, view-only, diff, toast. |
-| `xl` | 10px | The window, the composer, the command palette. |
-| `full` | 9999px | Badges, composer pills, token chips. |
-
-Left rules are part of the shape language: a 2px `primary` rule marks a user message and the selected rail item; a 1px dashed rule marks reasoning; a 1px `stroke` rule groups the tool rows of one turn.
+Small control radii, comfortable message and composer radii. User messages have a panel fill, a 12px rounded shape and a small lower-right corner, inset from the left. The selected thread retains its 2px blue rule. View-only notices have dashed borders. Overlay corners are 15px.
 
 ## Components
 
-Token values are in the front matter under `components`. This section covers what the tokens cannot say. Behaviour for each component is in the planning feature files.
+### Sidebar and header
 
-### Title bar and status badges
+Project switcher shows the selected project and a compact root label. Its menu lists recent roots, locate and add actions. No persistent visible-project list. Thread actions remain scoped to the project and explain busy refusals. Full titles and roots remain accessible even when visually truncated.
 
-- Session tabs show the thread title with `×` to close; the active tab sits on `surface-elevated` with a `stroke` border.
-- Turn badge: `● running` (success), `◐ approval` (warning), `○ idle` (muted), `✕ failed` (error).
-- ACP badge: `acp · ready` (success) or `acp · exited (1)` (muted). Badges are outlined pills; the outline takes the text colour.
+The header shows actual thread identity, not pretend tabs. ACP readiness comes only from supervisor state, independently from turn state. Version/runtime details are secondary, not the first-launch content.
 
-### Project rail
+### Conversation
 
-- Each thread row starts with its state glyph: `●` running in `primary`, `◐` waiting in `warning`, `○` ready, `░` archived.
-- The selected row has a `primary-soft` fill and a 2px `primary` left rule.
+User messages are inset panel bubbles. Agent text is unboxed with a quiet author label. Finished reasoning is folded but inspectable. Routine completed tool calls keep their ordered summary and fold details. Running reasoning stays visible; failed tools stay open with their reported result. Do not invent elapsed time, depth or usage.
 
-### Stream items
+Subagents use flat panel cards with reported task/state and truthful unknown values. The only stop action stops the whole owning turn, with its refusal and busy states unchanged. No child transcript tree or per-child cancellation.
 
-- **User message:** 2px `primary` left rule, author label "you · 14:02".
-- **Agent message:** author label "✱ Nanocoder · 14:03" in `primary`, a token chip (`+0.9k tok`) and a blinking `▌` cursor while streaming.
-- **Reasoning:** `◌` glyph, italic, muted, dashed left rule, elapsed time at the end.
-- **Tool row:** status glyph, tool name in `on-surface`, target in muted. Expandable rows show `▸` and reveal `meta`-size detail.
-- **Subagent card:** `surface-panel` card with a header row (task, depth chip such as `depth 1/2`, state, elapsed, and a `✕ stop turn` action in `error`, since Nanocoder cannot yet stop one subagent on its own) and indented child rows starting with `└`.
-- **Approval card:** `warning` border, a slow pulse ring, title "▲ approval required · protected tool · normal mode", the command, a one-line effect note, then one button per option Nanocoder sends, using Nanocoder's own labels (for example "allow once", "allow always", "reject"), each with its key.
-- **Failure banner:** `error` border and text, with "restart" and "resume" buttons on the right.
-- **View-only notice:** dashed border, muted text, with "start a new thread" and "remove" actions.
+### Approval shelf
+
+A warning-bordered panel immediately above the composer. Show the full offered action, source and effect, with only Nanocoder's own choices and request-scoped shortcuts. Keep request focus, assertive announcement and fallback focus return. Failures remain visible. A question offers only provided choices, no invented free-text reply.
 
 ### Composer
 
-- `›` prompt mark in `primary`, placeholder "ask anything…", a token estimate pill, a hint line ("⏎ send · ⇧⏎ newline · / ! @") and an outlined `▶` send button.
-- Control rail below: model pill (`✳ qwen3-coder:30b ▾`), which applies to every thread in the project and says so in its accessible name; mode pill in `primary` (`normal ▾`); and a dashed context pill (`⌁ ctx 32%`), shown only when the connected Nanocoder reports context-window use. At Nanocoder `8a5f4d4` it does not, so the pill and gauge are hidden.
-- A 2px context gauge runs along the bottom edge in `primary`, under the same condition as the context pill.
-- The border turns `primary` on focus. When the thread cannot accept input, the composer drops to 50% opacity and says why.
+Panel fill, 13px reading input, 13px corners, blue focus border. Compact model/mode controls below the input, with send aligned right. Native selects preserve their semantics. Model applies to the whole project; mode changes only between turns; yolo needs native consent and is never restored or a default. State refusals appear beside the locked control. Drafts remain editable and unqueued where allowed.
 
-### Inspector: files and review
+Only reported context use can produce the context pill/gauge. No token estimate or context figure is fabricated. Helper text uses readable muted ink. Disabled input is not faded to unreadable opacity.
 
-- File tree: folders in `on-surface`, files in muted, Git status letters (`m` in `warning`, `a` in `success`) and line deltas (`+18` in `success`, `−6` in `error`).
-- Review list: filter buttons (all, staged, unstaged), a dashed "touched this turn" strip, then changed files with a `turn` chip when the agent touched them.
-- Diff: line numbers at 50% muted, hunk headers in `mention` on `surface-panel`, added and removed lines on `diff-add` and `diff-del`.
-- Review comment: dashed card with the line reference and a "send to chat?" prompt.
+### First launch and recovery
 
-### Terminal
+The first action is choose a project, not runtime paths. Recents show exact project identity and missing-folder locate. Trust stays native and cancel-default, with the bounded launch summary. Saved-session import remains explicit metadata only, with no selection, resume or draft side effect.
 
-- Bottom panel on `surface-elevated` with a two-tab strip, "terminal" and "browser" (active tab underlined in `primary`). There is one terminal in v1; its tab has restart, clear and stop buttons.
-- An agent strip above the output shows the last agent command and its approval result, so it is clear the agent did not type into this terminal (`TERM-12` in the planning set).
-- Prompt `$` in `primary`, detected URLs in `mention` and underlined.
+Failure keeps draft and thread identity, with retry and reviewed diagnostics. View-only shows metadata and why history is missing, with new-thread/remove actions and no composer or invented transcript. Diagnostics uses the exact main-captured redacted snapshot, a native destination and no upload.
 
-### Browser
+### Overlays and dialogs
 
-- The "browser" tab of the bottom panel. Address bar with back, forward and reload, the URL in a `surface` field, and outlined badges for origin safety (`localhost · safe` in `success`) and downloads (`⤓ ask`: every download asks for a destination).
-- The viewport is a plain `surface` area labelled "isolated preview · separate profile · no desktop bridge" when empty.
-- An agent rail below lists the agent's actions as a chain (`snapshot ✓ → click [sign in] ✓ → ▲ type credentials · approval pending`) with "take control" and "reload" buttons and the current policy (`public http · off · downloads ask`).
+One shared elevated shell with readable target and consequence. Trap keyboard focus; Escape/dismiss returns to the original opener even when another dialog replaces it. Rename supports Enter and Escape. Native trust, yolo, desktop removal, history deletion and diagnostics review retain their existing safe defaults and main-process authority.
 
-### Overlays
+Palette: 520px, one search, one pointer/keyboard active result, scrolling list and explicit no-results state. Empty results do not expose a misleading expanded listbox. Shortcuts use the same shell. Toasts are quiet local feedback, never focus-taking, and sit near the lower centre of the conversation.
 
-- **Command palette (⌘K):** centred near the top, 520px wide, an input then rows with glyph, command and shortcut. The selected row uses `primary-soft`.
-- **Shortcut sheet (?):** same shell as the palette, a list of action and key pairs.
-- **Toast:** top right, `surface-elevated`, 2px `success` left rule, auto-hides after about 2.4 seconds. It is announced politely and never takes focus.
+### Later slots
 
-### Buttons
-
-Outlined, `surface-panel` fill, `md` radius, `meta` text, with the key hint after the label at 55% opacity. "Allow" variants take `success` for border and text; "reject" variants take `error`. On hover, the border turns `on-surface`. There is no filled primary button in the window.
+Files/review/browser and the user terminal are not implemented by the overhaul. Preserve their layout seams without empty placeholders. Later diff text uses primary ink on add/delete fills, with semantic markers. The user's terminal must remain distinct from agent tool output.
 
 ## Iconography
 
-Text glyphs from the monospace font, so they align with text and scale with it.
-
-| Glyph | Meaning | Glyph | Meaning |
-|---|---|---|---|
-| `○` | user, ready | `✓` | success |
-| `✱` | Nanocoder | `▲` | approval, warning |
-| `⌗` | file, subagent | `✕` | error, reject, close |
-| `▸` `▾` | folder, collapsed or open | `⚒` | tool |
-| `›` | composer prompt | `●` | running |
-| `$` | bash, terminal | `◐` | waiting, in progress |
-| `◌` | thinking, new | `◍` | browser, view-only |
-
-A glyph never carries meaning alone: it always sits beside a word or has an accessible name.
+Text glyphs, never an icon font. Every glyph has a word or accessible name. The untouched official coloured logo is the only image in the M1 chrome, served locally under the existing CSP.
 
 ## Motion
 
-Motion only signals that something is live.
-
-- Spinner (`◐` rotating): 1.1s linear loop on running tool rows.
-- Cursor (`▌`): 1s two-step blink while the agent streams.
-- Approval pulse: 2.2s ease-in-out ring in `warning` at 10% to 30%.
-- Toast: 180ms fade and 6px slide. Theme switch: 200ms colour transition.
-
-With "reduce motion" on, the spinner, cursor and pulse stop and transitions are instant. State is still shown by glyph and colour.
+Only live activity moves: spinner 1.1s, cursor 1s, approval pulse 2.2s. Reduced motion stops them. Theme changes are instant. Toasts never take focus.
 
 ## Do's and Don'ts
 
-- Do keep one accent. If two things want `primary` in one region, one of them is wrong.
-- Do pair every state colour with a glyph and a word.
-- Do keep `success`, `error` and `warning` for results and approvals, never for decoration.
-- Do use tonal surfaces and strokes for hierarchy. Don't add shadows outside overlays.
-- Do keep every text pairing at WCAG 2.2 AA or better in both themes.
-- Don't use a second typeface, bold for emphasis, or an icon font.
-- Don't style the browser viewport's page; it is the page's own content behind an isolation boundary.
-- Don't make the terminal look like the agent's output. The agent strip is the only place agent commands appear in the bottom panel.
-- Don't hide a disabled control without saying why.
-- Don't load fonts, images or styles from the network.
+- Keep one blue interactive accent, neutral dark surfaces and semantic result colours.
+- Keep reading text larger than navigation.
+- Keep the outstanding decision and composer together.
+- Fold routine finished detail, never failures.
+- Explain unavailable actions without inventing capabilities.
+- Never load fonts, images or styles remotely.
+- Never build alternatives, new ideas, or later features as part of M1.
 
 ## Open design questions
 
-- **Palette and token format.** Settled (`DEC-36`): keep the mockup's monocode palette in hex. The NC project guide names Tokyo Night in OKLch as the default ([Visual identity][nc-visual]); the divergence is documented in `CONTRIBUTING.md`.
-- **Browser placement.** The mockup put the browser in the inspector. This file follows the whitepaper, which puts it in the bottom panel with the terminal. Moving it needs a whitepaper change first.
-- **Mockup sync.** The mockup still shows a per-subagent cancel, fixed approval labels and the lowercase product name. Update it to match this file.
-- **Light muted ink.** The mockup's token export says `hsl(225 10% 44%)` but the rendered frame uses `hsl(225 10% 40%)`. This file uses 40%, which has more contrast; confirm.
-- **Narrow layout.** The mockup hides the inspector at 840px but does not show how it comes back. A drawer or a tab in the title bar both work.
-- **High contrast and forced colours.** Not covered by the mockup.
-- **Font licence.** Fira Code is under the SIL Open Font License 1.1, so its notice goes in the third-party notices (`REL-06`).
+Forced colours and native screen-reader acceptance still require platform QA. The designer-approved palette, logo and main layout are settled for this implementation. No claim of native-dialog capture or full production accessibility certification follows from static mockup evidence.
 
 ## Sources
 
-- [Nanocoder Desktop design sheet][mockup], version 12, last modified 2026-09-27. Its own sources: [docs#107][docs107], the monocode chassis, [nanocollective.org][nc-site] and [nanocoder#907][nc907].
-- [DESIGN.md format specification][spec], Google Labs, version `alpha`.
-- [Nano Collective Brand Guidelines][brand].
-- [Planning set](planning/index.md), especially the feature files and the accessibility targets in [`testing-strategy.md`](planning/testing-strategy.md#accessibility-targets).
+- [UI exploration][mockup], revision 4, approved by the user as designer on 31 October 2026.
+- [Brand guidelines][brand]. The coloured logo is the original Nano Collective GitHub avatar, bundled unchanged.
+- [`planning/decisions.md`](planning/decisions.md), `DEC-36` and `DEC-40`.
 
-[mockup]: https://bubbles.adityalogs.xyz/o/nanocoder-desktop-mockups/
+[mockup]: https://bubbles.adityalogs.xyz/o/nanocoder-desktop-ui-explore/
 [spec]: https://github.com/google-labs-code/design.md/blob/main/docs/spec.md
 [brand]: https://docs.nanocollective.org/collective/organisation/brand
-[docs107]: https://github.com/Nano-Collective/docs/pull/107
-[nc-site]: https://nanocollective.org/
-[nc907]: https://github.com/Nano-Collective/nanocoder/issues/907
-[nc-visual]: https://docs.nanocollective.org/collective/projects/creating-a-new-project#visual-identity
