@@ -3,7 +3,7 @@
 Where Nanocoder Desktop is in the NC process, and the build broken into small phases with checklists, from scaffold to the first public release. No dates: no source gives one.
 
 - Status: Draft
-- Last updated: 2026-10-29
+- Last updated: 2026-10-30
 - Drafted by: @akramcodez
 
 ## How to use this roadmap
@@ -256,6 +256,12 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Blockers.** Technical gate; `OQ-03`, `OQ-19`. **Risks.** `RISK-04`, `RISK-05`, `RISK-06`, `RISK-11`, `RISK-14`.
 
+Local macOS automation was rerun on `8c01146`, the exit-check merge of
+`d16f9ac`, with Node 22.22.0. The newly checked items below have exact-tip
+[gate and test evidence](milestone-1-exit-checks.md#final-local-run).
+This is not all-platform, native VoiceOver, real-provider or milestone exit
+acceptance. Phase 1.8 and `SUB-05` remain app-composed, not full acceptance.
+
 ### Phase 1.1: desktop store
 
 `node:sqlite`, with `better-sqlite3` as the fallback behind the same interface (`DEC-04`).
@@ -320,31 +326,31 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Build**
 
-- [ ] New thread through `session/new`, session ID stored first (`CHAT-04`)
-- [ ] Thread list by last activity, with archive (`CHAT-03`, `CHAT-13`)
-- [ ] Titles from `_nanocoder/sessionTitleChanged` and rename (`CHAT-12`)
-- [ ] Remove from desktop, and delete chat history with confirmation (`CHAT-14`, `DATA-07`)
+- [x] New thread through `session/new`, session ID stored first (`CHAT-04`) ([`threads.e2e.ts`](../e2e/threads.e2e.ts), real first-send identity before mapped content; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Thread list by last activity, with archive (`CHAT-03`, `CHAT-13`) ([`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), scoped list/archive metadata; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Titles from `_nanocoder/sessionTitleChanged` and rename (`CHAT-12`) ([`session-titles.acp.ts`](../source/main/threads/session-titles.acp.ts), [`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Remove from desktop, and delete chat history with confirmation (`CHAT-14`, `DATA-07`) ([`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), separate confirmed history deletion and refusal paths; [final local run](milestone-1-exit-checks.md#final-local-run))
 
 **Results we want**
 
-- [ ] A crash right after `session/new` still leaves a thread that resumes
-- [ ] A rename survives a restart
-- [ ] Removing a thread does not delete the Nanocoder session unless asked
+- [ ] A crash right after `session/new` still leaves a thread that resumes: pinned Nanocoder does not save an empty session before the first prompt ([`empty-session.acp.ts`](../source/main/threads/empty-session.acp.ts)); desktop ID persistence does not fix this upstream limit.
+- [x] A rename survives a restart ([`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), SQLite-backed service restart; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Removing a thread does not delete the Nanocoder session unless asked ([`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), desktop-only removal and separately confirmed history deletion; [final local run](milestone-1-exit-checks.md#final-local-run))
 
 ### Phase 1.6: streaming conversation
 
 **Build**
 
-- [ ] Projection of every `session/update` type into thread events (`CHAT-05`)
-- [ ] Ordered, batched events from main to renderer
-- [ ] Defensive parsing of vendor fields (`ACP-12`)
-- [ ] Usage display and custom slash commands (`CHAT-19`, `CHAT-20`)
+- [x] Projection of every `session/update` type into thread events (`CHAT-05`) ([`turn-events.spec.ts`](../source/main/nanocoder/turn-events.spec.ts), SDK update matrix and truthful unsupported-media fallback; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Ordered, batched events from main to renderer ([`transcript.spec.ts`](../source/renderer/transcript.spec.ts), [`streaming.e2e.ts`](../e2e/streaming.e2e.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Defensive parsing of vendor fields (`ACP-12`) ([`turn-metadata.spec.ts`](../source/main/nanocoder/turn-metadata.spec.ts), bounded allowlist and payload refusals; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Usage display and custom slash commands (`CHAT-19`, `CHAT-20`) ([`streaming.e2e.ts`](../e2e/streaming.e2e.ts), reported usage only and advertised-command draft suggestions; [final local run](milestone-1-exit-checks.md#final-local-run))
 
 **Results we want**
 
-- [ ] A long streaming turn meets `PERF-04`
-- [ ] Unknown `_meta` keys are ignored without errors
-- [ ] Nanocoder's VS Code-specific `/help` text is not shown as desktop help
+- [x] A long streaming turn meets `PERF-04` ([`streaming.e2e.ts`](../e2e/streaming.e2e.ts), 300 ordered updates at 104.986/s and response maxima below 100ms; [final local run](milestone-1-exit-checks.md#final-local-run), local fixture only)
+- [x] Unknown `_meta` keys are ignored without errors ([`turn-metadata.spec.ts`](../source/main/nanocoder/turn-metadata.spec.ts), [`streaming.e2e.ts`](../e2e/streaming.e2e.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Nanocoder's VS Code-specific `/help` text is not shown as desktop help ([`turn-events.spec.ts`](../source/main/nanocoder/turn-events.spec.ts), [`streaming.e2e.ts`](../e2e/streaming.e2e.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
 
 ### Phase 1.7: approvals and cancel
 
@@ -363,29 +369,29 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Build**
 
-- [ ] Resume through `session/resume` with full replay (`CHAT-08`, `ACP-06`, `ACP-07`)
-- [ ] View-only threads with a reason and recovery actions (`CHAT-09`, `ACP-19`)
-- [ ] Session discovery and import with native exact-root matching (`ACP-18`, `DEC-34`)
+- [ ] Resume through `session/resume` with full replay (`CHAT-08`, `ACP-06`, `ACP-07`): saved-ID bounded replay and whole-app/fake-child restart are app-composed ([`durable-replay.e2e.ts`](../e2e/durable-replay.e2e.ts), [`replay-gates.e2e.ts`](../e2e/replay-gates.e2e.ts)); upstream tool results/outcomes and single real-provider whole-app context acceptance remain incomplete ([limits](durable-replay.md), [final local run](milestone-1-exit-checks.md#final-local-run)).
+- [x] View-only threads with a reason and recovery actions (`CHAT-09`, `ACP-19`) ([`supervisor-recovery.e2e.ts`](../e2e/supervisor-recovery.e2e.ts), both-theme missing/retry/new/remove keyboard checks, not full phase acceptance; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Session discovery and import with native exact-root matching (`ACP-18`, `DEC-34`) ([`session-import.e2e.ts`](../e2e/session-import.e2e.ts), [`session-discovery.acp.ts`](../source/main/nanocoder/session-discovery.acp.ts), explicit metadata-only import, best-effort alias omission; [final local run](milestone-1-exit-checks.md#final-local-run))
 
 **Results we want**
 
-- [ ] A thread continues with its context after the app and Nanocoder restart
-- [ ] A thread whose session file was deleted opens view-only and says why
-- [ ] Exact-root CLI sessions are offered for explicit import by an already-ready connection; nested folders are intentionally excluded because they may have a separate configuration or trust scope (`DEC-34`). Listing is best-effort and may omit path aliases.
+- [ ] A thread continues with its context after the app and Nanocoder restart: whole-app/fake-child replay and separate pinned real ACP restart/context tests pass; a single whole-Electron-restart real-provider acceptance run is still absent ([final local run](milestone-1-exit-checks.md#final-local-run)).
+- [x] A thread whose session file was deleted opens view-only and says why ([`supervisor-recovery.e2e.ts`](../e2e/supervisor-recovery.e2e.ts), [`resume.acp.ts`](../source/main/nanocoder/resume.acp.ts), exact-ID missing history with no replacement new/load; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Exact-root CLI sessions are offered for explicit import by an already-ready connection; nested folders are intentionally excluded because they may have a separate configuration or trust scope (`DEC-34`). Listing is best-effort and may omit path aliases ([`session-import.e2e.ts`](../e2e/session-import.e2e.ts), [`session-discovery.acp.ts`](../source/main/nanocoder/session-discovery.acp.ts); [final local run](milestone-1-exit-checks.md#final-local-run)).
 
 ### Phase 1.9: controls and the one-root-turn rule
 
 **Build**
 
-- [ ] Model and provider controls labelled as project-wide (`CHAT-10`, `ACP-14`)
-- [ ] Mode control, set between turns only, with an explicit project default and a confirmation for `yolo` (`CHAT-11`, `ACP-13`, `DEC-31`)
-- [ ] One root turn per project process (`CHAT-17`)
+- [x] Model and provider controls labelled as project-wide (`CHAT-10`, `ACP-14`) ([`controls.e2e.ts`](../e2e/controls.e2e.ts), [`controls.acp.ts`](../source/main/nanocoder/controls.acp.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Mode control, set between turns only, with an explicit project default and a confirmation for `yolo` (`CHAT-11`, `ACP-13`, `DEC-31`) ([`controls.e2e.ts`](../e2e/controls.e2e.ts), [`thread-modes.spec.ts`](../source/main/controls/thread-modes.spec.ts); implementation verified, DEC-31 remains Proposed, not policy approval; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] One root turn per project process (`CHAT-17`) ([`project-operations.spec.ts`](../source/main/threads/project-operations.spec.ts), [`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
 
 **Results we want**
 
-- [ ] Prompting a second thread while one runs is refused with `BUSY` and a reason
-- [ ] Model and mode controls are disabled while a turn runs
-- [ ] A model change is visible in every thread of the project
+- [x] Prompting a second thread while one runs is refused with `BUSY` and a reason ([`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), shared project authority; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Model and mode controls are disabled while a turn runs ([`project-controls.spec.ts`](../source/main/controls/project-controls.spec.ts), [`thread-modes.spec.ts`](../source/main/controls/thread-modes.spec.ts), [`controls.e2e.ts`](../e2e/controls.e2e.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] A model change is visible in every thread of the project ([`project-controls.spec.ts`](../source/main/controls/project-controls.spec.ts), [`controls.acp.ts`](../source/main/nanocoder/controls.acp.ts), process-current controls across historical resume; [final local run](milestone-1-exit-checks.md#final-local-run))
 
 ### Phase 1.10: subagents
 
@@ -409,9 +415,9 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 - [ ] `SP-04` passes on macOS, Windows and Linux
 - [ ] `SP-05` passes on macOS, Windows and Linux (whole-turn stop unless `SUB-08` lands)
 - [ ] `SP-06` passes on macOS, Windows and Linux
-- [ ] The conversation meets `A11Y-01` to `A11Y-05` (`CHAT-18`)
-- [ ] `PERF-01` to `PERF-04` measured and within target, or the gap recorded with an issue
-- [ ] Coverage at or above the floor, all required checks green
+- [ ] The conversation meets `A11Y-01` to `A11Y-05` (`CHAT-18`): local automated keyboard/Chromium AX/live-region checks pass; native VoiceOver, full AA and cross-platform acceptance remain open ([evidence and user script](milestone-1-exit-checks.md)).
+- [ ] `PERF-01` to `PERF-04` measured and within target, or the gap recorded with an issue: local measurements pass their bounded checks; exact PERF-02 spawn/initialize/MCP breakdown and reference-hardware/all-platform evidence remain missing. No external issue was filed by this check ([measurements](milestone-1-exit-checks.md#final-local-run)).
+- [ ] Coverage at or above the floor, all required checks green: local configured main/shared lines are 97.40% and the full Node 22 local gates pass; required remote/all-platform checks on this tip are not established ([final local run](milestone-1-exit-checks.md#final-local-run)).
 
 ## Milestone 2: files and review
 
