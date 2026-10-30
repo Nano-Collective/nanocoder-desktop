@@ -8,6 +8,8 @@ import {
 	type WebContents,
 } from 'electron';
 import {z} from 'zod';
+import {createWorkspaceControls} from '@/main/controls/workspace-controls';
+import {confirmYolo} from '@/main/controls/yolo-consent';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
 import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
@@ -52,9 +54,29 @@ let rendererAttachment = new AbortController();
 let connecting: Promise<void> | undefined;
 let rendererCleanup: Promise<void> = Promise.resolve();
 let threads: ReturnType<typeof createThreadService> | undefined;
+let controlRuntime: ReturnType<typeof createWorkspaceControls> | undefined;
 let appOrigins: readonly string[] = [];
 let workspaceServices: WorkspaceServices = {};
 let unsubscribeProjectEvents: (() => void) | undefined;
+
+function availableControls() {
+	if (!controlRuntime)
+		throw new IpcFailure('UNAVAILABLE', 'The project controls are unavailable');
+	return controlRuntime;
+}
+
+function invalidateControls() {
+	for (const project of workspaceServices.store?.projects.list() ?? [])
+		controlRuntime?.invalidate(project.id);
+}
+
+function stopProject(projectId: string) {
+	if (!supervisor)
+		throw new IpcFailure('AGENT_UNAVAILABLE', 'The desktop cannot stop now');
+	const stopping = supervisor.stop(projectId);
+	controlRuntime?.invalidate(projectId, stopping);
+	return stopping;
+}
 
 // Only windows showing the app get events; the renderer never sees the IPC event object.
 function sendProjectEvent(event: ProjectEvent): void {
@@ -197,6 +219,7 @@ export function closeNanocoder(): Promise<void> {
 					threads?.detach(workspaceServices.store?.projects.list() ?? []),
 				]);
 			} finally {
+				controlRuntime?.dispose();
 				threads?.dispose();
 			}
 		},
@@ -215,6 +238,7 @@ function watchRenderer(contents: WebContents): void {
 		);
 		rendererAttachment = new AbortController();
 		activeProjectId = undefined;
+		invalidateControls();
 		rendererCleanup = Promise.allSettled([
 			rendererCleanup,
 			threads?.detach(
@@ -271,9 +295,11 @@ export function registerIpcHandlers(
 					await threads?.restore(project, connection, signal);
 				},
 			});
+	const ownedSupervisor = supervisor;
 	workspaceServices = {
 		...services,
 		supervisor: services.supervisor ?? supervisor,
+		stopProject: services.stopProject ?? (supervisor ? stopProject : undefined),
 		restartProject:
 			services.restartProject ??
 			(supervisor
@@ -287,6 +313,13 @@ export function registerIpcHandlers(
 								'Already connecting to Nanocoder',
 								true,
 							);
+						if (threads?.projectOperations.isBusy(projectId))
+							throw new IpcFailure(
+								'BUSY',
+								'Stop the current operation first',
+								true,
+							);
+						controlRuntime?.invalidate(projectId);
 						const {signal} = rendererAttachment;
 						const state = await untilAborted(
 							supervisor.restart(chosen),
@@ -353,11 +386,14 @@ export function registerIpcHandlers(
 				: undefined),
 		projects:
 			services.projects ??
-			(services.store && supervisor
+			(services.store && ownedSupervisor
 				? createProjectService({
 						store: services.store,
 						chooseRoot: chooseProjectRoot,
-						supervisor,
+						supervisor: {
+							probeProject: project => ownedSupervisor.probeProject(project),
+							stop: stopProject,
+						},
 						signal: () => rendererAttachment.signal,
 						announceProject: project => {
 							activeProjectId = project.id;
@@ -373,6 +409,14 @@ export function registerIpcHandlers(
 					store: services.store,
 					supervisor,
 					onEvent: sendProjectEvent,
+					onSessionPrepared: context =>
+						availableControls().hooks.onSessionPrepared(context),
+					beforeFirstPrompt: context =>
+						availableControls().hooks.beforeFirstPrompt(context),
+					validateBeforePrepare: (lease, thread) =>
+						availableControls().hooks.validateBeforePrepare(lease, thread),
+					resolveLiveMode: (...args) =>
+						availableControls().hooks.resolveLiveMode(...args),
 					confirmDeleteHistory: async ({project, thread}) => {
 						const options = {
 							type: 'warning' as const,
@@ -393,6 +437,37 @@ export function registerIpcHandlers(
 				})
 			: undefined;
 	workspaceServices.threads = services.threads ?? threads;
+	if (threads && services.store && ownedSupervisor) {
+		controlRuntime = createWorkspaceControls({
+			store: services.store,
+			threads,
+			getConnection: threads.getControlConnection,
+			publishControls: controls => ownedSupervisor.publishControls(controls),
+			publishThread: thread => ownedSupervisor.publishThread(thread),
+			publishProject: project => ownedSupervisor.announceProject(project),
+			confirmYolo: snapshot =>
+				confirmYolo({
+					...snapshot,
+					ask: async options => {
+						const window = BrowserWindow.getFocusedWindow();
+						const {response} = window
+							? await dialog.showMessageBox(window, options)
+							: await dialog.showMessageBox(options);
+						return response;
+					},
+				}),
+		});
+		workspaceServices.controls = services.controls ?? controlRuntime.controls;
+		workspaceServices.threads = {
+			...threads,
+			setThreadMode: controlRuntime.setThreadMode,
+		};
+		if (workspaceServices.projects)
+			workspaceServices.projects = {
+				...workspaceServices.projects,
+				setProjectDefaultMode: controlRuntime.setProjectDefaultMode,
+			};
+	}
 	app.on('web-contents-created', (_event, contents) => watchRenderer(contents));
 	for (const window of BrowserWindow.getAllWindows())
 		watchRenderer(window.webContents);
@@ -404,6 +479,16 @@ export function registerIpcHandlers(
 			if (project?.trusted) store?.projects.save({...project, trusted: false});
 		}
 		if (event.type !== 'turn') sendProjectEvent(event);
+		if (
+			(event.type === 'supervisor' &&
+				event.state.status !== 'ready' &&
+				event.state.status !== 'starting') ||
+			event.type === 'project-removed' ||
+			(event.type === 'project' && !event.project.trusted)
+		)
+			controlRuntime?.invalidate(event.projectId);
+		else if (event.type === 'thread-removed')
+			controlRuntime?.invalidateThread(event.projectId, event.threadId);
 	});
 	registerHandler(
 		CHANNELS.getAppInfo,

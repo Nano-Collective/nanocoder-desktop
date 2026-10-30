@@ -6,6 +6,7 @@ import type {
 	createProjectOperations,
 	ProjectOperationLease,
 } from '@/main/threads/project-operations';
+import {CONFIG_UNCERTAINTY_REASON} from '@/shared/control-reasons';
 import type {
 	ProjectControls,
 	ProjectInfo,
@@ -46,8 +47,7 @@ interface OfferState {
 
 const missingOffers =
 	'available after the first message: Nanocoder supplies model options after a session exists';
-const uncertainReason =
-	'restart Nanocoder before sending after an unconfirmed model change';
+const uncertainReason = CONFIG_UNCERTAINTY_REASON;
 const changed = () =>
 	new IpcFailure('DENIED', 'The model options changed; choose again');
 

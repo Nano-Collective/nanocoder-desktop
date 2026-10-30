@@ -63,7 +63,8 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/store/agent-runs.ts`, `source/main/nanocoder/subagent-runs.ts` | Passive metadata-only repository and lifecycle consumer; application composition awaits phase 1.8 identity/replay |
 | `source/renderer/transcript.ts`, `source/renderer/stream-batcher.ts` | Ordered immutable transcript patches and cancellable 16ms renderer batching |
 | `source/renderer/conversation-stream.tsx`, `source/renderer/agent-markdown.tsx`, `source/renderer/stream-commands.tsx` | U.4 stream rows, isolated inert Markdown and advertised-command draft suggestions |
-| `source/renderer/composer.tsx`, `source/renderer/project-controls.ts` | Plain-props multiline composer and scoped acknowledged project-control state |
+| `source/renderer/composer.tsx`, `source/renderer/project-controls.ts`, `source/renderer/use-project-controls.ts` | Mounted plain-props multiline composer and scoped acknowledged project-control state; no renderer live-mode cache |
+| `source/shared/control-reasons.ts` | Shared refusal copy for irreversible same-process config uncertainty |
 | `planning/streaming-conversation.md` | Phase 1.6 stream semantics, metadata boundaries, performance and remaining integration seams |
 | `source/renderer/subagent-run-card.tsx`, `source/renderer/styles/subagents.css` | U.7 flat reported progress, truthful fallback and the owner's whole-turn stop callback |
 | `planning/subagents.md` | Phase 1.10 source limits, SUB-05 composition contract and subagent verification gaps |

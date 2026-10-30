@@ -64,11 +64,13 @@ export function createWorkspaceControls(options: {
 			},
 			resolveLiveMode: modes.resolveLiveMode,
 		},
-		invalidate(projectId: string) {
+		invalidate(projectId: string, shutdown?: Promise<unknown>) {
+			options.threads.projectOperations.invalidate(projectId, shutdown);
 			modes.invalidate(projectId);
 			controls.invalidate(projectId);
 		},
 		invalidateThread(projectId: string, threadId: string) {
+			options.threads.projectOperations.invalidateThread(projectId, threadId);
 			modes.invalidateThread(projectId, threadId);
 			controls.invalidateThread(projectId, threadId);
 		},

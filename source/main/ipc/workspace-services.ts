@@ -52,5 +52,6 @@ export interface WorkspaceServices {
 	threads?: ThreadService;
 	diagnostics?: DiagnosticsService;
 	controls?: ProjectControlService;
+	stopProject?: (projectId: string) => Promise<SupervisorState>;
 	restartProject?: (projectId: string) => Promise<SupervisorState>;
 }

@@ -1,7 +1,13 @@
 import test from 'ava';
 import {createProjectControlsController} from '@/renderer/project-controls';
 import type {DesktopApi} from '@/shared/desktop-api';
-import type {IpcResult, ProjectControls, ProjectEvent} from '@/shared/ipc';
+import type {
+	DefaultMode,
+	IpcResult,
+	ProjectControls,
+	ProjectEvent,
+	ProjectInfo,
+} from '@/shared/ipc';
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;
@@ -37,6 +43,15 @@ function fixture() {
 	let reason: string | null = null;
 	const reads: string[] = [];
 	const writes: Array<Parameters<DesktopApi['setProjectConfigOption']>[0]> = [];
+	const defaults: Array<Parameters<DesktopApi['setProjectDefaultMode']>[0]> =
+		[];
+	let setDefault: DesktopApi['setProjectDefaultMode'] = async ({
+		projectId,
+		mode,
+	}) => ({
+		ok: true,
+		value: {id: projectId, defaultMode: mode} as ProjectInfo,
+	});
 	let read: DesktopApi['getProjectControls'] = async ({projectId}) => ({
 		ok: true,
 		value: controls(projectId),
@@ -55,6 +70,10 @@ function fixture() {
 				writes.push(request);
 				return write(request);
 			},
+			setProjectDefaultMode: request => {
+				defaults.push(request);
+				return setDefault(request);
+			},
 			onProjectEvent: callback => {
 				event = callback;
 				return () => {
@@ -69,6 +88,10 @@ function fixture() {
 		controller,
 		reads,
 		writes,
+		defaults,
+		setDefault: (next: typeof setDefault) => {
+			setDefault = next;
+		},
 		event: (value: ProjectEvent) => event(value),
 		read: (next: typeof read) => {
 			read = next;
@@ -91,6 +114,54 @@ test('project control reads do not create a session and keep offers independent 
 	t.deepEqual(f.writes, []);
 	await f.controller.selectProject('project');
 	t.deepEqual(f.reads, ['project']);
+});
+
+test('explicit project default waits for main, works before model offers and never permits yolo (CHAT-11)', async t => {
+	const f = fixture();
+	await f.controller.selectProject('project');
+	f.event({
+		type: 'project-controls',
+		projectId: 'project',
+		sequence: 1,
+		controls: {
+			...controls(),
+			configOptions: [],
+			modelGate: {enabled: false, reason: 'available after the first message'},
+		},
+	});
+	const response = deferred<IpcResult<ProjectInfo>>();
+	f.setDefault(() => response.promise);
+	const changing = f.controller.setDefault('plan');
+	t.true(f.controller.getState().pending);
+	t.deepEqual(f.defaults, [{projectId: 'project', mode: 'plan'}]);
+	t.is(await f.controller.setDefault('architect'), null);
+	response.resolve({
+		ok: true,
+		value: {id: 'project', defaultMode: 'plan'} as ProjectInfo,
+	});
+	t.is((await changing)?.defaultMode, 'plan');
+	t.is(await f.controller.setDefault('yolo' as DefaultMode), null);
+	t.is(f.defaults.length, 1);
+});
+
+test('project default refuses stop-first and discards responses after a project switch (CHAT-17)', async t => {
+	const f = fixture();
+	await f.controller.selectProject('project');
+	f.reason('stop the project turn first');
+	t.is(await f.controller.setDefault('plan'), null);
+	t.deepEqual(f.defaults, []);
+	f.reason(null);
+	const response = deferred<IpcResult<ProjectInfo>>();
+	f.setDefault(() => response.promise);
+	const changing = f.controller.setDefault('plan');
+	await f.controller.selectProject('other');
+	response.resolve({
+		ok: true,
+		value: {id: 'project', defaultMode: 'plan'} as ProjectInfo,
+	});
+	t.is(await changing, null);
+	t.is(f.controller.getState().projectId, 'other');
+	t.false(f.controller.getState().pending);
 });
 
 test('config selection sends main-owned revision and shows only the confirmed result (ACP-14)', async t => {

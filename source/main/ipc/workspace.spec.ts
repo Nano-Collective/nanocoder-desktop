@@ -123,6 +123,26 @@ test('cancelThread refuses renderer session identities and malformed scopes befo
 	t.is(calls, 1);
 });
 
+test('stopProject delegates to the composed lifecycle after strict validation (CHAT-17)', async t => {
+	const calls: string[] = [];
+	const stopped = {projectId, status: 'stopped'} as SupervisorState;
+	const request = registered({
+		stopProject: async id => {
+			calls.push(id);
+			return stopped;
+		},
+	} as WorkspaceServices);
+	const malformed = await request('stopProject', {...project, confirmed: true});
+	t.false(malformed.ok);
+	if (!malformed.ok) t.is(malformed.error.code, 'VALIDATION');
+	t.deepEqual(calls, []);
+	t.deepEqual(await request('stopProject', project), {
+		ok: true,
+		value: stopped,
+	});
+	t.deepEqual(calls, [projectId]);
+});
+
 test('project control schemas refuse arbitrary config authority before reaching a service (CHAT-10 ACP-14)', async t => {
 	let calls = 0;
 	const request = registered({

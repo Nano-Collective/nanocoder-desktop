@@ -135,7 +135,9 @@ export function registerWorkspaceHandlers(
 			return supervisor.ensureProcess(trustedProject(projectId));
 		},
 		stopProject: ({projectId}) =>
-			available(services.supervisor).stop(projectId),
+			services.stopProject
+				? services.stopProject(projectId)
+				: available(services.supervisor).stop(projectId),
 		restartProject: ({projectId}) => {
 			if (services.restartProject) return services.restartProject(projectId);
 			const supervisor = available(services.supervisor);

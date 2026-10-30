@@ -44,6 +44,14 @@ const modes: NanocoderMode[] = [
 ];
 
 export function Composer(props: ComposerProps) {
+	const localInput = React.useRef<HTMLTextAreaElement>(null);
+	const input = props.inputRef ?? localInput;
+	React.useLayoutEffect(() => {
+		const element = input.current;
+		if (!element || element.value !== props.draft) return;
+		element.style.height = 'auto';
+		element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
+	}, [input, props.draft]);
 	const id = React.useId();
 	const hintId = `${id}-send`;
 	const modelHintId = `${id}-model`;
@@ -105,7 +113,8 @@ export function Composer(props: ComposerProps) {
 				</span>
 				<span className="sr-only">message</span>
 				<textarea
-					ref={props.inputRef}
+					className="composer-inactive-control"
+					ref={input}
 					value={props.draft}
 					onChange={event => props.onDraft(event.currentTarget.value)}
 					onKeyDown={event => {
@@ -170,6 +179,7 @@ export function Composer(props: ComposerProps) {
 								{option.id}
 							</span>
 							<select
+								className="composer-inactive-control"
 								aria-label={`${option.id} for every thread in project ${props.projectName}`}
 								aria-describedby={modelHintId}
 								value={option.currentValue}
@@ -198,6 +208,7 @@ export function Composer(props: ComposerProps) {
 				<label className="composer-pill composer-mode">
 					<span aria-hidden="true">mode</span>
 					<select
+						className="composer-inactive-control"
 						aria-label="mode for this thread"
 						aria-describedby={modeHintId}
 						value={props.mode}

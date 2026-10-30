@@ -85,13 +85,7 @@ async function fixture(t: ExecutionContext, scenario?: string) {
 	controls = createWorkspaceControls({
 		store,
 		threads,
-		getConnection: id => {
-			try {
-				return supervisor.getConnection(id);
-			} catch {
-				return undefined;
-			}
-		},
+		getConnection: threads.getControlConnection,
 		publishControls: value => {
 			published.push(value);
 			supervisor.publishControls(value);
@@ -221,4 +215,76 @@ test('composed config uncertainty blocks every later prompt before content, not 
 	const after = await f.threads.getThreadSnapshot(f.request);
 	t.deepEqual(after.events, before.events);
 	t.is(f.rpc().filter(event => event.method === 'session/prompt').length, 2);
+});
+
+test('a pending native confirmation reserves the same authority used by ThreadService prompts (CHAT-17)', async t => {
+	const f = await fixture(t);
+	let entered!: () => void;
+	let decide!: (value: boolean) => void;
+	const waiting = new Promise<void>(done => {
+		entered = done;
+	});
+	const decision = new Promise<boolean>(done => {
+		decide = done;
+	});
+	f.confirm(() => {
+		entered();
+		return decision;
+	});
+	const selecting = f.controls.setThreadMode({...f.request, mode: 'yolo'});
+	t.teardown(() => decide(false));
+	await waiting;
+	await t.throwsAsync(
+		f.threads.promptThread({...f.request, text: 'must not start'}),
+		{code: 'BUSY'},
+	);
+	t.is(f.launches(), 0);
+	decide(false);
+	await selecting;
+});
+
+test('lifecycle invalidation aborts a native confirmation instead of accepting its late yolo response (DEC-31)', async t => {
+	const f = await fixture(t);
+	let entered!: () => void;
+	let decide!: (value: boolean) => void;
+	const waiting = new Promise<void>(done => {
+		entered = done;
+	});
+	const decision = new Promise<boolean>(done => {
+		decide = done;
+	});
+	f.confirm(() => {
+		entered();
+		return decision;
+	});
+	const selecting = f.controls.setThreadMode({...f.request, mode: 'yolo'});
+	const refused = t.throwsAsync(selecting, {instanceOf: IpcFailure});
+	t.teardown(() => decide(false));
+	await waiting;
+	f.controls.invalidate(f.project.id);
+	decide(true);
+	await refused;
+	t.is(f.launches(), 0);
+	t.is(f.store.threads.get(f.project.id, f.thread.id)?.mode, 'normal');
+	t.is((await f.threads.getThreadSnapshot(f.request)).thread.mode, 'normal');
+});
+
+test('a repeated prompt after direct authority invalidation safely resumes instead of retaining previous-epoch yolo (DEC-31)', async t => {
+	const f = await fixture(t);
+	await f.controls.setThreadMode({...f.request, mode: 'yolo'});
+	await f.threads.promptThread({...f.request, text: 'first fixture'});
+	f.threads.projectOperations.invalidate(f.project.id);
+	await f.threads.promptThread({...f.request, text: 'second fixture'});
+	t.is(f.rpc().filter(event => event.method === 'session/resume').length, 1);
+	t.deepEqual(
+		f
+			.rpc()
+			.filter(event => event.method === 'session/set_mode')
+			.map(event => (event.params as {modeId: string}).modeId),
+		['normal', 'yolo', 'normal'],
+	);
+	t.is((await f.threads.getThreadSnapshot(f.request)).thread.mode, 'normal');
+	t.is(f.launches(), 1);
+	t.is(f.confirmations(), 1);
+	t.true(f.writes.every(thread => thread.mode !== 'yolo'));
 });

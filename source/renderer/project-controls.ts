@@ -1,8 +1,10 @@
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {
+	DefaultMode,
 	ProjectConfigSelect,
 	ProjectControls,
 	ProjectEvent,
+	ProjectInfo,
 } from '@/shared/ipc';
 
 export interface ProjectControlsState {
@@ -15,7 +17,10 @@ export interface ProjectControlsState {
 
 type Bridge = Pick<
 	DesktopApi,
-	'getProjectControls' | 'setProjectConfigOption' | 'onProjectEvent'
+	| 'getProjectControls'
+	| 'setProjectConfigOption'
+	| 'setProjectDefaultMode'
+	| 'onProjectEvent'
 >;
 
 export function createProjectControlsController(options: {
@@ -104,6 +109,42 @@ export function createProjectControlsController(options: {
 		getState: () => structuredClone(state),
 		selectProject,
 		reload,
+		setDefault: async (mode: DefaultMode): Promise<ProjectInfo | null> => {
+			const projectId = state.projectId;
+			if (disposed || !projectId || state.loading || state.pending) return null;
+			const reason = options.controlReason?.();
+			if (
+				reason ||
+				!['normal', 'auto-accept', 'plan', 'architect'].includes(mode)
+			) {
+				update({error: reason ?? 'choose a non-yolo project default'});
+				return null;
+			}
+			const scope = generation;
+			update({pending: true, error: null});
+			try {
+				const result = await options.bridge.setProjectDefaultMode({
+					projectId,
+					mode,
+				});
+				if (!current(scope)) return null;
+				if (!result.ok) {
+					update({error: result.error.message});
+					return null;
+				}
+				if (result.value.id !== projectId) {
+					update({error: 'the project default could not change'});
+					return null;
+				}
+				return structuredClone(result.value);
+			} catch {
+				if (current(scope))
+					update({error: 'the project default could not change'});
+				return null;
+			} finally {
+				if (current(scope)) update({pending: false});
+			}
+		},
 		setConfig: async (id: ProjectConfigSelect['id'], value: string) => {
 			const snapshot = state.controls;
 			const projectId = state.projectId;

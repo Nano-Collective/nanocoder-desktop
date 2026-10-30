@@ -4,7 +4,7 @@
 	overflow: hidden;
 }
 
-.composer[data-unavailable] {
+.composer .composer-inactive-control:disabled {
 	opacity: 0.5;
 }
 
@@ -71,10 +71,6 @@
 	color: inherit;
 	background: var(--colors-surface-panel);
 	font: inherit;
-}
-
-.composer:not([data-unavailable]) .composer-pill:has(select:disabled) {
-	opacity: 0.5;
 }
 
 .composer-context {

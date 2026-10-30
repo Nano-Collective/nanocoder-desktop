@@ -234,6 +234,7 @@ export function createThreadModes(options: ThreadModeOptions) {
 		const row = thread(input.projectId, input.id);
 		mutable(row);
 		const key = keyFor(input.projectId, input.id);
+		if (live.get(key)?.epoch !== lease.epoch) live.delete(key);
 		const choice = pending.get(key);
 		if (
 			choice &&
