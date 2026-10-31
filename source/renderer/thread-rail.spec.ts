@@ -28,10 +28,6 @@ const props: Parameters<typeof ThreadRail>[0] = {
 	onOpen: () => {},
 	onOpenArchives: () => {},
 	onOpenImport: () => {},
-	onRename: () => {},
-	onArchive: () => {},
-	onRemove: () => {},
-	onDeleteHistory: () => {},
 };
 const render = (patch: Partial<typeof props> = {}) =>
 	renderToStaticMarkup(createElement(ThreadRail, {...props, ...patch}));
@@ -125,31 +121,13 @@ test('selected row shows state and age in its meta line, others show age on the 
 	t.false(other.includes('thread-state-label'));
 });
 
-test('rail separates desktop removal from history deletion with visible capability reasons (CHAT-12, CHAT-14)', t => {
-	const html = render({
-		threads: [
-			thread,
-			{
-				...thread,
-				id: 'stored',
-				title: 'fixture stored',
-				nanocoderSessionId: 'fixture-session',
-			},
-		],
-		renameDisabledReason: 'rename unavailable',
-		deleteHistoryDisabledReason: 'history deletion unavailable',
-	});
-	t.true(html.includes('aria-label="remove from desktop: fixture thread"'));
-	t.true(html.includes('aria-label="delete chat history: fixture thread"'));
-	t.regex(
-		html,
-		/aria-label="delete chat history: fixture thread"[^>]*disabled/,
-	);
-	t.true(html.includes('this thread has no Nanocoder history'));
-	t.notRegex(html, /aria-label="rename: fixture thread"[^>]*disabled/);
-	t.regex(html, /aria-label="rename: fixture stored"[^>]*disabled/);
-	t.true(html.includes('rename unavailable</p>'));
-	t.true(html.includes('history deletion unavailable</p>'));
+test('rail rows only open threads; rename, archive and remove live in the header thread actions (A-15)', t => {
+	const html = render({threads: [thread, {...thread, id: 'other'}]});
+	t.is(html.split('class="thread-open"').length - 1, 2);
+	t.false(html.includes('thread-actions'));
+	t.false(html.includes('actions for'));
+	t.false(html.includes('<details'));
+	t.false(html.includes('remove from desktop'));
 });
 
 test('rail explains absent project and pending states instead of hiding disabled controls (U.3)', t => {

@@ -3,7 +3,6 @@ import {
 	compactAge,
 	threadAppearance,
 	threadGroups,
-	threadMutationReason,
 } from '@/renderer/thread-rail-model';
 import {Button} from '@/renderer/ui';
 import type {ThreadInfo} from '@/shared/ipc';
@@ -16,42 +15,10 @@ interface ThreadRailProps {
 	now: Date;
 	importCount: number | null;
 	newThreadShortcut?: string;
-	renameDisabledReason?: string;
-	deleteHistoryDisabledReason?: string;
 	onNew(projectId: string): void;
 	onOpen(threadId: string): void;
 	onOpenArchives(opener: HTMLElement): void;
 	onOpenImport(): void;
-	onRename(threadId: string): void;
-	onArchive(threadId: string, archived: boolean): void;
-	onRemove(threadId: string): void;
-	onDeleteHistory(threadId: string): void;
-}
-
-function RailAction({
-	label,
-	title,
-	reason,
-	onClick,
-}: {
-	label: string;
-	title: string;
-	reason?: string;
-	onClick(): void;
-}) {
-	return (
-		<div className="thread-action">
-			<Button
-				aria-label={`${label}: ${title}`}
-				title={reason}
-				disabled={Boolean(reason)}
-				onClick={onClick}
-			>
-				{label}
-			</Button>
-			{reason && <p className="thread-action-reason">{reason}</p>}
-		</div>
-	);
 }
 
 export function ThreadRail(props: ThreadRailProps): React.ReactElement {
@@ -68,15 +35,6 @@ export function ThreadRail(props: ThreadRailProps): React.ReactElement {
 	const row = (thread: ThreadInfo) => {
 		const status = threadAppearance(thread);
 		const selected = thread.id === props.activeThreadId;
-		const reason = threadMutationReason(thread, props.pending);
-		const renameReason =
-			reason ??
-			(thread.nanocoderSessionId ? props.renameDisabledReason : undefined);
-		const deleteReason =
-			reason ??
-			(thread.nanocoderSessionId
-				? props.deleteHistoryDisabledReason
-				: 'this thread has no Nanocoder history');
 		const age = (
 			<time
 				className="thread-age"
@@ -118,39 +76,6 @@ export function ThreadRail(props: ThreadRailProps): React.ReactElement {
 					</span>
 					{!selected && age}
 				</button>
-				<details className="thread-actions">
-					<summary aria-label={`actions for ${thread.title}`}>⋯</summary>
-					<div className="thread-action-list">
-						<RailAction
-							label="rename"
-							title={thread.title}
-							reason={renameReason}
-							onClick={() => props.onRename(thread.id)}
-						/>
-						<RailAction
-							label={
-								thread.archiveState === 'archived' ? 'unarchive' : 'archive'
-							}
-							title={thread.title}
-							reason={reason}
-							onClick={() =>
-								props.onArchive(thread.id, thread.archiveState !== 'archived')
-							}
-						/>
-						<RailAction
-							label="remove from desktop"
-							title={thread.title}
-							reason={reason}
-							onClick={() => props.onRemove(thread.id)}
-						/>
-						<RailAction
-							label="delete chat history"
-							title={thread.title}
-							reason={deleteReason}
-							onClick={() => props.onDeleteHistory(thread.id)}
-						/>
-					</div>
-				</details>
 			</li>
 		);
 	};

@@ -607,8 +607,6 @@ export function App() {
 								sessionImports.ready ? sessionImports.sessions.length : null
 							}
 							newThreadShortcut={newShortcut}
-							renameDisabledReason={renameDisabledReason}
-							deleteHistoryDisabledReason={deleteHistoryDisabledReason}
 							onNew={onNew}
 							onOpen={id => {
 								if (
@@ -625,12 +623,6 @@ export function App() {
 							}}
 							onOpenArchives={opener => openDialog('archives', opener)}
 							onOpenImport={openImportPage}
-							onRename={onRename}
-							onArchive={onArchive}
-							onRemove={onRemove}
-							onDeleteHistory={id => {
-								void controls.deleteHistory(id);
-							}}
 						/>
 						{!projectId && (
 							<SidebarRecents

@@ -69,7 +69,6 @@
 }
 
 .thread-row {
-	position: relative;
 	min-width: 0;
 	border-left: 2px solid transparent;
 	border-radius: 5px;
@@ -87,7 +86,7 @@
 	gap: 6px;
 	width: 100%;
 	min-width: 0;
-	padding: 6px 23px 6px 5px;
+	padding: 6px 5px;
 	border: 0;
 	background: transparent;
 	color: inherit;
@@ -166,47 +165,6 @@
 	line-height: 16px;
 }
 
-.thread-actions {
-	position: absolute;
-	top: 0;
-	right: 0;
-}
-
-.thread-actions > summary {
-	min-height: 28px;
-	padding: 6px 5px;
-	color: var(--colors-on-surface-muted);
-	font-size: 10px;
-	line-height: 16px;
-	list-style: none;
-	cursor: pointer;
-}
-
-.thread-actions > summary::-webkit-details-marker {
-	display: none;
-}
-
-.thread-action-list {
-	position: absolute;
-	z-index: 1;
-	top: 100%;
-	right: 0;
-	display: grid;
-	gap: var(--spacing-md);
-	width: calc(var(--spacing-rail-width) - 2 * var(--spacing-xl));
-	padding: var(--spacing-sm);
-	border: 1px solid var(--colors-stroke);
-	border-radius: var(--rounded-md);
-	background: var(--colors-surface-elevated);
-}
-
-.thread-action .ui-button {
-	justify-content: flex-start;
-	width: 100%;
-	text-align: left;
-}
-
-.thread-action-reason,
 .thread-rail-note {
 	color: var(--colors-on-surface-muted);
 	font-size: var(--typography-meta-font-size);
