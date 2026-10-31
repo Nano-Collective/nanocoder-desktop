@@ -9,6 +9,7 @@ import {
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {expect, test} from '@playwright/test';
+import type {Perf03Experiment} from '@/renderer/perf03-experiment';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {IpcResult, SupervisorState, ThreadReplay} from '@/shared/ipc';
 import {electron} from './qa/electron';
@@ -20,6 +21,7 @@ const failed = 'Nanocoder could not resume the session';
 const missing =
 	"nanocoder can't find this session · it may have been deleted, expired or never saved";
 interface GateWindow {
+	__perf03Experiment: Perf03Experiment;
 	desktop: DesktopApi;
 	replayRestart?: Promise<IpcResult<SupervisorState>>;
 	probe: {
@@ -109,6 +111,7 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 			await page.evaluate(scope => {
 				const state = window as unknown as GateWindow;
 				state.probe = {events: [], inputMs: []};
+				state.__perf03Experiment.begin();
 				state.desktop.onProjectEvent(event => {
 					if (
 						event.type !== 'turn' ||
@@ -118,15 +121,20 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 					)
 						return;
 					state.probe.events.push({...event.replay, sequence: event.sequence});
-					if (event.replay.phase === 'complete')
+					if (event.replay.phase === 'complete') {
 						state.probe.end = performance.now();
+						state.__perf03Experiment.mark('replay-complete', state.probe.end);
+					}
 				});
 				document.querySelector('textarea')?.addEventListener('input', () => {
 					if (state.probe.end === undefined) return;
 					const at = performance.now();
-					requestAnimationFrame(() =>
-						state.probe.inputMs.push(performance.now() - at),
-					);
+					requestAnimationFrame(() => {
+						const end = performance.now();
+						state.probe.inputMs.push(end - at);
+						state.__perf03Experiment.mark('input-start', at);
+						state.__perf03Experiment.mark('input-end', end);
+					});
 				});
 				const frame = () => {
 					if (state.probe.usable !== undefined) return;
@@ -148,7 +156,13 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 							'select[aria-label^="model for every thread"]',
 						);
 						if (users === 100 && agents === 100) {
-							state.probe.prefix ??= performance.now();
+							if (state.probe.prefix === undefined) {
+								state.probe.prefix = performance.now();
+								state.__perf03Experiment.mark(
+									'prefix-ready',
+									state.probe.prefix,
+								);
+							}
 							if (
 								input &&
 								!input.disabled &&
@@ -160,6 +174,10 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 								!model.disabled
 							) {
 								state.probe.usable = performance.now();
+								state.__perf03Experiment.mark(
+									'controls-usable',
+									state.probe.usable,
+								);
 								return;
 							}
 						}
@@ -341,7 +359,8 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 				() => (window as unknown as GateWindow).probe.inputMs.length > 0,
 			);
 			const metrics = await page.evaluate(async () => {
-				const probe = (window as unknown as GateWindow).probe;
+				const state = window as unknown as GateWindow;
+				const probe = state.probe;
 				if (
 					probe.end === undefined ||
 					probe.usable === undefined ||
@@ -357,16 +376,26 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 					const at = performance.now();
 					scroller.addEventListener(
 						'scroll',
-						() => requestAnimationFrame(() => resolve(performance.now() - at)),
+						() =>
+							requestAnimationFrame(() => {
+								const end = performance.now();
+								state.__perf03Experiment.mark('scroll-start', at);
+								state.__perf03Experiment.mark('scroll-end', end);
+								resolve(end - at);
+							}),
 						{once: true},
 					);
 					scroller.scrollTop =
 						scroller.scrollTop > 0 ? 0 : scroller.scrollHeight;
 				});
 				const frameMs = await new Promise<number>(resolve =>
-					requestAnimationFrame(first =>
-						requestAnimationFrame(second => resolve(second - first)),
-					),
+					requestAnimationFrame(first => {
+						state.__perf03Experiment.mark('frame-first', first);
+						requestAnimationFrame(second => {
+							state.__perf03Experiment.mark('frame-second', second);
+							resolve(second - first);
+						});
+					}),
 				);
 				const eventLoopMs = await new Promise<number>(resolve => {
 					const channel = new MessageChannel();
@@ -374,10 +403,14 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 					channel.port1.onmessage = () => {
 						channel.port1.close();
 						channel.port2.close();
-						resolve(performance.now() - at);
+						const end = performance.now();
+						state.__perf03Experiment.mark('loop-start', at);
+						state.__perf03Experiment.mark('loop-end', end);
+						resolve(end - at);
 					};
 					channel.port2.postMessage(null);
 				});
+				state.__perf03Experiment.end();
 				return {
 					messages: 200,
 					prefixMs: probe.prefix - probe.end,
@@ -388,6 +421,14 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 					eventLoopMs,
 				};
 			});
+			const experiment = await page.evaluate(() =>
+				(window as unknown as GateWindow).__perf03Experiment.finish(),
+			);
+			console.info('PERF03-EXPERIMENT', JSON.stringify(experiment));
+			writeFileSync(
+				test.info().outputPath('perf03-experiment.json'),
+				JSON.stringify(experiment, null, 2),
+			);
 			console.info('PERF-03', JSON.stringify(metrics));
 			writeFileSync(
 				test.info().outputPath('perf03.json'),

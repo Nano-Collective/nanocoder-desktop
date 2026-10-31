@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Experiment branch warning
+
+This branch is evidence only and must never be merged. Its dispatch-only macOS workflow builds two instrumented variants of58e4230, then runs ten alternating A/B PERF-03 pairs with unchanged budgets. `node scripts/perf03-ci-experiment.mjs build` prepares both; `node scripts/perf03-ci-experiment.mjs run --pairs 10` collects numeric-only read/React-commit/long-task timing under Node22. Only B suppresses project/projects-changed recents refresh while the restart capture is armed. No content or frame artifacts are collected.
+
 Guidance for coding agents, and anyone else, working in this repository. Keep it current: a pull request that changes the structure, commands or conventions below updates this file too.
 
 ## Project Overview

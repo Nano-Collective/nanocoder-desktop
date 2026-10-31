@@ -1,4 +1,5 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
+import {perf03Experiment} from '@/renderer/perf03-experiment';
 import {
 	readRecentProjects,
 	subscribeProjectRefresh,
@@ -14,6 +15,18 @@ export function useProjects(onOpened?: () => void) {
 	const waiting = useRef(false);
 	const mounted = useRef(true);
 	const refreshSequence = useRef(0);
+	const experimentCommit = useRef<{
+		projects: ProjectInfo[];
+		readId: number;
+	} | null>(null);
+	useLayoutEffect(() => {
+		const commit = experimentCommit.current;
+		if (commit?.projects !== projects) return;
+		perf03Experiment.mark('recents-react-commit', performance.now(), {
+			readId: commit.readId,
+		});
+		experimentCommit.current = null;
+	}, [projects]);
 	const report = useCallback((value: ProjectFeedback) => {
 		if (mounted.current) setFeedback(value);
 	}, []);
@@ -21,7 +34,10 @@ export function useProjects(onOpened?: () => void) {
 		const sequence = ++refreshSequence.current;
 		await readRecentProjects(window.desktop, {
 			current: () => mounted.current && sequence === refreshSequence.current,
-			projects: setProjects,
+			projects: (value, readId) => {
+				experimentCommit.current = {projects: value, readId};
+				setProjects(value);
+			},
 			activeProject: setActiveProjectId,
 			failed: message => report({status: 'failed', message}),
 		});
