@@ -310,10 +310,9 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 		.getByRole('textbox', {name: 'message', exact: true})
 		.fill('synthetic failed request');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
-	const recovery = page.getByRole('region', {
-		name: 'Nanocoder recovery',
-		exact: true,
-	});
+	const recovery = page
+		.getByRole('main', {name: 'conversation workspace'})
+		.getByRole('region', {name: 'Nanocoder recovery', exact: true});
 	await expect(recovery).toContainText('exit code 3');
 	await expect(
 		page.getByRole('textbox', {name: 'message', exact: true}),
@@ -372,10 +371,9 @@ test('a failed turn keeps the unsent draft typed while it ran', async () => {
 	await expect(input).toBeEditable();
 	await input.fill('unsent draft kept through failure');
 	writeFileSync(path.join(root, '.fake-turn-release'), 'go');
-	const recovery = page.getByRole('region', {
-		name: 'Nanocoder recovery',
-		exact: true,
-	});
+	const recovery = page
+		.getByRole('main', {name: 'conversation workspace'})
+		.getByRole('region', {name: 'Nanocoder recovery', exact: true});
 	await expect(recovery).toContainText('exit code 3');
 	await expect(recovery).toContainText('Nanocoder stopped unexpectedly');
 	await expect(recovery).toContainText(
@@ -449,7 +447,9 @@ for (const {failure, action} of [
 			await page.getByRole('button', {name: action, exact: true}).click();
 		}
 		await expect(
-			page.getByRole('region', {name: 'Nanocoder recovery'}),
+			page
+				.getByRole('main', {name: 'conversation workspace'})
+				.getByRole('region', {name: 'Nanocoder recovery'}),
 		).toContainText('Nanocoder is not ready');
 		writeFileSync(
 			path.join(root, '.fake-nanocoder'),
@@ -591,7 +591,9 @@ test('failed resume preserves the visible failed turn and cannot accept another 
 		.getByRole('textbox', {name: 'message', exact: true})
 		.fill('synthetic failed request');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
-	const recovery = page.getByRole('region', {name: 'Nanocoder recovery'});
+	const recovery = page
+		.getByRole('main', {name: 'conversation workspace'})
+		.getByRole('region', {name: 'Nanocoder recovery'});
 	await expect(recovery).toContainText('exit code 3');
 	await page.evaluate(async projectId => {
 		await (window as unknown as {desktop: DesktopApi}).desktop.stopProject({
@@ -673,7 +675,9 @@ test('repeated fake-child signal exits exhaust automatic recovery until explicit
 				.poll(async () => (await getState()).status, {timeout: 10_000})
 				.toBe('ready');
 	}
-	const recovery = page.getByRole('region', {name: 'Nanocoder recovery'});
+	const recovery = page
+		.getByRole('main', {name: 'conversation workspace'})
+		.getByRole('region', {name: 'Nanocoder recovery'});
 	await expect(recovery).toContainText(
 		'automatic recovery stopped after 3 attempts',
 	);
