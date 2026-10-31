@@ -204,7 +204,7 @@
 }
 .session-import-page {
 	display: grid;
-	gap: 14px;
+	gap: 0;
 	width: min(100%, 850px);
 	min-width: 0;
 	margin-inline: auto;
@@ -233,46 +233,58 @@
 	align-items: center;
 	justify-content: space-between;
 	gap: 12px;
+	margin-bottom: 12px;
 }
 .session-import-heading {
 	margin: 0;
 	font-size: 21px;
 	font-weight: 400;
-	line-height: 1.4;
+	line-height: 1.35;
 }
 .session-import-actions {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
+	margin-bottom: 18px;
 }
-.session-import-intro,
+.session-import-intro {
+	max-width: 670px;
+	margin: 0 0 26px;
+	color: var(--colors-on-surface-muted);
+	font-size: 12px;
+	line-height: 1.6;
+}
 .session-import-note {
 	margin: 0;
 	color: var(--colors-on-surface-muted);
 	font-size: 11px;
 	line-height: 1.8;
 }
+.session-import-note:not(:last-child) {
+	margin-bottom: 18px;
+}
 .session-import-notice {
-	display: grid;
-	gap: 4px;
-	padding: 12px 14px;
-	border: 1px solid var(--colors-stroke);
-	border-radius: var(--rounded-lg);
+	margin-bottom: 18px;
+	padding: 16px 18px;
+	border-radius: var(--rounded-xl);
 	background: var(--colors-surface-panel);
 	color: var(--colors-on-surface-muted);
 	font-size: 11px;
-	line-height: 1.8;
+	line-height: 1.6;
 }
 .session-import-notice p {
-	margin: 0;
+	margin: 0 0 14px;
 }
 .session-import-notice p:first-child {
+	margin-bottom: 8px;
 	color: var(--colors-on-surface);
+	font-size: 13px;
+	line-height: 1.35;
 }
 .session-import-list {
 	display: grid;
 	gap: 10px;
-	margin: 0;
+	margin: 0 0 24px;
 	padding: 0;
 	list-style: none;
 }
