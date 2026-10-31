@@ -14,7 +14,7 @@
 }
 
 .composer-cancel {
-	min-height: 30px;
+	min-height: 32px;
 	padding: 0 10px;
 	font-size: 10px;
 	white-space: nowrap;
@@ -202,8 +202,10 @@
 	clip-path: inset(50%);
 }
 
-/* Inline, so the accessible description joins it without a block-level gap. */
+/* Inline and zero-sized: the description keeps the words without taking width or height. */
 .composer-hint-row .sr-only {
+	font-size: 0;
+	line-height: 0;
 	clip-path: inset(50%);
 }
 
