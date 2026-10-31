@@ -5,6 +5,7 @@ import {
 	ApprovalRequests,
 	isOutsideShelf,
 	openQuestionId,
+	reportedToolName,
 	shortcutOption,
 } from '@/renderer/approval-requests';
 import type {PermissionRequestInfo} from '@/shared/ipc';
@@ -197,6 +198,35 @@ test('agent-provided titles and option names stay escaped text', t => {
 	t.true(markup.includes('&lt;img'));
 	t.true(markup.includes('&lt;script&gt;'));
 	t.false(/<(?:img|script)\b/.test(markup));
+});
+
+test('D-05 meta names the reported tool and leaves it out when none is reported', t => {
+	const markupFor = (title: string) =>
+		renderToStaticMarkup(
+			createElement(ApprovalRequests, {
+				requests: [{...request, title}],
+				mode: 'normal',
+				busy: false,
+				onAnswer: async () => ({ok: true, value: null}),
+			}),
+		);
+	t.true(
+		markupFor('execute_bash: echo old').includes(
+			'Nanocoder · execute_bash · normal mode',
+		),
+	);
+	for (const title of ['fixture command', 'call_1', 'Execute: ls']) {
+		const markup = markupFor(title);
+		t.true(markup.includes('Nanocoder · normal mode'));
+		t.false(markup.includes('undefined'));
+	}
+	t.is(reportedToolName('execute_bash: echo old'), 'execute_bash');
+	t.is(reportedToolName('execute_bash fixture (explore)'), undefined);
+	t.is(reportedToolName('execute_bash:echo old'), undefined);
+	t.is(
+		reportedToolName('<img src="https://example.invalid/fixture">'),
+		undefined,
+	);
 });
 
 test('no waiting request renders no approval controls', t => {

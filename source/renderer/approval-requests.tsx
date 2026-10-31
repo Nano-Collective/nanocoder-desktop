@@ -37,6 +37,13 @@ export function shortcutOption(
 	return options[Number(event.key) - 1];
 }
 
+// Nanocoder's tool titles lead with the tool name, as in "execute_bash: ls".
+const TOOL_TITLE = /^([a-z][a-z0-9_]{0,63}): /;
+
+export function reportedToolName(title: string): string | undefined {
+	return TOOL_TITLE.exec(title)?.[1];
+}
+
 export function openQuestionId(
 	requests: readonly PermissionRequestInfo[],
 	collapsed: ReadonlySet<string>,
@@ -209,6 +216,7 @@ function PermissionCard({
 }) {
 	const id = React.useId();
 	const question = request.question === true;
+	const tool = question ? undefined : reportedToolName(request.title);
 	const policy =
 		!question && request.options.some(option => option.kind === 'allow_always');
 	const describedBy = [
@@ -244,7 +252,9 @@ function PermissionCard({
 					{question ? QUESTION_TITLE : 'approval required'}
 				</h2>
 				<p id={`${id}-meta`} className="approval-meta">
-					{question ? 'ask_user' : 'Nanocoder'} · {mode} mode
+					{[question ? 'ask_user' : 'Nanocoder', tool, `${mode} mode`]
+						.filter(Boolean)
+						.join(' · ')}
 				</p>
 				{question ? (
 					<p id={`${id}-command`} className="approval-question">
