@@ -159,14 +159,19 @@ test('long thread titles stay inside the rail with visible glyphs, selection rul
 	}
 });
 
-for (const [state, glyph] of [
-	['new', '◌'],
-	['ready', '○'],
-	['running', '●'],
-	['waiting', '▲'],
-	['interrupted', '◐'],
-	['archived', '░'],
-	['view-only', '◍'],
+const stateInk = {
+	muted: {dark: 'rgb(168, 168, 168)', light: 'rgb(79, 86, 120)'},
+	primary: {dark: 'rgb(122, 162, 247)', light: 'rgb(0, 0, 238)'},
+	warning: {dark: 'rgb(224, 175, 104)', light: 'rgb(118, 81, 11)'},
+} as const;
+for (const [state, glyph, tone] of [
+	['new', '◌', 'muted'],
+	['ready', '○', 'muted'],
+	['running', '●', 'primary'],
+	['waiting', '▲', 'warning'],
+	['interrupted', '◐', 'warning'],
+	['archived', '░', 'muted'],
+	['view-only', '◍', 'muted'],
 ] as const) {
 	test(`selected ${state} glyph meets rendered AA in both themes without changing its row or selection rule (U.3)`, async () => {
 		await page.emulateMedia({reducedMotion: 'reduce'});
@@ -261,16 +266,17 @@ for (const [state, glyph] of [
 				'border-left-color',
 				theme === 'dark' ? 'rgb(122, 162, 247)' : 'rgb(0, 0, 238)',
 			);
-			if (state === 'waiting' || state === 'interrupted')
-				await expect(marker).toHaveCSS(
-					'color',
-					theme === 'dark' ? 'rgb(224, 175, 104)' : 'rgb(118, 81, 11)',
-				);
-			if (state === 'running')
-				await expect(marker).toHaveCSS(
-					'color',
-					theme === 'dark' ? 'rgb(122, 162, 247)' : 'rgb(0, 0, 238)',
-				);
+			await expect(marker).toHaveCSS(
+				'color',
+				theme === 'dark' ? 'rgb(230, 230, 230)' : 'rgb(36, 40, 59)',
+			);
+			const dash = await marker.evaluate(element =>
+				getComputedStyle(element, '::after').getPropertyValue(
+					'background-color',
+				),
+			);
+			const ink = stateInk[tone];
+			expect(dash).toBe(theme === 'dark' ? ink.dark : ink.light);
 		}
 	});
 }
