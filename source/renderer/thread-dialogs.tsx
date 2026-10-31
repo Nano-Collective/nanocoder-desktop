@@ -19,7 +19,7 @@ export interface ThreadDialogData {
 	threads: readonly ThreadInfo[];
 	projectId: string | null;
 	projectName: string;
-	defaultMode: ProjectInfo['defaultMode'];
+	defaultMode?: ProjectInfo['defaultMode'];
 	pending: boolean;
 	projectBusy: boolean;
 	renameDisabledReason?: string;
@@ -339,10 +339,12 @@ function NewThreadDialog({data, api}: Pick<BodyProps, 'data' | 'api'>) {
 						onChange={event => setDraft(event.target.value)}
 					/>
 				</label>
-				<p className="dialog-note">
-					project default · {data.defaultMode}. yolo is never restored or used
-					as a default.
-				</p>
+				{data.defaultMode && (
+					<p className="dialog-note">
+						project default · {data.defaultMode}. yolo is never restored or used
+						as a default.
+					</p>
+				)}
 				{(reason || failed) && (
 					<p className="dialog-reason" role="status">
 						{reason ?? 'the draft could not be created. try again.'}

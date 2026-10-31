@@ -409,7 +409,7 @@ export function App() {
 		threads: workspace.threads,
 		projectId,
 		projectName: currentProject?.displayName ?? 'selected project',
-		defaultMode: currentProject?.defaultMode ?? 'normal',
+		defaultMode: currentProject?.defaultMode,
 		pending,
 		projectBusy: rootBusy,
 		renameDisabledReason,

@@ -138,6 +138,12 @@ test('new thread dialog uses the mockup copy and refuses without a project (D1, 
 	t.true(noProject.includes('disabled=""'));
 });
 
+test('new thread dialog leaves out the mode line when the project default is unknown (D1)', t => {
+	const html = render({kind: 'new-thread'}, {defaultMode: undefined});
+	t.false(html.includes('project default'));
+	t.true(html.includes('keep as new thread draft'));
+});
+
 test('other-thread notice names the running thread and offers both ways out (E-37)', t => {
 	const running = {
 		...thread,
