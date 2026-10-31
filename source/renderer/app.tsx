@@ -200,6 +200,7 @@ export function App() {
 						: 'ready';
 	const composerInput = useRef<HTMLTextAreaElement>(null);
 	const retryFocus = useRef(false);
+	const retrying = useRef(false);
 	const [renaming, setRenaming] = useState<{
 		projectId: string;
 		threadId: string;
@@ -247,13 +248,18 @@ export function App() {
 	}, [sending, cancellation]);
 
 	useEffect(() => {
+		if (!retryFocus.current) return;
+		const composer = composerInput.current;
 		if (
-			retryFocus.current &&
-			document.activeElement === document.body &&
-			composerInput.current?.disabled === false
+			!composer ||
+			(!retrying.current && document.activeElement !== document.body)
 		) {
 			retryFocus.current = false;
-			composerInput.current.focus();
+			return;
+		}
+		if (document.activeElement === document.body && !composer.disabled) {
+			retryFocus.current = false;
+			composer.focus();
 		}
 	});
 
@@ -385,9 +391,12 @@ export function App() {
 			state={processState}
 			onRetry={async id => {
 				retryFocus.current = true;
-				const result = await window.desktop.restartProject({
-					projectId: id,
-				});
+				retrying.current = true;
+				const result = await window.desktop
+					.restartProject({projectId: id})
+					.finally(() => {
+						retrying.current = false;
+					});
 				if (!result.ok || result.value.status !== 'ready')
 					retryFocus.current = false;
 				if (
