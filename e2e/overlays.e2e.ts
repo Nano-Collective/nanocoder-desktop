@@ -205,7 +205,7 @@ test('overlays match both themes at every width and retain visible keyboard focu
 			).toBeLessThan(1);
 			await expect(palette.locator('.dialog-shell')).toHaveCSS(
 				'box-shadow',
-				'rgba(0, 0, 0, 0.08) 0px 2px 6px 0px',
+				'none',
 			);
 			await expect(
 				page.getByRole('combobox', {name: 'find a command', exact: true}),
