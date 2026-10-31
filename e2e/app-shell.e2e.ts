@@ -210,6 +210,9 @@ test('shell geometry and pinned composer follow all three widths without an empt
 test('the compact shell exposes real controls and omits unused later surfaces', async () => {
 	await page.setViewportSize({width: 1240, height: 900});
 	await expect(page.getByRole('banner')).not.toContainText('not built yet');
+	const crumb = page.locator('.shell-breadcrumb');
+	await expect(crumb).toHaveCSS('line-height', '16px');
+	expect((await crumb.boundingBox())?.height).toBeCloseTo(16, 0);
 	await expect(
 		page.getByRole('banner').getByRole('button', {name: 'command palette'}),
 	).toBeVisible();

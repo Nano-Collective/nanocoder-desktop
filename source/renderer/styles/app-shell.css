@@ -59,8 +59,7 @@
 	display: flex;
 	align-items: center;
 	gap: 12px;
-	box-sizing: border-box;
-	height: 66px;
+	min-height: 66px;
 	padding: 13px 26px;
 	color: var(--colors-on-surface-muted);
 	font-size: var(--typography-tab-font-size);
@@ -137,6 +136,7 @@
 .shell-stream-scroll {
 	flex: 1;
 	min-height: 0;
+	padding-inline: 40px;
 	overflow: auto;
 	overflow-wrap: anywhere;
 	overscroll-behavior: contain;
@@ -145,9 +145,10 @@
 
 .shell-stream-tools,
 .technical-gate,
-.shell-composer {
+.shell-composer,
+.shell-approval-shelf {
 	width: 100%;
-	max-width: 820px;
+	max-width: 740px;
 	margin-inline: auto;
 }
 
@@ -162,12 +163,12 @@
 .shell-stream-tools {
 	display: grid;
 	gap: var(--spacing-xl);
-	padding: 20px 40px 0;
+	padding-top: 20px;
 }
 
 .shell-composer {
 	flex: none;
-	padding: 0 40px 20px;
+	padding-bottom: 20px;
 }
 
 .shell-workbench {
@@ -208,17 +209,12 @@
 	.shell-title-bar {
 		padding-inline: 22px;
 	}
-	.shell-stream-tools,
-	.technical-gate,
-	.shell-composer,
-	.shell-approval-shelf {
-		max-width: 800px;
+	.shell-stream-scroll,
+	.shell-conversation-footer {
+		padding-inline: 30px;
 	}
 	.shell-composer {
-		padding: 0 30px 18px;
-	}
-	.shell-stream-tools {
-		padding-inline: 30px;
+		padding-bottom: 18px;
 	}
 }
 
@@ -236,17 +232,18 @@
 	.shell-title-bar {
 		padding-inline: 18px;
 		padding-block: 11px;
-		height: 62px;
+		min-height: 62px;
 		gap: 8px;
 	}
 	.shell-identity h2 {
 		font-size: 12px;
 	}
-	.shell-composer {
-		padding: 0 24px 17px;
-	}
-	.shell-stream-tools {
+	.shell-stream-scroll,
+	.shell-conversation-footer {
 		padding-inline: 24px;
+	}
+	.shell-composer {
+		padding-bottom: 17px;
 	}
 	.shell-canvas[data-workbench-open="true"] .shell-stream {
 		display: none;
@@ -267,20 +264,8 @@
 	flex: none;
 	max-height: 72vh;
 	overflow: auto;
+	padding-inline: 40px;
 }
 .shell-approval-shelf {
-	width: 100%;
-	max-width: 820px;
-	margin-inline: auto;
-	padding: 0 40px 12px;
-}
-@media (max-width: 1050px) {
-	.shell-approval-shelf {
-		padding-inline: 30px;
-	}
-}
-@media (max-width: 840px) {
-	.shell-approval-shelf {
-		padding-inline: 24px;
-	}
+	padding-bottom: 12px;
 }
