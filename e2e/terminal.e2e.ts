@@ -124,7 +124,7 @@ async function nestedServer(): Promise<number[]> {
 	);
 	writeFileSync(
 		parent,
-		`process.on("SIGTERM",()=>{}); process.on("SIGHUP",()=>{}); console.log("PARENT_PID="+process.pid); const child=require("node:child_process").spawn(process.execPath,[${JSON.stringify(child)}],{stdio:["ignore","pipe","inherit"]}); child.stdout.pipe(process.stdout);`,
+		'process.on("SIGTERM",()=>{}); process.on("SIGHUP",()=>{}); console.log("PARENT_PID="+process.pid); const child=require("node:child_process").spawn(process.execPath,[process.argv[2]],{stdio:["ignore","pipe","inherit"]}); child.stdout.pipe(process.stdout);',
 	);
 	const prefix =
 		process.platform === 'win32' &&
@@ -133,7 +133,7 @@ async function nestedServer(): Promise<number[]> {
 			: '';
 	await call('write', {
 		projectId,
-		data: `${prefix}"${process.execPath}" "${parent}"\r`,
+		data: `${prefix}"${process.execPath}" "${parent}" "${child}"\r`,
 	});
 	let pids: number[] = [];
 	await expect
@@ -400,7 +400,7 @@ test('TERM-12 agent command approval metadata never starts or writes the user PT
 						.trim(),
 				}));
 			expect(viewportColors.actual).toBe(viewportColors.expected);
-			console.info(`[terminal-ui] viewport ${theme} ${width}`, viewportColors);
+			console.info('[terminal-ui] viewport', theme, width, viewportColors);
 			await page.screenshot({
 				path: path.join(screenshots, `terminal-${theme}-${width}.png`),
 			});
@@ -416,7 +416,7 @@ test('TERM-02/04/06/11 mounted terminal types, escapes, restarts, clears and sto
 	const errors: string[] = [];
 	page.on('pageerror', error => errors.push(error.message));
 	const step = async (name: string, action: () => Promise<void>) => {
-		console.info(`[terminal-ui] ${name}`);
+		console.info('[terminal-ui]', name);
 		await test.step(name, action);
 	};
 	const input = page.getByRole('textbox', {name: 'your terminal input'});
