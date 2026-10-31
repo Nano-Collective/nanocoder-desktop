@@ -158,13 +158,20 @@ test('composer shows one draft hint, help row and control note without a prompt 
 test('the draft textarea describes its state and keyboard hint together', t => {
 	const html = render({draft: ''});
 	const described = /<textarea[^>]*aria-describedby="([^"]+)"/.exec(html)?.[1];
-	const [stateId, helpId] = (described ?? '').split(' ');
+	const [hintId, helpId] = (described ?? '').split(' ');
 	t.is(described?.split(' ').length, 2);
 	t.true(
 		html.includes(
-			`<span id="${stateId}" hidden="">ready for your next message; enter a message to send</span>`,
+			`<p id="${hintId}" class="gate-hint">ready for your next message<span class="sr-only">; enter a message to send</span></p>`,
 		),
 	);
+	t.true(html.includes(`aria-describedby="${hintId}"`));
 	t.true(html.includes(`<p id="${helpId}" class="gate-hint composer-help">`));
 	t.true(html.includes('↵ send · ⇧↵ newline'));
+	const busy = render({
+		running: true,
+		modePending: false,
+		sendReason: 'another thread is running',
+	});
+	t.is(busy.split('another thread is running').length, 2);
 });

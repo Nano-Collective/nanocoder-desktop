@@ -192,7 +192,8 @@
 	margin-block: 4px;
 }
 
-.composer .sr-only {
+.composer .sr-only,
+.composer-hint-row .sr-only {
 	position: absolute;
 	width: 1px;
 	height: 1px;

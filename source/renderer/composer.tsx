@@ -53,7 +53,7 @@ export function Composer(props: ComposerProps) {
 		element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
 	}, [input, props.draft]);
 	const id = React.useId();
-	const stateId = `${id}-state`;
+	const hintId = `${id}-hint`;
 	const helpId = `${id}-help`;
 	const noteId = `${id}-note`;
 	const defaultHintId = `${id}-default`;
@@ -90,7 +90,6 @@ export function Composer(props: ComposerProps) {
 			? 'turn in progress · draft is not queued'
 			: 'ready for your next message');
 	const idleEmpty = !props.running && !sendReason && emptyDraft;
-	const state = idleEmpty ? `${hint}; enter a message to send` : hint;
 	const lead = modelReason ?? modeReason;
 	const note = [
 		lead && `${lead.replace(/\.$/, '')}.`,
@@ -112,10 +111,12 @@ export function Composer(props: ComposerProps) {
 	return (
 		<>
 			<div className="composer-hint-row">
-				<p className="gate-hint">{hint}</p>
-				<span id={stateId} hidden>
-					{state}
-				</span>
+				<p id={hintId} className="gate-hint">
+					{hint}
+					{idleEmpty && (
+						<span className="sr-only">; enter a message to send</span>
+					)}
+				</p>
 				{props.running && (
 					<Button
 						variant="reject"
@@ -163,7 +164,7 @@ export function Composer(props: ComposerProps) {
 						placeholder={
 							props.running ? 'write a draft for later…' : 'ask anything…'
 						}
-						aria-describedby={`${stateId} ${helpId}`}
+						aria-describedby={`${hintId} ${helpId}`}
 						rows={2}
 					/>
 				</label>
@@ -250,7 +251,7 @@ export function Composer(props: ComposerProps) {
 									: 'unavailable'
 						}
 						disabled={!!sendReason || emptyDraft}
-						aria-describedby={stateId}
+						aria-describedby={hintId}
 					>
 						<span aria-hidden="true">↑ </span>send
 					</Button>
