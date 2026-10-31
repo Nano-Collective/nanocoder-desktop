@@ -133,10 +133,14 @@
 	min-height: 0;
 }
 
+.shell-stream-scroll,
+.shell-conversation-footer {
+	padding-inline: 40px;
+}
+
 .shell-stream-scroll {
 	flex: 1;
 	min-height: 0;
-	padding-inline: 40px;
 	overflow: auto;
 	overflow-wrap: anywhere;
 	overscroll-behavior: contain;
@@ -264,7 +268,6 @@
 	flex: none;
 	max-height: 72vh;
 	overflow: auto;
-	padding-inline: 40px;
 }
 .shell-approval-shelf {
 	padding-bottom: 12px;

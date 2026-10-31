@@ -167,7 +167,7 @@ test('shell geometry and pinned composer follow all three widths without an empt
 			await page.evaluate(theme => {
 				document.documentElement.dataset.theme = theme;
 			}, theme);
-			for (const width of [1240, 1020, 840, 841, 839]) {
+			for (const width of [1240, 1050, 1020, 840, 841, 839]) {
 				await page.setViewportSize({width, height: 900});
 				await expect(page.locator('.shell-workbench')).toHaveCount(0);
 				const geometry = await page.evaluate(() => {
@@ -177,6 +177,12 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						const rect = element.getBoundingClientRect();
 						return {x: rect.x, width: rect.width, bottom: rect.bottom};
 					};
+					const padding = (selector: string) => {
+						const element = document.querySelector(selector);
+						if (!element) throw new Error('Missing shell region');
+						const style = getComputedStyle(element);
+						return [style.paddingLeft, style.paddingRight];
+					};
 					const scroll = document.querySelector('.shell-stream-scroll');
 					if (!scroll) throw new Error('Missing stream scroll region');
 					scroll.scrollTop = scroll.scrollHeight;
@@ -184,6 +190,8 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						rail: measure('.shell-project-rail'),
 						stream: measure('.shell-stream'),
 						composer: measure('.gate-composer'),
+						scrollPadding: padding('.shell-stream-scroll'),
+						footerPadding: padding('.shell-conversation-footer'),
 						scrolls: scroll.scrollHeight > scroll.clientHeight,
 						overflows: document.documentElement.scrollWidth > innerWidth,
 					};
@@ -195,6 +203,9 @@ test('shell geometry and pinned composer follow all three widths without an empt
 				expect(geometry.composer.bottom).toBe(
 					width <= 840 ? 883 : width <= 1050 ? 882 : 880,
 				);
+				const reading = width <= 840 ? '24px' : width <= 1050 ? '30px' : '40px';
+				expect(geometry.scrollPadding).toEqual([reading, reading]);
+				expect(geometry.footerPadding).toEqual([reading, reading]);
 				expect(geometry.scrolls).toBe(true);
 				expect(geometry.overflows).toBe(false);
 				expect(await visibleTextContrast(page, theme)).toEqual([]);
