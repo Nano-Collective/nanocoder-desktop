@@ -52,15 +52,18 @@ test('finds Nanocoder installed after the app started, without a restart', async
 
 		await page.getByRole('button', {name: 'Check again'}).click();
 		await expect(alert).toHaveCount(0);
-		const details = page.locator('.runtime-details');
-		if (
-			!(await details.evaluate(element => (element as HTMLDetailsElement).open))
-		) {
-			await details.locator('summary').focus();
+		const setup = page.getByRole('dialog', {name: 'runtime details'});
+		if (!(await setup.isVisible())) {
+			await page
+				.getByRole('button', {name: 'runtime details', exact: true})
+				.focus();
 			await page.keyboard.press('Enter');
 		}
-		await expect(details).toHaveAttribute('open');
-		await expect(page.getByText(`Nanocoder 9.9.9 at ${fakeCli}`)).toBeVisible();
+		await expect(setup).toBeVisible();
+		await expect(setup.locator('.runtime-rows')).toContainText('9.9.9');
+		await expect(setup.locator('.runtime-rows')).toContainText(fakeCli);
+		await page.keyboard.press('Escape');
+		await expect(setup).toBeHidden();
 		await expect(alert).toHaveCount(0);
 		await expect(
 			page.getByRole('button', {name: 'Open a project folder'}),

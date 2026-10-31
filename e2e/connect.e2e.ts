@@ -14,6 +14,7 @@ import path from 'node:path';
 import {
 	type ElectronApplication,
 	expect,
+	type Locator,
 	type Page,
 	test,
 } from '@playwright/test';
@@ -113,18 +114,97 @@ test.afterAll(async () => {
 	rmSync(work, {recursive: true, force: true});
 });
 
+function setupDialog() {
+	return page.getByRole('dialog', {name: 'runtime details'});
+}
+
+function capabilitiesDialog() {
+	return page.getByRole('dialog', {name: 'capabilities, with reasons'});
+}
+
 async function showSetup() {
-	const details = page.locator('.runtime-details');
-	if (
-		!(await details.evaluate(element => (element as HTMLDetailsElement).open))
-	)
-		await details.locator('summary').click();
-	await expect(details).toHaveAttribute('open');
+	if (!(await setupDialog().isVisible()))
+		await page
+			.getByRole('button', {name: 'runtime details', exact: true})
+			.click();
+	await expect(setupDialog()).toBeVisible();
+}
+
+async function closeSetup() {
+	await page.keyboard.press('Escape');
+	await expect(setupDialog()).toBeHidden();
+}
+
+async function showCapabilities() {
+	await showSetup();
+	await setupDialog()
+		.getByRole('button', {name: 'capabilities', exact: true})
+		.click();
+	await expect(capabilitiesDialog()).toBeVisible();
+}
+
+const minimumReasons: Record<string, string> = {
+	'session resume': 'Nanocoder did not advertise session/resume.',
+	'session close': 'Nanocoder did not advertise session/close.',
+	'session delete': 'Nanocoder did not advertise session/delete.',
+	'session list': 'Nanocoder did not advertise session/list.',
+	'session rename':
+		'Nanocoder did not confirm the renameSession extension with a safe probe.',
+	'tool timeline':
+		'Nanocoder did not confirm the timeline/list extension with a safe probe; tool locations remain available.',
+	'exact agent changes':
+		'Nanocoder does not yet offer a verified snapshot-read method.',
+	'child run tree':
+		'Nanocoder does not yet offer a verified child-event projection; subagents remain tool cards.',
+};
+
+// The model row copy depends on session state; these are main's exact copies.
+const modelReasonBeforeReconnect =
+	'available after the first message: Nanocoder supplies model options after a session exists';
+const modelReasonAfterReconnect =
+	'model options changed; wait for a prepared session';
+
+// Every row is disabled for the minimum build; the model row copy is dynamic.
+async function expectMinimumReasons(features: Locator) {
+	const rows = features.locator('.capability-row');
+	await expect(rows).toHaveCount(9);
+	for (const row of await rows.all()) {
+		await expect(row.locator('span').first()).toHaveText('○');
+		const label =
+			(await row.locator('.capability-label').textContent())?.trim() ?? '';
+		const reason =
+			(await row.locator('.capability-reason').textContent())?.trim() ?? '';
+		expect(reason).not.toBe('available');
+		if (label === 'model + mode offers') expect(reason).not.toBe('');
+		else expect(reason).toBe(minimumReasons[label]);
+	}
+}
+
+async function reasonsByLabel(
+	features: Locator,
+): Promise<Record<string, string>> {
+	const entries = await Promise.all(
+		(await features.locator('.capability-row').all()).map(async row => [
+			(await row.locator('.capability-label').textContent())?.trim() ?? '',
+			(await row.locator('.capability-reason').textContent())?.trim() ?? '',
+		]),
+	);
+	return Object.fromEntries(entries);
+}
+
+async function expectConnectedAgent(root: string) {
+	await showSetup();
+	const rows = setupDialog().locator('.runtime-rows');
+	await expect(rows).toContainText(root);
+	await expect(rows).toContainText('✓ ACP connected');
+	await closeSetup();
 }
 
 test('shows the Nanocoder it will launch', async () => {
 	await showSetup();
-	await expect(page.getByText(`Nanocoder 9.9.9 at ${fakeCli}`)).toBeVisible();
+	await expect(setupDialog().locator('.runtime-rows')).toContainText('9.9.9');
+	await expect(setupDialog().locator('.runtime-rows')).toContainText(fakeCli);
+	await closeSetup();
 });
 
 interface Bridge {
@@ -171,18 +251,22 @@ test('refuses a prompt before any project is open', async () => {
 test('initialises a trusted folder without eagerly creating a session or asking', async () => {
 	const root = project('trusted');
 	await openFolder(root);
-	await showSetup();
-	const agent = page.getByRole('region', {
-		name: 'Connected agent',
-		includeHidden: true,
+	await expectConnectedAgent(root);
+	await showCapabilities();
+	const agent = capabilitiesDialog().getByRole('region', {
+		name: 'connected agent',
 	});
 	await expect(agent).toContainText(
-		`connected to nanocoder 9.9.9 over ACP protocol version 1 in ${root}`,
+		'connected to nanocoder 9.9.9 over ACP protocol version 1',
 	);
 	await expect(agent).not.toContainText('session fake-session');
-	await expect(agent.locator('dt:has-text("resume sessions") + dd')).toHaveText(
-		'yes',
-	);
+	await expect(
+		capabilitiesDialog().locator('.capability-row', {
+			hasText: 'session resume',
+		}),
+	).toContainText('available');
+	await page.keyboard.press('Escape');
+	await expect(capabilitiesDialog()).toBeHidden();
 	expect(await trustPrompts()).toEqual([]);
 });
 
@@ -209,9 +293,7 @@ test('trusts the folder through Nanocoder when the user agrees, then opens it', 
 	await openFolder(root, 0);
 	expect(await trustPrompts()).toHaveLength(1);
 	expect(existsSync(path.join(root, '.fake-trusted'))).toBe(true);
-	await expect(
-		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-	).toContainText(`in ${root}`);
+	await expectConnectedAgent(root);
 	await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
@@ -487,18 +569,15 @@ test('a version below the minimum is refused with a clear upgrade message', asyn
 test('an older accepted version shows a reason for every disabled feature', async () => {
 	await openFolder(project('minimum-agent', 'minimum-no-gates'));
 	await showSetup();
-	const features = page.getByRole('region', {name: 'Nanocoder features'});
-	await expect(features.locator('dd')).toHaveCount(9);
-	for (const entry of await features.locator('dd').allTextContents()) {
-		expect(entry).toMatch(/^unavailable: .+/);
-	}
-	await expect(features).toContainText(
-		'Nanocoder did not advertise session/resume',
-	);
-	await expect(features).toContainText('safe probe');
-	await expect(features.getByRole('status')).toContainText(
+	await expect(setupDialog().getByRole('status')).toContainText(
 		'Compatibility is unverified',
 	);
+	await showCapabilities();
+	const features = capabilitiesDialog();
+	await expectMinimumReasons(features);
+	await expect(features).toContainText('safe probe');
+	await page.keyboard.press('Escape');
+	await expect(capabilitiesDialog()).toBeHidden();
 });
 
 test('the native-picked root is used to refuse a project-local runtime override', async () => {
@@ -729,9 +808,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 		await page.reload();
 		const other = project(`reload-mode-other-${resume}`);
 		await openFolder(other);
-		await expect(
-			page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-		).toContainText(other);
+		await expectConnectedAgent(other);
 		const state = await page.evaluate(
 			projectId =>
 				(window as unknown as {desktop: DesktopApi}).desktop.getSupervisorState(
@@ -742,9 +819,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 		expect(state.ok && state.value.status).toBe('stopped');
 		writeFileSync(path.join(root, '.fake-nanocoder'), 'ok');
 		await openFolder(root);
-		await expect(
-			page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-		).toContainText(root);
+		await expectConnectedAgent(root);
 		await sendMessage();
 		await expect(cards()).toBeVisible();
 		await cards().getByRole('button', {name: 'Deny'}).click();
@@ -756,19 +831,33 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 test('idle reconnect replays all feature reasons and the version warning before a prompt', async () => {
 	const root = project('reload-idle-gates', 'minimum-no-gates');
 	await openFolder(root);
-	await showSetup();
-	const features = () => page.getByRole('region', {name: 'Nanocoder features'});
-	await expect(features().locator('dd')).toHaveCount(9);
-	const reasons = await features().locator('dd').allTextContents();
+	await showCapabilities();
+	const features = () => capabilitiesDialog();
+	await expectMinimumReasons(features());
+	expect(await reasonsByLabel(features())).toEqual({
+		...minimumReasons,
+		'model + mode offers': modelReasonBeforeReconnect,
+	});
+	await page.keyboard.press('Escape');
+	await expect(capabilitiesDialog()).toBeHidden();
 	await page.reload();
 	await recordRecoveryProjects();
 	await openFolder(root);
+	await showCapabilities();
+	await expect
+		.poll(async () => reasonsByLabel(features()))
+		.toEqual({
+			...minimumReasons,
+			'model + mode offers': modelReasonAfterReconnect,
+		});
+	await expectMinimumReasons(features());
+	await page.keyboard.press('Escape');
+	await expect(capabilitiesDialog()).toBeHidden();
 	await showSetup();
-	await expect(features().locator('dd')).toHaveText(reasons);
-	for (const reason of reasons) expect(reason).toMatch(/^unavailable: .+/);
-	await expect(features().getByRole('status')).toContainText(
+	await expect(setupDialog().getByRole('status')).toContainText(
 		'Compatibility is unverified',
 	);
+	await closeSetup();
 	await expect(page.getByLabel('Message')).toBeEmpty();
 	const states = await page.evaluate(() =>
 		(window as unknown as {recoveryEvents: ProjectEvent[]}).recoveryEvents
@@ -815,9 +904,7 @@ test('a detached folder picker cannot hold the latch or reopen its late selectio
 			}
 		).releasePicker?.({canceled: false, filePaths: [root]});
 	}, late);
-	await expect(
-		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-	).toContainText(replacement);
+	await expectConnectedAgent(replacement);
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
@@ -865,9 +952,7 @@ test('a detached trust dialog cannot hold the latch or grant its late confirmati
 			}
 		).releaseTrust?.({response: 0, checkboxChecked: false});
 	});
-	await expect(
-		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-	).toContainText(replacement);
+	await expectConnectedAgent(replacement);
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
@@ -921,9 +1006,7 @@ test('a second reload cancels an open still queued behind bounded process cleanu
 	).toBe(0);
 	const replacement = project('reload-queued-replacement');
 	await openFolder(replacement);
-	await expect(
-		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-	).toContainText(replacement);
+	await expectConnectedAgent(replacement);
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();

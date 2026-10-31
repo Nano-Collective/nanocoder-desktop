@@ -69,8 +69,19 @@ async function open(folder: string | null) {
 	if (!folder) return startFolderFromPalette(page);
 	await openFolderFromPalette(page, folder);
 	await expect(
-		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
-	).toContainText(folder);
+		page.getByRole('textbox', {name: 'message', exact: true}),
+	).toBeEnabled();
+	if (folder) await expectConnectedAgent(folder);
+}
+
+async function expectConnectedAgent(text: string) {
+	await page
+		.getByRole('button', {name: 'runtime details', exact: true})
+		.click();
+	const setup = page.getByRole('dialog', {name: 'runtime details'});
+	await expect(setup.locator('.runtime-rows')).toContainText(text);
+	await page.keyboard.press('Escape');
+	await expect(setup).toBeHidden();
 }
 
 test('ACP badge follows child exit, not unrelated provider failure, in both themes', async () => {
@@ -124,9 +135,7 @@ test('ACP badge stays scoped when a picker is cancelled or another project stops
 	await open(first);
 	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
 	await open(null);
-	await expect(
-		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
-	).toContainText(first);
+	await expectConnectedAgent(first);
 	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
 	const second = project('scoped-b');
 	await open(second);
@@ -289,12 +298,17 @@ test('the compact shell exposes real controls and omits unused later surfaces', 
 	await expect(
 		page.locator('.shell-workbench,.shell-bottom-panel,.shell-placeholder'),
 	).toHaveCount(0);
-	const switcher = page.getByLabel('switch project', {exact: true});
+	const switcher = page.getByRole('button', {
+		name: 'switch project',
+		exact: true,
+	});
+	const projects = page.getByRole('dialog', {name: 'your projects'});
 	await switcher.click();
 	await expect(
-		page.getByRole('region', {name: 'recent projects'}),
+		projects.getByRole('region', {name: 'recent projects'}),
 	).toBeVisible();
-	await switcher.click();
+	await page.keyboard.press('Escape');
+	await expect(projects).toBeHidden();
 });
 test('keyboard controls remain reachable and visibly focused inside the stream in both themes and all widths', async () => {
 	for (const theme of ['dark', 'light']) {
@@ -313,23 +327,33 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			await page.keyboard.press('Shift+Tab');
 			await expect(palette).toBeFocused();
 			await expect(palette).toHaveCSS('outline-width', '2px');
-			const recent = page.getByRole('region', {name: 'recent projects'});
-			const add = recent.getByRole('button', {
-				name: 'add project folder',
+			const switcher = page.getByRole('button', {
+				name: 'switch project',
 				exact: true,
 			});
-			const switcher = page.getByLabel('switch project', {exact: true});
-			await page.locator('.project-switcher').evaluate(element => {
-				(element as HTMLDetailsElement).open = true;
-			});
-			await expect(recent).toBeVisible();
-			const projects = recent.getByRole('listitem');
-			expect(await projects.count()).toBeGreaterThan(0);
+			const projects = page.getByRole('dialog', {name: 'your projects'});
+			await switcher.focus();
+			await page.keyboard.press('Enter');
+			await expect(projects).toBeVisible();
+			const rows = projects
+				.getByRole('region', {name: 'recent projects'})
+				.getByRole('listitem');
+			expect(await rows.count()).toBeGreaterThan(0);
+			const dialogOrder = [
+				projects.getByRole('button', {name: 'dismiss dialog', exact: true}),
+				...(await rows.all()).map(row => row.locator('button')),
+				projects.getByRole('button', {name: /add project folder/}),
+			];
+			await dialogOrder[0].focus();
+			for (const [index, control] of dialogOrder.entries()) {
+				if (index > 0) await page.keyboard.press('Tab');
+				await expect(control).toBeFocused();
+				await expect(control).toHaveCSS('outline-width', '2px');
+			}
+			await page.keyboard.press('Escape');
+			await expect(projects).toBeHidden();
+			await expect(switcher).toBeFocused();
 			const rail = page.getByRole('region', {name: 'project threads'});
-			const diagnostics = page.getByRole('button', {
-				name: 'diagnostics',
-				exact: true,
-			});
 			const send = page.getByRole('button', {name: 'send', exact: true});
 			const stream = page.getByRole('region', {
 				name: 'conversation',
@@ -337,12 +361,6 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			});
 			const focusOrder = [
 				switcher,
-				add,
-				...(await projects.all()).flatMap(project =>
-					[/^open /, /^locate /].map(name =>
-						project.getByRole('button', {name}),
-					),
-				),
 				rail.getByRole('button', {name: 'new thread', exact: true}),
 				...(await rail.locator('.thread-row').all()).flatMap(thread => [
 					thread.locator('.thread-open'),
@@ -353,8 +371,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 					name: 'import saved session: existing saved session',
 					exact: true,
 				}),
-				page.getByText('runtime and setup details', {exact: true}),
-				diagnostics,
+				page.getByRole('button', {name: 'runtime details', exact: true}),
 				palette,
 				stream,
 				input,

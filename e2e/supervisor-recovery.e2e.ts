@@ -386,7 +386,17 @@ for (const {failure, action} of [
 				checkboxChecked: false,
 			})) as typeof dialog.showMessageBox;
 		}, root);
-		await page.getByRole('button', {name: action, exact: true}).click();
+		if (action === 'add project folder') {
+			await page
+				.getByRole('button', {name: 'switch project', exact: true})
+				.click();
+			await page
+				.getByRole('dialog', {name: 'your projects'})
+				.getByRole('button', {name: /add project folder/})
+				.click();
+		} else {
+			await page.getByRole('button', {name: action, exact: true}).click();
+		}
 		await expect(
 			page.getByRole('region', {name: 'Nanocoder recovery'}),
 		).toContainText('Nanocoder is not ready');
@@ -461,11 +471,14 @@ test('recovery remains bound to the failed attempted project when another projec
 		page.getByRole('button', {name: 'retry Nanocoder', exact: true}),
 	).toBeVisible();
 	await page.getByRole('button', {name: 'diagnostics', exact: true}).click();
+	const review = page.getByRole('dialog', {
+		name: 'review captured diagnostics',
+	});
 	await expect(
-		page.getByRole('region', {name: 'captured diagnostics'}),
+		review.getByRole('region', {name: 'captured diagnostics'}),
 	).toContainText(JSON.stringify(other).slice(1, -1));
 	await expect(
-		page.getByRole('region', {name: 'captured diagnostics'}),
+		review.getByRole('region', {name: 'captured diagnostics'}),
 	).not.toContainText(JSON.stringify(root).slice(1, -1));
 });
 
@@ -489,27 +502,30 @@ test('diagnostics export reviews the exact snapshot and cancellation never write
 			return {canceled: false, filePath: target};
 		}) as typeof dialog.showSaveDialog;
 	}, target);
-	const footer = page.locator('footer.shell-sidebar-footer');
-	await footer.getByRole('button', {name: 'diagnostics', exact: true}).click();
-	const diagnostics = footer.getByRole('region', {
-		name: 'redacted diagnostics',
+	await page
+		.getByRole('button', {name: 'runtime details', exact: true})
+		.click();
+	await page
+		.getByRole('dialog', {name: 'runtime details'})
+		.getByRole('button', {name: 'review diagnostics', exact: true})
+		.click();
+	const diagnostics = page.getByRole('dialog', {
+		name: 'review captured diagnostics',
 	});
 	await expect(diagnostics).toBeVisible();
 	await expect(
-		page
-			.locator('[data-shell-slot="stream-tools"]')
-			.getByRole('region', {name: 'redacted diagnostics'}),
-	).toHaveCount(0);
+		diagnostics.getByRole('region', {name: 'redacted diagnostics'}),
+	).toBeVisible();
 	const captured = await diagnostics.locator('pre').innerText();
 	await diagnostics
-		.getByRole('button', {name: 'review and export', exact: true})
+		.getByRole('button', {name: 'choose export destination…', exact: true})
 		.click();
 	await expect(diagnostics).toContainText('export cancelled');
 	expect(
 		await app.evaluate(() => (globalThis as {exports?: number}).exports),
 	).toBe(0);
 	await diagnostics
-		.getByRole('button', {name: 'review and export', exact: true})
+		.getByRole('button', {name: 'choose export destination…', exact: true})
 		.click();
 	await expect(diagnostics).toContainText('diagnostics exported');
 	expect(readFileSync(target, 'utf8')).toBe(captured);
@@ -647,31 +663,40 @@ test('built main refuses unknown recovery handles and renderer-supplied paths or
 	).toEqual(['NOT_FOUND', 'VALIDATION', 'VALIDATION']);
 });
 
-test('compact ready row and reviewed diagnostics keep their computed presentation in both themes and widths', async () => {
+test('runtime details reviews diagnostics with computed presentation in both themes and widths', async () => {
 	await open();
-	const ready = page.getByRole('region', {name: 'Nanocoder recovery'});
+	const runtime = page.getByRole('button', {
+		name: 'runtime details',
+		exact: true,
+	});
 	for (const theme of ['dark', 'light']) {
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
 		}, theme);
 		for (const width of [1240, 1020, 840]) {
 			await page.setViewportSize({width, height: 900});
-			await expect(ready).toHaveCSS('display', 'flex');
-			await expect(ready).toHaveCSS('padding', '0px');
-			await expect(ready).toHaveCSS('border-top-width', '0px');
-			await expect(ready).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-			await expect(ready).toHaveCSS(
-				'color',
-				theme === 'dark' ? 'rgb(168, 168, 168)' : 'rgb(79, 86, 120)',
-			);
+			await runtime.click();
+			const details = page.getByRole('dialog', {name: 'runtime details'});
+			await expect(details).toHaveCSS('border-radius', '15px');
+			await expect(
+				details.getByRole('button', {name: 'review diagnostics', exact: true}),
+			).toBeVisible();
+			await page.keyboard.press('Escape');
+			await expect(details).toBeHidden();
+			await expect(runtime).toBeFocused();
 		}
 	}
-	await ready.getByRole('button', {name: 'diagnostics', exact: true}).click();
-	const diagnostics = page.getByRole('region', {
-		name: 'redacted diagnostics',
+	await runtime.click();
+	await page
+		.getByRole('dialog', {name: 'runtime details'})
+		.getByRole('button', {name: 'review diagnostics', exact: true})
+		.click();
+	const diagnostics = page.getByRole('dialog', {
+		name: 'review captured diagnostics',
 		exact: true,
 	});
-	await expect(diagnostics).toHaveCSS('padding', '18px 20px');
-	await expect(diagnostics).toHaveCSS('gap', '14px');
-	await expect(diagnostics).toHaveCSS('font-size', '11px');
+	await expect(diagnostics).toHaveCSS('border-radius', '15px');
+	await expect(
+		diagnostics.getByRole('region', {name: 'captured diagnostics'}),
+	).toHaveCSS('font-size', '11px');
 });

@@ -1,0 +1,136 @@
+.project-switch {
+	display: flex;
+	align-items: center;
+	gap: var(--spacing-md);
+	width: 100%;
+	min-height: 52px;
+	padding: var(--spacing-md);
+	border: 1px solid var(--colors-stroke);
+	border-radius: var(--rounded-lg);
+	background: var(--colors-surface);
+	color: var(--colors-on-surface);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+.project-initial {
+	flex: none;
+	width: 25px;
+	height: 25px;
+	display: grid;
+	place-items: center;
+	border-radius: var(--rounded-md);
+	background: var(--colors-surface-elevated);
+	font-size: 12px;
+}
+
+.project-switch-text {
+	flex: 1;
+	min-width: 0;
+	display: grid;
+	gap: 2px;
+}
+
+.project-switch-name,
+.project-switch-root {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.project-switch-name {
+	font-size: 12px;
+}
+
+.project-switch-root {
+	color: var(--colors-on-surface-muted);
+	font-size: 9px;
+}
+
+.project-switch-chevron {
+	flex: none;
+	color: var(--colors-on-surface-muted);
+}
+
+.projects-dialog-list {
+	display: grid;
+	gap: var(--spacing-xs);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.projects-dialog-row {
+	display: flex;
+	align-items: center;
+	gap: var(--spacing-lg);
+	width: 100%;
+	min-width: 0;
+	margin: 0;
+	padding: 10px 12px;
+	border: 1px solid transparent;
+	border-radius: var(--rounded-lg);
+	background: transparent;
+	color: var(--colors-on-surface);
+	font: inherit;
+	text-align: left;
+}
+
+button.projects-dialog-row {
+	cursor: pointer;
+}
+
+.projects-dialog-row--missing {
+	border: 0;
+}
+
+.projects-dialog-row[aria-current="true"] {
+	background: var(--colors-primary-soft);
+}
+
+.projects-dialog-glyph {
+	flex: none;
+	width: 14px;
+	color: var(--colors-on-surface-muted);
+	text-align: center;
+}
+
+.projects-dialog-text {
+	flex: 1;
+	min-width: 0;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--spacing-xs);
+}
+
+.projects-dialog-name {
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}
+
+.projects-dialog-meta {
+	display: flex;
+	min-width: 0;
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-caption-font-size);
+	line-height: 1.5;
+	white-space: nowrap;
+}
+
+.projects-dialog-root {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.projects-dialog-status {
+	flex: none;
+	white-space: pre;
+}
+
+.projects-dialog-check {
+	flex: none;
+	color: var(--colors-primary);
+}

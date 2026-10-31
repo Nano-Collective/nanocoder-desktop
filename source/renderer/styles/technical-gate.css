@@ -5,11 +5,6 @@
 	overflow-wrap: anywhere;
 }
 
-.gate-runtime {
-	display: grid;
-	gap: var(--spacing-md);
-}
-
 .gate-meta,
 dt,
 .gate-hint {
@@ -21,21 +16,6 @@ dt,
 	align-items: center;
 	flex-wrap: wrap;
 	gap: var(--spacing-md);
-}
-
-.gate-runtime .ui-button {
-	justify-self: start;
-}
-
-.gate-capabilities {
-	display: grid;
-	grid-template-columns: max-content 1fr;
-	gap: var(--spacing-xs) var(--spacing-xl);
-	font-size: var(--typography-body-sm-font-size);
-}
-
-.gate-capabilities dd {
-	margin: 0;
 }
 
 .gate-composer {

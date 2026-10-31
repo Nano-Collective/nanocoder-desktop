@@ -7,7 +7,7 @@ import {ConversationStream} from '@/renderer/conversation-stream';
 import type {FocusTarget} from '@/renderer/overlay-model';
 import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
-import {RecentProjects} from '@/renderer/recent-projects';
+import {ProjectSwitch} from '@/renderer/recent-projects';
 import {RecoveryTools} from '@/renderer/recovery-tools';
 import {SessionImportList} from '@/renderer/session-import-list';
 import {
@@ -20,11 +20,16 @@ import {threadPalette} from '@/renderer/thread-palette';
 import {ThreadRail} from '@/renderer/thread-rail';
 import {ThreadRecoveryNotice} from '@/renderer/thread-recovery-notice';
 import {TrustFeedback} from '@/renderer/trust-feedback';
-import {Button, Card, Divider, StatusBadge} from '@/renderer/ui';
+import {Button, Card, StatusBadge} from '@/renderer/ui';
+import {useDiagnosticReview} from '@/renderer/use-diagnostic-review';
 import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
 import {useSessionImports} from '@/renderer/use-session-imports';
 import {useThreads} from '@/renderer/use-threads';
+import {
+	type WorkspaceDialogKind,
+	WorkspaceDialogs,
+} from '@/renderer/workspace-dialogs';
 import {CONFIG_UNCERTAINTY_REASON} from '@/shared/control-reasons';
 import type {
 	AppInfo,
@@ -33,66 +38,15 @@ import type {
 	ConnectResult,
 	IpcResult,
 	NanocoderRuntime,
-	ThreadInfo,
 } from '@/shared/ipc';
 import {REPLAY_FAILURE_REASON, REPLAY_REASON} from '@/shared/thread-replay';
 
-function FeatureDetails({gates}: {gates: CapabilityGates}) {
-	return (
-		<section aria-label="Nanocoder features">
-			{gates.versionPolicy.reason && (
-				<p role="status">{gates.versionPolicy.reason}</p>
-			)}
-			<dl>
-				{Object.entries(gates.features).map(([name, gate]) => (
-					<div key={name}>
-						<dt>{name}</dt>
-						<dd>
-							{gate.enabled ? 'available' : `unavailable: ${gate.reason}`}
-						</dd>
-					</div>
-				))}
-			</dl>
-		</section>
-	);
-}
-
-function AgentDetails({
-	agent,
-	thread,
-}: {
-	agent: ConnectedAgent;
-	thread: ThreadInfo | null;
-}) {
-	return (
-		<Card aria-label="connected agent">
-			<p>
-				connected to {agent.name ?? 'an unnamed agent'}{' '}
-				{agent.version ?? '(no version)'} over ACP protocol version{' '}
-				{agent.protocolVersion} in {agent.root}
-			</p>
-			{thread?.nanocoderSessionId && (
-				<p>
-					session {thread.nanocoderSessionId} in {thread.mode} mode
-				</p>
-			)}
-			<Divider soft />
-			<dl className="gate-capabilities">
-				{Object.entries({
-					'resume sessions': agent.capabilities.sessions.resume,
-					'close sessions': agent.capabilities.sessions.close,
-					'list sessions': agent.capabilities.sessions.list,
-					'delete sessions': agent.capabilities.sessions.delete,
-					'load sessions': agent.capabilities.loadSession,
-				}).map(([name, enabled]) => (
-					<div key={name}>
-						<dt>{name}</dt>
-						<dd>{enabled ? 'yes' : 'no'}</dd>
-					</div>
-				))}
-			</dl>
-		</Card>
-	);
+// A dialog only needs the current element; the opener is kept across replacements.
+function focusedElement(): HTMLElement | null {
+	const active = document.activeElement;
+	return active instanceof HTMLElement && active !== document.body
+		? active
+		: null;
 }
 
 export function App() {
@@ -215,17 +169,61 @@ export function App() {
 	const renameInput = useRef<HTMLInputElement>(null);
 	const renameReturn = useRef<HTMLElement | null>(null);
 	const renameId = renaming?.threadId;
+	const [dialog, setDialog] = useState<WorkspaceDialogKind | null>(null);
+	// The opener of the first dialog stays the return target while dialogs replace each other.
+	const dialogOpener = useRef<HTMLElement | null | undefined>(undefined);
+	const review = useDiagnosticReview(projectId, {
+		capture: id => window.desktop.getDiagnostics({projectId: id}),
+		exportSnapshot: request => window.desktop.exportDiagnostics(request),
+	});
+	const openDialog = (kind: WorkspaceDialogKind, opener = focusedElement()) => {
+		if (dialogOpener.current === undefined) dialogOpener.current = opener;
+		setDialog(kind);
+	};
+	const closeDialog = () => {
+		if (dialog === 'diagnostics') {
+			if (review.busy) return;
+			review.close();
+		}
+		setDialog(null);
+	};
+	const captureDiagnostics = () => {
+		const opener = focusedElement();
+		void review.capture().then(captured => {
+			if (captured) openDialog('diagnostics', opener);
+		});
+	};
+	useEffect(() => {
+		if (dialog !== null || dialogOpener.current === undefined) return;
+		const target = dialogOpener.current;
+		dialogOpener.current = undefined;
+		const focused = document.activeElement;
+		if (focused && focused !== document.body) return;
+		if (
+			target?.isConnected &&
+			!target.matches(':disabled') &&
+			target.checkVisibility()
+		)
+			target.focus();
+		else
+			document
+				.querySelector<HTMLButtonElement>('[aria-label="command palette"]')
+				?.focus();
+	}, [dialog]);
+	useEffect(() => {
+		if (dialog === 'diagnostics' && !review.snapshot) setDialog(null);
+	}, [dialog, review.snapshot]);
 
 	useEffect(() => {
 		if (!renameId) return;
-		const dialog = renameDialog.current;
-		dialog?.showModal();
+		const renameModal = renameDialog.current;
+		renameModal?.showModal();
 		renameInput.current?.focus();
 		return () => {
 			const restore =
 				document.activeElement === document.body ||
-				!!dialog?.contains(document.activeElement);
-			dialog?.close();
+				!!renameModal?.contains(document.activeElement);
+			renameModal?.close();
 			if (!restore || document.querySelector('dialog[open]')) return;
 			const target = renameReturn.current;
 			renameReturn.current = null;
@@ -416,8 +414,9 @@ export function App() {
 				}
 				return result;
 			}}
-			onCapture={projectId => window.desktop.getDiagnostics({projectId})}
-			onExport={request => window.desktop.exportDiagnostics(request)}
+			onDiagnostics={captureDiagnostics}
+			diagnosticsBusy={review.busy}
+			diagnosticsMessage={dialog === null ? review.message : ''}
 		/>
 	);
 
@@ -470,34 +469,15 @@ export function App() {
 								{gates[projectId ?? '']?.versionPolicy.reason}
 							</p>
 						)}
-						<details
-							className="runtime-details"
-							open={runtime && !runtime.ok ? true : undefined}
-						>
-							<summary>runtime and setup details</summary>{' '}
-							<section className="gate-runtime" aria-label="Nanocoder runtime">
-								{runtime?.ok && (
-									<p>
-										Nanocoder {runtime.value.version} at {runtime.value.cliPath}
-										, on Node.js {runtime.value.nodeVersion} at{' '}
-										{runtime.value.nodePath}
-									</p>
-								)}
-								{runtime && !runtime.ok && (
-									<>
-										<p role="alert">{runtime.error.message}</p>
-										<Button onClick={checkRuntime}>check again</Button>
-									</>
-								)}
-							</section>
-							{outcome?.status === 'connected' && (
-								<AgentDetails agent={outcome.agent} thread={thread} />
-							)}
-							{gates[projectId ?? ''] && (
-								<FeatureDetails gates={gates[projectId ?? '']} />
-							)}
-						</details>
-						{processState?.status === 'ready' && recoveryTools}
+						{runtime && !runtime.ok && (
+							<>
+								<p role="alert">{runtime.error.message}</p>
+								<Button onClick={checkRuntime}>check again</Button>
+							</>
+						)}
+						<Button onClick={() => openDialog('runtime')}>
+							runtime details
+						</Button>
 						<span>
 							Nanocoder{' '}
 							{agent?.version ??
@@ -508,10 +488,9 @@ export function App() {
 				}
 				palette={<PaletteButton />}
 				projectRail={
-					<RecentProjects
-						compact
-						{...projectControls}
-						pending={connecting || projectControls.pending}
+					<ProjectSwitch
+						selected={currentProject}
+						onOpen={() => openDialog('projects')}
 					/>
 				}
 				threadRail={
@@ -735,6 +714,65 @@ export function App() {
 					</Card>
 				)}
 			</AppShell>
+			<WorkspaceDialogs
+				kind={dialog}
+				onClose={closeDialog}
+				projects={{
+					projects: projectControls.projects,
+					activeProjectId: projectId,
+					pending: connecting || projectControls.pending,
+					onAdd: () => {
+						closeDialog();
+						projectControls.onAdd();
+					},
+					onOpen: id => {
+						closeDialog();
+						projectControls.onOpen(id);
+					},
+					onLocate: id => {
+						closeDialog();
+						projectControls.onLocate(id);
+					},
+				}}
+				runtime={{
+					runtime,
+					processState,
+					projectRoot: currentProject?.canonicalRoot ?? null,
+					gates: gates[projectId ?? ''] ?? null,
+					diagnosticsBusy: review.busy,
+					diagnosticsMessage: review.message,
+					onCheckAgain: checkRuntime,
+					onCapabilities: () => openDialog('capabilities'),
+					onDiagnostics: captureDiagnostics,
+				}}
+				capabilities={{
+					gates: gates[projectId ?? ''] ?? null,
+					modelGate: modelControls.controls?.modelGate ?? null,
+					agent: agent ?? null,
+					thread,
+				}}
+				archives={{
+					threads: workspace.threads.filter(
+						row => row.archiveState === 'archived',
+					),
+					projectName: currentProject?.displayName,
+					now: new Date(),
+					pending,
+					onUnarchive: id => {
+						void controls.archive(id, false);
+					},
+				}}
+				diagnostics={
+					review.snapshot
+						? {
+								snapshot: review.snapshot,
+								busy: review.busy,
+								message: review.message,
+								onExport: review.exportSnapshot,
+							}
+						: null
+				}
+			/>
 			{renaming && (
 				<dialog
 					ref={renameDialog}

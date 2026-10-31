@@ -240,7 +240,7 @@ export const states: CaptureState[] = [
 		stem: 'archives',
 		manifestId: 'archives',
 		fixture: 'extensions, no edits',
-		how: `send "earlier export research", new thread "keyboard navigation", new thread "${MAIN}" (each permission allowed), archive the first two from their ⋯ menus, expand "archived · 2" in the rail, open ⋯ on "earlier export research" to show unarchive (the app shows archived threads as a rail group, not a dialog)`,
+		how: `send "earlier export research", new thread "keyboard navigation", new thread "${MAIN}" (each permission allowed), archive the first two from their ⋯ menus, open the rail's "archived 2" link to show the archived threads dialog with unarchive`,
 		async reach(capture) {
 			const page = await openProject(capture, 'extensions');
 			await finishedTurn(page, 'earlier export research');
@@ -253,19 +253,25 @@ export const states: CaptureState[] = [
 				await target
 					.getByRole('button', {name: `archive: ${title}`, exact: true})
 					.click();
-				await expect(
-					page.locator('.thread-group-heading', {hasText: 'archived'}),
-				).toBeVisible();
+				await expect(row(page, title)).toHaveCount(0);
 			}
-			const heading = page.locator('summary.thread-group-heading');
-			await expect(heading).toHaveText('archived · 2');
-			await heading.click();
-			const archived = page.getByRole('list', {name: 'archived threads'});
-			await expect(archived.locator('.thread-row')).toHaveCount(2);
-			const target = await threadMenu(page, 'earlier export research');
+			const opener = page.getByRole('button', {name: /^archived/});
+			await expect(opener).toContainText('2');
+			await opener.click();
+			const dialog = page.getByRole('dialog', {
+				name: 'archived threads',
+				exact: true,
+			});
+			await expect(dialog).toBeVisible();
+			const archived = dialog.getByRole('list', {
+				name: 'archived threads',
+				exact: true,
+			});
+			await expect(archived.locator('.archives-dialog-row')).toHaveCount(2);
 			await expect(
-				target.getByRole('button', {
-					name: 'unarchive: earlier export research',
+				dialog.getByRole('button', {
+					name: 'unarchive earlier export research',
+					exact: true,
 				}),
 			).toBeEnabled();
 		},
@@ -309,7 +315,7 @@ export const states: CaptureState[] = [
 		stem: 'diagnostics',
 		manifestId: 'diagnostics',
 		fixture: 'die-in-turn, no edits',
-		how: `open project tide, send "${MAIN}" (Nanocoder exits with code 3), click diagnostics in the recovery row; stops at the in-app redacted review, before "review and export" (which opens native dialogs)`,
+		how: `open project tide, send "${MAIN}" (Nanocoder exits with code 3), click diagnostics in the recovery row; stops at the "review captured diagnostics" dialog, before "choose export destination…" (which opens a native dialog)`,
 		async reach(capture) {
 			const page = await openProject(capture, 'die-in-turn');
 			await send(page, MAIN);
@@ -318,11 +324,15 @@ export const states: CaptureState[] = [
 			await recovery
 				.getByRole('button', {name: 'diagnostics', exact: true})
 				.click();
+			const review = page.getByRole('dialog', {
+				name: 'review captured diagnostics',
+			});
+			await expect(review).toBeVisible();
 			await expect(
-				page.getByRole('region', {name: 'redacted diagnostics', exact: true}),
+				review.getByRole('region', {name: 'redacted diagnostics', exact: true}),
 			).toBeVisible();
 			await expect(
-				page.getByRole('region', {name: 'captured diagnostics', exact: true}),
+				review.getByRole('region', {name: 'captured diagnostics', exact: true}),
 			).toBeVisible();
 		},
 	},
