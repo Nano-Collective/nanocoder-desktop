@@ -16,3 +16,5 @@ jobs:
     with:
       build-output-dir: out
       validate-changesets: true
+      coverage-threshold: 80
+      fail-on-coverage-drop: false
