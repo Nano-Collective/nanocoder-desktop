@@ -199,6 +199,7 @@ export function App() {
 						? 'view-only'
 						: 'ready';
 	const composerInput = useRef<HTMLTextAreaElement>(null);
+	const retryFocus = useRef(false);
 	const [renaming, setRenaming] = useState<{
 		projectId: string;
 		threadId: string;
@@ -244,6 +245,17 @@ export function App() {
 		)
 			composerInput.current?.focus();
 	}, [sending, cancellation]);
+
+	useEffect(() => {
+		if (
+			retryFocus.current &&
+			document.activeElement === document.body &&
+			composerInput.current?.disabled === false
+		) {
+			retryFocus.current = false;
+			composerInput.current.focus();
+		}
+	});
 
 	useEffect(() => {
 		return window.desktop.onProjectEvent(event => {
@@ -372,9 +384,12 @@ export function App() {
 		<RecoveryTools
 			state={processState}
 			onRetry={async id => {
+				retryFocus.current = true;
 				const result = await window.desktop.restartProject({
 					projectId: id,
 				});
+				if (!result.ok || result.value.status !== 'ready')
+					retryFocus.current = false;
 				if (
 					selectedProject.current === id &&
 					result.ok &&
