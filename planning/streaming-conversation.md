@@ -44,7 +44,7 @@ One persistent node moves between the normal stream host and the open native dia
 
 ## Markdown and commands
 
-Only `AgentMarkdown` imports exactly pinned `react-markdown` 10.1.0. There are no added remark/rehype plugins. CommonMark headings, lists, blockquotes and code render; raw HTML is skipped, all images are text placeholders and all links are inert spans with their targets removed. There is no external-link IPC or automatic navigation. This small module can be replaced without changing the stream contract.
+Only `AgentMarkdown` imports exactly pinned `react-markdown` 10.1.0 and `remark-gfm` 4.0.1, the only plugin; there are no rehype plugins. CommonMark headings, lists, blockquotes and code render, with GFM tables, strikethrough and task checkboxes. Task checkboxes are disabled, unsupported footnote text is kept as plain text, raw HTML is skipped, all images are text placeholders and all links, including autolinks, are inert spans with their targets removed. There is no external-link IPC or automatic navigation. This small module can be replaced without changing the stream contract.
 
 The resolved dependency graph contains 83 package versions, 78 newly locked. All have lockfile integrity; licences are MIT except `@ungap/structured-clone` (ISC). None has an install lifecycle script. Full upstream copyright/licence texts are in `THIRD-PARTY-NOTICES.txt`. This does not complete the later whole-application release-notices work.
 
