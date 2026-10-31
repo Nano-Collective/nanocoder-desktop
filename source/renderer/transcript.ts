@@ -390,12 +390,11 @@ type Message = Extract<TranscriptItem, {kind: 'user' | 'agent'}>;
 // when neither side has an id, and empty agent text never counts.
 function sameMessage(earlier: Message, item: Message): boolean {
 	if (earlier.kind !== item.kind) return false;
+	if (earlier.kind === 'agent' && (earlier.text === '' || item.text === ''))
+		return false;
 	if (earlier.messageId !== undefined || item.messageId !== undefined)
 		return earlier.messageId === item.messageId;
-	return (
-		earlier.text === item.text &&
-		(earlier.kind === 'user' || earlier.text !== '')
-	);
+	return earlier.text === item.text;
 }
 
 export function carryMessageTimes(

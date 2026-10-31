@@ -637,6 +637,34 @@ test('an id on only one side never carries a time (A2)', t => {
 	t.is(next.items.map(at)[0], 'none');
 });
 
+test('an empty agent message with a shared id never carries a time (A2)', t => {
+	const previous = applyEvents(
+		emptyTranscript,
+		[{type: 'text', text: '', messageId: 'a1'}],
+		50,
+	);
+	const next = carryMessageTimes(
+		previous,
+		applyEvents(emptyTranscript, [{type: 'text', text: '', messageId: 'a1'}]),
+	);
+	t.is(next.items.map(at)[0], 'none');
+});
+
+test('a message id on the new item never carries from an id-less earlier item (A2)', t => {
+	const previous = applyEvents(
+		emptyTranscript,
+		[{type: 'text', text: 'reply'}],
+		50,
+	);
+	const next = carryMessageTimes(
+		previous,
+		applyEvents(emptyTranscript, [
+			{type: 'text', text: 'reply', messageId: 'a1'},
+		]),
+	);
+	t.is(next.items.map(at)[0], 'none');
+});
+
 test('carrying times never overwrites a time, ignores empty agent text and keeps an unmatched transcript', t => {
 	const previous = applyEvents(
 		emptyTranscript,
