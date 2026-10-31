@@ -477,6 +477,9 @@ test.describe('approval and overlay focus', () => {
 		await page.keyboard.press('3');
 		await expect(cards()).toHaveCount(0);
 		await expect(input()).toBeFocused();
+		await expect(input()).not.toHaveAccessibleDescription(
+			'waiting for your decision · draft is not queued ↵ send · ⇧↵ newline',
+		);
 	});
 
 	for (const kind of ['palette', 'shortcuts'] as const) {
