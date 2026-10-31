@@ -410,6 +410,8 @@ const drivers: CaptureState[] = [
 				}),
 			).toBeVisible();
 		},
+		// Keep the transcript where it is under the dialog.
+		async beforeShot() {},
 	},
 	{
 		stem: 'mode-control',
