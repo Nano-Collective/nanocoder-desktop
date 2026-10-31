@@ -19,6 +19,7 @@ import {
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -215,9 +216,7 @@ test('100 updates per second keep ordered content and input and scroll response 
 			),
 		);
 	}
-	await expect(
-		page.getByText('turn ended: end_turn', {exact: true}),
-	).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(
 		page.locator('[role="status"][aria-label="stream announcements"]'),
 	).toContainText('turn completed. response finished:');
@@ -343,9 +342,7 @@ test('stream semantics keyboard disclosure reduced motion and both themes at thr
 	const input = page.getByRole('textbox', {name: 'message', exact: true});
 	await input.fill('first visual fixture');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
-	await expect(
-		page.getByText('turn ended: end_turn', {exact: true}),
-	).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.locator('.gate-message-tool details')).toHaveCount(1);
 	await input.fill('second visual fixture');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
@@ -375,9 +372,7 @@ test('stream semantics keyboard disclosure reduced motion and both themes at thr
 		'border-left-width',
 		'0px',
 	);
-	await expect(
-		page.getByText('turn ended: end_turn', {exact: true}),
-	).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.locator('.stream-cursor')).toHaveCount(0);
 	const reasoning = page.locator('.stream-reasoning').last();
 	await expect(reasoning).not.toHaveAttribute('open');

@@ -1,9 +1,33 @@
+.composer-hint-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	min-height: 16px;
+	margin-bottom: 8px;
+}
+
+.composer-hint-row .gate-hint {
+	margin: 0;
+	font-size: 10px;
+	line-height: 16px;
+}
+
+.composer-cancel {
+	min-height: 30px;
+	padding: 0 10px;
+	font-size: 10px;
+	white-space: nowrap;
+}
+
 .composer {
 	position: relative;
+	box-sizing: border-box;
+	width: 100%;
 	min-width: 0;
 	overflow: hidden;
-	gap: 8px;
-	padding: 13px 13px 10px;
+	gap: 0;
+	padding: 21px 13px 10px;
 	border-radius: 13px;
 }
 
@@ -13,25 +37,18 @@
 }
 
 .composer .composer-message {
-	display: flex;
-	align-items: flex-start;
-	gap: 8px;
-}
-
-.composer-prompt,
-.composer .composer-pill.composer-mode,
-.composer .composer-send:not(:disabled) {
-	color: var(--colors-primary);
+	display: block;
 }
 
 .composer textarea {
 	box-sizing: border-box;
-	flex: 1;
+	display: block;
 	width: 100%;
 	min-width: 0;
 	min-height: 53px;
 	max-height: 160px;
-	resize: vertical;
+	resize: none;
+	margin: 0;
 	padding: 0 4px;
 	border: 0;
 	color: var(--colors-on-surface);
@@ -45,58 +62,102 @@
 	opacity: 1;
 }
 
-.composer .gate-hint {
-	margin: 0;
-	overflow-wrap: anywhere;
-	font-size: 9px;
-}
-
 .composer-control-rail {
 	display: flex;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	align-items: center;
 	gap: 5px;
 	min-width: 0;
+	min-height: 32px;
 }
 
 .composer .composer-pill {
 	display: flex;
 	align-items: center;
 	gap: 4px;
+	box-sizing: border-box;
 	min-width: 0;
 	max-width: 100%;
-	padding: 5px 7px;
-	border: 1px solid var(--colors-stroke);
-	border-radius: 7px;
+	height: 31px;
+	padding: 0 8px;
+	border: 0;
+	border-radius: 6px;
 	background: var(--colors-surface-elevated);
 	color: var(--colors-on-surface-muted);
-	font-size: 10px;
+	font-size: 11px;
+}
+
+.composer .composer-model {
+	width: 176px;
+}
+
+.composer .composer-mode {
+	width: 116px;
 }
 
 .composer-pill > span {
 	display: none;
 }
+
 .composer-pill select {
+	box-sizing: border-box;
+	width: 100%;
 	min-width: 0;
-	max-width: 220px;
+	height: 31px;
 	border: 0;
 	color: var(--colors-on-surface);
-	background: var(--colors-surface-elevated);
+	background: transparent;
 	font: inherit;
+	font-size: 11px;
 }
 
-.composer-mode select {
+.composer .composer-mode select,
+.composer .composer-mode select:disabled {
 	color: var(--colors-primary);
 }
-.composer-control-rail > .ui-button {
-	font-size: 10px;
+
+.composer .composer-pill:has(select:focus-visible) {
+	outline: 2px solid var(--colors-primary);
+	outline-offset: 2px;
+	border-radius: 8px;
 }
-.composer-control-rail > .composer-send {
+
+.composer .composer-context {
+	border: 1px dashed var(--colors-stroke);
+	border-radius: 7px;
+}
+
+.composer .composer-send {
+	box-sizing: border-box;
+	min-width: 64px;
+	height: 32px;
 	margin-left: auto;
+	padding: 0 10px;
+	border: 1px solid var(--colors-stroke);
+	border-radius: 6px;
+	background: transparent;
+	font-size: 11px;
+	color: var(--colors-on-surface-muted);
 }
-.composer-context {
-	border-style: dashed;
+
+.composer .composer-send[data-state="ready"] {
+	color: var(--colors-primary);
 }
+
+.composer .composer-send[data-state="running"] {
+	color: var(--colors-on-surface);
+}
+
+.composer-help {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	min-height: 22px;
+	margin: 0;
+	font-size: 10px;
+	line-height: 22.39px;
+}
+
 .composer-context-gauge {
 	height: 2px;
 	overflow: hidden;
@@ -107,13 +168,20 @@
 	background: var(--colors-primary);
 }
 
+.composer-control-note {
+	margin: 8px 0 0;
+	font-size: 9px;
+	line-height: 14.4px;
+	overflow-wrap: anywhere;
+}
+
 .composer-options {
 	font-size: 9px;
 	color: var(--colors-on-surface-muted);
 }
 .composer-options > summary {
 	cursor: pointer;
-	min-height: 24px;
+	min-height: 16px;
 }
 .composer-options .ui-button {
 	min-height: 28px;
@@ -123,13 +191,9 @@
 .composer-options .gate-hint {
 	margin-block: 4px;
 }
-.composer-footer-hint {
-	display: flex;
-	justify-content: space-between;
-	gap: 12px;
-}
 
-.composer .sr-only {
+.composer .sr-only,
+.composer-hint-row .sr-only {
 	position: absolute;
 	width: 1px;
 	height: 1px;
@@ -137,4 +201,9 @@
 	overflow: hidden;
 	white-space: nowrap;
 	clip-path: inset(50%);
+}
+
+/* An empty thread centres the draft composer; the shell owns the centring. */
+.shell-stream[data-composer-placement="centred"] .shell-composer {
+	padding-bottom: 0;
 }

@@ -17,6 +17,7 @@ import {
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
@@ -220,9 +221,7 @@ test('native yolo cancellation is the default and accepted pending yolo is never
 	).toBeDisabled();
 	await input.press('Enter');
 	await expect(input).toHaveValue('');
-	await expect(
-		page.getByText('turn ended: end_turn', {exact: true}),
-	).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	const restarted = await page.evaluate(async () => {
 		const {desktop} = window as unknown as {desktop: DesktopApi};
 		const ui = await desktop.getUiState({});

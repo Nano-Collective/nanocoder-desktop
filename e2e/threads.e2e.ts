@@ -18,6 +18,7 @@ import type {DesktopApi} from '@/shared/desktop-api';
 import type {IpcResult, ProjectEvent, ThreadSnapshot} from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {turnEnded} from './qa/turn-state';
 import {contrast} from './qa/ui-contrast';
 
 let work: string;
@@ -186,9 +187,7 @@ for (const [state, glyph] of [
 					await page
 						.getByRole('button', {name: 'cancel turn', exact: true})
 						.click();
-					await expect(
-						page.getByText('turn interrupted: cancelled'),
-					).toBeVisible();
+					await expect(page.getByText('turn interrupted')).toBeVisible();
 				}
 			} else {
 				const approval = page.getByRole('region', {name: 'permission request'});
@@ -197,7 +196,7 @@ for (const [state, glyph] of [
 					await approval
 						.getByRole('button', {name: 'Deny', exact: true})
 						.click();
-					await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+					await expect(turnEnded(page)).toBeVisible();
 				}
 			}
 		}

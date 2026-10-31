@@ -9,7 +9,14 @@ import type {
 } from '@/shared/ipc';
 
 export type TranscriptItem = (
-	| {kind: 'user' | 'agent' | 'thought'; text: string; messageId?: string}
+	| {
+			kind: 'user' | 'agent';
+			text: string;
+			messageId?: string;
+			// Epoch ms seen live by this renderer; never persisted or estimated.
+			at?: number;
+	  }
+	| {kind: 'thought'; text: string; messageId?: string}
 	| {kind: 'turn-metadata'}
 	| {kind: 'failure'; text: string}
 	| {
@@ -112,7 +119,11 @@ function upsert(
 	return {...transcript, items};
 }
 
-function applyContent(transcript: Transcript, event: TurnEvent): Transcript {
+function applyContent(
+	transcript: Transcript,
+	event: TurnEvent,
+	at: number | undefined,
+): Transcript {
 	const {items} = transcript;
 	switch (event.type) {
 		case 'metadata':
@@ -147,6 +158,7 @@ function applyContent(transcript: Transcript, event: TurnEvent): Transcript {
 						kind,
 						text: event.text,
 						...(event.messageId ? {messageId: event.messageId} : {}),
+						...(at !== undefined && kind !== 'thought' ? {at} : {}),
 					};
 			return {
 				...transcript,
@@ -333,8 +345,9 @@ function mergeMetadata(
 export function applyEvent(
 	transcript: Transcript,
 	event: TurnEvent,
+	at?: number,
 ): Transcript {
-	const next = applyContent(transcript, event);
+	const next = applyContent(transcript, event, at);
 	if (!event.metadata) return next;
 	let index = -1;
 	for (let cursor = next.items.length - 1; cursor >= 0; cursor--) {
@@ -363,6 +376,40 @@ export function applyEvent(
 export function applyEvents(
 	transcript: Transcript,
 	events: readonly TurnEvent[],
+	at?: number,
 ): Transcript {
-	return events.reduce(applyEvent, transcript);
+	return events.reduce(
+		(current, event) => applyEvent(current, event, at),
+		transcript,
+	);
+}
+
+export function carryMessageTimes(
+	previous: Transcript,
+	next: Transcript,
+): Transcript {
+	type Message = Extract<TranscriptItem, {kind: 'user' | 'agent'}>;
+	const isMessage = (item: TranscriptItem): item is Message =>
+		item.kind === 'user' || item.kind === 'agent';
+	const earlier = previous.items.filter(isMessage);
+	const of = (kind: Message['kind']) =>
+		earlier.filter(item => item.kind === kind);
+	const known = {user: of('user'), agent: of('agent')};
+	const seen = {user: 0, agent: 0};
+	let changed = false;
+	const items = next.items.map(item => {
+		if (!isMessage(item)) return item;
+		const match = known[item.kind][seen[item.kind]++];
+		if (
+			match?.at === undefined ||
+			item.at !== undefined ||
+			!(item.kind === 'user'
+				? item.text === match.text
+				: match.text !== '' && item.text.startsWith(match.text))
+		)
+			return item;
+		changed = true;
+		return {...item, at: match.at};
+	});
+	return changed ? {...next, items} : next;
 }

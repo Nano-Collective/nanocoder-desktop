@@ -21,6 +21,7 @@ import type {approvalHarness} from './qa/approval-harness';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {openFolderFromPalette} from './qa/open-folder';
+import {turnEnded} from './qa/turn-state';
 
 const work = realpathSync.native(
 	mkdtempSync(path.join(tmpdir(), 'nd-approvals-')),
@@ -113,18 +114,18 @@ test('cancel closes every pending permission as Interrupted, never allowed, and 
 	).toBeVisible();
 	await page.getByRole('button', {name: 'cancel turn', exact: true}).click();
 	await expect(cards()).toHaveCount(0);
-	await expect(page.getByText('turn interrupted: cancelled')).toBeVisible();
+	await expect(page.getByText('turn interrupted')).toBeVisible();
 	await expect(page.locator('.ui-badge--interrupted')).toBeVisible();
 	await expect(input()).toBeEnabled();
 	await expect(input()).toBeFocused();
 	await expect(page.locator('.gate-message-tool')).toHaveText([
-		/tool .+: failed/,
-		/tool .+: failed/,
+		/failed execute_bash: echo call_1/,
+		/failed execute_bash: echo call_2/,
 	]);
 	await prompt();
 	await expect(cards()).toHaveCount(2);
 	await page.getByRole('button', {name: 'cancel turn', exact: true}).click();
-	await expect(page.getByText('turn interrupted: cancelled')).toBeVisible();
+	await expect(page.getByText('turn interrupted')).toBeVisible();
 });
 
 test('cancel also interrupts an active turn with no permission request', async () => {
@@ -136,7 +137,7 @@ test('cancel also interrupts an active turn with no permission request', async (
 		page.getByRole('button', {name: 'cancel turn', exact: true}),
 	).toBeVisible();
 	await page.getByRole('button', {name: 'cancel turn', exact: true}).click();
-	await expect(page.getByText('turn interrupted: cancelled')).toBeVisible();
+	await expect(page.getByText('turn interrupted')).toBeVisible();
 	await expect(input()).toBeFocused();
 });
 
@@ -165,7 +166,7 @@ test('permission takes focus, supports only its offered numbered choices and res
 	await dialogs().focus();
 	await page.keyboard.press('2');
 	await expect(cards()).toHaveCount(0);
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(input()).toBeFocused();
 });
 
@@ -211,7 +212,7 @@ test('all offered permission kinds keep their labels and their reported outcomes
 			).toBeVisible();
 		await cards().getByRole('button', {name: choice, exact: true}).click();
 		await expect(cards()).toHaveCount(0);
-		await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+		await expect(turnEnded(page)).toBeVisible();
 		await expect(page.locator('.gate-message-tool')).toContainText(
 			allowed ? 'completed' : 'failed',
 		);
@@ -267,7 +268,7 @@ test('ask_user presents only Nanocoder question options and sends the selected a
 	);
 	await page.keyboard.press('2');
 	await expect(cards()).toHaveCount(0);
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.locator('.gate-message-tool code')).toHaveText(
 		'selected answer-1',
 	);
@@ -468,7 +469,7 @@ test.describe('approval and overlay focus', () => {
 			page.getByRole('button', {name: 'send', exact: true}),
 		).toBeDisabled();
 		await expect(input()).toHaveAccessibleDescription(
-			'waiting for Nanocoder to finish the turn',
+			'turn in progress · draft is not queued',
 		);
 		await page.keyboard.press('3');
 		await expect(cards()).toHaveCount(0);
@@ -550,7 +551,7 @@ test.describe('approval and overlay focus', () => {
 			await page.keyboard.press('Escape');
 			await expect(page.locator('dialog[open]')).toHaveCount(0);
 			await expect(input()).toBeFocused();
-			await expect(page.getByText('turn interrupted: cancelled')).toBeVisible();
+			await expect(page.getByText('turn interrupted')).toBeVisible();
 		});
 	}
 });

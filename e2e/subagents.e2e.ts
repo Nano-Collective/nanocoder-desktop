@@ -19,6 +19,7 @@ import {build} from 'vite';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import type {subagentHarness} from './qa/subagent-harness';
+import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -103,7 +104,7 @@ test.describe('fc01-shaped delegation cards', () => {
 		await expect(cards().last()).not.toContainText('private fixture task');
 		await stop().click();
 		await expect(
-			page.getByText('turn interrupted: cancelled', {exact: true}),
+			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
 		await expect(page.getByRole('alertdialog')).toHaveCount(0);
 		await expect(cards().last()).toContainText('interrupted');
@@ -117,9 +118,7 @@ test.describe('fc01-shaped delegation cards', () => {
 			.getByRole('alertdialog')
 			.getByRole('button', {name: 'Allow'})
 			.click();
-		await expect(
-			page.getByText('turn ended: end_turn', {exact: true}),
-		).toBeVisible();
+		await expect(turnEnded(page)).toBeVisible();
 		await expect(cards().last()).toContainText('failed');
 		await expect(
 			page
@@ -140,7 +139,7 @@ test.describe('fc01-shaped delegation cards', () => {
 		await stop().focus();
 		await stop().press('Enter');
 		await expect(
-			page.getByText('turn interrupted: cancelled', {exact: true}),
+			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
 		await expect(input()).toHaveValue('unsent fixture draft');
 		await expect(input()).toBeFocused();
@@ -180,7 +179,7 @@ test.describe('fc01-shaped delegation cards', () => {
 		await expect(page.getByRole('alertdialog')).toHaveCount(0);
 		await expect(stop()).toHaveCount(0);
 		await expect(
-			page.getByText('turn interrupted: cancelled', {exact: true}),
+			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
 	});
 
@@ -202,7 +201,7 @@ test.describe('fc01-shaped delegation cards', () => {
 			})
 			.click();
 		await expect(
-			page.getByText('turn interrupted: cancelled', {exact: true}),
+			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
 		for (const [index, text] of retained.entries())
 			await expect(cards().nth(index)).toHaveText(text);
@@ -239,7 +238,7 @@ test.describe('fc01-shaped delegation cards', () => {
 			}
 			await runningStop.press('Enter');
 			await expect(
-				page.getByText('turn interrupted: cancelled', {exact: true}),
+				page.getByText('turn interrupted', {exact: true}),
 			).toBeVisible();
 			await page.emulateMedia({reducedMotion: 'no-preference'});
 			await page.setViewportSize({width: 1240, height: 900});
@@ -302,9 +301,7 @@ test.describe('fc01-shaped delegation cards', () => {
 				.getByRole('alertdialog')
 				.getByRole('button', {name: 'Allow'})
 				.click();
-			await expect(
-				page.getByText('turn ended: end_turn', {exact: true}),
-			).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
 			await expect(cards()).toHaveCount(1);
 			await expect(cards().last()).toContainText('failed');
 			const toolCallId = await page.evaluate(

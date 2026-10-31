@@ -13,6 +13,7 @@ import type {DesktopApi} from '@/shared/desktop-api';
 import type {IpcResult, SupervisorState, ThreadReplay} from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {turnEnded} from './qa/turn-state';
 
 const restoring =
 	'restoring saved history; sending and controls will be available when it finishes';
@@ -79,9 +80,7 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 			await expect(input).toBeEnabled();
 			await input.fill('initial replay gate fixture');
 			await input.press('Enter');
-			await expect(
-				page.getByText('turn ended: end_turn', {exact: true}),
-			).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
 			const model = page.getByRole('combobox', {
 				name: /model for every thread in project/,
 			});
@@ -180,7 +179,7 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 					),
 				)
 				.toContain('begin');
-			await expect(page.locator('.gate-composer')).toContainText(restoring);
+			await expect(page.locator('.composer-hint-row')).toContainText(restoring);
 			await expect(input).toBeEnabled();
 			await input.fill('editable memory-only draft');
 			await input.press('Enter');
@@ -259,7 +258,9 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 						}),
 					).toBeEnabled();
 				} else {
-					await expect(page.locator('.gate-composer')).toContainText(failed);
+					await expect(page.locator('.composer-hint-row')).toContainText(
+						failed,
+					);
 					await expect(input).toBeEnabled();
 					await input.fill('draft after replay failure');
 					await input.press('Enter');
@@ -410,9 +411,7 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 			await test.step('send the retained draft only after explicit click', async () => {
 				await send.click();
 				await expect(input).toHaveValue('');
-				await expect(
-					page.getByText('turn ended: end_turn', {exact: true}),
-				).toBeVisible();
+				await expect(turnEnded(page)).toBeVisible();
 			});
 		} finally {
 			await test.step('settle and close the owned Electron process', () =>

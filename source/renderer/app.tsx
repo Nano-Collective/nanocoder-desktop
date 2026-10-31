@@ -167,7 +167,7 @@ export function App() {
 	const rootControlReason =
 		replayReason ??
 		(rootBusy
-			? 'stop the project turn before changing controls'
+			? 'model + mode locked until the project turn stops'
 			: !accepting
 				? 'Nanocoder is not ready'
 				: workspace.loading || workspace.pending
@@ -375,16 +375,14 @@ export function App() {
 			: thread?.archiveState === 'archived'
 				? 'this thread is archived; unarchive it before sending'
 				: sending
-					? 'waiting for Nanocoder to finish the turn'
+					? 'turn in progress · draft is not queued'
 					: rootBusy
 						? 'another thread is running'
 						: modelControls.pending
 							? 'a project control change is pending'
 							: configUncertain
 								? CONFIG_UNCERTAINTY_REASON
-								: draft.trim() === ''
-									? 'enter a message to send'
-									: null);
+								: null);
 
 	const recoveryTools = (
 		<RecoveryTools
@@ -685,6 +683,7 @@ export function App() {
 						running={sending}
 						onStopTurn={cancel}
 						stopping={stopping}
+						stopReason={turn?.ok ? turn.value.stopReason : undefined}
 						outcome={
 							turn?.ok
 								? turn.value.stopReason === 'cancelled'
@@ -704,14 +703,6 @@ export function App() {
 						onNew={onNew}
 						onRemove={() => void controls.remove(thread.id)}
 					/>
-				)}
-				{turn?.ok && (
-					<p role="status">
-						{turn.value.stopReason === 'cancelled'
-							? 'turn interrupted'
-							: 'turn ended'}
-						: {turn.value.stopReason}
-					</p>
 				)}
 				{turn && !turn.ok && failed && (
 					<Card variant="failure" role="alert">

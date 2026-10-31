@@ -4,6 +4,7 @@ import {
 	addUserMessage,
 	applyEvent,
 	applyEvents,
+	carryMessageTimes,
 	emptyTranscript,
 } from '@/renderer/transcript';
 
@@ -525,4 +526,113 @@ test('does not list the same request twice', t => {
 		request: request('permission-1'),
 	});
 	t.is(transcript.permissions.length, 1);
+});
+
+const at = (item: object) =>
+	Object.hasOwn(item, 'at') ? Reflect.get(item, 'at') : 'none';
+
+test('live user and first agent chunks take the applied time while joins and other rows add none', t => {
+	let transcript = applyEvents(
+		emptyTranscript,
+		[
+			{type: 'user', text: 'sent', messageId: 'u'},
+			{type: 'thought', text: 'thinking'},
+			{type: 'text', text: 'first', messageId: 'm'},
+		],
+		10,
+	);
+	transcript = applyEvent(
+		transcript,
+		{type: 'text', text: ' joined', messageId: 'm'},
+		20,
+	);
+	transcript = applyEvents(
+		transcript,
+		[
+			{type: 'tool', id: 'tool', status: 'completed'},
+			{type: 'plan', id: 'plan', content: {entries: []}},
+			{type: 'text', text: 'second'},
+			{type: 'metadata', metadata: {durationMs: 1}},
+		],
+		30,
+	);
+	t.deepEqual(transcript.items.map(at), [10, 'none', 10, 'none', 'none', 30]);
+	t.is(transcript.items[2]?.text, 'first joined');
+	t.like(transcript.items[5], {
+		kind: 'agent',
+		text: 'second',
+		metadata: {durationMs: 1},
+	});
+});
+
+test('replayed or snapshot events applied without a time add no time field', t => {
+	const transcript = applyEvents(emptyTranscript, [
+		{type: 'user', text: 'saved'},
+		{type: 'text', text: 'saved answer'},
+	]);
+	t.deepEqual(transcript.items, [
+		{kind: 'user', text: 'saved'},
+		{kind: 'agent', text: 'saved answer'},
+	]);
+	t.false(transcript.items.some(item => Object.hasOwn(item, 'at')));
+});
+
+test('carried times need equal user text and an agent text prefix at the same position', t => {
+	const previous = applyEvents(
+		applyEvents(emptyTranscript, [
+			{type: 'user', text: 'saved'},
+			{type: 'text', text: 'saved answer'},
+		]),
+		[
+			{type: 'user', text: 'first'},
+			{type: 'text', text: 'partial'},
+			{type: 'tool', id: 'tool'},
+			{type: 'text', text: 'after tool'},
+			{type: 'user', text: 'second'},
+			{type: 'text', text: 'reply'},
+		],
+		50,
+	);
+	const next = carryMessageTimes(
+		previous,
+		applyEvents(emptyTranscript, [
+			{type: 'user', text: 'saved'},
+			{type: 'text', text: 'saved answer'},
+			{type: 'user', text: 'first'},
+			{type: 'text', text: 'partial and more'},
+			{type: 'tool', id: 'tool'},
+			{type: 'text', text: 'rewritten'},
+			{type: 'user', text: 'second edited'},
+			{type: 'text', text: 'reply'},
+		]),
+	);
+	t.deepEqual(next.items.map(at), [
+		'none',
+		'none',
+		50,
+		50,
+		'none',
+		'none',
+		'none',
+		50,
+	]);
+});
+
+test('carrying times never overwrites a time, ignores empty agent text and keeps an unmatched transcript', t => {
+	const previous = applyEvents(
+		emptyTranscript,
+		[
+			{type: 'user', text: 'sent'},
+			{type: 'text', text: ''},
+		],
+		1,
+	);
+	const stamped = applyEvent(emptyTranscript, {type: 'user', text: 'sent'}, 2);
+	t.is(at(carryMessageTimes(previous, stamped).items[0]), 2);
+	const unmatched = applyEvents(emptyTranscript, [
+		{type: 'user', text: 'other'},
+		{type: 'text', text: 'anything'},
+	]);
+	t.is(carryMessageTimes(previous, unmatched), unmatched);
+	t.is(carryMessageTimes(emptyTranscript, unmatched), unmatched);
 });

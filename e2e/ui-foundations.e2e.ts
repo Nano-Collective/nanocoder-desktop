@@ -18,6 +18,7 @@ import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {openFolderFromPalette} from './qa/open-folder';
+import {turnEnded} from './qa/turn-state';
 import {contrast, themedColor, visibleTextContrast} from './qa/ui-contrast';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-ui-')));
@@ -234,11 +235,11 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 		await expect(control).toHaveCSS('outline-width', '2px');
 		if (control === input) {
 			await expect(input).toHaveAccessibleDescription(
-				'enter a message to send',
+				'ready for your next message ; enter a message to send',
 			);
 			await input.fill('synthetic UI check');
 			await expect(input).toHaveAccessibleDescription(
-				'⏎ send · ⇧⏎ newline · / commands',
+				'ready for your next message',
 			);
 			await expect(send).toBeEnabled();
 		}
@@ -270,8 +271,8 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		page.getByRole('region', {name: 'conversation', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),
 		card.getByRole('button', {name: 'Deny', exact: true}),
-		page.getByRole('textbox', {name: 'message'}),
 		page.getByRole('button', {name: 'cancel turn', exact: true}),
+		page.getByRole('textbox', {name: 'message'}),
 	];
 	await focusOrder[0].focus();
 	for (const [index, control] of focusOrder.entries()) {
@@ -284,7 +285,7 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	).toBeDisabled();
 	await expect(
 		page.getByRole('textbox', {name: 'message'}),
-	).toHaveAccessibleDescription('waiting for Nanocoder to finish the turn');
+	).toHaveAccessibleDescription('turn in progress · draft is not queued');
 	await expect(
 		page.getByRole('status').filter({hasText: 'approval'}),
 	).toBeVisible();
@@ -302,7 +303,7 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		expect(await visibleTextContrast(page, theme)).toEqual([]);
 	}
 	await card.getByRole('button', {name: 'Deny', exact: true}).click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('reduce motion stops spinner, cursor, approval pulse and colour transitions', async () => {

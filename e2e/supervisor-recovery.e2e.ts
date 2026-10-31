@@ -20,6 +20,7 @@ import type {ProjectEvent} from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {openFolderFromPalette} from './qa/open-folder';
+import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
@@ -98,9 +99,7 @@ for (const theme of ['dark', 'light'] as const) {
 			const input = page.getByRole('textbox', {name: 'message', exact: true});
 			await input.fill('saved recovery fixture');
 			await input.press('Enter');
-			await expect(
-				page.getByText('turn ended: end_turn', {exact: true}),
-			).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
 			const before = await page.evaluate(async projectId => {
 				const {desktop} = window as unknown as {desktop: DesktopApi};
 				const ui = await desktop.getUiState({});
@@ -353,7 +352,7 @@ test('ordinary reopen preserves the existing conversation when no replay is prod
 		.getByRole('region', {name: 'permission request'})
 		.getByRole('button', {name: 'Deny', exact: true})
 		.click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	const conversation = page.getByRole('list', {name: 'conversation'});
 	const before = await conversation.innerText();
 	await expect(conversation.locator('li')).toHaveCount(4);
@@ -416,7 +415,7 @@ for (const {failure, action} of [
 			.getByRole('region', {name: 'permission request'})
 			.getByRole('button', {name: 'Deny', exact: true})
 			.click();
-		await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+		await expect(turnEnded(page)).toBeVisible();
 		await expect(page.getByRole('alert')).toHaveCount(0);
 		expect(
 			await app.evaluate(

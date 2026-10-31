@@ -1,6 +1,7 @@
 import {writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {expect, type Page} from '@playwright/test';
+import {turnEnded} from '../turn-state';
 import type {Capture, CaptureState, FixtureEdit} from './harness';
 
 const PROMPT =
@@ -11,8 +12,6 @@ const input = (page: Page) =>
 	page.getByRole('textbox', {name: 'message', exact: true});
 const selectedRow = (page: Page) =>
 	page.locator('.thread-row[data-selected="true"]');
-const turnEnded = (page: Page) =>
-	page.getByText('turn ended: end_turn', {exact: true});
 
 async function openTide(capture: Capture, mode: string): Promise<string> {
 	const folder = capture.project('tide', mode);
@@ -147,7 +146,7 @@ const drivers: CaptureState[] = [
 		stem: 'conversation-ready',
 		manifestId: 'conversation-ready',
 		fixture: READY_FIXTURE,
-		how: 'open project folder "tide", rename the new thread to "export the audit log" from the thread menu, type the CSV export prompt and press Enter, wait for "turn ended: end_turn"',
+		how: 'open project folder "tide", rename the new thread to "export the audit log" from the thread menu, type the CSV export prompt and press Enter, wait for the turn to end',
 		fixtureEdits: READY_EDITS,
 		reach: readyConversation,
 	},

@@ -7,23 +7,39 @@
 }
 
 .conversation-stream .gate-transcript {
-	gap: 9px;
+	gap: 18px;
 	white-space: normal;
 }
 
+.stream-day-label {
+	margin: 0 0 12px;
+	color: var(--colors-on-surface-muted);
+	font-size: 10px;
+	line-height: 16px;
+	text-align: center;
+}
+
 .stream-author {
-	color: var(--components-message-author-text-color);
-	font-size: var(--components-message-author-font-size);
-	font-weight: var(--components-message-author-font-weight);
-	line-height: var(--components-message-author-line-height);
-	letter-spacing: var(--components-message-author-letter-spacing);
-	text-transform: uppercase;
+	margin-bottom: 9px;
+	color: var(--colors-on-surface-muted);
+	font-size: 10px;
+	line-height: 1.75;
+	letter-spacing: 0;
+	text-transform: none;
 	font-style: normal;
-	margin-bottom: var(--spacing-xs);
 }
 
 .stream-author-agent {
 	color: var(--colors-primary);
+}
+
+.stream-time {
+	color: var(--colors-on-surface-muted);
+	font-size: inherit;
+}
+
+.gate-message-label {
+	margin-bottom: -9px;
 }
 
 .stream-plain,
@@ -31,16 +47,24 @@
 	white-space: pre-wrap;
 }
 
-.gate-transcript > .gate-message-thought {
-	border-left-style: dashed;
-}
-
 .stream-reasoning {
 	color: var(--components-reasoning-text-color);
-	font-size: var(--components-reasoning-font-size);
+	font-size: 11px;
 	line-height: var(--components-reasoning-line-height);
-	font-style: italic;
+	font-style: normal;
 	font-synthesis: style;
+}
+
+.stream-reasoning > summary {
+	min-height: 32px;
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.stream-reasoning > p {
+	padding: 7px 0 0 18px;
+	font-size: 11px;
 }
 
 .gate-message-tool,
@@ -58,8 +82,28 @@
 	font-size: inherit;
 }
 
+.stream-tool-verb {
+	color: var(--colors-on-surface);
+}
+
+.stream-tool-wait {
+	margin: 0;
+	padding: 0 0 8px 22px;
+	color: var(--colors-on-surface-muted);
+}
+
 .conversation-stream summary {
 	cursor: pointer;
+}
+
+.conversation-stream .sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	clip-path: inset(50%);
 }
 
 .gate-message-tool summary {
@@ -126,9 +170,10 @@ details[open] > summary .stream-disclosure::before {
 }
 
 .stream-markdown :is(h1, h2, h3, h4, h5, h6) {
-	color: var(--components-markdown-heading-text-color);
-	font-size: inherit;
+	color: var(--colors-on-surface);
+	font-size: 16px;
 	font-weight: var(--typography-body-md-font-weight);
+	margin-block: 10px 12px;
 }
 
 .stream-markdown strong {
@@ -144,6 +189,15 @@ details[open] > summary .stream-disclosure::before {
 	padding-left: var(--spacing-lg);
 	border-left: 1px solid var(--colors-stroke);
 	color: var(--colors-on-surface-muted);
+}
+
+.stream-markdown ul,
+.stream-markdown ol {
+	padding-left: 20px;
+}
+
+.stream-markdown ul {
+	list-style-type: disc;
 }
 
 .stream-resource,
@@ -178,12 +232,12 @@ details[open] > summary .stream-disclosure::before {
 	overflow-wrap: anywhere;
 }
 
-.conversation-stream .gate-transcript {
-	gap: 18px;
-}
 .gate-transcript > li {
 	padding-left: 0;
 	border-left: 0;
+}
+.gate-transcript > .gate-message-thought {
+	border-left-style: dashed;
 }
 .gate-transcript > .gate-message-user {
 	margin: 0 0 9px 76px;
@@ -194,61 +248,61 @@ details[open] > summary .stream-disclosure::before {
 	font-size: 13px;
 	line-height: 1.75;
 }
-.stream-author {
-	font-size: 10px;
-	letter-spacing: 0;
-	text-transform: none;
-	margin-bottom: 9px;
-}
-.stream-author-agent {
-	color: var(--colors-on-surface-muted);
-}
 .gate-message-agent {
 	font-size: 13px;
 	line-height: 1.8;
 }
-.stream-markdown :is(h1, h2, h3, h4, h5, h6) {
-	color: var(--colors-on-surface);
-	font-size: 16px;
-	margin-block: 10px 12px;
-}
-.stream-markdown :is(p, ul, ol) + * {
-	margin-top: 14px;
-}
 .stream-reasoning {
 	font-style: normal;
 }
-.stream-reasoning > summary {
-	min-height: 32px;
-	font-size: 11px;
-}
-.stream-reasoning > p {
-	padding: 7px 0 0 18px;
-	font-size: 11px;
-}
+
+/* One shared panel per run of tool calls in an agent turn. */
 .gate-message-tool:not(:has(.subagent-run-card)) {
-	padding: 5px 12px;
-	border-radius: 9px;
+	margin-inline: 12px;
+	padding-inline: 12px;
+	border-inline: 1px solid var(--colors-stroke);
 	background: var(--colors-surface-panel);
 }
-.gate-message-tool summary {
+.gate-message-tool.stream-tool-first:not(:has(.subagent-run-card)),
+.gate-message-tool.stream-tool-only:not(:has(.subagent-run-card)) {
+	border-top: 1px solid var(--colors-stroke);
+	border-radius: 9px 9px 0 0;
+}
+.gate-message-tool.stream-tool-only:not(:has(.subagent-run-card)) {
+	border-radius: 9px;
+}
+.gate-message-tool.stream-tool-middle:not(:has(.subagent-run-card)),
+.gate-message-tool.stream-tool-last:not(:has(.subagent-run-card)) {
+	border-top: 1px solid var(--colors-stroke-soft);
+}
+.gate-message-tool.stream-tool-last:not(:has(.subagent-run-card)) {
+	border-bottom: 1px solid var(--colors-stroke);
+	border-radius: 0 0 9px 9px;
+}
+.gate-message-tool summary,
+.stream-tool-summary {
 	min-height: 34px;
 	display: flex;
 	align-items: center;
 	flex-wrap: wrap;
 	gap: 4px;
 }
-.gate-message-tool[data-status="failed"] {
-	border: 1px solid var(--colors-error);
+.gate-message-tool .stream-tool-details {
+	padding-top: 0;
 }
-.gate-message-tool[data-status="failed"] .stream-tool-details {
-	display: block;
+.gate-message-tool .stream-disclosure::before {
+	font-size: 10px;
 }
 .gate-message-failure {
 	border-left: 3px solid var(--colors-error);
 	padding: 12px 16px;
 	background: var(--colors-surface-panel);
 	border-radius: 10px;
+}
+.stream-turn-note {
+	margin: 0;
+	color: var(--colors-on-surface-muted);
+	font-size: 10px;
 }
 @media (max-width: 840px) {
 	.gate-transcript > .gate-message-user {
