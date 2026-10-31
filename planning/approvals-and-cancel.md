@@ -13,7 +13,7 @@ Nanocoder supplies the title, option IDs, kinds and labels. `PermissionBroker` r
 
 The renderer forwards only the request ID and option ID. It never records a remembered allow/reject policy, fabricates options or interprets an option's name as permission. `ask_user` uses the same selection-only flow, with Nanocoder's own question and option labels; there is no free-text answer.
 
-Main adds one display-only question hint (`DEC-41`). It marks a permission request as a question only when the request matches the exact shape Nanocoder uses for `ask_user`: the same tool call announced this turn, matching question and option names, and `answer-N` option ids. Nanocoder reports no tool name, so this is recognition from shape, not a reported fact. A request that does not match stays an ordinary approval. The hint never adds, renames or reorders an option, never changes an option ID, and never lets the renderer answer. Its security review is required before merge.
+Main adds one display-only question hint (`DEC-41`). It marks a permission request as a question only when the request matches the exact shape Nanocoder uses for `ask_user`: the same tool call announced this turn with kind `other`, a question and 2 to 6 string options in its raw input, and option ids `answer-0` to `answer-(N-1)` in order, all `allow_once` and named as their labels. The ids are 0-based, as Nanocoder sends them. Nanocoder reports no tool name, so this is recognition from shape, not a reported fact. A request that does not match stays an ordinary approval. The hint never adds, renames or reorders an option, never changes an option ID, and never lets the renderer answer. Its security review is required before merge.
 
 The pinned Nanocoder `fc01e239` offers Allow/allow_once and Deny/reject_once for protected tools. All four ACP option kinds are covered with the fake fixture. The desktop does not invent allow-always or reject-all controls when Nanocoder does not offer them.
 
@@ -21,7 +21,7 @@ The pinned Nanocoder `fc01e239` offers Allow/allow_once and Deny/reject_once for
 
 `ApprovalRequests` accepts shared `PermissionRequestInfo` values, the shared mode, a busy flag, an optional fallback-focus ref and an `onAnswer` callback with the shared permission-answer signature. It contains no direct desktop bridge call. ThreadService can bind the callback to `answerThreadPermission` later.
 
-The card keeps the design's warning border, 2.2-second pulse and reduced-motion refusal of animation. Its named non-modal alert dialog takes focus without choosing a default button. The title includes the session's actual mode, followed by Nanocoder's title as escaped command/question text and a short note that the choice is sent to Nanocoder.
+The card keeps the design's warning border, 2.2-second pulse and reduced-motion refusal of animation. Its named non-modal alert dialog takes focus without choosing a default button. The title reads "approval required", with a meta line "Nanocoder · {mode} mode". Nanocoder's title follows as escaped command text, then a note that the choice is sent to Nanocoder and that approval does not guarantee success. A subagent request adds its source line.
 
 Options retain their labels and success/reject variants. Keys 1 to 9 select only an offered option while its card has focus. Repeated, modified, empty and multi-character key events are ignored. Other controls do not share these shortcuts. Additional options remain native buttons reached with Tab and Enter.
 
@@ -37,7 +37,7 @@ Native palette and shortcut dialogs keep focus while open. Incoming approvals ar
 
 ## Question dialog
 
-A request with the question hint opens the question dialog (`DEC-41`), titled "Nanocoder needs a choice". It shows Nanocoder's question text and each offered option as a numbered button. Choosing an option sends the same request ID and option ID as the approval card, through the same main-process check. There is no free-text field.
+A request with the question hint opens the question dialog (`DEC-41`), titled "Nanocoder needs a choice". It shows Nanocoder's question text and each offered option as a numbered button. A subagent request also shows the same source line as the approval card. The question text is a deliberate deviation from the approved mockup, which has no prompt line: the choices alone would not say what is being asked. Choosing an option sends the same request ID and option ID as the approval card, through the same main-process check. There is no free-text field.
 
 Closing the dialog, with its close control or Escape, does not answer the question. The request collapses to the approval shelf above the composer and stays pending until the user chooses an offered option there or cancels the turn. The dialog traps focus while open. When it closes, a waiting approval takes focus, as described above.
 
