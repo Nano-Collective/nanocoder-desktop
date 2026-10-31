@@ -44,6 +44,27 @@ test('footer names untested versions and keeps the version lines (A-28)', t => {
 	t.false(render().includes('untested'));
 });
 
+test('footer names unsupported versions in a short marker', t => {
+	t.true(
+		render({notice: 'not supported'}).includes(
+			'Nanocoder 1.31.0 · not supported',
+		),
+	);
+});
+
+test('a runtime error shows its message and a check-again button in the footer', t => {
+	t.false(render().includes('role="alert"'));
+	const html = render({
+		runtimeError: 'Nanocoder was not found',
+		onCheckRuntime: () => {},
+	});
+	t.true(html.includes('<p role="alert">Nanocoder was not found</p>'));
+	t.regex(html, /footer-text-button"[^>]*>check again<\/button>/);
+	t.false(
+		render({runtimeError: 'Nanocoder was not found'}).includes('check again'),
+	);
+});
+
 test('runtime and shortcut buttons render only when their owner passes a callback (A-29)', t => {
 	t.true(render().includes('aria-label="runtime details"'));
 	t.false(render({onOpenRuntime: undefined}).includes('runtime details'));
