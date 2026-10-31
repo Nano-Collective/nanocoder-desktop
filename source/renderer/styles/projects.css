@@ -107,20 +107,24 @@
 .welcome-recent-text {
 	display: grid;
 	flex: 1;
+	grid-template-columns: minmax(0, 1fr);
 	gap: 2px;
 	min-width: 0;
+}
+.welcome-recent-name,
+.welcome-recent-text small {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 .welcome-recent-name {
 	color: var(--colors-on-surface);
 	font-size: 12px;
-	overflow-wrap: anywhere;
-	white-space: normal;
 }
 .welcome-recent-text small {
 	color: var(--colors-on-surface-muted);
 	font-size: 10px;
-	overflow-wrap: anywhere;
-	white-space: normal;
 }
 .welcome-recent-end {
 	display: flex;
