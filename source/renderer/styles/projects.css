@@ -9,11 +9,12 @@
 	line-height: 1.6;
 }
 .welcome-logo {
+	display: block;
 	width: 68px;
 	height: 68px;
-	margin-bottom: 10px;
-	border-radius: 3px;
-	background: #ffffff;
+	margin-bottom: 19.8px;
+	border-radius: 0;
+	background: var(--colors-logo-tile);
 }
 .workspace-eyebrow,
 .workspace-setup-warning {
@@ -27,6 +28,7 @@
 }
 .workspace-welcome > .workspace-eyebrow {
 	width: min(100%, 500px);
+	margin-bottom: -8px;
 	font-size: 12px;
 	letter-spacing: 1.5px;
 }
@@ -287,6 +289,8 @@
 }
 .thread-view-only > .workspace-eyebrow {
 	margin: 0;
+	line-height: 1.6;
+	letter-spacing: 1.5px;
 }
 .thread-view-only-title {
 	margin: 0;
