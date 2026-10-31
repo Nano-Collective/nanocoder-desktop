@@ -527,7 +527,7 @@ export function App() {
 			<AppShell
 				logoSrc={logoUrl}
 				title={info?.name ?? 'Nanocoder'}
-				threadTitle={thread?.title}
+				threadTitle={importOpen ? 'saved sessions' : thread?.title}
 				onOpenThreadMenu={
 					thread
 						? () => openOverlay({kind: 'thread-menu', threadId: thread.id})
