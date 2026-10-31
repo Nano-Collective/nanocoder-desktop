@@ -69,7 +69,11 @@ export function isOutsideShelf(
 	active: Element | null,
 	body: Element | null,
 ): active is HTMLElement {
-	return !!active && active !== body && !active.closest('.approval-requests');
+	return (
+		active instanceof HTMLElement &&
+		active !== body &&
+		!active.closest('.approval-requests')
+	);
 }
 
 function useApprovalFocus(

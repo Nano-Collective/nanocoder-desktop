@@ -229,6 +229,13 @@ test('D-05 meta names the reported tool and leaves it out when none is reported'
 	);
 });
 
+test('D-05 tool name is the leading identifier, empty names and over-long names are left out', t => {
+	t.is(reportedToolName('execute_bash: echo a: b: c'), 'execute_bash');
+	t.is(reportedToolName(': echo a'), undefined);
+	t.is(reportedToolName(`${'a'.repeat(64)}: x`), 'a'.repeat(64));
+	t.is(reportedToolName(`${'a'.repeat(65)}: x`), undefined);
+});
+
 test('no waiting request renders no approval controls', t => {
 	t.is(
 		renderToStaticMarkup(
@@ -361,14 +368,28 @@ test('a subagent question names its source inside the dialog it is described by'
 });
 
 test('focus outside the shelf is an origin, but focus inside it never is (ask_user focus return)', t => {
-	const body = {closest: () => null} as unknown as Element;
-	const outside = {closest: () => null} as unknown as Element;
-	const inside = {
-		closest: (selector: string) =>
-			selector === '.approval-requests' ? {} : null,
-	} as unknown as Element;
-	t.true(isOutsideShelf(outside, body));
-	t.false(isOutsideShelf(inside, body));
-	t.false(isOutsideShelf(body, body));
-	t.false(isOutsideShelf(null, body));
+	class FakeHTMLElement {
+		shelf = false;
+		closest(selector: string) {
+			return this.shelf && selector === '.approval-requests' ? this : null;
+		}
+	}
+	const globals = globalThis as {HTMLElement?: unknown};
+	const real = globals.HTMLElement;
+	globals.HTMLElement = FakeHTMLElement;
+	try {
+		const body = new FakeHTMLElement() as unknown as Element;
+		const outside = new FakeHTMLElement() as unknown as Element;
+		const inside = Object.assign(new FakeHTMLElement(), {
+			shelf: true,
+		}) as unknown as Element;
+		const svg = {closest: () => null} as unknown as Element;
+		t.true(isOutsideShelf(outside, body));
+		t.false(isOutsideShelf(inside, body));
+		t.false(isOutsideShelf(body, body));
+		t.false(isOutsideShelf(null, body));
+		t.false(isOutsideShelf(svg, body));
+	} finally {
+		globals.HTMLElement = real;
+	}
 });
