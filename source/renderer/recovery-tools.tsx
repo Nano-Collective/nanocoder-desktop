@@ -1,7 +1,6 @@
 import * as React from 'react';
 import {Button, Card} from '@/renderer/ui';
 import type {IpcResult, SupervisorState} from '@/shared/ipc';
-import '@/renderer/styles/recovery-tools.css';
 
 interface RecoveryProps {
 	state: SupervisorState | null;
