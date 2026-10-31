@@ -68,3 +68,40 @@ test('a turn failure before any process state shows the standalone notice', t =>
 	t.true(html.includes('this turn failed'));
 	t.true(html.includes(failure));
 });
+
+function renderWithNew(status: SupervisorState['status'], newPending = false) {
+	return renderToStaticMarkup(
+		createElement(RecoveryTools, {
+			state: supervisor(status),
+			turnFailure: null,
+			onRetry: unused,
+			onCapture: unused,
+			onExport: unused,
+			onNew() {},
+			newPending,
+		}),
+	);
+}
+
+test('a failed process offers a metadata-only new thread after diagnostics, refused with its reason while a thread request is pending', t => {
+	const idle = renderWithNew('failed');
+	t.true(idle.includes('start a new thread in this project'));
+	t.true(
+		idle.indexOf('review diagnostics') <
+			idle.indexOf('start a new thread in this project'),
+	);
+	t.false(idle.includes('waiting for the thread request'));
+	const pending = renderWithNew('failed', true);
+	t.true(pending.includes('waiting for the thread request or native dialog'));
+	const button =
+		pending
+			.split('<button')
+			.find(part => part.includes('start a new thread in this project')) ?? '';
+	t.true(button.includes('disabled=""'));
+});
+
+test('a process that is not failed offers no new thread action', t => {
+	t.false(
+		renderWithNew('ready').includes('start a new thread in this project'),
+	);
+});

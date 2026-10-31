@@ -388,6 +388,8 @@ export function App() {
 			onDiagnostics={captureDiagnostics}
 			diagnosticsBusy={review.busy}
 			diagnosticsMessage={overlayOpen ? '' : review.message}
+			onNew={onNew}
+			newPending={workspace.pending}
 		/>
 	);
 

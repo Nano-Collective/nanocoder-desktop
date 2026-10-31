@@ -54,8 +54,9 @@ test('CHAT-09 view-only notice explains missing history and retains escaped desk
 			'remove affects desktop metadata only. deleting Nanocoder history is a separate, confirmed action.',
 		),
 	);
+	t.true(html.includes('retry this same thread'));
 	t.false(html.includes('retry this thread'));
-	t.is((html.match(/<button/g) ?? []).length, 2);
+	t.is((html.match(/<button/g) ?? []).length, 3);
 });
 
 test('view-only footer keeps the composer hidden and says messages still shown are memory-only', t => {
@@ -101,7 +102,7 @@ test('pending recovery actions are disabled with a visible reason and native but
 		});
 		t.true(html.includes('waiting for the thread request or native dialog'));
 		const buttons = html.match(/<button[^>]*>/g) ?? [];
-		t.is(buttons.length, runState === 'view-only' ? 2 : 1);
+		t.is(buttons.length, runState === 'view-only' ? 3 : 1);
 		t.true(buttons.every(button => button.includes('disabled=""')));
 		t.true(buttons.every(button => button.includes('type="button"')));
 		t.false(html.includes('tabindex="-1"'));
@@ -147,7 +148,11 @@ test('recovery notices forward only their supplied callbacks and never start wor
 	const missing = ThreadRecoveryNotice(next);
 	t.deepEqual(calls, []);
 	for (const action of actions(missing)) action.props.onClick?.();
-	t.deepEqual(calls, ['metadata-only new', 'metadata-only remove']);
+	t.deepEqual(calls, [
+		'metadata-only new',
+		'same-thread retry',
+		'metadata-only remove',
+	]);
 	calls.length = 0;
 	const retryable = ThreadRecoveryNotice({
 		...next,

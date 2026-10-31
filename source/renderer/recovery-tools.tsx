@@ -10,6 +10,8 @@ interface RecoveryProps {
 	onDiagnostics(): void;
 	diagnosticsBusy: boolean;
 	diagnosticsMessage: string;
+	onNew?(): void;
+	newPending?: boolean;
 }
 
 const FAILED_STATUSES = ['failed', 'untrusted', 'unsupported'];
@@ -38,15 +40,19 @@ export function TurnFailureNotice({reason}: {reason: string}) {
 function ProcessRecovery({
 	state,
 	busy,
+	newPending,
 	turnFailure,
 	onRetry,
 	onDiagnostics,
+	onNew,
 }: {
 	state: SupervisorState;
 	busy: boolean;
+	newPending: boolean;
 	turnFailure: string | null;
 	onRetry(): void;
 	onDiagnostics(): void;
+	onNew?(): void;
 }) {
 	const failed = FAILED_STATUSES.includes(state.status);
 	const preparing = state.status === 'starting' || state.status === 'stopping';
@@ -98,6 +104,9 @@ function ProcessRecovery({
 				!state.restart.nextAttemptAt && (
 					<p>automatic recovery stopped after {state.restart.limit} attempts</p>
 				)}
+			{failed && onNew && newPending && (
+				<p role="status">waiting for the thread request or native dialog</p>
+			)}
 			<div className="nc-recovery-actions">
 				{state.status !== 'ready' && (
 					<Button onClick={onRetry} disabled={busy || preparing}>
@@ -107,6 +116,11 @@ function ProcessRecovery({
 				<Button onClick={onDiagnostics} disabled={busy}>
 					review diagnostics
 				</Button>
+				{failed && onNew && (
+					<Button onClick={onNew} disabled={busy || newPending}>
+						start a new thread in this project
+					</Button>
+				)}
 			</div>
 		</Card>
 	);
@@ -119,6 +133,8 @@ export function RecoveryTools({
 	onDiagnostics,
 	diagnosticsBusy,
 	diagnosticsMessage,
+	onNew,
+	newPending = false,
 }: RecoveryProps) {
 	const [busy, setBusy] = React.useState(false);
 	const [message, setMessage] = React.useState('');
@@ -163,11 +179,13 @@ export function RecoveryTools({
 			<ProcessRecovery
 				state={state}
 				busy={busy || diagnosticsBusy}
+				newPending={newPending}
 				turnFailure={turnFailure}
 				onRetry={() => {
 					void retry();
 				}}
 				onDiagnostics={onDiagnostics}
+				onNew={onNew}
 			/>
 			{shown && <p role="status">{shown}</p>}
 		</>

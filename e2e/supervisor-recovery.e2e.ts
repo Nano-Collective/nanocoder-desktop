@@ -89,7 +89,7 @@ async function open(mode = 'ok'): Promise<string> {
 }
 
 for (const theme of ['dark', 'light'] as const) {
-	for (const action of ['retry', 'new', 'remove'] as const) {
+	for (const action of ['retry', 'new', 'remove', 'view-retry'] as const) {
 		test(`CHAT-09 ${theme} keyboard ${action} keeps recovery native, scoped and unqueued`, async () => {
 			const projectId = await open('replay-gates');
 			await page.emulateMedia({reducedMotion: 'reduce'});
@@ -231,68 +231,101 @@ for (const theme of ['dark', 'light'] as const) {
 					name:
 						action === 'new'
 							? 'start a new thread in this project'
-							: 'remove from desktop',
+							: action === 'view-retry'
+								? 'retry this same thread'
+								: 'remove from desktop',
 					exact: true,
 				});
 				await button.focus();
 				await expect(button).toBeFocused();
 				await expect(button).toHaveCSS('outline-width', '2px');
 				await button.press('Enter');
-				const confirmation = page.getByRole('dialog', {
-					name: action === 'new' ? 'new thread' : 'remove from desktop',
-					exact: true,
-				});
-				await expect(confirmation).toBeVisible();
-				await confirmation
-					.getByRole('button', {
-						name:
-							action === 'new'
-								? 'keep as new thread draft'
-								: 'remove from desktop',
-						exact: true,
-					})
-					.click();
-				await expect(confirmation).toBeHidden();
-				await expect(notice).toHaveCount(0);
-				const after = await page.evaluate(async scope => {
-					const {desktop} = window as unknown as {desktop: DesktopApi};
-					const rows = await desktop.listThreads({
-						projectId: scope.projectId,
-						archiveState: 'active',
-					});
-					const diagnostics = await desktop.getDiagnostics({
-						projectId: scope.projectId,
-					});
-					if (!rows.ok || !diagnostics.ok)
-						throw new Error('Missing fixture state');
-					return {threads: rows.value, lines: diagnostics.value.lines};
-				}, scope);
-				expect(after.lines).toEqual(diagnostics);
-				if (action === 'new') {
-					expect(after.threads.find(row => row.id === scope.threadId)).toEqual(
-						failed.value.thread,
+				if (action === 'view-retry') {
+					const resumes = (lines: readonly string[]) =>
+						lines.filter(line => line === '{"method":"session/resume"}').length;
+					await expect
+						.poll(async () => {
+							const lines = await page.evaluate(async projectId => {
+								const result = await (
+									window as unknown as {desktop: DesktopApi}
+								).desktop.getDiagnostics({projectId});
+								if (!result.ok) throw new Error(result.error.code);
+								return result.value.lines;
+							}, scope.projectId);
+							return resumes(lines);
+						})
+						.toBe(resumes(diagnostics) + 1);
+					await expect(button).toBeEnabled();
+					await expect(notice).toBeVisible();
+					await expect(input).toHaveCount(0);
+					const retried = await page.evaluate(async scope => {
+						const {desktop} = window as unknown as {desktop: DesktopApi};
+						const result = await desktop.getThreadSnapshot(scope);
+						if (!result.ok) throw new Error(result.error.code);
+						return result.value.thread;
+					}, scope);
+					expect(retried.id).toBe(scope.threadId);
+					expect(retried.runState).toBe('view-only');
+					expect(retried.nanocoderSessionId).toBe(
+						failed.value.thread.nanocoderSessionId,
 					);
-					const created = after.threads.filter(
-						row => row.id !== scope.threadId,
-					);
-					expect(created).toHaveLength(1);
-					expect(created[0].nanocoderSessionId).toBeNull();
-					expect(created[0].runState).toBe('new');
 				} else {
-					expect(after.threads.some(row => row.id === scope.threadId)).toBe(
-						false,
-					);
-					const removed = await page.evaluate(
-						scope =>
-							(
-								window as unknown as {desktop: DesktopApi}
-							).desktop.getThreadSnapshot(scope),
-						scope,
-					);
-					expect(removed).toMatchObject({
-						ok: false,
-						error: {code: 'NOT_FOUND'},
+					const confirmation = page.getByRole('dialog', {
+						name: action === 'new' ? 'new thread' : 'remove from desktop',
+						exact: true,
 					});
+					await expect(confirmation).toBeVisible();
+					await confirmation
+						.getByRole('button', {
+							name:
+								action === 'new'
+									? 'keep as new thread draft'
+									: 'remove from desktop',
+							exact: true,
+						})
+						.click();
+					await expect(confirmation).toBeHidden();
+					await expect(notice).toHaveCount(0);
+					const after = await page.evaluate(async scope => {
+						const {desktop} = window as unknown as {desktop: DesktopApi};
+						const rows = await desktop.listThreads({
+							projectId: scope.projectId,
+							archiveState: 'active',
+						});
+						const diagnostics = await desktop.getDiagnostics({
+							projectId: scope.projectId,
+						});
+						if (!rows.ok || !diagnostics.ok)
+							throw new Error('Missing fixture state');
+						return {threads: rows.value, lines: diagnostics.value.lines};
+					}, scope);
+					expect(after.lines).toEqual(diagnostics);
+					if (action === 'new') {
+						expect(
+							after.threads.find(row => row.id === scope.threadId),
+						).toEqual(failed.value.thread);
+						const created = after.threads.filter(
+							row => row.id !== scope.threadId,
+						);
+						expect(created).toHaveLength(1);
+						expect(created[0].nanocoderSessionId).toBeNull();
+						expect(created[0].runState).toBe('new');
+					} else {
+						expect(after.threads.some(row => row.id === scope.threadId)).toBe(
+							false,
+						);
+						const removed = await page.evaluate(
+							scope =>
+								(
+									window as unknown as {desktop: DesktopApi}
+								).desktop.getThreadSnapshot(scope),
+							scope,
+						);
+						expect(removed).toMatchObject({
+							ok: false,
+							error: {code: 'NOT_FOUND'},
+						});
+					}
 				}
 			}
 			expect(

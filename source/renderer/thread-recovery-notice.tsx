@@ -105,6 +105,9 @@ export function ThreadRecoveryNotice({
 				>
 					start a new thread in this project
 				</Button>
+				<Button disabled={pending} onClick={onRetry}>
+					retry this same thread
+				</Button>
 				<Button variant="reject" disabled={pending} onClick={onRemove}>
 					remove from desktop
 				</Button>
