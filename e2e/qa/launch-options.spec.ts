@@ -24,7 +24,7 @@ test('all e2e and QA launches use the shared Electron launcher', t => {
 	const root = path.resolve(import.meta.dirname, '..');
 	const bypasses = readdirSync(root, {recursive: true, encoding: 'utf8'})
 		.filter(name => name.endsWith('.ts') && !name.endsWith('.spec.ts'))
-		.filter(name => name !== 'qa/electron.ts')
+		.filter(name => name !== path.join('qa', 'electron.ts'))
 		.filter(name => {
 			const source = readFileSync(path.join(root, name), 'utf8');
 			return [

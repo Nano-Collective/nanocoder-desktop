@@ -2,6 +2,7 @@ import {
 	copyFileSync,
 	mkdirSync,
 	mkdtempSync,
+	realpathSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -14,7 +15,9 @@ import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {visibleTextContrast} from './qa/ui-contrast';
 
-const work = mkdtempSync(path.join(tmpdir(), 'nd-overlays-'));
+const work = realpathSync.native(
+	mkdtempSync(path.join(tmpdir(), 'nd-overlays-')),
+);
 const cli = path.join(work, 'nanocoder/dist/cli.js');
 let app: Awaited<ReturnType<typeof electron.launch>>;
 const paletteKey = process.platform === 'darwin' ? 'Meta+k' : 'Control+k';

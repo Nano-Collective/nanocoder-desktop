@@ -2927,10 +2927,12 @@ test('signal exit settles the thread activity and revokes its pending approval (
 	await failed.promise;
 	await rejected;
 	off();
-	t.deepEqual(supervisor.getState(project.id).exit, {
-		code: null,
-		signal: 'SIGTERM',
-	});
+	t.deepEqual(
+		supervisor.getState(project.id).exit,
+		process.platform === 'win32'
+			? {code: 1, signal: null}
+			: {code: null, signal: 'SIGTERM'},
+	);
 	t.false(service.activity(project.id).runningTurn);
 	await t.throwsAsync(
 		service.answerThreadPermission({

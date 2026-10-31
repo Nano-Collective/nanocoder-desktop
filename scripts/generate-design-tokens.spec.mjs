@@ -38,10 +38,14 @@ test('generation refuses incomplete themes and unknown references', t => {
 	t.throws(() => parseDesign('---\ncolors: {}\n---'), {
 		message: /Missing token group/,
 	});
-	t.throws(
-		() => parseDesign(markdown.replace('  primary-light: "#0000ee"\n', '')),
-		{message: /Missing light colour: primary/},
-	);
+	for (const newline of ['\n', '\r\n']) {
+		const source = markdown.replace(/\r?\n/g, newline);
+		t.throws(
+			() =>
+				parseDesign(source.replace(/^  primary-light: "#0000ee"\r?\n/m, '')),
+			{message: /Missing light colour: primary/},
+		);
+	}
 	const invalid = structuredClone(tokens);
 	invalid.components.button.textColor = '{colors.missing}';
 	t.throws(() => generateTokens(invalid), {message: /Unknown token/});

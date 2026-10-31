@@ -258,7 +258,12 @@ for (const restart of ['close', 'SIGKILL'] as const) {
 				{stdio: 'ignore', timeout: 10000},
 			);
 			t.is(crashed.error, undefined);
-			t.is(crashed.signal, 'SIGKILL');
+			t.deepEqual(
+				{status: crashed.status, signal: crashed.signal},
+				process.platform === 'win32'
+					? {status: 1, signal: null}
+					: {status: null, signal: 'SIGKILL'},
+			);
 			t.true(readdirSync(f.root).includes('desktop.sqlite-wal'));
 		}
 		const reopened = await f.open();
