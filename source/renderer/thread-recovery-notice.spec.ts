@@ -46,7 +46,7 @@ test('CHAT-09 view-only notice explains missing history and retains escaped desk
 	t.true(html.includes('remove from desktop'));
 	t.true(html.includes('&lt;script&gt;manual fixture&lt;/script&gt;'));
 	t.true(html.includes(`dateTime="${thread.lastActivityAt}"`));
-	t.notRegex(html, /<script>/);
+	t.notRegex(html, /<script\b/i);
 	t.false(html.includes('<textarea'));
 	t.true(
 		html.includes(
@@ -76,7 +76,7 @@ test('retryable failure offers only explicit same-thread retry with its safe rea
 	t.true(html.includes('&lt;script&gt;safe resume refusal&lt;/script&gt;'));
 	t.false(html.includes('start a new thread'));
 	t.false(html.includes('remove from desktop'));
-	t.notRegex(html, /<script>/);
+	t.notRegex(html, /<script\b/i);
 	t.is((html.match(/<button/g) ?? []).length, 1);
 });
 

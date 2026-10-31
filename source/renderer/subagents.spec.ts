@@ -232,7 +232,7 @@ test('SUB-07 replay and SDK child rows are fallback cards without live controls'
 	t.true(html.includes('historical outcome not reported'));
 	t.true(html.includes('child details not available'));
 	t.false(html.includes('<button'));
-	t.notRegex(html, /<script>/);
+	t.notRegex(html, /<script\b/i);
 });
 
 test('SUB-04 known interrupted cards keep their outcome when another turn starts', t => {
