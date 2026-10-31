@@ -511,6 +511,16 @@ test('the native-picked root is used to refuse a project-local runtime override'
 	await expect(page.getByLabel('Message')).toHaveCount(0);
 });
 
+test('a refusal for a known folder stays visible after connecting it again', async () => {
+	const refusal = {alert: 'Refusing a Nanocoder inside the project folder'};
+	await openFolder(work, 1, refusal);
+	await openFolder(work, 1, refusal);
+	await expect(page.getByLabel('Message')).toHaveCount(0);
+	await expect(
+		page.getByRole('alert').filter({hasText: refusal.alert}).first(),
+	).toBeVisible();
+});
+
 async function recordRecoveryProjects(): Promise<void> {
 	await page.evaluate(() => {
 		const state = window as unknown as {
