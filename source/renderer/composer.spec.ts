@@ -175,3 +175,15 @@ test('the draft textarea describes its state and keyboard hint together', t => {
 	});
 	t.is(busy.split('another thread is running').length, 2);
 });
+
+test('the options disclosure is a button that controls its body (C-05)', t => {
+	const html = render({});
+	const toggle =
+		/<button type="button" class="composer-options-toggle" aria-expanded="false" aria-controls="([^"]+)">mode and project default details<\/button>/.exec(
+			html,
+		);
+	const id = toggle?.[1] ?? '';
+	t.truthy(id);
+	t.true(html.includes(`<div id="${id}" class="gate-actions" hidden="">`));
+	t.false(html.includes('<details'));
+});
