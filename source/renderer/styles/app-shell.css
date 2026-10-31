@@ -119,6 +119,15 @@
 	background: transparent;
 }
 
+.shell-header-actions kbd {
+	padding: 2px 5px;
+	border-radius: 4px;
+	background: var(--colors-surface-elevated);
+	color: var(--colors-on-surface-muted);
+	font-size: 10px;
+	line-height: 16px;
+}
+
 .shell-header-actions .ui-badge {
 	font-size: 11px;
 	line-height: 17.6px;
@@ -222,6 +231,9 @@
 	}
 	.shell-header-actions {
 		gap: 2px;
+	}
+	.shell-header-actions > .ui-button {
+		padding-inline: 8px;
 	}
 	.shell-stream-scroll,
 	.shell-conversation-footer {
