@@ -432,7 +432,7 @@ async function showProjects() {
 }
 
 for (const ordering of ['initial empty', 'delayed empty'] as const) {
-	test(`seeded project setup recovers ${ordering} hydration and a closed compact switcher`, async () => {
+	test(`recents stay coherent after ${ordering} hydration and the seeded helper opens a closed compact switcher`, async () => {
 		const code = await hydrationFixtureCode();
 		await mountHydrationFixture(code, true);
 		await page.evaluate(() =>
@@ -456,26 +456,46 @@ for (const ordering of ['initial empty', 'delayed empty'] as const) {
 			ok: true,
 			value: {status: 'opened'},
 		});
-		if (ordering === 'delayed empty') {
-			await page.evaluate(() =>
-				(
-					window as unknown as HydrationWindow
-				).projectHydrationFixture.projectHydrationHarness.releaseEmpty(),
-			);
-		}
-		expect(await call('listProjects', {})).toMatchObject({
-			ok: true,
-			value: [{id: project.id, canonicalRoot: root}],
-		});
 		const recent = page.getByRole('region', {
 			name: 'recent projects',
 			exact: true,
 		});
-		await expect(recent).toContainText('no recent projects');
-		await expect(
-			recent.getByRole('button', {name: 'open project', exact: true}),
-		).toHaveCount(0);
-		await expect(page.locator('.project-switch-root')).not.toHaveText(root);
+		const assertCoherent = async () => {
+			expect(await call('listProjects', {})).toMatchObject({
+				ok: true,
+				value: [{id: project.id, canonicalRoot: root}],
+			});
+			expect(await call('getUiState', {})).toMatchObject({
+				ok: true,
+				value: {activeProjectId: project.id},
+			});
+			expect(
+				await call('getSupervisorState', {projectId: project.id}),
+			).toMatchObject({ok: true, value: {status: 'ready'}});
+			await expect(page.locator('.project-switch-root')).toHaveText(root);
+			await showProjects();
+			await expect(recent.locator('.recent-project')).toHaveCount(1);
+			await expect(recent.locator('.recent-project')).toHaveAttribute(
+				'aria-current',
+				'true',
+			);
+			await expect(recent.locator('.recent-project-path')).toHaveText(root);
+			await expect(
+				recent.getByRole('button', {name: 'open project', exact: true}),
+			).toBeEnabled();
+			await expect(recent).not.toContainText('no recent projects');
+		};
+		await assertCoherent();
+		if (ordering === 'delayed empty') {
+			await page.evaluate(() =>
+				(
+					window as unknown as HydrationWindow
+				).projectHydrationFixture.projectHydrationHarness.releaseEmpty(
+					'settled',
+				),
+			);
+			await assertCoherent();
+		}
 		await openSeededProject(page, root, async () => {
 			await page.reload();
 			await mountHydrationFixture(code, false);
