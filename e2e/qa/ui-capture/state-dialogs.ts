@@ -310,7 +310,7 @@ export const states: CaptureState[] = [
 					.getByRole('button', {name: 'archive thread', exact: true})
 					.click();
 				await expect(confirmation).toBeHidden();
-				// Archived rows stay in the rail's collapsed archived group, so check the active groups only.
+				// Archived rows leave the rail for the archived link, so check the active groups only.
 				await expect(
 					page
 						.locator('section.thread-group .thread-row')

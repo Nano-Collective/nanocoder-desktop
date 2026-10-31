@@ -381,6 +381,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				rail.locator('.sidebar-link', {hasText: 'archived'}),
 				rail.locator('.sidebar-link', {hasText: 'import sessions'}),
 				page.getByRole('button', {name: 'runtime details', exact: true}),
+				page.getByRole('button', {name: 'keyboard shortcuts', exact: true}),
 				page.getByRole('button', {name: 'thread actions', exact: true}),
 				palette,
 				stream,
