@@ -178,7 +178,12 @@ details[open] > summary .stream-disclosure::before {
 	color: var(--colors-on-surface);
 	font-size: 16px;
 	font-weight: var(--typography-body-md-font-weight);
+	line-height: 1.35;
 	margin-block: 10px 12px;
+}
+
+.stream-markdown > :first-child:is(h1, h2, h3, h4, h5, h6) {
+	margin-top: 0;
 }
 
 .stream-markdown strong {
