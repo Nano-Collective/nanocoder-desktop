@@ -266,16 +266,13 @@ details[open] > summary .stream-disclosure::before {
 	font-style: normal;
 }
 
-/* One shared panel per run of tool calls; later rows close the 18px transcript gap and overlap the divider above, so rows pitch at 34px. */
+/* One shared panel per run of tool calls, with no row dividers; later rows close the 18px transcript gap, so rows pitch at 34px. */
 .gate-message-tool:not(:has(.subagent-run-card)) {
-	margin-inline: 12px;
 	padding-inline: 12px;
-	border-inline: 1px solid var(--colors-stroke);
 	background: var(--colors-surface-panel);
 }
 .gate-message-tool.stream-tool-first:not(:has(.subagent-run-card)),
 .gate-message-tool.stream-tool-only:not(:has(.subagent-run-card)) {
-	border-top: 1px solid var(--colors-stroke);
 	border-radius: 9px 9px 0 0;
 }
 .gate-message-tool.stream-tool-only:not(:has(.subagent-run-card)) {
@@ -283,11 +280,9 @@ details[open] > summary .stream-disclosure::before {
 }
 .gate-message-tool.stream-tool-middle:not(:has(.subagent-run-card)),
 .gate-message-tool.stream-tool-last:not(:has(.subagent-run-card)) {
-	margin-top: -19px;
-	border-top: 1px solid var(--colors-stroke-soft);
+	margin-top: -18px;
 }
 .gate-message-tool.stream-tool-last:not(:has(.subagent-run-card)) {
-	border-bottom: 1px solid var(--colors-stroke);
 	border-radius: 0 0 9px 9px;
 }
 .gate-message-tool summary,
