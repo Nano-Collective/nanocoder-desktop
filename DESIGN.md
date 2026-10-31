@@ -376,7 +376,7 @@ Chat headings may step up to 16px. The centred first action uses a 26px heading.
 A compact full-height sidebar beside the conversation canvas. The title bar belongs to the canvas, not above the sidebar. No static session tabs, empty inspector or unfinished-feature placeholders.
 
 - Sidebar: official logo, compact project switcher, new-thread action, then today/earlier threads in last-activity order. Archived threads stay separate. One glyph, compact age and selected-thread state copy, without attention reordering. The project switcher and new-thread action open their dialogs (see Overlays and dialogs).
-- Header: project/thread identity, distinct turn and ACP states, command palette and purposeful available actions.
+- Header: project/thread identity, the turn state, command palette and purposeful available actions. The ACP state sits in the sidebar footer.
 - Conversation: constrained to 740px, centred in spare space. Transcript scrolls independently. The approval shelf sits above the composer within that same column, not in scrollback.
 - Empty workspace: a centred useful first action, choose a folder. After opening a new thread, centre the draft composer until there is conversation content. Never invent prompt starters.
 - Workbench: an optional right slot for later files/review/browser tools. It is absent when unused. At 840px and below an open workbench owns the conversation canvas and has an explicit back-to-chat action, while project navigation remains reachable.
@@ -400,7 +400,7 @@ Small control radii, comfortable message and composer radii. User messages have 
 
 Project switcher shows the selected project and a compact root label. Activating it opens the projects dialog: recent roots with the selected one marked, locate for a missing folder, and add project folder. No persistent visible-project list. Thread actions remain scoped to the project and explain busy refusals. Full titles and roots remain accessible even when visually truncated.
 
-The header shows actual thread identity, not pretend tabs. The turn state is one dot and word: running uses the primary blue dot, approval required uses the warning dot, and ready uses a neutral dot. ACP readiness comes only from supervisor state, independently from turn state, and its ready marker is success green. Version/runtime details are secondary, not the first-launch content.
+The header shows actual thread identity, not pretend tabs. The turn state is one dot and word: running uses the primary blue dot, approval required uses the warning dot, and ready uses a neutral dot. ACP readiness comes only from supervisor state, independently from turn state. It sits in the sidebar footer, and its ready marker is success green. Version/runtime details are secondary, not the first-launch content.
 
 ### Conversation
 
