@@ -134,6 +134,34 @@ pre,
 	background: var(--components-status-badge-failed-light-background-color);
 }
 
+.ui-badge--plain,
+:root[data-theme="light"] .ui-badge--plain {
+	padding: 0;
+	border-color: transparent;
+	background: transparent;
+	color: var(--colors-on-surface);
+}
+
+.ui-badge-glyph--running {
+	color: var(--components-status-badge-running-text-color);
+}
+
+.ui-badge-glyph--approval {
+	color: var(--components-status-badge-approval-text-color);
+}
+
+.ui-badge-glyph--failed {
+	color: var(--components-status-badge-failed-text-color);
+}
+
+.ui-badge-glyph--success {
+	color: var(--colors-success);
+}
+
+.ui-badge-glyph--muted {
+	color: var(--colors-on-surface-muted);
+}
+
 .ui-card {
 	display: grid;
 	gap: var(--spacing-lg);

@@ -10,8 +10,10 @@ export function AppShell({
 	projectRail,
 	threadRail,
 	sidebarFooter,
+	onOpenThreadMenu,
 	streamTools,
 	composer,
+	composerPlacement = 'bottom',
 	approvalShelf,
 	palette,
 	workbench,
@@ -20,20 +22,27 @@ export function AppShell({
 }: {
 	title: React.ReactNode;
 	logoSrc?: string;
-	threadTitle?: React.ReactNode;
+	// Undefined on the welcome page, which shows the local workspace eyebrow.
+	threadTitle?: string;
 	projectName?: string;
-	statusBadges: React.ReactNode;
+	// Header turn status slot.
+	statusBadges?: React.ReactNode;
 	projectRail?: React.ReactNode;
 	threadRail?: React.ReactNode;
+	// Sidebar footer slot. Its rows are styled by the sidebar.
 	sidebarFooter?: React.ReactNode;
+	// Shows the thread actions button after the title when set.
+	onOpenThreadMenu?: () => void;
 	streamTools?: React.ReactNode;
 	composer?: React.ReactNode;
+	composerPlacement?: 'centred' | 'bottom';
 	approvalShelf?: React.ReactNode;
 	palette?: React.ReactNode;
 	workbench?: {title: string; children: React.ReactNode; onClose(): void};
 	bottomPanel?: React.ReactNode;
 	children: React.ReactNode;
 }) {
+	const inThread = threadTitle !== undefined;
 	return (
 		<div className="app-shell">
 			<aside className="shell-project-rail" aria-label="project rail">
@@ -50,14 +59,37 @@ export function AppShell({
 			<div className="shell-main-area">
 				<header className="shell-title-bar">
 					<div className="shell-identity">
-						{projectName && <p className="shell-breadcrumb">{projectName}</p>}
-						<h2>{threadTitle ?? 'your workspace'}</h2>
+						<p className="shell-breadcrumb">
+							{inThread
+								? `${projectName ?? 'selected project'} / conversation`
+								: 'local workspace'}
+						</p>
+						<div className="shell-title-row">
+							<h2>{inThread ? threadTitle : 'your projects'}</h2>
+							{inThread && onOpenThreadMenu && (
+								<button
+									type="button"
+									className="shell-menu-button"
+									aria-label="thread actions"
+									aria-haspopup="dialog"
+									onClick={onOpenThreadMenu}
+								>
+									<span aria-hidden="true">•••</span>
+								</button>
+							)}
+						</div>
 					</div>
-					<div className="gate-actions">{statusBadges}</div>
-					{palette}
+					<div className="shell-header-actions">
+						{statusBadges}
+						{palette}
+					</div>
 				</header>
 				<div className="shell-canvas" data-workbench-open={Boolean(workbench)}>
-					<main className="shell-stream" aria-label="conversation workspace">
+					<main
+						className="shell-stream"
+						aria-label="conversation workspace"
+						data-composer-placement={composerPlacement}
+					>
 						<div className="shell-stream-scroll">
 							{streamTools && (
 								<div
