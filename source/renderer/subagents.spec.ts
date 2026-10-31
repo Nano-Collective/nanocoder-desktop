@@ -199,7 +199,7 @@ test('SUB-01/04 renders a flat U.7 card with truthful depth and whole-turn stop'
 			'depth, elapsed time and child tool details were not reported.',
 		),
 	);
-	t.true(html.includes('source bounds: depth 2, batch 5'));
+	t.false(html.includes('source bounds'));
 	t.true(html.includes('display-only progress'));
 	t.true(html.includes('reported role · explore'));
 	t.true(html.includes('entire turn and all subagents'));

@@ -184,16 +184,14 @@ test.describe('fc01-shaped delegation cards', () => {
 		).toBeVisible();
 	});
 
-	test('thin delegation safely falls back and source bounds are not settings (SUB-06/07)', async () => {
+	test('thin delegation safely falls back and shows no bounds settings (SUB-06/07)', async () => {
 		const retained = await cards().allTextContents();
 		await prompt('fixture fallback');
 		await expect(cards()).toHaveCount(retained.length + 1);
 		await expect(cards().last()).toContainText(
 			'child tool details were not reported',
 		);
-		await expect(cards().last()).toContainText(
-			'source bounds: depth 2, batch 5',
-		);
+		await expect(cards().last()).not.toContainText('source bounds');
 		await expect(cards().last()).toContainText('elapsed time');
 		await expect(cards().last()).toContainText('display-only progress');
 		await expect(cards().last().getByRole('combobox')).toHaveCount(0);

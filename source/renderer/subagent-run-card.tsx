@@ -108,7 +108,7 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 				depth, elapsed time and child tool details were not reported.
 			</p>
 			<div className="subagent-foot">
-				<span>display-only progress · source bounds: depth 2, batch 5</span>
+				<span>display-only progress</span>
 				{canStop && (
 					<Button
 						ref={stopButton}
