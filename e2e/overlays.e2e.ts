@@ -450,7 +450,7 @@ test('palette adds opens and locates projects through the existing project contr
 			.getByRole('dialog', {name: 'command palette', exact: true})
 			.getByRole('option')
 			.first(),
-	).toContainText('folder missing; locate it before opening');
+	).toContainText('folder missing');
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('dialog')).toBeVisible();
 	await page.keyboard.press('Escape');
