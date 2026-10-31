@@ -58,8 +58,11 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 								'state not reported')
 							: 'state not reported';
 	const canStop = running && !history && !outcome && unfinished && onStopTurn;
-	const name = subagentLabel(role, 160) ?? 'subagent';
+	const reportedRole = subagentLabel(role, 160);
+	const name = reportedRole ?? 'subagent';
 	const progress = subagentLabel(title);
+	const historyError =
+		history && (state === 'failed' || state === 'interrupted');
 	return (
 		<section
 			ref={card}
@@ -67,53 +70,58 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 			aria-label={`subagent run ${position} of ${total}: ${name}`}
 			tabIndex={-1}
 		>
-			<header>
+			<div className="subagent-head">
 				<span className="subagent-task">
 					<span aria-hidden="true">⌗ </span>
 					{subagentLabel(task) ?? name}
 				</span>
-				<span className="subagent-depth">depth not reported · limit 2</span>
 				<span
-					className={
-						history && (state === 'failed' || state === 'interrupted')
-							? 'subagent-status--error'
-							: undefined
-					}
+					className={`subagent-state${
+						historyError
+							? ' subagent-status--error'
+							: state === 'running'
+								? ' subagent-status--running'
+								: ''
+					}`}
 				>
-					<span aria-hidden="true">
+					<span aria-hidden="true" className="subagent-state-glyph">
 						{state === 'completed'
 							? '✓'
 							: state === 'failed' || (history && state === 'interrupted')
 								? '✕'
 								: state === 'running'
-									? '◐'
+									? '●'
 									: '○'}{' '}
 					</span>
 					{state}
 				</span>
-				<span>elapsed not reported</span>
+			</div>
+			<p className="subagent-role">
+				{reportedRole ? `reported role · ${reportedRole}` : 'role not reported'}
+			</p>
+			{progress && (
+				<p className="subagent-progress">
+					<span aria-hidden="true">↳ </span>Nanocoder reports: {progress}
+				</p>
+			)}
+			<p className="subagent-fallback">
+				depth, elapsed time and child tool details were not reported.
+			</p>
+			<div className="subagent-foot">
+				<span>display-only progress · source bounds: depth 2, batch 5</span>
 				{canStop && (
 					<Button
 						ref={stopButton}
 						variant="reject"
 						disabled={stopping}
-						aria-label={`stop turn: ${name}; stops the entire turn and all subagents`}
+						aria-label={`stop whole turn: ${name}; stops the entire turn and all subagents`}
 						onClick={onStopTurn}
 					>
 						<span aria-hidden="true">✕ </span>
-						{stopping ? 'stopping turn' : 'stop turn'}
+						{stopping ? 'stopping whole turn' : 'stop whole turn'}
 					</Button>
 				)}
-			</header>
-			{progress && (
-				<p className="subagent-progress">
-					<span aria-hidden="true">└ </span>reported: {progress}
-				</p>
-			)}
-			<p className="subagent-fallback">
-				child details not available · source bounds: depth 2, batch 5 · not
-				configurable here
-			</p>
+			</div>
 		</section>
 	);
 });
