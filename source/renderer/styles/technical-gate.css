@@ -99,3 +99,14 @@ dt,
 .gate-transcript .gate-message-user {
 	border-left: 2px solid var(--colors-primary);
 }
+
+@media (max-width: 1050px) {
+	.technical-gate {
+		padding-top: 17px;
+	}
+}
+@media (max-width: 840px) {
+	.technical-gate {
+		padding-top: 15px;
+	}
+}

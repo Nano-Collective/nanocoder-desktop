@@ -233,7 +233,10 @@ test('shell geometry and pinned composer follow all three widths without an empt
 				if (width >= 1020) expect(geometry.reading.width).toBeCloseTo(740, 0);
 				else expect(geometry.reading.width).toBeLessThanOrEqual(740);
 				if (geometry.tools === 0)
-					expect(geometry.readingOffset).toBeCloseTo(20, 0);
+					expect(geometry.readingOffset).toBeCloseTo(
+						width <= 840 ? 15 : width <= 1050 ? 17 : 20,
+						0,
+					);
 				const reading = width <= 840 ? '24px' : width <= 1050 ? '30px' : '40px';
 				expect(geometry.scrollPadding).toEqual([reading, reading]);
 				expect(geometry.footerPadding).toEqual([reading, reading]);
