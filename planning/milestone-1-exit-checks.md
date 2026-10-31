@@ -61,7 +61,8 @@ screen-reader QA requires separate approval.
   lifecycle/finished-response announcements, one-second write limits and
   modal host ownership. Chromium AX/DOM delivery is not native spoken delivery.
 - PERF-04: `streaming.e2e.ts` checks 300 ordered updates, at least 100 updates
-  per second and input/scroll/frame/event-loop response within 100ms. It is a
+  per second, median and p95 frame, input and scroll response within 100ms over
+  at least 20 samples each, and event-loop maximum within 100ms. It is a
   local fake-stream result, not general scalability or memory evidence.
 
 The known designer-owned light approval title/Allow contrast gaps and
