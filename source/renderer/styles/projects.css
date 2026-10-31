@@ -170,7 +170,7 @@
 /* The mockup's import page is 850px wide, wider than the 740px reading column. */
 .technical-gate:has(> .session-import-page) {
 	max-width: none;
-	padding: 8px 0 20px;
+	padding: 28px 0 20px;
 }
 .session-import-page {
 	display: grid;
@@ -181,7 +181,8 @@
 }
 /* The reference pages have no scrollbar gutter, so their centre matches. */
 .shell-stream-scroll:has(.workspace-welcome),
-.shell-stream-scroll:has(.session-import-page) {
+.shell-stream-scroll:has(.session-import-page),
+.shell-stream-scroll:has(.thread-view-only) {
 	scrollbar-gutter: auto;
 }
 @media (max-width: 1050px) {
@@ -191,7 +192,7 @@
 }
 @media (max-width: 840px) {
 	.technical-gate:has(> .session-import-page) {
-		padding-top: 4px;
+		padding-top: 24px;
 	}
 	.session-import-page {
 		width: 100%;
@@ -307,8 +308,15 @@
 }
 
 /* The mockup's view-only page is 850px centred, wider than the 740px reading column. */
+/* The empty conversation row adds an 18px gap above the notice, so 10px here totals 28px. */
 .technical-gate:has(> .thread-view-only) {
 	max-width: none;
+	padding-top: 10px;
+}
+@media (max-width: 840px) {
+	.technical-gate:has(> .thread-view-only) {
+		padding-top: 6px;
+	}
 }
 .thread-view-only {
 	display: grid;
@@ -316,6 +324,16 @@
 	width: min(100%, 850px);
 	min-width: 0;
 	margin-inline: auto;
+}
+@media (max-width: 1050px) {
+	.thread-view-only {
+		width: calc(100% - 12px);
+	}
+}
+@media (max-width: 840px) {
+	.thread-view-only {
+		width: 100%;
+	}
 }
 .thread-view-only > .workspace-eyebrow {
 	margin: 0;
