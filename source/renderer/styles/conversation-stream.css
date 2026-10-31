@@ -268,9 +268,7 @@ details[open] > summary .stream-disclosure::before {
 
 /* One shared panel per run of tool calls; later rows close the 18px transcript gap and overlap the divider above, so rows pitch at 34px. */
 .gate-message-tool:not(:has(.subagent-run-card)) {
-	margin-inline: 12px;
 	padding-inline: 12px;
-	border-inline: 1px solid var(--colors-stroke);
 	background: var(--colors-surface-panel);
 }
 .gate-message-tool.stream-tool-first:not(:has(.subagent-run-card)),
