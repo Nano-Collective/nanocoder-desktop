@@ -53,6 +53,7 @@ function ThreadMenuDialog({thread, data, api}: BodyProps) {
 	const note = reasons.shared ?? reasons.rename ?? reasons.deleteHistory;
 	return (
 		<DialogShell
+			className="dialog-shell--thread-menu"
 			title="thread actions"
 			closeLabel="close thread actions"
 			onClose={api.close}

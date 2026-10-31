@@ -195,6 +195,10 @@
 	min-height: 365px;
 }
 
+.dialog-shell--thread-menu {
+	min-height: 275px;
+}
+
 .thread-menu-items {
 	display: grid;
 	gap: 0;
