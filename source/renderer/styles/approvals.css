@@ -1,0 +1,56 @@
+.approval-requests,
+.approval-dialog {
+	display: grid;
+	gap: var(--spacing-lg);
+	min-width: 0;
+}
+
+.approval-requests {
+	gap: var(--spacing-xxl);
+}
+
+.approval-requests .ui-card--approval {
+	scroll-margin-block: var(--spacing-xs);
+}
+
+.approval-dialog {
+	border-radius: var(--rounded-sm);
+}
+
+.approval-effect {
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-body-sm-font-size);
+}
+
+.approval-key-hints .ui-key-hint {
+	color: var(--colors-on-surface-muted);
+	opacity: 1;
+}
+
+.approval-requests .ui-card--approval {
+	padding: 14px 17px;
+	border-radius: 11px;
+	background: var(--colors-surface-panel);
+}
+.approval-dialog h2 {
+	font-size: 12px;
+	letter-spacing: 0;
+	text-transform: none;
+}
+.approval-dialog > p:has(code) {
+	padding: 11px 12px;
+	border-radius: 6px;
+	background: var(--colors-surface);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.approval-dialog code {
+	font-size: 12px;
+	line-height: 1.6;
+}
+.approval-effect {
+	font-size: 10px;
+}
+.approval-key-hints .ui-button {
+	font-size: 11px;
+}

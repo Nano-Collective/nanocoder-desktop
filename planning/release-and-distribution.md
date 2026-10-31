@@ -3,7 +3,7 @@
 Prototype versus public release, bundling Nanocoder, the runtime, packaging, notices, signing and the release flow.
 
 - Status: Draft
-- Last updated: 2026-10-28
+- Last updated: 2026-10-29
 - Drafted by: @akramcodez
 
 ## Requirements
@@ -87,6 +87,8 @@ Installer size and memory are measured every release (`PERF-09`, `PERF-10`), as 
 ## Third-party notices
 
 Nanocoder and Electron are MIT licensed; the ACP SDK is Apache-2.0; `diff` is BSD-3-Clause ([`tech-stack.md`](tech-stack.md#electron-specific-choices)). Distributions keep Nanocoder's copyright and licence and include complete third-party notices ([whitepaper][wp-dist]). Suggestion (not discussed): generate notices from both lockfiles (the desktop's and the bundled Nanocoder's) at build time, ship them in the app, and fail CI when they are stale.
+
+The UI foundations bundle Fira Code 400 from `@fontsource/fira-code`. Its complete upstream copyright and SIL OFL 1.1 licence are in [`THIRD-PARTY-NOTICES.txt`](../THIRD-PARTY-NOTICES.txt), included in the app archive beside `package.json`. A unit test rejects notice drift against the installed font package. Vite includes the local font files in `out/renderer/assets/`, covered by the packaging allow-list. This does not complete phase 4.3's full dependency-notices generator.
 
 ## Signing, notarisation and auto-update
 

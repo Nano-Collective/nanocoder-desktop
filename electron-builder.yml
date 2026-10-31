@@ -7,9 +7,14 @@ directories:
 files:
   - out/**
   - package.json
+  - THIRD-PARTY-NOTICES.txt
+  - '!e2e/**'
+  - '!.qa/**'
 asarUnpack:
   - '**/*.node'
+  - '**/node-pty/**'
 npmRebuild: true
+buildDependenciesFromSource: true
 mac:
   category: public.app-category.developer-tools
   # electron-updater needs the .zip.

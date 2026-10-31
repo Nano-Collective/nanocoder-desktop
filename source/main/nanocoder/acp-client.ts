@@ -10,23 +10,41 @@ import {
 	type ResumeSessionResponse,
 	type SessionNotification,
 } from '@agentclientprotocol/sdk';
-import {describeAgent} from '@/main/nanocoder/capabilities';
+import {
+	describeAgent,
+	type ExtensionProbes,
+} from '@/main/nanocoder/capabilities';
+import {sessionModeOptions} from '@/main/nanocoder/control-options';
 import {type Exit, launchNanocoder, waitForExit} from '@/main/nanocoder/launch';
 import {
 	ProtocolViolation,
 	protocolStream,
 } from '@/main/nanocoder/protocol-stream';
+import {
+	type ConfigOptionsObserver,
+	createSessionControls,
+	type SessionOffers,
+} from '@/main/nanocoder/session-controls';
+import {
+	type SessionTitleChange,
+	sessionTitle,
+} from '@/main/nanocoder/session-title';
 import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
 import {type TrustRefusal, trustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
+import {parsePromptMetadata} from '@/main/nanocoder/turn-metadata';
 import type {
 	ConnectedAgent,
 	NanocoderMode,
 	NanocoderRuntime,
+	ProjectConfigSelect,
 	SessionInfo,
+	StreamMetadata,
 	TurnEvent,
 	TurnResult,
 } from '@/shared/ipc';
+
+export type {SessionOffers} from '@/main/nanocoder/session-controls';
 
 const INITIALIZE_TIMEOUT_MS = 60_000;
 const SHUTDOWN_GRACE_MS = 5_000;
@@ -52,14 +70,30 @@ export interface NanocoderConnection {
 	readonly agent: ConnectedAgent;
 	readonly stderr: StderrRing;
 	readonly exited: Promise<Exit>;
+	listSessions?(): Promise<unknown>;
 	newSession(mode: NanocoderMode): Promise<SessionInfo>;
 	resumeSession(
 		sessionId: string,
 		mode: NanocoderMode,
 	): Promise<ResumedSession>;
 	deleteSession(sessionId: string): Promise<void>;
-	prompt(sessionId: string, text: string): Promise<TurnResult>;
+	renameSession(sessionId: string, title: string): Promise<string>;
+	getSessionOffers(sessionId: string): SessionOffers | undefined;
+	observeConfigOptions?(observer: ConfigOptionsObserver): () => void;
+	setMode(sessionId: string, mode: NanocoderMode): Promise<SessionInfo>;
+	setConfigOption(
+		sessionId: string,
+		configId: ProjectConfigSelect['id'],
+		value: string,
+	): Promise<SessionOffers>;
+	prompt(sessionId: string, text: string): Promise<NanocoderTurnResult>;
+	cancel(sessionId: string): Promise<void>;
+	probeExtensions(): Promise<ExtensionProbes>;
 	close(): Promise<void>;
+}
+
+export interface NanocoderTurnResult extends TurnResult {
+	metadata?: StreamMetadata;
 }
 
 export interface ResumedSession {
@@ -74,8 +108,14 @@ export interface ConnectOptions {
 	clientInfo: Implementation;
 	env?: NodeJS.ProcessEnv;
 	homeDir?: string;
+	stderr?: StderrRing;
 	initializeTimeoutMs?: number;
+	shutdownGraceMs?: number;
+	probeTimeoutMs?: number;
+	signal?: AbortSignal;
 	onUpdate?: (update: SessionNotification['update']) => void;
+	onSessionUpdate?: (notification: SessionNotification) => void;
+	onTitleChanged?: (change: SessionTitleChange) => void;
 	// Without it, every permission request is answered as cancelled: nothing is allowed by default.
 	onPermission?: (
 		request: RequestPermissionRequest,
@@ -123,6 +163,7 @@ export function nanocoderMessage(lines: readonly string[]): string | undefined {
 export async function connectNanocoder(
 	options: ConnectOptions,
 ): Promise<NanocoderConnection> {
+	options.signal?.throwIfAborted();
 	const child = launchNanocoder(
 		options.runtime,
 		['--acp'],
@@ -130,7 +171,7 @@ export async function connectNanocoder(
 		options.env,
 	);
 	const exited = waitForExit(child);
-	const stderr = new StderrRing({homeDir: options.homeDir});
+	const stderr = options.stderr ?? new StderrRing({homeDir: options.homeDir});
 	let violated = false;
 
 	// EPIPE after Nanocoder exits is reported through the exit, not as a crash.
@@ -140,7 +181,31 @@ export async function connectNanocoder(
 	child.stderr.on('end', () => stderr.flush());
 
 	// Set while session/resume replays history, so replayed updates are not shown as new activity.
-	let replay: SessionNotification['update'][] | undefined;
+	let replay:
+		| {
+				sessionId: string;
+				updates: SessionNotification['update'][];
+				bytes: number;
+				failed: boolean;
+		  }
+		| undefined;
+	let disposed = false;
+	const clearReplay = () => {
+		if (!replay) return;
+		replay.updates.length = 0;
+		replay.bytes = 0;
+	};
+	const readySessions = new Set<string>();
+	const activePrompts = new Set<Promise<unknown>>();
+	let notificationControls:
+		| ReturnType<typeof createSessionControls>
+		| undefined;
+	let canCloseSession = false;
+	const stream = protocolStream(child.stdout, child.stdin, line => {
+		violated = true;
+		stderr.append(`[stdout] ${line}`);
+		child.kill();
+	});
 
 	const connection = client({name: options.clientInfo.name})
 		.onRequest(methods.client.session.requestPermission, ({params}) =>
@@ -149,24 +214,93 @@ export async function connectNanocoder(
 				: {outcome: {outcome: 'cancelled'}},
 		)
 		.onNotification(methods.client.session.update, ({params}) => {
-			if (replay) replay.push(params.update);
-			else options.onUpdate?.(params.update);
+			if (replay) {
+				if (disposed || params.sessionId !== replay.sessionId || replay.failed)
+					return;
+				const bytes = Buffer.byteLength(JSON.stringify(params.update), 'utf8');
+				if (
+					replay.updates.length >= 100_000 ||
+					replay.bytes + bytes > 16 * 1024 * 1024
+				) {
+					replay.failed = true;
+					clearReplay();
+					void close();
+					return;
+				}
+				replay.bytes += bytes;
+				replay.updates.push(params.update);
+			} else {
+				options.onUpdate?.(params.update);
+				options.onSessionUpdate?.(params);
+			}
 		})
-		.connect(
-			protocolStream(child.stdout, child.stdin, line => {
-				violated = true;
-				stderr.append(`[stdout] ${line}`);
-				child.kill();
-			}),
-		);
+		.onNotification(
+			'_nanocoder/sessionTitleChanged',
+			sessionTitle,
+			({params}) => {
+				if (params) options.onTitleChanged?.(params);
+			},
+		)
+		.connect({
+			...stream,
+			// The SDK drops malformed config entries; authority must see the original.
+			readable: stream.readable.pipeThrough(
+				new TransformStream({
+					transform(frame, controller) {
+						notificationControls?.receiveConfigNotification(frame, !!replay);
+						controller.enqueue(frame);
+					},
+				}),
+			),
+		});
 
-	const close = async (): Promise<void> => {
-		child.stdin.end();
-		connection.close();
-		const timer = setTimeout(() => child.kill(), SHUTDOWN_GRACE_MS);
-		await exited;
-		clearTimeout(timer);
+	const closeQuietly = async (sessionId: string) => {
+		if (!canCloseSession) return;
+		await connection.agent
+			.request(methods.agent.session.close, {sessionId})
+			.catch(() => undefined);
 	};
+
+	let closing: Promise<void> | undefined;
+	const close = (): Promise<void> => {
+		disposed = true;
+		clearReplay();
+		notificationControls?.dispose();
+		closing ??= (async () => {
+			const grace = options.shutdownGraceMs ?? SHUTDOWN_GRACE_MS;
+			const terminate = () => {
+				connection.close();
+				child.stdin.end();
+				child.kill();
+			};
+			const timer = setTimeout(terminate, grace);
+			const kill = setTimeout(() => {
+				child.kill('SIGKILL');
+				child.stdin.destroy();
+				child.stdout.destroy();
+				child.stderr.destroy();
+			}, grace * 2);
+			await Promise.all([...readySessions].map(closeQuietly));
+			await Promise.allSettled([...activePrompts]);
+			readySessions.clear();
+			child.stdin.end();
+			connection.close();
+			await exited;
+			clearTimeout(timer);
+			clearTimeout(kill);
+		})();
+		return closing;
+	};
+	const abort = () => {
+		void close();
+	};
+	options.signal?.addEventListener('abort', abort, {once: true});
+	void exited.then(() => options.signal?.removeEventListener('abort', abort));
+	void exited.then(() => {
+		disposed = true;
+		clearReplay();
+		notificationControls?.dispose();
+	});
 
 	const timeoutMs = options.initializeTimeoutMs ?? INITIALIZE_TIMEOUT_MS;
 	let timedOut = false;
@@ -218,13 +352,7 @@ export async function connectNanocoder(
 	}
 
 	const agent = describeAgent(options.root, response);
-
-	const closeQuietly = async (sessionId: string) => {
-		if (!agent.capabilities.sessions.close) return;
-		await connection.agent
-			.request(methods.agent.session.close, {sessionId})
-			.catch(() => undefined);
-	};
+	canCloseSession = agent.capabilities.sessions.close;
 
 	// A session is handed out only once its mode is set, so nothing can prompt it before (DEC-31).
 	const applyMode = async (
@@ -233,7 +361,7 @@ export async function connectNanocoder(
 		availableModes: ReadonlyArray<{id: string}> | undefined,
 	): Promise<void> => {
 		try {
-			if (!availableModes?.some(({id}) => id === mode)) {
+			if (!sessionModeOptions(availableModes).includes(mode)) {
 				throw new NanocoderFailure(
 					'UNSUPPORTED',
 					`Nanocoder does not offer the ${mode} mode`,
@@ -253,6 +381,30 @@ export async function connectNanocoder(
 		}
 	};
 
+	const sessionControls = createSessionControls({
+		isReady: sessionId => readySessions.has(sessionId) && !closing,
+		isPrompting: () => activePrompts.size > 0,
+		setReady: (sessionId, ready) => {
+			if (ready) readySessions.add(sessionId);
+			else readySessions.delete(sessionId);
+		},
+		setMode: (sessionId, mode) =>
+			connection.agent.request(methods.agent.session.setMode, {
+				sessionId,
+				modeId: mode,
+			}),
+		setConfigOption: async (sessionId, configId, value) =>
+			(
+				await connection.agent.request(methods.agent.session.setConfigOption, {
+					sessionId,
+					configId,
+					value,
+				})
+			).configOptions,
+		failure: (code, message) => new NanocoderFailure(code, message),
+	});
+	notificationControls = sessionControls;
+
 	const newSession = async (mode: NanocoderMode): Promise<SessionInfo> => {
 		const created = await connection.agent
 			.request(methods.agent.session.new, {cwd: options.root, mcpServers: []})
@@ -263,6 +415,12 @@ export async function connectNanocoder(
 				);
 			});
 		await applyMode(created.sessionId, mode, created.modes?.availableModes);
+		sessionControls.remember(
+			created.sessionId,
+			created.modes?.availableModes,
+			created.configOptions,
+		);
+		readySessions.add(created.sessionId);
 		return {id: created.sessionId, mode};
 	};
 
@@ -272,15 +430,28 @@ export async function connectNanocoder(
 		sessionId: string,
 		mode: NanocoderMode,
 	): Promise<ResumedSession> => {
+		if (mode === 'yolo') mode = 'normal';
+		if (disposed) throw failedToResume();
+		if (replay)
+			throw new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				'A session replay is already active',
+			);
 		if (!agent.capabilities.sessions.resume) {
 			throw new NanocoderFailure(
 				'UNSUPPORTED',
 				'This version of Nanocoder cannot resume sessions',
 			);
 		}
-		const replayed: SessionNotification['update'][] = [];
+		const replayed = {
+			sessionId,
+			updates: [] as SessionNotification['update'][],
+			bytes: 0,
+			failed: false,
+		};
 		replay = replayed;
 		let resumed: ResumeSessionResponse;
+		let history: TurnEvent[];
 		try {
 			resumed = await connection.agent.request(methods.agent.session.resume, {
 				sessionId,
@@ -289,18 +460,59 @@ export async function connectNanocoder(
 			});
 			// Replayed updates are handled in the same turn of the event loop as the answer.
 			await new Promise(resolve => setImmediate(resolve));
+			if (replayed.failed || disposed || replay !== replayed)
+				throw failedToResume();
+			history = replayed.updates.flatMap(
+				update => toTurnEvent(update, {history: true}) ?? [],
+			);
 		} catch (error) {
+			if (replayed.failed) {
+				await close();
+				throw new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'Nanocoder replay exceeded the safe history limit',
+				);
+			}
 			throw missingSession(error) ?? failedToResume();
 		} finally {
-			replay = undefined;
+			replayed.updates.length = 0;
+			replayed.bytes = 0;
+			if (replay === replayed) replay = undefined;
 		}
 		await applyMode(sessionId, mode, resumed.modes?.availableModes);
+		if (disposed) {
+			history.length = 0;
+			throw failedToResume();
+		}
+		sessionControls.remember(
+			sessionId,
+			resumed.modes?.availableModes,
+			resumed.configOptions,
+		);
+		readySessions.add(sessionId);
 		return {
 			session: {id: sessionId, mode},
-			history: replayed.flatMap(
-				update => toTurnEvent(update, {history: true}) ?? [],
-			),
+			history,
 		};
+	};
+
+	const listSessions = async (): Promise<unknown> => {
+		const failed = () =>
+			new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				'Nanocoder could not list saved sessions',
+			);
+		if (disposed) throw failed();
+		if (!agent.capabilities.sessions.list)
+			throw new NanocoderFailure(
+				'UNSUPPORTED',
+				'This version of Nanocoder cannot list saved sessions',
+			);
+		return connection.agent
+			.request(methods.agent.session.list, {cwd: options.root})
+			.catch(() => {
+				throw failed();
+			});
 	};
 
 	const deleteSession = async (sessionId: string): Promise<void> => {
@@ -318,13 +530,25 @@ export async function connectNanocoder(
 					'Nanocoder could not delete the session',
 				);
 			});
+		sessionControls.forget(sessionId);
 	};
 
 	const prompt = async (
 		sessionId: string,
 		text: string,
-	): Promise<TurnResult> => {
-		const response = await connection.agent
+	): Promise<NanocoderTurnResult> => {
+		if (!sessionControls.canPrompt())
+			throw new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				'Restart Nanocoder before sending after an unconfirmed model change',
+			);
+		if (!readySessions.has(sessionId) || closing) {
+			throw new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				'The session cannot accept a prompt until its mode is set',
+			);
+		}
+		const pending = connection.agent
 			.request(methods.agent.session.prompt, {
 				sessionId,
 				prompt: [{type: 'text', text}],
@@ -338,17 +562,127 @@ export async function connectNanocoder(
 						: 'Nanocoder stopped during the turn',
 				);
 			});
-		return {stopReason: response.stopReason};
+		activePrompts.add(pending);
+		try {
+			const response = await pending;
+			const metadata = parsePromptMetadata(response);
+			return {
+				stopReason: response.stopReason,
+				...(metadata ? {metadata} : {}),
+			};
+		} finally {
+			activePrompts.delete(pending);
+		}
+	};
+
+	let renameMethod: string | undefined;
+	const renameSession = async (
+		sessionId: string,
+		title: string,
+	): Promise<string> => {
+		if (!renameMethod)
+			throw new NanocoderFailure(
+				'UNSUPPORTED',
+				'Session rename is unavailable',
+			);
+		const change = sessionTitle({sessionId, title});
+		if (!change)
+			throw new NanocoderFailure(
+				'UNSUPPORTED',
+				'Choose a non-empty, bounded title',
+			);
+		try {
+			const response: unknown = await connection.agent.request(
+				renameMethod,
+				change,
+			);
+			const renamed = sessionTitle({
+				sessionId: change.sessionId,
+				title:
+					typeof response === 'object' &&
+					response !== null &&
+					'title' in response
+						? response.title
+						: undefined,
+			});
+			if (!renamed) throw new Error();
+			return renamed.title;
+		} catch (error) {
+			throw (
+				missingSession(error) ??
+				new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'Nanocoder could not rename the session',
+				)
+			);
+		}
+	};
+	const probeExtensions = async (): Promise<ExtensionProbes> => {
+		const probe = async (
+			name: string,
+			expected: string,
+		): Promise<string | undefined> => {
+			for (const method of [`_${name}`, name]) {
+				try {
+					// No session ID or title: the pinned implementation refuses before any I/O.
+					await connection.agent.request(method, {});
+					return undefined;
+				} catch (error) {
+					if (!(error instanceof RequestError)) return undefined;
+					const details = (error.data as {details?: unknown} | undefined)
+						?.details;
+					if (error.code === -32602 || details === expected) return method;
+					if (
+						error.code !== -32601 &&
+						details !== `Unknown extension method: ${method}`
+					)
+						return undefined;
+				}
+			}
+			return undefined;
+		};
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const probes = Promise.all([
+			probe(
+				'renameSession',
+				'renameSession requires string sessionId and title params',
+			),
+			probe('timeline/list', 'timeline/list requires a string sessionId'),
+		]).then(([rename, timeline]) => ({rename, timeline}));
+		try {
+			const result = await Promise.race([
+				probes,
+				new Promise<undefined>(resolve => {
+					timer = setTimeout(
+						() => resolve(undefined),
+						options.probeTimeoutMs ?? 2_000,
+					);
+				}),
+			]);
+			renameMethod = result?.rename;
+			return {rename: !!result?.rename, timeline: !!result?.timeline};
+		} finally {
+			clearTimeout(timer);
+		}
 	};
 
 	return {
 		agent,
 		stderr,
 		exited,
+		listSessions,
 		newSession,
 		resumeSession,
 		deleteSession,
+		renameSession,
+		getSessionOffers: sessionControls.getSessionOffers,
+		observeConfigOptions: sessionControls.observeConfigOptions,
+		setMode: sessionControls.setMode,
+		setConfigOption: sessionControls.setConfigOption,
 		prompt,
+		cancel: sessionId =>
+			connection.agent.notify(methods.agent.session.cancel, {sessionId}),
+		probeExtensions,
 		close,
 	};
 }

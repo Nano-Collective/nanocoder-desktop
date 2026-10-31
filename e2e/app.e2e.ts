@@ -1,21 +1,28 @@
+import {mkdtempSync, rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import {
 	type ElectronApplication,
-	_electron as electron,
 	expect,
 	type Page,
 	test,
 } from '@playwright/test';
+import type {DesktopApi} from '@/shared/desktop-api';
+import {CHANNELS, type ProjectEvent} from '@/shared/ipc';
+import {electron} from './qa/electron';
 
 let app: ElectronApplication;
 let page: Page;
+const profile = mkdtempSync(path.join(tmpdir(), 'nd-app-e2e-'));
 
 test.beforeAll(async () => {
-	app = await electron.launch({args: ['.']});
+	app = await electron.launch({args: ['.', `--user-data-dir=${profile}`]});
 	page = await app.firstWindow();
 });
 
 test.afterAll(async () => {
 	await app.close();
+	rmSync(profile, {recursive: true, force: true});
 });
 
 test('shows the app shell, loaded over IPC', async () => {
@@ -25,17 +32,152 @@ test('shows the app shell, loaded over IPC', async () => {
 });
 
 test('the preload bridge exposes typed methods only', async () => {
+	const {keys, terminalKeys} = await page.evaluate(() => {
+		const desktop = (window as unknown as {desktop: DesktopApi}).desktop;
+		return {
+			keys: Object.keys(desktop),
+			terminalKeys: Object.keys(desktop.terminal),
+		};
+	});
+	expect(keys.sort()).toEqual(
+		[
+			...Object.keys(CHANNELS).filter(key => key !== 'projectEvent'),
+			'onProjectEvent',
+			'terminal',
+		].sort(),
+	);
+	expect(terminalKeys.sort()).toEqual(
+		[
+			'get',
+			'start',
+			'stop',
+			'restart',
+			'resize',
+			'write',
+			'clear',
+			'onEvent',
+		].sort(),
+	);
+	expect(keys).not.toContain('ipcRenderer');
+});
+
+test('project selection uses main and cancellation saves no project', async () => {
+	await app.evaluate(({dialog}) => {
+		const state = globalThis as {appProjectPickerCalls?: number};
+		state.appProjectPickerCalls = 0;
+		dialog.showOpenDialog = (async () => {
+			state.appProjectPickerCalls = (state.appProjectPickerCalls ?? 0) + 1;
+			return {canceled: true, filePaths: []};
+		}) as typeof dialog.showOpenDialog;
+	});
+	const result = await page.evaluate(() =>
+		(window as unknown as {desktop: DesktopApi}).desktop.addProject({}),
+	);
+	expect(result).toEqual({
+		ok: true,
+		value: {status: 'cancelled'},
+	});
+	expect(
+		await app.evaluate(
+			() =>
+				(globalThis as {appProjectPickerCalls?: number}).appProjectPickerCalls,
+		),
+	).toBe(1);
+	expect(
+		await page.evaluate(() =>
+			(window as unknown as {desktop: DesktopApi}).desktop.listProjects({}),
+		),
+	).toEqual({ok: true, value: []});
+});
+
+test('workspace methods reject content and renderer-supplied paths', async () => {
+	const results = await page.evaluate(async () => {
+		const desktop = (window as unknown as {desktop: DesktopApi}).desktop;
+		return Promise.all([
+			desktop.updateUiState({patch: {messages: ['not stored']}} as never),
+			desktop.addProject({canonicalRoot: '/not-picked'} as never),
+		]);
+	});
+	for (const result of results) {
+		expect(result.ok).toBe(false);
+		if (!result.ok) expect(result.error.code).toBe('VALIDATION');
+	}
+});
+
+test('project subscriptions expose data only and can stop listening', async () => {
+	const event: ProjectEvent = {
+		type: 'turn',
+		projectId: '11111111-1111-4111-8111-111111111111',
+		threadId: '22222222-2222-4222-8222-222222222222',
+		sequence: 1,
+		events: [{type: 'text', text: 'fixture only'}],
+	};
+	await page.evaluate(() => {
+		const state = window as unknown as {
+			desktop: DesktopApi;
+			projectEvents: unknown[];
+			stopProjectEvents: () => void;
+		};
+		state.projectEvents = [];
+		state.stopProjectEvents = state.desktop.onProjectEvent((...args) => {
+			state.projectEvents.push(args);
+		});
+	});
+	await app.evaluate(
+		({BrowserWindow}, {channel, value}) => {
+			BrowserWindow.getAllWindows()[0].webContents.send(channel, value);
+		},
+		{channel: CHANNELS.projectEvent, value: event},
+	);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() => (window as unknown as {projectEvents: unknown[]}).projectEvents,
+			),
+		)
+		.toEqual([[event]]);
+	await page.evaluate(() =>
+		(window as unknown as {stopProjectEvents: () => void}).stopProjectEvents(),
+	);
+	await app.evaluate(
+		({BrowserWindow}, {channel, value}) => {
+			BrowserWindow.getAllWindows()[0].webContents.send(channel, value);
+		},
+		{channel: CHANNELS.projectEvent, value: {...event, sequence: 2}},
+	);
+	// Invoke IPC after the pushed event, then inspect the same renderer queue.
+	await page.evaluate(() =>
+		(window as unknown as {desktop: DesktopApi}).desktop.getAppInfo(),
+	);
+	expect(
+		await page.evaluate(
+			() => (window as unknown as {projectEvents: unknown[]}).projectEvents,
+		),
+	).toEqual([[event]]);
+});
+
+test('thread-scoped methods replace every prototype turn capability', async () => {
 	const keys = await page.evaluate(() =>
 		Object.keys((window as {desktop?: object}).desktop ?? {}),
 	);
-	expect(keys).toEqual([
-		'getAppInfo',
-		'getNanocoderRuntime',
-		'connectNanocoder',
+	expect(keys).toEqual(
+		expect.arrayContaining([
+			'getAppInfo',
+			'getNanocoderRuntime',
+			'connectNanocoder',
+			'promptThread',
+			'cancelThread',
+			'answerThreadPermission',
+			'onProjectEvent',
+		]),
+	);
+	for (const retired of [
 		'sendPrompt',
 		'answerPermission',
+		'cancelPrompt',
 		'onNanocoderEvent',
-	]);
+	])
+		expect(keys).not.toContain(retired);
 });
 
 test('the bridge returns the standard result shape', async () => {

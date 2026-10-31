@@ -9,7 +9,10 @@ export default defineConfig({
 		resolve: {alias},
 		build: {
 			rolldownOptions: {
-				input: {index: fromRoot('source/main/index.ts')},
+				input: {
+					index: fromRoot('source/main/index.ts'),
+					'pty-worker': fromRoot('source/main/terminal/pty-worker.ts'),
+				},
 			},
 		},
 	},
@@ -29,6 +32,7 @@ export default defineConfig({
 		oxc: {jsx: {runtime: 'automatic'}},
 		build: {
 			outDir: fromRoot('out/renderer'),
+			assetsInlineLimit: 0,
 			rolldownOptions: {
 				input: {index: fromRoot('source/renderer/index.html')},
 			},
