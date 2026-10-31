@@ -98,6 +98,16 @@ async function threadMenu(page: Page, title: string) {
 	return target;
 }
 
+async function headerThreadActions(page: Page) {
+	await page.getByRole('button', {name: 'thread actions', exact: true}).click();
+	const dialog = page.getByRole('dialog', {
+		name: 'thread actions',
+		exact: true,
+	});
+	await expect(dialog).toBeVisible();
+	return dialog;
+}
+
 const NATIVE =
 	'native Electron message box shown by the main process (dialog.showMessageBox); the page screenshot cannot include OS dialogs and the capture harness answers them with a stub';
 
@@ -164,17 +174,31 @@ export const states: CaptureState[] = [
 		stem: 'thread-menu',
 		manifestId: 'thread-menu',
 		fixture: 'extensions, no edits',
-		how: `ready thread "${MAIN}", press the header ⋯ actions (S2)`,
-		notReachable:
-			'the thread actions dialog opens from the header ⋯ button that S2 adds through onOpenThreadMenu; S2 is not merged on this branch, so the rail disclosure is still the only trigger',
+		how: `ready thread "${MAIN}", click the header "thread actions" button`,
+		async reach(capture) {
+			const page = await readyThread(capture);
+			await headerThreadActions(page);
+		},
+		// Keep the transcript where it is under the dialog.
+		async beforeShot() {},
 	},
 	{
 		stem: 'thread-busy',
 		manifestId: 'thread-busy',
 		fixture: 'wait-for-cancel, no edits',
-		how: `send "${MAIN}" (turn keeps running), press the header ⋯ actions (S2)`,
-		notReachable:
-			'the thread actions dialog opens from the header ⋯ button that S2 adds through onOpenThreadMenu; S2 is not merged on this branch, so the rail disclosure is still the only trigger',
+		how: `send "${MAIN}" (turn keeps running), click the header "thread actions" button; the dialog says "wait for this thread to finish" and archive, remove and rename are disabled`,
+		async reach(capture) {
+			const page = await runningThread(capture);
+			const dialog = await headerThreadActions(page);
+			await expect(dialog.getByRole('status')).toHaveText(
+				'wait for this thread to finish',
+			);
+			await expect(
+				dialog.getByRole('button', {name: 'archive thread…', exact: true}),
+			).toBeDisabled();
+		},
+		// Keep the transcript where it is under the dialog.
+		async beforeShot() {},
 	},
 	{
 		stem: 'other-thread',
