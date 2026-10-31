@@ -15,6 +15,7 @@ import {
 	observeSupervisor,
 	type SupervisorIndex,
 } from '@/renderer/supervisor-state';
+import {TerminalPanel} from '@/renderer/terminal-panel';
 import {threadComposerState} from '@/renderer/thread-composer-state';
 import {threadPalette} from '@/renderer/thread-palette';
 import {ThreadRail} from '@/renderer/thread-rail';
@@ -24,6 +25,7 @@ import {Button, Card, Divider, StatusBadge} from '@/renderer/ui';
 import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
 import {useSessionImports} from '@/renderer/use-session-imports';
+import {useTerminal} from '@/renderer/use-terminal';
 import {useThreads} from '@/renderer/use-threads';
 import {CONFIG_UNCERTAINTY_REASON} from '@/shared/control-reasons';
 import type {
@@ -112,6 +114,9 @@ export function App() {
 	);
 	const selectedProject = useRef<string | null>(null);
 	const projectId = attemptedProjectId ?? projectControls.activeProjectId;
+	const terminal = useTerminal(projectId);
+	const [terminalOpen, setTerminalOpen] = useState(false);
+	const terminalTrigger = useRef<HTMLButtonElement>(null);
 	const selected = supervisors[projectId ?? ''];
 	const processState = selected?.state ?? null;
 	const controls = useThreads(projectId, processState?.status === 'ready');
@@ -377,6 +382,14 @@ export function App() {
 					onArchive,
 				}),
 				{
+					id: 'open-terminal',
+					label: 'open your project terminal',
+					glyph: '$_',
+					keywords: 'shell pty',
+					disabledReason: projectId ? undefined : 'open a project first',
+					run: () => setTerminalOpen(true),
+				},
+				{
 					id: 'open-folder',
 					label: 'open a project folder',
 					glyph: '⌗',
@@ -408,7 +421,44 @@ export function App() {
 						<span>desktop {info?.version ?? 'pre-v0.1'}</span>
 					</>
 				}
-				palette={<PaletteButton />}
+				palette={
+					<>
+						{projectId && (
+							<Button
+								ref={terminalTrigger}
+								aria-label="open terminal"
+								aria-expanded={terminalOpen}
+								onClick={() => setTerminalOpen(value => !value)}
+							>
+								$_ terminal
+							</Button>
+						)}
+						<PaletteButton />
+					</>
+				}
+				bottomPanel={
+					terminalOpen &&
+					projectId && (
+						<TerminalPanel
+							key={projectId}
+							{...terminal}
+							projectName={currentProject?.displayName ?? 'selected project'}
+							disabledReason={
+								!currentProject?.trusted ||
+								currentProject.availability !== 'available'
+									? 'trust and open the project before starting its terminal'
+									: null
+							}
+							onAction={terminal.action}
+							onData={terminal.write}
+							onResize={terminal.resize}
+							onClose={() => {
+								setTerminalOpen(false);
+								terminalTrigger.current?.focus();
+							}}
+						/>
+					)
+				}
 				projectRail={
 					<RecentProjects
 						compact

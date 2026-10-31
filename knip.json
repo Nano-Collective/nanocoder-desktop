@@ -2,6 +2,7 @@
 	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"entry": [
 		"source/main/index.ts",
+		"source/main/terminal/pty-worker.ts",
 		"source/preload/index.ts",
 		"source/renderer/main.tsx",
 		"e2e/**/*.e2e.ts",

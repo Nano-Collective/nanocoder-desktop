@@ -19,6 +19,7 @@ allowBuilds:
   # Only used for Squirrel installers; we build NSIS.
   electron-winstaller: false
   esbuild: true
+  node-pty: true
 
 # Dev-only (electron-builder -> ajv). Remove once ajv requires a patched fast-uri.
 overrides:

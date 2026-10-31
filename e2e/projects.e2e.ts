@@ -17,6 +17,7 @@ import {
 	type Page,
 	test,
 } from '@playwright/test';
+import {build} from 'vite';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {
 	IpcResult,
@@ -26,11 +27,63 @@ import type {
 } from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import type {projectHydrationHarness} from './qa/project-hydration-harness';
+import {openSeededProject} from './qa/seeded-project';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
 let app: ElectronApplication;
 let page: Page;
+let hydrationCode: Promise<string> | undefined;
+
+interface HydrationWindow extends Window {
+	projectHydrationFixture: {
+		projectHydrationHarness: typeof projectHydrationHarness;
+	};
+}
+
+function hydrationFixtureCode(): Promise<string> {
+	hydrationCode ??= build({
+		configFile: false,
+		logLevel: 'silent',
+		define: {
+			'process.env.NODE_ENV': JSON.stringify('production'),
+			'window.desktop': 'window.projectHydrationBridge',
+		},
+		resolve: {alias: {'@': path.resolve(import.meta.dirname, '../source')}},
+		build: {
+			write: false,
+			minify: false,
+			lib: {
+				entry: path.join(
+					import.meta.dirname,
+					'qa/project-hydration-harness.ts',
+				),
+				name: 'projectHydrationFixture',
+				formats: ['iife'],
+			},
+		},
+	}).then(result => {
+		const outputs = Array.isArray(result) ? result : [result];
+		const code = outputs
+			.flatMap(output => ('output' in output ? output.output : []))
+			.filter(chunk => chunk.type === 'chunk')
+			.map(chunk => chunk.code)
+			.join('\n');
+		if (!code) throw new Error('Missing project hydration fixture');
+		return code;
+	});
+	return hydrationCode;
+}
+
+async function mountHydrationFixture(code: string, controlled: boolean) {
+	await page.evaluate(code);
+	await page.evaluate(controlled => {
+		(
+			window as unknown as HydrationWindow
+		).projectHydrationFixture.projectHydrationHarness.mount(controlled);
+	}, controlled);
+}
 
 async function launch() {
 	app = await electron.launch({
@@ -263,6 +316,68 @@ async function showProjects() {
 	await expect(
 		page.getByRole('region', {name: 'recent projects'}),
 	).toBeVisible();
+}
+
+for (const ordering of ['initial empty', 'delayed empty'] as const) {
+	test(`seeded project setup recovers ${ordering} hydration and a closed compact switcher`, async () => {
+		const code = await hydrationFixtureCode();
+		await mountHydrationFixture(code, true);
+		await page.evaluate(() =>
+			(
+				window as unknown as HydrationWindow
+			).projectHydrationFixture.projectHydrationHarness.waitForEmptyRead(),
+		);
+		if (ordering === 'initial empty') {
+			await page.evaluate(() =>
+				(
+					window as unknown as HydrationWindow
+				).projectHydrationFixture.projectHydrationHarness.releaseEmpty(),
+			);
+		}
+		const root = path.join(work, 'project');
+		mkdirSync(root);
+		writeFileSync(path.join(root, '.fake-nanocoder'), 'untrusted');
+		const project = await add(root);
+		await picker(root, 0);
+		expect(await call('openProject', {projectId: project.id})).toMatchObject({
+			ok: true,
+			value: {status: 'opened'},
+		});
+		if (ordering === 'delayed empty') {
+			await page.evaluate(() =>
+				(
+					window as unknown as HydrationWindow
+				).projectHydrationFixture.projectHydrationHarness.releaseEmpty(),
+			);
+		}
+		expect(await call('listProjects', {})).toMatchObject({
+			ok: true,
+			value: [{id: project.id, canonicalRoot: root}],
+		});
+		const recent = page.getByRole('region', {
+			name: 'recent projects',
+			exact: true,
+		});
+		await expect(recent).toContainText('no recent projects');
+		await expect(
+			recent.getByRole('button', {name: 'open project', exact: true}),
+		).toHaveCount(0);
+		await expect(page.locator('.project-switch-root')).not.toHaveText(root);
+		await openSeededProject(page, root, async () => {
+			await page.reload();
+			await mountHydrationFixture(code, false);
+			await expect(page.locator('.project-switch-root')).toHaveText(root);
+			await expect(page.locator('.project-switcher')).toHaveJSProperty(
+				'open',
+				false,
+			);
+		});
+		expect(
+			await app.evaluate(
+				() => (globalThis as {projectPickerCalls?: number}).projectPickerCalls,
+			),
+		).toBe(0);
+	});
 }
 
 test('a recent-project action opens by id without reopening the folder picker (CHAT-02)', async () => {
