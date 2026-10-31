@@ -554,7 +554,9 @@ test('recovery remains bound to the failed attempted project when another projec
 	await expect(
 		page.getByRole('button', {name: 'retry Nanocoder', exact: true}),
 	).toBeVisible();
-	await page.getByRole('button', {name: 'diagnostics', exact: true}).click();
+	await page
+		.getByRole('button', {name: 'review diagnostics', exact: true})
+		.click();
 	const review = page.getByRole('dialog', {
 		name: 'review captured diagnostics',
 	});
