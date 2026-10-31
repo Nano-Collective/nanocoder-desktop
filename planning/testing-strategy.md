@@ -119,7 +119,7 @@ Suggestion (not discussed): starting budgets, to be confirmed after the first me
 | PERF-01 | From launch to a usable project list: 3 seconds or less, not counting Nanocoder startup. | End-to-end timer, cold start, median of 5 runs. |
 | PERF-02 | From spawn to `initialize` answered: recorded every release; investigate any run over 5 seconds. MCP server startup is recorded separately. | Supervisor timestamps. |
 | PERF-03 | A resumed thread of 200 messages is usable within 2 seconds after replay ends. | End-to-end timer on a fixture session. |
-| PERF-04 | While receiving 100 `session/update` notifications a second, input and scrolling respond within 100 ms. | Scripted provider plus event-loop and frame timing. |
+| PERF-04 | While receiving 100 `session/update` notifications a second, input and scrolling respond within 100 ms at the median and 95th percentile. | Scripted provider; median and p95 of frame gap, input and scroll latency over at least 20 samples each, plus event-loop maximum. |
 | PERF-05 | A directory listing up to the entry cap (proposed 2,000) returns within 300 ms. | Service timer on the 20,000-entry fixture. |
 | PERF-06 | Text files up to 1 MiB preview within 500 ms; larger files show metadata instead. | Service plus render timer. |
 | PERF-07 | Git status returns, or returns `LIMIT`, within 5 seconds on a repository with 100,000 tracked files. | Service timer on a generated repository. |
