@@ -13,7 +13,7 @@ import {expect, test} from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
-import {visibleTextContrast} from './qa/ui-contrast';
+import {contrast, visibleTextContrast} from './qa/ui-contrast';
 
 const work = realpathSync.native(
 	mkdtempSync(path.join(tmpdir(), 'nd-overlays-')),
@@ -179,6 +179,7 @@ test('disabled actions keep a visible reason and cannot run with Enter or pointe
 test('overlays match both themes at every width and retain visible keyboard focus', async () => {
 	const page = await app.firstWindow();
 	await page.emulateMedia({reducedMotion: 'reduce'});
+	await expect(page.locator('.overlay-toast')).toHaveCount(0);
 	for (const theme of ['dark', 'light']) {
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
@@ -224,25 +225,115 @@ test('overlays match both themes at every width and retain visible keyboard focu
 	}
 });
 
-test('toast is polite, never focuses, honours reduced motion and automatically disappears', async () => {
+test('contrast sampler excludes zero-opacity text but still catches visible bad colours', async () => {
+	const page = await app.firstWindow();
+	await expect(page.locator('.overlay-toast')).toHaveCount(0);
+	await page.evaluate(() => {
+		document.documentElement.dataset.theme = 'light';
+		const fixture = document.createElement('div');
+		fixture.id = 'contrast-visibility-fixture';
+		fixture.style.backgroundColor = 'white';
+		fixture.style.color = 'white';
+		for (const [text, opacity] of [
+			['zero-opacity text', '0'],
+			['opaque low-contrast control', '1'],
+			['partly transparent low-contrast control', '0.55'],
+		]) {
+			const element = document.createElement('span');
+			element.textContent = text;
+			element.style.opacity = opacity;
+			fixture.append(element);
+		}
+		const ancestor = document.createElement('div');
+		ancestor.style.opacity = '0';
+		const child = document.createElement('span');
+		child.textContent = 'text inside a zero-opacity ancestor';
+		ancestor.append(child);
+		fixture.append(ancestor);
+		const readable = document.createElement('span');
+		readable.textContent = 'readable control';
+		readable.style.color = 'black';
+		fixture.append(readable);
+		document.body.append(fixture);
+	});
+	try {
+		await expect(page.locator('#contrast-visibility-fixture span')).toHaveCount(
+			5,
+		);
+		expect(
+			(await visibleTextContrast(page, 'light')).map(sample => sample.text),
+		).toEqual([
+			'opaque low-contrast control',
+			'partly transparent low-contrast control',
+		]);
+	} finally {
+		await page.evaluate(() =>
+			document.getElementById('contrast-visibility-fixture')?.remove(),
+		);
+	}
+});
+
+test('settled toast contrast passes in both themes and active hosts without focusing or overstaying', async () => {
 	const page = await app.firstWindow();
 	const trigger = page.getByRole('button', {name: 'command palette'});
 	await page.emulateMedia({reducedMotion: 'reduce'});
-	await trigger.click();
-	await page
-		.getByRole('combobox', {name: 'find a command', exact: true})
-		.fill('switch to dark');
-	await page.keyboard.press('Enter');
 	const region = page.getByRole('status', {name: 'notification'});
 	const toast = page.locator('.overlay-toast');
-	await expect(region).toHaveAttribute('aria-live', 'polite');
-	await expect(region).toHaveAttribute('aria-atomic', 'true');
-	await expect(toast).toBeVisible();
-	await expect(toast).toHaveCSS('transition-duration', '0s');
-	await expect(toast).toHaveCSS('border-left-width', '1px');
-	await expect(trigger).toBeFocused();
 	await expect(toast).toHaveCount(0);
-	await expect(trigger).toBeFocused();
+	for (const theme of ['light', 'dark']) {
+		await trigger.click();
+		await page
+			.getByRole('combobox', {name: 'find a command', exact: true})
+			.fill(`switch to ${theme}`);
+		await page.keyboard.press('Enter');
+		await expect(toast).toContainText(`switched to ${theme} theme`);
+		await expect(trigger).toBeFocused();
+		for (const host of ['closed', 'palette']) {
+			if (host === 'palette') await trigger.click();
+			const focused =
+				host === 'closed'
+					? trigger
+					: page.getByRole('combobox', {name: 'find a command', exact: true});
+			await expect(region).toHaveAttribute('aria-live', 'polite');
+			await expect(region).toHaveAttribute('aria-atomic', 'true');
+			await expect(toast).toHaveAttribute('data-exiting', 'false');
+			await expect(toast).toHaveCSS('opacity', '1');
+			await expect(toast).toHaveCSS('transition-duration', '0s');
+			await expect(toast).toHaveCSS('border-left-width', '1px');
+			expect(
+				await toast.evaluate(element =>
+					element.closest('dialog:modal')?.getAttribute('aria-label'),
+				),
+			).toBe(host === 'palette' ? 'command palette' : undefined);
+			const rendered = await toast.evaluate(element => {
+				const style = getComputedStyle(element);
+				const rgb = (color: string) =>
+					color
+						.match(/[\d.]+/g)
+						?.slice(0, 3)
+						.map(Number) as [number, number, number];
+				return {
+					foreground: rgb(style.color),
+					background: rgb(style.backgroundColor),
+					opacity: style.opacity,
+					exiting: element.getAttribute('data-exiting'),
+				};
+			});
+			expect(rendered.opacity).toBe('1');
+			expect(rendered.exiting).toBe('false');
+			expect(
+				contrast(rendered.foreground, rendered.background),
+			).toBeGreaterThanOrEqual(4.5);
+			expect(await visibleTextContrast(page, theme)).toEqual([]);
+			await expect(focused).toBeFocused();
+		}
+		await expect(toast).toHaveCount(0);
+		await expect(
+			page.getByRole('combobox', {name: 'find a command', exact: true}),
+		).toBeFocused();
+		await page.keyboard.press('Escape');
+		await expect(trigger).toBeFocused();
+	}
 	const setting = await page.evaluate(() =>
 		(window as unknown as {desktop: DesktopApi}).desktop.getSettings({}),
 	);

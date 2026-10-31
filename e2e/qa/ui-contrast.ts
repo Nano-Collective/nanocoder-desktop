@@ -99,7 +99,14 @@ export async function visibleTextContrast(page: Page, theme: string) {
 		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
 			const element = node.parentElement;
 			if (!element || !node.textContent?.trim()) continue;
-			if (!element.checkVisibility({checkVisibilityCSS: true})) continue;
+			if (
+				!element.checkVisibility({
+					checkVisibilityCSS: true,
+					checkOpacity: true,
+				})
+			) {
+				continue;
+			}
 			const style = getComputedStyle(element);
 			let ancestor: Element | null = element;
 			let background: number[] = [];
