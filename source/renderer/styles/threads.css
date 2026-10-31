@@ -24,6 +24,9 @@
 }
 
 .thread-rail .thread-new {
+	position: sticky;
+	top: 0;
+	z-index: 1;
 	justify-content: space-between;
 	width: 100%;
 	min-height: 32px;
