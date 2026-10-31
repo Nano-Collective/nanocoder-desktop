@@ -15,6 +15,7 @@ import {
 	test,
 } from '@playwright/test';
 import {build} from 'vite';
+import {commandModifier} from '@/renderer/overlay-model';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
@@ -175,6 +176,10 @@ test('shell geometry and pinned composer follow all three widths without an empt
 	await expect(turnEnded(page)).toBeVisible();
 	await expect(stream).toHaveAttribute('data-composer-placement', 'bottom');
 	await page.emulateMedia({reducedMotion: 'reduce'});
+	const platform = await page.evaluate(() => navigator.platform);
+	await expect(
+		page.locator('.shell-header-actions > button:last-child kbd'),
+	).toHaveText(`${commandModifier(platform)}K`);
 	await page.evaluate(() => {
 		const fixture = document.createElement('div');
 		fixture.id = 'shell-layout-fixture';
@@ -217,6 +222,21 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						(firstRow?.getBoundingClientRect().top ?? 0) -
 						scroll.getBoundingClientRect().top +
 						scroll.scrollTop;
+					const chrome = (selector: string) => {
+						const element = document.querySelector(selector);
+						if (!element) throw new Error('Missing shell region');
+						const style = getComputedStyle(element);
+						return [
+							'padding-left',
+							'padding-right',
+							'border-left-width',
+							'border-right-width',
+						].reduce(
+							(sum, property) =>
+								sum + Number.parseFloat(style.getPropertyValue(property)),
+							0,
+						);
+					};
 					const tools =
 						document.querySelector('.shell-stream-tools')?.childElementCount ??
 						0;
@@ -236,6 +256,11 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						breadcrumb: measure('.shell-breadcrumb'),
 						title: measure('.shell-identity h2'),
 						palette: measure('.shell-header-actions > button:last-child'),
+						paletteHint: measure(
+							'.shell-header-actions > button:last-child kbd',
+						).width,
+						paletteChrome: chrome('.shell-header-actions > button:last-child'),
+						mac: navigator.platform.startsWith('Mac'),
 						reading: measure('.technical-gate'),
 						scrollPadding: padding('.shell-stream-scroll'),
 						footerPadding: padding('.shell-conversation-footer'),
@@ -260,7 +285,19 @@ test('shell geometry and pinned composer follow all three widths without an empt
 				expect(geometry.header.height).toBe(width <= 840 ? 62 : 66);
 				expect(geometry.breadcrumb.y).toBeCloseTo(crumbTop, 1);
 				expect(geometry.title.y).toBeCloseTo(crumbTop + 19, 1);
-				expect(geometry.palette.width).toBeCloseTo(width <= 1050 ? 40 : 46, 0);
+				// macOS shows ⌘K, which sets the reference width. Other platforms
+				// show Ctrl+K, so their width is the button's own chrome plus the
+				// hint it actually renders.
+				const expectedPalette = geometry.mac
+					? width <= 1050
+						? 40
+						: 46
+					: geometry.paletteChrome + geometry.paletteHint;
+				expect(geometry.palette.width).toBeCloseTo(expectedPalette, 0);
+				expect(geometry.palette.width).toBeCloseTo(
+					geometry.paletteChrome + geometry.paletteHint,
+					0,
+				);
 				if (width >= 1020) expect(geometry.reading.width).toBeCloseTo(740, 0);
 				else expect(geometry.reading.width).toBeLessThanOrEqual(740);
 				if (geometry.tools === 0)

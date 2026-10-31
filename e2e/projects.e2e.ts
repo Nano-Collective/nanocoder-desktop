@@ -18,6 +18,7 @@ import {
 	type Page,
 	test,
 } from '@playwright/test';
+import {shortRoot} from '@/renderer/recency';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {
 	CHANNELS,
@@ -678,7 +679,10 @@ test('long welcome recent paths give actions their full width without dropping p
 	});
 	const action = recents.getByRole('button', {name: /^open recent project/});
 	const savedPath = recents.locator('small');
-	await expect(savedPath).toHaveText(root);
+	// The row shows the home-shortened path (for example ~\AppData on Windows);
+	// the full canonical root stays in the title.
+	await expect(savedPath).toHaveText(shortRoot(root));
+	await expect(savedPath).toHaveAttribute('title', root);
 	for (const theme of ['dark', 'light']) {
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
