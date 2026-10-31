@@ -19,6 +19,7 @@ import type {DesktopApi} from '@/shared/desktop-api';
 import type {ProjectEvent} from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette} from './qa/open-folder';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
@@ -71,9 +72,7 @@ test.afterEach(async () => {
 
 async function open(mode = 'ok'): Promise<string> {
 	writeFileSync(path.join(root, '.fake-nanocoder'), mode);
-	await page
-		.getByRole('button', {name: 'open a project folder', exact: true})
-		.click();
+	await openFolderFromPalette(page, root);
 	await expect(
 		page.getByRole('textbox', {name: 'message', exact: true}),
 	).toBeEnabled();
@@ -316,9 +315,9 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 	await retry.focus();
 	await expect(retry).toBeFocused();
 	await retry.press('Enter');
-	await expect(
-		page.getByRole('textbox', {name: 'message', exact: true}),
-	).toBeEnabled();
+	const composer = page.getByRole('textbox', {name: 'message', exact: true});
+	await expect(composer).toBeEnabled();
+	await expect(composer).toBeFocused();
 	await expect(page.getByRole('list', {name: 'conversation'})).toContainText(
 		'Earlier answer',
 	);
@@ -450,9 +449,7 @@ test('recovery remains bound to the failed attempted project when another projec
 			checkboxChecked: false,
 		})) as typeof dialog.showMessageBox;
 	}, other);
-	await page
-		.getByRole('button', {name: 'open a project folder', exact: true})
-		.click();
+	await openFolderFromPalette(page, other, 'refused');
 	await expect(page.getByRole('alert')).toContainText('not opened');
 	await page.evaluate(async firstId => {
 		const api = (window as unknown as {desktop: DesktopApi}).desktop;
@@ -493,11 +490,17 @@ test('diagnostics export reviews the exact snapshot and cancellation never write
 			return {canceled: false, filePath: target};
 		}) as typeof dialog.showSaveDialog;
 	}, target);
-	await page.getByRole('button', {name: 'diagnostics', exact: true}).click();
-	const diagnostics = page
-		.locator('[data-shell-slot="stream-tools"]')
-		.getByRole('region', {name: 'redacted diagnostics'});
+	const footer = page.locator('footer.shell-sidebar-footer');
+	await footer.getByRole('button', {name: 'diagnostics', exact: true}).click();
+	const diagnostics = footer.getByRole('region', {
+		name: 'redacted diagnostics',
+	});
 	await expect(diagnostics).toBeVisible();
+	await expect(
+		page
+			.locator('[data-shell-slot="stream-tools"]')
+			.getByRole('region', {name: 'redacted diagnostics'}),
+	).toHaveCount(0);
 	const captured = await diagnostics.locator('pre').innerText();
 	await diagnostics
 		.getByRole('button', {name: 'review and export', exact: true})

@@ -22,6 +22,7 @@ import type {ProjectEvent} from '@/shared/ipc';
 import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette, startFolderFromPalette} from './qa/open-folder';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-e2e-')));
 const fakeCli = path.join(work, 'nanocoder', 'dist', 'cli.js');
@@ -42,7 +43,11 @@ interface Prompt {
 }
 
 // Stubs both native dialogs: the folder picker, and the trust prompt with the given button.
-async function openFolder(folder: string, trustButton = 1): Promise<void> {
+async function openFolder(
+	folder: string,
+	trustButton = 1,
+	result: 'opened' | 'refused' | {alert: string} = 'opened',
+): Promise<void> {
 	await app.evaluate(
 		({dialog}, [picked, button]) => {
 			const state = globalThis as {trustPrompts?: unknown[]};
@@ -58,10 +63,7 @@ async function openFolder(folder: string, trustButton = 1): Promise<void> {
 		},
 		[folder, trustButton] as const,
 	);
-	await page.getByRole('button', {name: 'Open a project folder'}).click();
-	await expect(
-		page.getByRole('button', {name: 'Open a project folder'}),
-	).toBeEnabled();
+	await openFolderFromPalette(page, folder, result);
 }
 
 const trustPrompts = () =>
@@ -185,7 +187,7 @@ test('initialises a trusted folder without eagerly creating a session or asking'
 
 test("asks with Nanocoder's reason, and shows its message when the user says no", async () => {
 	const root = project('refused', 'untrusted');
-	await openFolder(root);
+	await openFolder(root, 1, 'refused');
 	const [prompt] = await trustPrompts();
 	expect(prompt.title).toBe('Trust this folder?');
 	// The home folder is redacted to ~, and on Windows the temp folder sits inside it.
@@ -213,7 +215,7 @@ test('trusts the folder through Nanocoder when the user agrees, then opens it', 
 });
 
 test('reports a second refusal without asking again', async () => {
-	await openFolder(project('stubborn', 'refuse'), 0);
+	await openFolder(project('stubborn', 'refuse'), 0, 'refused');
 	expect(await trustPrompts()).toHaveLength(1);
 	const alert = page.getByRole('alert');
 	await expect(alert).toContainText('is not trusted');
@@ -478,10 +480,9 @@ test('two project processes keep simultaneous turns, events and approvals separa
 });
 
 test('a version below the minimum is refused with a clear upgrade message', async () => {
-	await openFolder(project('old-agent', 'old-version'));
-	await expect(page.getByRole('alert')).toContainText(
-		'Nanocoder 1.30.0 is below the minimum 1.31.0',
-	);
+	await openFolder(project('old-agent', 'old-version'), 1, {
+		alert: 'Nanocoder 1.30.0 is below the minimum 1.31.0',
+	});
 	await expect(page.getByRole('alert')).toContainText('Upgrade Nanocoder');
 	await expect(page.getByLabel('Message')).toHaveCount(0);
 });
@@ -504,10 +505,9 @@ test('an older accepted version shows a reason for every disabled feature', asyn
 });
 
 test('the native-picked root is used to refuse a project-local runtime override', async () => {
-	await openFolder(work);
-	await expect(page.getByRole('alert')).toContainText(
-		'Refusing a Nanocoder inside the project folder',
-	);
+	await openFolder(work, 1, {
+		alert: 'Refusing a Nanocoder inside the project folder',
+	});
 	await expect(page.getByLabel('Message')).toHaveCount(0);
 });
 
@@ -694,7 +694,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 				filePaths: [root],
 			})) as typeof dialog.showOpenDialog;
 		}, root);
-		await page.getByRole('button', {name: 'Open a project folder'}).click();
+		await openFolderFromPalette(page, root);
 		await expect(page.getByLabel('Message')).toBeEnabled();
 		const projectId = await recoveryProjectId(root);
 		await sendMessage();
@@ -787,7 +787,7 @@ test('a detached folder picker cannot hold the latch or reopen its late selectio
 			});
 		}) as typeof dialog.showOpenDialog;
 	});
-	await page.getByRole('button', {name: 'Open a project folder'}).click();
+	await startFolderFromPalette(page);
 	await expect
 		.poll(() =>
 			app.evaluate(
@@ -839,7 +839,7 @@ test('a detached trust dialog cannot hold the latch or grant its late confirmati
 			});
 		}) as typeof dialog.showMessageBox;
 	}, late);
-	await page.getByRole('button', {name: 'Open a project folder'}).click();
+	await startFolderFromPalette(page);
 	await expect
 		.poll(() =>
 			app.evaluate(() => (globalThis as {trustEntered?: boolean}).trustEntered),

@@ -187,7 +187,20 @@ export function App() {
 		thread?.runState === 'failed' ||
 		(turn !== null && !turn.ok && thread?.runState !== 'ready');
 	const processBadge = acpBadge(supervisors, selected?.root ?? '');
+	const turnStatus = transcript.permissions.length
+		? 'approval'
+		: sending
+			? 'running'
+			: failed || (opened && !opened.ok)
+				? 'failed'
+				: thread?.runState === 'interrupted'
+					? 'interrupted'
+					: thread?.runState === 'view-only'
+						? 'view-only'
+						: 'ready';
 	const composerInput = useRef<HTMLTextAreaElement>(null);
+	const retryFocus = useRef(false);
+	const retrying = useRef(false);
 	const [renaming, setRenaming] = useState<{
 		projectId: string;
 		threadId: string;
@@ -233,6 +246,22 @@ export function App() {
 		)
 			composerInput.current?.focus();
 	}, [sending, cancellation]);
+
+	useEffect(() => {
+		if (!retryFocus.current) return;
+		const composer = composerInput.current;
+		if (
+			!composer ||
+			(!retrying.current && document.activeElement !== document.body)
+		) {
+			retryFocus.current = false;
+			return;
+		}
+		if (document.activeElement === document.body && !composer.disabled) {
+			retryFocus.current = false;
+			composer.focus();
+		}
+	});
 
 	useEffect(() => {
 		return window.desktop.onProjectEvent(event => {
@@ -357,6 +386,37 @@ export function App() {
 									? 'enter a message to send'
 									: null);
 
+	const recoveryTools = (
+		<RecoveryTools
+			state={processState}
+			onRetry={async id => {
+				retryFocus.current = true;
+				retrying.current = true;
+				const result = await window.desktop
+					.restartProject({projectId: id})
+					.finally(() => {
+						retrying.current = false;
+					});
+				if (!result.ok || result.value.status !== 'ready')
+					retryFocus.current = false;
+				if (
+					selectedProject.current === id &&
+					result.ok &&
+					result.value.status === 'ready' &&
+					result.value.agent
+				) {
+					setOpened(null);
+					projectControls.clearFeedback();
+					void projectControls.refresh();
+					await controls.reload(id);
+				}
+				return result;
+			}}
+			onCapture={projectId => window.desktop.getDiagnostics({projectId})}
+			onExport={request => window.desktop.exportDiagnostics(request)}
+		/>
+	);
+
 	return (
 		<OverlayProvider
 			pendingApprovalCount={transcript.permissions.length}
@@ -400,6 +460,40 @@ export function App() {
 				projectName={currentProject?.displayName}
 				sidebarFooter={
 					<>
+						{processBadge && <StatusBadge {...processBadge} />}
+						{gates[projectId ?? '']?.versionPolicy.reason && (
+							<p className="workspace-setup-warning" role="status">
+								{gates[projectId ?? '']?.versionPolicy.reason}
+							</p>
+						)}
+						<details
+							className="runtime-details"
+							open={runtime && !runtime.ok ? true : undefined}
+						>
+							<summary>runtime and setup details</summary>{' '}
+							<section className="gate-runtime" aria-label="Nanocoder runtime">
+								{runtime?.ok && (
+									<p>
+										Nanocoder {runtime.value.version} at {runtime.value.cliPath}
+										, on Node.js {runtime.value.nodeVersion} at{' '}
+										{runtime.value.nodePath}
+									</p>
+								)}
+								{runtime && !runtime.ok && (
+									<>
+										<p role="alert">{runtime.error.message}</p>
+										<Button onClick={checkRuntime}>check again</Button>
+									</>
+								)}
+							</section>
+							{outcome?.status === 'connected' && (
+								<AgentDetails agent={outcome.agent} thread={thread} />
+							)}
+							{gates[projectId ?? ''] && (
+								<FeatureDetails gates={gates[projectId ?? '']} />
+							)}
+						</details>
+						{processState?.status === 'ready' && recoveryTools}
 						<span>
 							Nanocoder{' '}
 							{agent?.version ??
@@ -460,24 +554,7 @@ export function App() {
 						/>
 					</>
 				}
-				statusBadges={
-					<div className="gate-actions">
-						<StatusBadge
-							status={
-								transcript.permissions.length
-									? 'approval'
-									: sending
-										? 'running'
-										: failed || (opened && !opened.ok)
-											? 'failed'
-											: thread?.runState === 'interrupted'
-												? 'interrupted'
-												: 'idle'
-							}
-						/>
-						{processBadge && <StatusBadge {...processBadge} />}
-					</div>
-				}
+				statusBadges={thread && <StatusBadge status={turnStatus} />}
 				streamTools={
 					<>
 						<TrustFeedback feedback={projectControls.feedback} />
@@ -533,77 +610,7 @@ export function App() {
 								)}
 							</section>
 						)}
-						<div className="workspace-setup">
-							{gates[projectId ?? '']?.versionPolicy.reason && (
-								<p className="workspace-setup-warning" role="status">
-									{gates[projectId ?? '']?.versionPolicy.reason}
-								</p>
-							)}
-							<div className="workspace-setup-actions">
-								<details
-									className="runtime-details"
-									open={runtime && !runtime.ok ? true : undefined}
-								>
-									<summary>runtime and setup details</summary>{' '}
-									<section
-										className="gate-runtime"
-										aria-label="Nanocoder runtime"
-									>
-										{runtime?.ok && (
-											<p>
-												Nanocoder {runtime.value.version} at{' '}
-												{runtime.value.cliPath}, on Node.js{' '}
-												{runtime.value.nodeVersion} at {runtime.value.nodePath}
-											</p>
-										)}
-										{runtime && !runtime.ok && (
-											<>
-												<p role="alert">{runtime.error.message}</p>
-												<Button onClick={checkRuntime}>check again</Button>
-											</>
-										)}
-									</section>
-									{outcome?.status === 'connected' && (
-										<AgentDetails agent={outcome.agent} thread={thread} />
-									)}
-									{gates[projectId ?? ''] && (
-										<FeatureDetails gates={gates[projectId ?? '']} />
-									)}
-								</details>
-								{thread && runtime?.ok && (
-									<Button
-										onClick={connect}
-										disabled={connecting || projectControls.pending}
-									>
-										open a project folder
-									</Button>
-								)}
-							</div>
-						</div>
-						<RecoveryTools
-							state={processState}
-							onRetry={async id => {
-								const result = await window.desktop.restartProject({
-									projectId: id,
-								});
-								if (
-									selectedProject.current === id &&
-									result.ok &&
-									result.value.status === 'ready' &&
-									result.value.agent
-								) {
-									setOpened(null);
-									projectControls.clearFeedback();
-									void projectControls.refresh();
-									await controls.reload(id);
-								}
-								return result;
-							}}
-							onCapture={projectId =>
-								window.desktop.getDiagnostics({projectId})
-							}
-							onExport={request => window.desktop.exportDiagnostics(request)}
-						/>
+						{processState?.status !== 'ready' && recoveryTools}
 						{workspace.error && <p role="alert">{workspace.error}</p>}
 					</>
 				}

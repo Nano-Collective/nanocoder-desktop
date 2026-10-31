@@ -16,6 +16,7 @@ import {
 } from '@playwright/test';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette} from './qa/open-folder';
 
 const root = path.resolve(import.meta.dirname, '..');
 const work = realpathSync.native(
@@ -57,7 +58,7 @@ test.beforeAll(async () => {
 			filePaths: [folder],
 		})) as typeof dialog.showOpenDialog;
 	}, project);
-	await page.getByRole('button', {name: 'open a project folder'}).click();
+	await openFolderFromPalette(page, project);
 	await expect(input()).toBeEnabled();
 	await input().evaluate(element => {
 		element.dataset.inputEvents = '0';
@@ -145,7 +146,7 @@ test.describe('existing composer state', () => {
 				filePaths: [folder],
 			})) as typeof dialog.showOpenDialog;
 		}, project);
-		await page.getByRole('button', {name: 'open a project folder'}).click();
+		await openFolderFromPalette(page, project);
 		await expect(input()).toBeEnabled();
 		await input().fill('synthetic command fixture');
 		await input().press('Enter');

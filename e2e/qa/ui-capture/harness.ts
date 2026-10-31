@@ -10,6 +10,7 @@ import path from 'node:path';
 import type {ElectronApplication, Page} from '@playwright/test';
 import {electron} from '../electron';
 import {qaEnvironment} from '../environment';
+import {startFolderFromPalette} from '../open-folder';
 
 export const root = path.resolve(import.meta.dirname, '../../..');
 const fixtureSource = path.join(
@@ -162,9 +163,7 @@ export async function launchCapture(
 				picker.canceled = picked === null;
 				picker.filePaths = picked === null ? [] : [picked];
 			}, folder);
-			await capture.page
-				.getByRole('button', {name: 'open a project folder'})
-				.click();
+			await startFolderFromPalette(capture.page);
 		},
 		async nativeAnswer(response) {
 			await capture.app.evaluate(({}, value) => {

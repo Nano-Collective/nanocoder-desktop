@@ -20,6 +20,7 @@ import type {PermissionRequestInfo} from '@/shared/ipc';
 import type {approvalHarness} from './qa/approval-harness';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette} from './qa/open-folder';
 
 const work = realpathSync.native(
 	mkdtempSync(path.join(tmpdir(), 'nd-approvals-')),
@@ -67,7 +68,7 @@ async function open(mode = 'ok') {
 			filePaths: [folder],
 		})) as typeof dialog.showOpenDialog;
 	}, folder);
-	await page.getByRole('button', {name: 'open a project folder'}).click();
+	await openFolderFromPalette(page, folder);
 	await expect(
 		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 	).toContainText(folder);
@@ -155,7 +156,9 @@ test('permission takes focus, supports only its offered numbered choices and res
 	await expect(cards()).toBeVisible();
 	await dialogs().dispatchEvent('keydown', {key: '1', repeat: true});
 	await expect(cards()).toBeVisible();
-	await page.getByRole('button', {name: 'open a project folder'}).focus();
+	await page
+		.getByRole('button', {name: 'command palette', exact: true})
+		.focus();
 	await page.keyboard.press('1');
 	await expect(cards()).toBeVisible();
 	await dialogs().focus();
@@ -242,7 +245,10 @@ test('ask_user presents only Nanocoder question options and sends the selected a
 test('queued requests keep focus on the oldest remaining request and restore the original control', async () => {
 	await open('two-tools');
 	await input().fill('fixture queued requests');
-	const origin = page.getByRole('button', {name: 'open a project folder'});
+	const origin = page.getByRole('button', {
+		name: 'command palette',
+		exact: true,
+	});
 	await origin.focus();
 	await page.evaluate(() => {
 		const form = document.querySelector<HTMLFormElement>('.gate-composer');

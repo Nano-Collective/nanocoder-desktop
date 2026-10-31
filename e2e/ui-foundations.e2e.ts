@@ -17,7 +17,8 @@ import {
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
-import {contrast, visibleTextContrast} from './qa/ui-contrast';
+import {openFolderFromPalette} from './qa/open-folder';
+import {contrast, themedColor, visibleTextContrast} from './qa/ui-contrast';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-ui-')));
 const cli = path.join(work, 'nanocoder/dist/cli.js');
@@ -215,10 +216,10 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 			name: 'import saved session: existing saved session',
 			exact: true,
 		}),
-		palette,
 		page.getByText('runtime and setup details', {exact: true}),
-		open,
 		diagnostics,
+		palette,
+		page.getByRole('region', {name: 'conversation', exact: true}),
 		input,
 		page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
 		send,
@@ -262,10 +263,10 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		rail.getByRole('button', {name: 'new thread', exact: true}),
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
-		page.getByRole('button', {name: 'command palette', exact: true}),
 		page.getByText('runtime and setup details', {exact: true}),
-		page.getByRole('button', {name: 'open a project folder', exact: true}),
 		page.getByRole('button', {name: 'diagnostics', exact: true}),
+		page.getByRole('button', {name: 'command palette', exact: true}),
+		page.getByRole('region', {name: 'conversation', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),
 		card.getByRole('button', {name: 'Deny', exact: true}),
 		page.getByRole('textbox', {name: 'message'}),
@@ -422,10 +423,7 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
 		}, theme);
-		await page.getByRole('button', {name: 'open a project folder'}).click();
-		await expect(
-			page.getByRole('button', {name: 'open a project folder'}),
-		).toBeEnabled();
+		await openFolderFromPalette(page, folder);
 		await expect(
 			page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 		).toContainText(folder);
@@ -464,9 +462,33 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 				.filter({hasText: /ready|running|idle/}),
 		).toHaveCount(0);
 		await expect(page.locator('.ui-badge--success')).toHaveCount(0);
-		await expect(page.locator('.ui-badge--failed')).toHaveCSS(
-			'background-color',
-			theme === 'light' ? 'rgb(235, 237, 245)' : 'rgb(22, 22, 22)',
+		// Plain turn badges have no fill, so the error ink is checked against the surface behind it.
+		const failedInk = await page
+			.locator('.ui-badge--failed .ui-badge-glyph--failed')
+			.evaluate(element => {
+				const rgb = (value: string) =>
+					value
+						.match(/[\d.]+/g)
+						?.slice(0, 3)
+						.map(Number) as [number, number, number];
+				let surface: Element | null = element;
+				while (
+					surface &&
+					getComputedStyle(surface).backgroundColor === 'rgba(0, 0, 0, 0)'
+				)
+					surface = surface.parentElement;
+				return {
+					ink: rgb(getComputedStyle(element).color),
+					surface: rgb(
+						surface
+							? getComputedStyle(surface).backgroundColor
+							: 'rgb(0, 0, 0)',
+					),
+				};
+			});
+		expect(failedInk.ink).toEqual(themedColor('error', theme));
+		expect(contrast(failedInk.ink, failedInk.surface)).toBeGreaterThanOrEqual(
+			4.5,
 		);
 		await expect(page.getByRole('textbox', {name: 'message'})).toBeDisabled();
 		await expect(

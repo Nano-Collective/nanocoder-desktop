@@ -12,6 +12,7 @@ import {expect, test} from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette} from './qa/open-folder';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 for (const theme of ['dark', 'light'] as const) {
@@ -63,9 +64,7 @@ for (const theme of ['dark', 'light'] as const) {
 						filePaths: [folder],
 					})) as typeof dialog.showOpenDialog;
 				}, folder);
-				await page
-					.getByRole('button', {name: 'open a project folder', exact: true})
-					.click();
+				await openFolderFromPalette(page, folder);
 				await expect(
 					page.getByRole('textbox', {name: 'message', exact: true}),
 				).toBeEnabled();

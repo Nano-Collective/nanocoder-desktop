@@ -34,7 +34,7 @@ export function PaletteButton() {
 			aria-haspopup="dialog"
 			onClick={() => overlays.open('palette')}
 		>
-			<kbd>{overlays.shortcut}</kbd> palette
+			<kbd>{overlays.shortcut}</kbd>
 		</Button>
 	);
 }

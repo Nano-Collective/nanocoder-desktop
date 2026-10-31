@@ -48,6 +48,67 @@ test('unused later shell slots render no placeholders or pretend actions', t => 
 	t.false(html.includes('bottom-panel'));
 });
 
+test('header shows the thread identity, and the thread actions button only when wired', t => {
+	const thread = renderToStaticMarkup(
+		createElement(AppShell, {
+			title: 'Nanocoder',
+			projectName: 'tide',
+			threadTitle: 'fixture thread',
+			children: null,
+		}),
+	);
+	t.true(thread.includes('tide / conversation'));
+	t.true(thread.includes('fixture thread'));
+	t.false(thread.includes('aria-label="thread actions"'));
+	const wired = renderToStaticMarkup(
+		createElement(AppShell, {
+			title: 'Nanocoder',
+			threadTitle: 'fixture thread',
+			onOpenThreadMenu() {},
+			children: null,
+		}),
+	);
+	t.true(wired.includes('aria-label="thread actions"'));
+	t.true(wired.includes('aria-haspopup="dialog"'));
+	const welcome = renderToStaticMarkup(
+		createElement(AppShell, {title: 'Nanocoder', children: null}),
+	);
+	t.true(welcome.includes('local workspace'));
+	t.true(welcome.includes('your projects'));
+	t.false(welcome.includes('conversation</p>'));
+});
+
+test('composer placement defaults to the bottom and passes the centred state through', t => {
+	const bottom = renderToStaticMarkup(
+		createElement(AppShell, {title: 'Nanocoder', children: null}),
+	);
+	t.true(bottom.includes('data-composer-placement="bottom"'));
+	const centred = renderToStaticMarkup(
+		createElement(AppShell, {
+			title: 'Nanocoder',
+			composerPlacement: 'centred',
+			children: null,
+		}),
+	);
+	t.true(centred.includes('data-composer-placement="centred"'));
+});
+
+test('sidebar footer renders only when it has content', t => {
+	const withFooter = renderToStaticMarkup(
+		createElement(AppShell, {
+			title: 'Nanocoder',
+			sidebarFooter: createElement('span', null, 'footer fixture'),
+			children: null,
+		}),
+	);
+	t.true(withFooter.includes('shell-sidebar-footer'));
+	t.true(withFooter.includes('footer fixture'));
+	const without = renderToStaticMarkup(
+		createElement(AppShell, {title: 'Nanocoder', children: null}),
+	);
+	t.false(without.includes('shell-sidebar-footer'));
+});
+
 test('later workbench and bottom slots preserve plain children with an explicit return action', t => {
 	const html = renderToStaticMarkup(
 		createElement(AppShell, {
