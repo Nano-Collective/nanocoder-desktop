@@ -25,6 +25,7 @@ import {connectProject} from '@/main/nanocoder/open-project';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
 import {desktopStoreFactory} from '@/main/store';
 import {createNodeSqliteDriver} from '@/main/store/node-sqlite';
+import type {ProjectOperationLease} from '@/main/threads/project-operations';
 import {createThreadService} from '@/main/threads/thread-service';
 import type {
 	PermissionRequestInfo,
@@ -2478,6 +2479,28 @@ function deferred<T>() {
 		resolve = done;
 	});
 	return {promise, resolve};
+}
+
+async function waitForFakeEvent(
+	connection: NanocoderConnection,
+	matches: (event: Record<string, unknown>) => boolean,
+) {
+	const {stderr} = connection;
+	const write = stderr.write;
+	try {
+		await new Promise<void>(resolve => {
+			const check = () => {
+				if (fakeEvents(stderr.lines()).some(matches)) resolve();
+			};
+			stderr.write = chunk => {
+				write.call(stderr, chunk);
+				check();
+			};
+			check();
+		});
+	} finally {
+		stderr.write = write;
+	}
 }
 
 function nextFailure(supervisor: ProjectSupervisor) {
@@ -5451,65 +5474,118 @@ test('thread metadata operations publish stored changes and a distinct removal e
 	t.deepEqual(calls, []);
 });
 
-test('owned hooks receive safe saved sessions and run before first prompt on the same lease', async t => {
-	const seen: string[] = [];
-	const {service, project, supervisor, store} = await fixture(
-		t,
-		true,
-		undefined,
-		false,
-		{
-			onSessionPrepared: context => {
-				service.projectOperations.assertCurrent(context.lease);
+for (const deferStderr of [false, true]) {
+	const suffix = deferStderr ? ' with deferred stderr' : '';
+	test(`owned hooks receive safe saved sessions and run before first prompt on the same lease${suffix}`, async t => {
+		const seen: string[] = [];
+		const entered = deferred<void>();
+		const received = deferred<void>();
+		const chunks: string[] = [];
+		const matchesMode = (event: Record<string, unknown>) => {
+			const params = event.params as
+				| {sessionId?: string; modeId?: string}
+				| undefined;
+			return (
+				event.method === 'session/set_mode' &&
+				params?.sessionId === 'fake-session' &&
+				params.modeId === 'auto-accept'
+			);
+		};
+		let preparedLease!: ProjectOperationLease;
+		const {service, project, supervisor, store} = await fixture(
+			t,
+			true,
+			undefined,
+			false,
+			{
+				onSessionPrepared: async context => {
+					const check = () => {
+						service.projectOperations.assertCurrent(context.lease);
+						t.true(service.projectOperations.isBusy(project.id));
+						t.is(context.source, 'new');
+						t.is(context.connection, supervisor.getConnection(project.id));
+						t.is(context.thread.nanocoderSessionId, 'fake-session');
+						t.is(
+							store.threads.get(project.id, context.thread.id)
+								?.nanocoderSessionId,
+							'fake-session',
+						);
+					};
+					check();
+					preparedLease = context.lease;
+					const observed = waitForFakeEvent(context.connection, matchesMode);
+					entered.resolve();
+					await observed;
+					check();
+					t.true(
+						fakeEvents(context.connection.stderr.lines()).some(matchesMode),
+					);
+					seen.push('prepared');
+				},
+				beforeFirstPrompt: async context => {
+					service.projectOperations.assertCurrent(context.lease);
+					t.is(context.lease, preparedLease);
+					await t.throwsAsync(
+						service.projectOperations.runProjectOperation(
+							project.id,
+							'controls',
+							async () => {
+								t.fail('A hook must not reacquire the project lease');
+							},
+						),
+						{code: 'BUSY'},
+					);
+					seen.push('before');
+				},
+			},
+		);
+		const thread = await service.createThread({projectId: project.id});
+		await supervisor.ensureProcess(project);
+		const connection = supervisor.getConnection(project.id);
+		connection.prompt = async () => {
+			seen.push('prompt');
+			return {stopReason: 'end_turn'};
+		};
+		const write = connection.stderr.write;
+		let holding = deferStderr;
+		if (deferStderr)
+			connection.stderr.write = chunk => {
+				if (!holding) {
+					write.call(connection.stderr, chunk);
+					return;
+				}
+				chunks.push(chunk);
+				if (fakeEvents(chunks.join('').split('\n')).some(matchesMode))
+					received.resolve();
+			};
+		const request = {
+			projectId: project.id,
+			threadId: thread.id,
+			text: 'fixture send',
+		};
+		try {
+			const prompting = service.promptThread(request);
+			if (deferStderr) {
+				await Promise.race([
+					Promise.all([entered.promise, received.promise]),
+					prompting,
+				]);
+				t.false(fakeEvents(connection.stderr.lines()).some(matchesMode));
+				t.deepEqual(seen, []);
 				t.true(service.projectOperations.isBusy(project.id));
-				t.is(context.source, 'new');
-				t.is(context.connection, supervisor.getConnection(project.id));
-				t.is(context.thread.nanocoderSessionId, 'fake-session');
-				t.is(
-					store.threads.get(project.id, context.thread.id)?.nanocoderSessionId,
-					'fake-session',
-				);
-				t.true(
-					fakeEvents(context.connection.stderr.lines()).some(
-						event =>
-							event.method === 'session/set_mode' &&
-							(event.params as {modeId?: string}).modeId === 'auto-accept',
-					),
-				);
-				seen.push('prepared');
-			},
-			beforeFirstPrompt: async context => {
-				service.projectOperations.assertCurrent(context.lease);
-				await t.throwsAsync(
-					service.projectOperations.runProjectOperation(
-						project.id,
-						'controls',
-						async () => {
-							t.fail('A hook must not reacquire the project lease');
-						},
-					),
-					{code: 'BUSY'},
-				);
-				seen.push('before');
-			},
-		},
-	);
-	const thread = await service.createThread({projectId: project.id});
-	await supervisor.ensureProcess(project);
-	supervisor.getConnection(project.id).prompt = async () => {
-		seen.push('prompt');
-		return {stopReason: 'end_turn'};
-	};
-	const request = {
-		projectId: project.id,
-		threadId: thread.id,
-		text: 'fixture send',
-	};
-	await service.promptThread(request);
-	await service.promptThread(request);
-	t.deepEqual(seen, ['prepared', 'before', 'prompt', 'prompt']);
-	t.false(service.projectOperations.isBusy(project.id));
-});
+				holding = false;
+				for (const chunk of chunks.splice(0)) connection.stderr.write(chunk);
+			}
+			await prompting;
+			await service.promptThread(request);
+			t.deepEqual(seen, ['prepared', 'before', 'prompt', 'prompt']);
+			t.false(service.projectOperations.isBusy(project.id));
+		} finally {
+			holding = false;
+			connection.stderr.write = write;
+		}
+	});
+}
 
 test('a pending yolo choice dropped after safe preparation visibly refuses instead of prompting normally', async t => {
 	const events: ProjectEvent[] = [];
