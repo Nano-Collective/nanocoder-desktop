@@ -721,6 +721,11 @@ export function App() {
 					<ConversationStream
 						key={`${projectId}:${thread.id}`}
 						transcript={transcript}
+						failureNotice={
+							processState?.status === 'ready' && turnFailure ? (
+								<TurnFailureNotice reason={turnFailure} />
+							) : undefined
+						}
 						running={sending}
 						onStopTurn={cancel}
 						stopping={stopping}
@@ -745,9 +750,6 @@ export function App() {
 						onNew={onNew}
 						onRemove={() => onRemove(thread.id)}
 					/>
-				)}
-				{processState?.status === 'ready' && turnFailure && (
-					<TurnFailureNotice reason={turnFailure} />
 				)}
 				{outcome?.status === 'untrusted' && (
 					<Card variant="failure" role="alert">
