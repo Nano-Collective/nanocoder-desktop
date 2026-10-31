@@ -237,6 +237,21 @@ for (const theme of ['dark', 'light'] as const) {
 				await expect(button).toBeFocused();
 				await expect(button).toHaveCSS('outline-width', '2px');
 				await button.press('Enter');
+				const confirmation = page.getByRole('dialog', {
+					name: action === 'new' ? 'new thread' : 'remove from desktop',
+					exact: true,
+				});
+				await expect(confirmation).toBeVisible();
+				await confirmation
+					.getByRole('button', {
+						name:
+							action === 'new'
+								? 'keep as new thread draft'
+								: 'remove from desktop',
+						exact: true,
+					})
+					.click();
+				await expect(confirmation).toBeHidden();
 				await expect(notice).toHaveCount(0);
 				const after = await page.evaluate(async scope => {
 					const {desktop} = window as unknown as {desktop: DesktopApi};
@@ -685,7 +700,10 @@ test('runtime details reviews diagnostics with computed presentation in both the
 			await page.setViewportSize({width, height: 900});
 			await runtime.click();
 			const details = page.getByRole('dialog', {name: 'runtime details'});
-			await expect(details).toHaveCSS('border-radius', '15px');
+			await expect(details.locator('.dialog-shell')).toHaveCSS(
+				'border-radius',
+				'15px',
+			);
 			await expect(
 				details.getByRole('button', {name: 'review diagnostics', exact: true}),
 			).toBeVisible();
@@ -703,7 +721,10 @@ test('runtime details reviews diagnostics with computed presentation in both the
 		name: 'review captured diagnostics',
 		exact: true,
 	});
-	await expect(diagnostics).toHaveCSS('border-radius', '15px');
+	await expect(diagnostics.locator('.dialog-shell')).toHaveCSS(
+		'border-radius',
+		'15px',
+	);
 	await expect(
 		diagnostics.getByRole('region', {name: 'captured diagnostics'}),
 	).toHaveCSS('font-size', '11px');

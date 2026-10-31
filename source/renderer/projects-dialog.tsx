@@ -2,8 +2,6 @@ import * as React from 'react';
 import {Button} from '@/renderer/ui';
 import type {ProjectInfo} from '@/shared/ipc';
 
-export const projectsDialogTitle = 'your projects';
-
 export interface ProjectsDialogProps {
 	projects: readonly ProjectInfo[];
 	activeProjectId: string | null;

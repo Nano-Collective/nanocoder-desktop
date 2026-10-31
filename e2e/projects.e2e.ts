@@ -381,7 +381,9 @@ async function showProjects() {
 			.getByRole('button', {name: 'switch project', exact: true})
 			.click();
 	await expect(dialog).toBeVisible();
-	await expect(dialog.getByRole('status')).toHaveCount(0);
+	await expect(
+		dialog.getByText('waiting for the project request or native dialog'),
+	).toHaveCount(0);
 }
 
 async function openRuntimeDetails() {

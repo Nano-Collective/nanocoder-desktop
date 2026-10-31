@@ -210,8 +210,8 @@ function writeIndex(
 		'',
 		'## Notes',
 		'',
-		'- No toast follows an import in the app. The toast state is the nearest real toast, the theme switch, with the copy "switched to <theme> theme" instead of the reference "thread metadata imported. selection and draft unchanged."',
-		'- Archive and remove-thread act at once, with no confirmation step, so their reference dialogs are not reachable.',
+		'- The toast state is a real import: each shot imports one saved session, so the import toast shows the reference copy. The fixture offers six capture-only saved sessions for this, not one.',
+		'- Archive and remove-thread open a confirmation before acting. Their captures show the confirmation with cancel focused.',
 		'- Repeat runs can differ in small regions: recents show temp project paths with a random 6-character folder suffix, the header control at top right can change, and one mode-control geometry entry can measure zero in one run.',
 		'',
 	].join('\n');

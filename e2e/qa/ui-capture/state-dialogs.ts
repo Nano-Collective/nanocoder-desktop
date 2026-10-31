@@ -1,4 +1,5 @@
 import {expect, type Page} from '@playwright/test';
+import {createDraftThread} from '../new-thread';
 import {turnCancelled, turnEnded} from '../turn-state';
 import type {Capture, CaptureState} from './harness';
 
@@ -6,6 +7,9 @@ const PALETTE_KEY = process.platform === 'darwin' ? 'Meta+k' : 'Control+k';
 const SLOW = {timeout: 30_000};
 
 const MAIN = 'export the audit log';
+// One import per capture shot: 2 themes by 3 widths.
+const IMPORTS = 6;
+const IMPORTED = 'thread metadata imported. selection and draft unchanged.';
 
 async function openProject(capture: Capture, mode: string): Promise<Page> {
 	await capture.nativeAnswer(0);
@@ -46,7 +50,10 @@ async function runningTurn(page: Page, text: string): Promise<void> {
 }
 
 async function newThread(page: Page): Promise<void> {
-	await page.getByRole('button', {name: 'new thread', exact: true}).click();
+	await createDraftThread(
+		page,
+		page.getByRole('button', {name: 'new thread', exact: true}),
+	);
 	await expect(
 		page.locator('.thread-row[data-selected="true"] .thread-title'),
 	).toHaveText('new thread');
@@ -89,6 +96,16 @@ async function threadMenu(page: Page, title: string) {
 	const list = target.locator('.thread-action-list');
 	await expect(list).toBeVisible();
 	return target;
+}
+
+async function headerThreadActions(page: Page) {
+	await page.getByRole('button', {name: 'thread actions', exact: true}).click();
+	const dialog = page.getByRole('dialog', {
+		name: 'thread actions',
+		exact: true,
+	});
+	await expect(dialog).toBeVisible();
+	return dialog;
 }
 
 const NATIVE =
@@ -134,7 +151,9 @@ export const states: CaptureState[] = [
 			const page = await readyThread(capture);
 			const palette = await openPalette(page);
 			await palette.getByRole('combobox').fill('zzz');
-			await expect(palette.getByText('no matching commands')).toBeVisible();
+			await expect(
+				palette.getByText('no commands found. try a different action name.'),
+			).toBeVisible();
 		},
 	},
 	{
@@ -155,36 +174,37 @@ export const states: CaptureState[] = [
 		stem: 'thread-menu',
 		manifestId: 'thread-menu',
 		fixture: 'extensions, no edits',
-		how: `ready thread "${MAIN}", click its ⋯ actions in the thread rail`,
+		how: `ready thread "${MAIN}", click the header "thread actions" button`,
 		async reach(capture) {
 			const page = await readyThread(capture);
-			const target = await threadMenu(page, MAIN);
-			await expect(
-				target.getByRole('button', {name: `rename: ${MAIN}`}),
-			).toBeEnabled();
+			await headerThreadActions(page);
 		},
+		// Keep the transcript where it is under the dialog.
+		async beforeShot() {},
 	},
 	{
 		stem: 'thread-busy',
 		manifestId: 'thread-busy',
 		fixture: 'wait-for-cancel, no edits',
-		how: `send "${MAIN}" (turn keeps running), click its ⋯ actions in the thread rail`,
+		how: `send "${MAIN}" (turn keeps running), click the header "thread actions" button; the dialog says "wait for this thread to finish" and archive, remove and rename are disabled`,
 		async reach(capture) {
 			const page = await runningThread(capture);
-			const target = await threadMenu(page, MAIN);
+			const dialog = await headerThreadActions(page);
 			await expect(
-				target.getByRole('button', {name: `delete chat history: ${MAIN}`}),
-			).toBeDisabled();
-			await expect(
-				target.getByText('wait for this thread to finish').first(),
+				dialog.getByText('wait for this thread to finish', {exact: true}),
 			).toBeVisible();
+			await expect(
+				dialog.getByRole('button', {name: 'archive thread…', exact: true}),
+			).toBeDisabled();
 		},
+		// Keep the transcript where it is under the dialog.
+		async beforeShot() {},
 	},
 	{
 		stem: 'other-thread',
 		manifestId: 'other-thread',
 		fixture: 'wait-for-cancel, no edits',
-		how: `send "${MAIN}" and cancel it, new thread, send "keyboard navigation" (keeps running), click "${MAIN}" in the rail; the composer shows the app's refusal "another thread is running" (the app has no dialog for this)`,
+		how: `send "${MAIN}" and cancel it, new thread, send "keyboard navigation" (keeps running), click "${MAIN}" in the rail; the other-thread dialog "another thread is running" opens over the selected thread`,
 		async reach(capture) {
 			const page = await openProject(capture, 'wait-for-cancel');
 			await runningTurn(page, MAIN);
@@ -200,47 +220,76 @@ export const states: CaptureState[] = [
 				page.locator('.thread-row[data-selected="true"] .thread-title'),
 			).toHaveText(MAIN);
 			await expect(
+				page.getByRole('dialog', {
+					name: 'another thread is running',
+					exact: true,
+				}),
+			).toBeVisible(SLOW);
+			await expect(
 				page
 					.locator('.composer-hint-row')
 					.getByText('another thread is running'),
-			).toBeVisible(SLOW);
+			).toBeVisible();
 		},
 	},
 	{
 		stem: 'toast',
 		manifestId: 'toast',
-		fixture: 'extensions, no edits',
-		how: `nearest real toast, different copy: ready thread "${MAIN}", then before each shot the command palette runs "switch to <theme> theme", which shows the toast "switched to <theme> theme". The reference copy is "thread metadata imported. selection and draft unchanged."; the app shows no toast after an import, so the theme toast is the only toast the app shows`,
+		fixture: `session-discovery, ${IMPORTS} capture-only saved sessions ("earlier export research 1" to "${IMPORTS}")`,
+		how: `ready project tide with ${IMPORTS} saved sessions offered; before each shot, import the first offered session from the saved sessions list, which shows the toast "${IMPORTED}". Each toast lasts 2.4 s, so each shot needs its own import`,
+		fixtureEdits: [
+			{
+				from: "'session/list': () =>",
+				to: `'session/list': () =>
+		mode === 'session-discovery'
+			? {sessions: Array.from({length: ${IMPORTS}}, (_, index) => ({sessionId: \`capture-session-\${index + 1}\`, cwd: process.cwd(), title: \`earlier export research \${index + 1}\`, updatedAt: '2026-10-29T12:00:00.000Z'}))}
+			:`,
+			},
+		],
 		async reach(capture) {
-			await readyThread(capture);
+			const page = await openProject(capture, 'session-discovery');
+			await send(page, MAIN);
+			await expect(turnEnded(page)).toBeVisible(SLOW);
+			await expect(row(page, MAIN)).toBeVisible();
 		},
-		async beforeShot(capture, theme) {
-			// Toasts queue (2.4 s each), so wait for the previous one to leave first.
-			await expect(capture.page.locator('.overlay-toast')).toHaveCount(0, {
+		async beforeShot(capture) {
+			const page = capture.page;
+			// Toasts queue, so wait for the previous one to leave before importing again.
+			await expect(page.locator('.overlay-toast')).toHaveCount(0, {
 				timeout: 15_000,
 			});
-			const palette = await openPalette(capture.page);
-			await palette
-				.getByRole('option', {name: `switch to ${theme} theme`})
-				.click();
-			await expect(capture.page.locator('.overlay-toast')).toContainText(
-				`switched to ${theme} theme`,
-			);
+			const next = page.locator('.session-import button').first();
+			await expect(next).toBeEnabled(SLOW);
+			await next.click();
+			await expect(page.locator('.overlay-toast')).toHaveText(IMPORTED);
 		},
 	},
 	{
 		stem: 'archive',
 		manifestId: 'archive',
-		fixture: 'none',
-		how: 'thread menu, archive',
-		notReachable:
-			'the app has no archive confirmation: "archive" in the thread menu (and the palette "archive thread" command) archives at once (source/renderer/app.tsx:325-327 onArchive calls controls.archive directly)',
+		fixture: 'extensions, no edits',
+		how: `ready thread "${MAIN}", its ⋯ actions, archive; the confirmation holds focus on cancel`,
+		async reach(capture) {
+			const page = await readyThread(capture);
+			const target = await threadMenu(page, MAIN);
+			await target
+				.getByRole('button', {name: `archive: ${MAIN}`, exact: true})
+				.click();
+			const dialog = page.getByRole('dialog', {
+				name: 'archive thread',
+				exact: true,
+			});
+			await expect(dialog).toBeVisible();
+			await expect(
+				dialog.getByRole('button', {name: 'cancel', exact: true}),
+			).toBeFocused();
+		},
 	},
 	{
 		stem: 'archives',
 		manifestId: 'archives',
 		fixture: 'extensions, no edits',
-		how: `send "earlier export research", new thread "keyboard navigation", new thread "${MAIN}" (each permission allowed), archive the first two from their ⋯ menus, open the rail's "archived 2" link to show the archived threads dialog with unarchive`,
+		how: `send "earlier export research", new thread "keyboard navigation", new thread "${MAIN}" (each permission allowed), archive the first two from their ⋯ menus and confirm each archive dialog, open the rail's "archived 2" link to show the archived threads dialog with unarchive`,
 		async reach(capture) {
 			const page = await openProject(capture, 'extensions');
 			await finishedTurn(page, 'earlier export research');
@@ -253,7 +302,20 @@ export const states: CaptureState[] = [
 				await target
 					.getByRole('button', {name: `archive: ${title}`, exact: true})
 					.click();
-				await expect(row(page, title)).toHaveCount(0);
+				const confirmation = page.getByRole('dialog', {
+					name: 'archive thread',
+					exact: true,
+				});
+				await confirmation
+					.getByRole('button', {name: 'archive thread', exact: true})
+					.click();
+				await expect(confirmation).toBeHidden();
+				// Archived rows stay in the rail's collapsed archived group, so check the active groups only.
+				await expect(
+					page
+						.locator('section.thread-group .thread-row')
+						.filter({has: page.locator('.thread-title', {hasText: title})}),
+				).toHaveCount(0);
 			}
 			const opener = page.getByRole('button', {name: /^archived/});
 			await expect(opener).toContainText('2');
@@ -286,10 +348,26 @@ export const states: CaptureState[] = [
 	{
 		stem: 'remove-thread',
 		manifestId: 'remove-thread',
-		fixture: 'none',
-		how: 'thread menu, remove from desktop',
-		notReachable:
-			'the app has no remove confirmation: "remove from desktop" in the thread menu removes the desktop row at once (source/renderer/app.tsx:437-439 onRemove calls controls.remove directly, which calls removeThread)',
+		fixture: 'extensions, no edits',
+		how: `ready thread "${MAIN}", its ⋯ actions, remove from desktop; the confirmation holds focus on cancel`,
+		async reach(capture) {
+			const page = await readyThread(capture);
+			const target = await threadMenu(page, MAIN);
+			await target
+				.getByRole('button', {
+					name: `remove from desktop: ${MAIN}`,
+					exact: true,
+				})
+				.click();
+			const dialog = page.getByRole('dialog', {
+				name: 'remove from desktop',
+				exact: true,
+			});
+			await expect(dialog).toBeVisible();
+			await expect(
+				dialog.getByRole('button', {name: 'cancel', exact: true}),
+			).toBeFocused();
+		},
 	},
 	{
 		stem: 'rename',

@@ -8,8 +8,6 @@ import type {
 	ThreadInfo,
 } from '@/shared/ipc';
 
-export const capabilitiesDialogTitle = 'capabilities, with reasons';
-
 export interface CapabilitiesDialogProps {
 	gates: CapabilityGates | null;
 	modelGate: CapabilityGate | null;

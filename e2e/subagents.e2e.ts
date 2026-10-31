@@ -18,6 +18,7 @@ import {
 import {build} from 'vite';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {createDraftThread} from './qa/new-thread';
 import type {subagentHarness} from './qa/subagent-harness';
 import {turnCancelled, turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
@@ -252,7 +253,10 @@ test.describe('fc01-shaped delegation cards', () => {
 
 	test('SUB-05 production delegations commit exact scoped execution-linked metadata without task content', async () => {
 		const {readFileSync, existsSync} = await import('node:fs');
-		await page.getByRole('button', {name: 'new thread', exact: true}).click();
+		await createDraftThread(
+			page,
+			page.getByRole('button', {name: 'new thread', exact: true}),
+		);
 		await expect(
 			page.locator('.thread-row[data-selected="true"] .thread-title'),
 		).toHaveText('new thread');

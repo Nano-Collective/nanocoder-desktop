@@ -23,6 +23,7 @@ import type {ProjectEvent} from '@/shared/ipc';
 import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {createDraftThread} from './qa/new-thread';
 import {openFolderFromPalette, startFolderFromPalette} from './qa/open-folder';
 import {turnEnded} from './qa/turn-state';
 
@@ -569,9 +570,11 @@ test('a version below the minimum is refused with a clear upgrade message', asyn
 test('an older accepted version shows a reason for every disabled feature', async () => {
 	await openFolder(project('minimum-agent', 'minimum-no-gates'));
 	await showSetup();
-	await expect(setupDialog().getByRole('status')).toContainText(
-		'Compatibility is unverified',
-	);
+	await expect(
+		setupDialog()
+			.getByRole('status')
+			.filter({hasText: 'Compatibility is unverified'}),
+	).toBeVisible();
 	await showCapabilities();
 	const features = capabilitiesDialog();
 	await expectMinimumReasons(features);
@@ -653,9 +656,10 @@ test('a missing cached session stays view-only until the user explicitly starts 
 	expect(stoppedMissing.ok).toBe(true);
 	writeFileSync(path.join(root, '.fake-nanocoder'), 'multiple-sessions');
 	await openFolder(root);
-	await page
-		.getByRole('button', {name: 'start a new thread in this project'})
-		.click();
+	await createDraftThread(
+		page,
+		page.getByRole('button', {name: 'start a new thread in this project'}),
+	);
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
@@ -854,9 +858,11 @@ test('idle reconnect replays all feature reasons and the version warning before 
 	await page.keyboard.press('Escape');
 	await expect(capabilitiesDialog()).toBeHidden();
 	await showSetup();
-	await expect(setupDialog().getByRole('status')).toContainText(
-		'Compatibility is unverified',
-	);
+	await expect(
+		setupDialog()
+			.getByRole('status')
+			.filter({hasText: 'Compatibility is unverified'}),
+	).toBeVisible();
 	await closeSetup();
 	await expect(page.getByLabel('Message')).toBeEmpty();
 	const states = await page.evaluate(() =>

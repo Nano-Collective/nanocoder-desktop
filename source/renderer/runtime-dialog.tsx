@@ -7,8 +7,6 @@ import type {
 	SupervisorState,
 } from '@/shared/ipc';
 
-export const runtimeDialogTitle = 'runtime details';
-
 export interface RuntimeDialogProps {
 	runtime: IpcResult<NanocoderRuntime> | null;
 	processState: SupervisorState | null;
