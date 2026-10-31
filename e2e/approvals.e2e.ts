@@ -225,6 +225,8 @@ test('ask_user presents only Nanocoder question options and sends the selected a
 	const question = page.locator('dialog.question-dialog');
 	await expect(question).toBeVisible();
 	await expect(question).toHaveJSProperty('open', true);
+	await expect(question).toHaveAttribute('role', 'alertdialog');
+	await expect(question).toHaveAccessibleName('Nanocoder needs a choice');
 	await expect(
 		question.getByRole('button', {name: 'close choice', exact: true}),
 	).toBeFocused();
@@ -289,6 +291,31 @@ test('closing an ask_user question with its close control sends no answer and th
 		'selected answer-1',
 	);
 	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+});
+
+test('a question already pending when the shelf mounts returns focus to the composer after answering', async () => {
+	await open('ask-user');
+	await prompt();
+	const question = page.locator('dialog.question-dialog');
+	await expect(question).toBeVisible();
+	const threadId = await page
+		.locator('.thread-row[data-selected="true"]')
+		.getAttribute('data-thread-id');
+	if (!threadId) throw new Error('Missing the question thread id');
+	await page.getByRole('button', {name: 'new thread', exact: true}).click();
+	await expect(
+		page.locator('.thread-row[data-selected="true"] .thread-title'),
+	).toHaveText('new thread');
+	await expect(question).toHaveCount(0);
+	await page.locator(`[data-thread-id="${threadId}"] .thread-open`).click();
+	await expect(question).toBeVisible();
+	await expect(
+		question.getByRole('button', {name: 'close choice', exact: true}),
+	).toBeFocused();
+	await page.keyboard.press('2');
+	await expect(question).toHaveCount(0);
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(input()).toBeFocused();
 });
 
 test('queued requests keep focus on the oldest remaining request and restore the original control', async () => {
