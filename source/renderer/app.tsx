@@ -368,6 +368,7 @@ export function App() {
 		connecting ||
 		projectControls.pending ||
 		modelControls.pending;
+	const waitingForDecision = transcript.permissions.length > 0;
 	const sendReason =
 		replayReason ??
 		(!accepting
@@ -375,7 +376,9 @@ export function App() {
 			: thread?.archiveState === 'archived'
 				? 'this thread is archived; unarchive it before sending'
 				: sending
-					? 'turn in progress · draft is not queued'
+					? waitingForDecision
+						? 'waiting for your decision · draft is not queued'
+						: 'turn in progress · draft is not queued'
 					: rootBusy
 						? 'another thread is running'
 						: modelControls.pending

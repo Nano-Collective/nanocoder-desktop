@@ -286,7 +286,7 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	await expect(
 		page.getByRole('textbox', {name: 'message'}),
 	).toHaveAccessibleDescription(
-		'turn in progress · draft is not queued ↵ send · ⇧↵ newline',
+		'waiting for your decision · draft is not queued ↵ send · ⇧↵ newline',
 	);
 	await expect(
 		page.getByRole('status').filter({hasText: 'approval'}),
