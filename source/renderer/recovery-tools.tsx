@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from 'react';
+import * as React from 'react';
 import {Button, Card} from '@/renderer/ui';
 import type {IpcResult, SupervisorState} from '@/shared/ipc';
 import '@/renderer/styles/recovery-tools.css';
@@ -58,7 +58,11 @@ function ProcessRecovery({
 			{failed && turnFailure ? (
 				<div role="alert" className="nc-turn-stopped">
 					<TurnStopped
-						title="Nanocoder stopped unexpectedly"
+						title={
+							state.status === 'failed'
+								? 'Nanocoder stopped unexpectedly'
+								: 'this turn failed'
+						}
 						reason={turnFailure}
 					/>
 				</div>
@@ -116,12 +120,12 @@ export function RecoveryTools({
 	diagnosticsBusy,
 	diagnosticsMessage,
 }: RecoveryProps) {
-	const [busy, setBusy] = useState(false);
-	const [message, setMessage] = useState('');
-	const generation = useRef(0);
+	const [busy, setBusy] = React.useState(false);
+	const [message, setMessage] = React.useState('');
+	const generation = React.useRef(0);
 	const projectId = state?.projectId;
-	const selectedProject = useRef<string | undefined>(undefined);
-	useEffect(() => {
+	const selectedProject = React.useRef<string | undefined>(undefined);
+	React.useEffect(() => {
 		if (selectedProject.current === projectId) return;
 		selectedProject.current = projectId;
 		generation.current++;

@@ -1,6 +1,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import {App} from '@/renderer/app';
+import '@/renderer/styles/recovery-tools.css';
 import '@/renderer/styles/foundations.css';
 import '@/renderer/styles/app-shell.css';
 import '@/renderer/styles/approvals.css';
