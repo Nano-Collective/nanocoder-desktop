@@ -1,55 +1,22 @@
 name: Desktop Checks
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches: [main]
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: desktop-checks-${{ github.ref }}
-  cancel-in-progress: true
+  group: windows-preflight-compile-cache-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   NANOCODER_REF: fc01e239a80ddb2e09ca174e3c909508832d5340
 
 jobs:
-  changes:
-    name: Detect Packaging Changes
-    runs-on: ubuntu-latest
-    outputs:
-      packaging: ${{ steps.filter.outputs.packaging }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          fetch-depth: 0
-
-      - id: filter
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [ -z "$BASE_SHA" ]; then
-            echo "packaging=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(electron-builder\.yml|electron\.vite\.config\.ts|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|source/main/|source/preload/|scripts/smoke-packaged\.mjs|\.github/workflows/desktop-checks\.yml)'; then
-            echo "packaging=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "packaging=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  unit:
-    name: Unit Tests (${{ matrix.os }}, Node ${{ matrix.node }})
-    if: github.event_name != 'push'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-        node: ['22', '24']
+  windows-preflight-compile-cache:
+    name: Windows ACP compile-cache experiment
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
@@ -57,194 +24,23 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: ${{ matrix.node }}
+          node-version: '22'
           cache: 'pnpm'
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm test:ava
-
-  acp:
-    name: ACP Integration (${{ matrix.os }})
-    if: github.event_name != 'push'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-
-      - id: tests
-        shell: bash
-        run: |
-          if [ -n "$(git ls-files 'source/*.acp.ts')" ]; then echo "found=true" >> "$GITHUB_OUTPUT"; else echo "found=false" >> "$GITHUB_OUTPUT"; fi
-
-      - if: steps.tests.outputs.found == 'true'
-        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
-
-      - if: steps.tests.outputs.found == 'true'
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
-      - if: steps.tests.outputs.found == 'true'
-        run: pnpm install --frozen-lockfile
-
-      # Not on Windows: pnpm's node_modules links do not survive a cache restore there.
-      - if: steps.tests.outputs.found == 'true' && runner.os != 'Windows'
-        id: nanocoder-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          path: .nanocoder-build
-          key: nanocoder-${{ runner.os }}-${{ env.NANOCODER_REF }}
-
-      - if: steps.tests.outputs.found == 'true' && steps.nanocoder-cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: Nano-Collective/nanocoder
           ref: ${{ env.NANOCODER_REF }}
           path: .nanocoder-build
 
-      - if: steps.tests.outputs.found == 'true' && steps.nanocoder-cache.outputs.cache-hit != 'true'
-        working-directory: .nanocoder-build
+      - working-directory: .nanocoder-build
         run: |
           pnpm install --frozen-lockfile
           pnpm build
 
-      - if: steps.tests.outputs.found == 'true'
+      - name: Alternate 10 fresh-cache probes per condition
         env:
           NANOCODER_CLI: ${{ github.workspace }}/.nanocoder-build/dist/cli.js
-        run: pnpm test:acp
-
-      # Phase G.6: advisory, so a measurement problem never blocks a pull request.
-      - if: steps.tests.outputs.found == 'true'
-        continue-on-error: true
-        env:
-          NANOCODER_CLI: ${{ github.workspace }}/.nanocoder-build/dist/cli.js
-        run: |
-          pnpm fetch:node
-          pnpm measure:runtime
-
-  package-smoke:
-    name: Package Smoke (${{ matrix.name }})
-    needs: changes
-    if: needs.changes.outputs.packaging == 'true'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux
-            os: ubuntu-latest
-          - name: macOS arm64
-            os: macos-latest
-          - name: macOS x64
-            os: macos-15-intel
-          - name: Windows
-            os: windows-latest
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
-      - run: pnpm install --frozen-lockfile
-
-      # Ubuntu 24.04 blocks the user namespaces Chromium's sandbox needs.
-      - if: runner.os == 'Linux'
-        run: |
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          command -v xvfb-run || (sudo apt-get update && sudo apt-get install -y xvfb)
-
-      - run: pnpm package
-
-      - if: runner.os == 'Linux'
-        run: xvfb-run -a node scripts/smoke-packaged.mjs
-
-      - if: runner.os != 'Linux'
-        run: node scripts/smoke-packaged.mjs
-
-  e2e:
-    name: End to End (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-
-      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-
-      - run: pnpm install --frozen-lockfile
-
-      - if: runner.os == 'Linux'
-        run: |
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          command -v xvfb-run || (sudo apt-get update && sudo apt-get install -y xvfb)
-
-      - name: Run fake-fixture E2E
-        id: e2e
-        shell: bash
-        env:
-          NANOCODER_CLI: ''
-          NANOCODER_E2E_VISIBLE: ''
-        run: |
-          mkdir -p .qa/e2e-ci
-          cat > .qa/e2e-ci/playwright.config.ts <<'CONFIG'
-          import path from 'node:path';
-          import config from '../../playwright.config';
-          export default {
-            ...config,
-            testDir: path.resolve('e2e'),
-            outputDir: path.resolve('.qa/e2e-ci/test-results'),
-            use: {
-              ...config.use,
-              trace: {mode: 'retain-on-failure', sources: false},
-              screenshot: 'only-on-failure',
-            },
-          };
-          CONFIG
-          # Isolate runtime/config lookup and user home/profile data.
-          sandbox="$RUNNER_TEMP/nanocoder-e2e"
-          export HOME="$sandbox/home" USERPROFILE="$sandbox/home"
-          export XDG_CONFIG_HOME="$sandbox/config" XDG_DATA_HOME="$sandbox/data"
-          export APPDATA="$sandbox/appdata" LOCALAPPDATA="$sandbox/localappdata"
-          export NANOCODER_CONFIG_DIR="$sandbox/config"
-          export NANOCODER_DATA_DIR="$sandbox/data"
-          export NANOCODER_DESKTOP_CLI="$sandbox/unavailable/dist/cli.js"
-          mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$APPDATA" "$LOCALAPPDATA"
-          if [ "$RUNNER_OS" = 'Linux' ]; then
-            xvfb-run -a pnpm test:e2e --config .qa/e2e-ci/playwright.config.ts
-          else
-            pnpm test:e2e --config .qa/e2e-ci/playwright.config.ts
-          fi 2>&1 | tee .qa/e2e-ci/playwright.log
-
-      # Artifacts may quote checked-in fake test source, but contain no
-      # environment dumps, home/profile files or real Nanocoder data.
-      - name: Upload failed fake-fixture E2E diagnostics
-        if: failure() && steps.e2e.outcome == 'failure'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: e2e-failure-${{ matrix.os }}
-          retention-days: 7
-          include-hidden-files: true
-          if-no-files-found: warn
-          path: |
-            .qa/e2e-ci/playwright.log
-            .qa/e2e-ci/test-results/**/trace.zip
-            .qa/e2e-ci/test-results/**/test-failed-*.png
-            .qa/e2e-ci/test-results/**/error-context.md
+        run: pnpm exec ava --config ava.acp.config.js source/main/nanocoder/compile-cache-experiment.acp.ts
