@@ -416,8 +416,12 @@ export function registerIpcHandlers(
 						availableControls().hooks.onSessionPrepared(context),
 					beforeFirstPrompt: context =>
 						availableControls().hooks.beforeFirstPrompt(context),
-					validateBeforePrepare: (lease, thread) =>
-						availableControls().hooks.validateBeforePrepare(lease, thread),
+					validateBeforePrepare: (lease, thread, reason) =>
+						availableControls().hooks.validateBeforePrepare(
+							lease,
+							thread,
+							reason,
+						),
 					resolveLiveMode: (...args) =>
 						availableControls().hooks.resolveLiveMode(...args),
 					confirmDeleteHistory: async ({project, thread}) => {
