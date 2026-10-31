@@ -55,6 +55,7 @@ export function WorkspaceDialogs({
 		case 'projects':
 			return (
 				<DialogShell
+					className="projects-dialog"
 					title={workspaceDialogLabels.projects}
 					closeLabel={closeLabel}
 					onClose={onClose}
