@@ -101,6 +101,9 @@ for (const theme of ['dark', 'light'] as const) {
 					{timeout: 5_000},
 				);
 			await open(project);
+			const input = page.getByRole('textbox', {name: 'message', exact: true});
+			await input.fill('retained unqueued import draft');
+			const before = await snapshot();
 			await page
 				.getByRole('button', {name: 'import saved sessions', exact: true})
 				.click();
@@ -119,9 +122,9 @@ for (const theme of ['dark', 'light'] as const) {
 				'2026-10-29T12:00:00.000Z',
 			);
 			expect(await visibleTextContrast(page, theme)).toEqual([]);
-			const input = page.getByRole('textbox', {name: 'message', exact: true});
-			await input.fill('retained unqueued import draft');
-			const before = await snapshot();
+			await expect(
+				page.getByRole('textbox', {name: 'message', exact: true}),
+			).toHaveCount(0);
 			const refresh = imports.getByRole('button', {
 				name: 'refresh offers',
 				exact: true,
@@ -139,7 +142,6 @@ for (const theme of ['dark', 'light'] as const) {
 			await page.keyboard.press('Enter');
 			await expect(importButton).toHaveCount(0);
 			await expect(refresh).toBeFocused();
-			await expect(input).toHaveValue('retained unqueued import draft');
 			const after = await snapshot();
 			expect(after.ui).toEqual(before.ui);
 			expect(after.rows).toHaveLength(before.rows.length + 1);
@@ -172,6 +174,10 @@ for (const theme of ['dark', 'light'] as const) {
 					before.methods.filter(row => row === method),
 				);
 			}
+			await page
+				.getByRole('button', {name: 'back to selected thread', exact: true})
+				.click();
+			await expect(input).toHaveValue('retained unqueued import draft');
 			if (!imported) throw new Error('Missing imported thread');
 			await test.step(
 				'explicitly open the imported thread',
