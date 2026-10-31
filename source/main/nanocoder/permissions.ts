@@ -24,6 +24,7 @@ export class PermissionBroker {
 
 	request(
 		params: RequestPermissionRequest,
+		question = false,
 	): Promise<RequestPermissionResponse> {
 		const id = this.nextId();
 		const source = permissionSource(params.toolCall);
@@ -36,6 +37,7 @@ export class PermissionBroker {
 				kind: option.kind,
 			})),
 			...(source ? {source} : {}),
+			...(question ? {question: true} : {}),
 		};
 		return new Promise(resolve => {
 			this.pending.set(id, {

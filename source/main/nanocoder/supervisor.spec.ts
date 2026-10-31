@@ -306,6 +306,47 @@ test('permissions outside the active session are cancelled instead of becoming h
 	await turn;
 });
 
+test('an ask_user question is display-marked and still answers only with an offered option', async t => {
+	const supervisor = make();
+	t.teardown(() => supervisor.close());
+	const chosen = project('ask-user');
+	await supervisor.ensureProcess(chosen);
+	const {id} = await supervisor.getConnection(chosen.id).newSession('normal');
+	const waiting = nextEvent(
+		supervisor,
+		event => event.type === 'turn' && event.events[0].type === 'permission',
+	);
+	const turn = supervisor.prompt(chosen.id, id, 'ask');
+	const event = await waiting;
+	if (event.type !== 'turn' || event.events[0].type !== 'permission')
+		throw new Error('Expected permission');
+	const {request} = event.events[0];
+	t.is(request.question, true);
+	t.false(supervisor.answerPermission(chosen.id, id, request.id, 'unoffered'));
+	t.true(supervisor.answerPermission(chosen.id, id, request.id, 'answer-1'));
+	t.deepEqual(await turn, {stopReason: 'end_turn'});
+});
+
+test('an ordinary tool approval is never marked as a question', async t => {
+	const supervisor = make();
+	t.teardown(() => supervisor.close());
+	const chosen = project();
+	await supervisor.ensureProcess(chosen);
+	const {id} = await supervisor.getConnection(chosen.id).newSession('normal');
+	const waiting = nextEvent(
+		supervisor,
+		event => event.type === 'turn' && event.events[0].type === 'permission',
+	);
+	const turn = supervisor.prompt(chosen.id, id, 'run');
+	const event = await waiting;
+	if (event.type !== 'turn' || event.events[0].type !== 'permission')
+		throw new Error('Expected permission');
+	const {request} = event.events[0];
+	t.is(request.question, undefined);
+	t.true(supervisor.answerPermission(chosen.id, id, request.id, 'deny'));
+	await turn;
+});
+
 test('cancellation from the active-state publication prevents the prompt entirely', async t => {
 	const supervisor = make();
 	t.teardown(() => supervisor.close());

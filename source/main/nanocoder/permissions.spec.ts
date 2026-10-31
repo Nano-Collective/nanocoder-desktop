@@ -48,6 +48,81 @@ test("shows Nanocoder's options unchanged and waits for the user", async t => {
 	t.deepEqual(events.at(-1), {type: 'permission-closed', id: 'permission-1'});
 });
 
+test('the question flag is display only and never changes answers', async t => {
+	const {events, broker: b} = broker();
+	const questionRequest: RequestPermissionRequest = {
+		...request,
+		toolCall: {toolCallId: 'call_1', title: 'which rows?', status: 'pending'},
+		options: [
+			{optionId: 'answer-0', name: 'current filtered rows', kind: 'allow_once'},
+			{optionId: 'answer-1', name: 'all rows', kind: 'allow_once'},
+		],
+	};
+	const response = b.request(questionRequest, true);
+	t.deepEqual(events[0], {
+		type: 'permission',
+		request: {
+			id: 'permission-1',
+			title: 'which rows?',
+			options: [
+				{id: 'answer-0', name: 'current filtered rows', kind: 'allow_once'},
+				{id: 'answer-1', name: 'all rows', kind: 'allow_once'},
+			],
+			question: true,
+		},
+	});
+	t.false(b.answer('permission-1', 'allow'), 'an approval id is not offered');
+	t.false(b.answer('permission-1', 'answer-2'), 'an unoffered answer id');
+	t.true(b.answer('permission-1', 'answer-1'));
+	t.deepEqual(await response, {
+		outcome: {outcome: 'selected', optionId: 'answer-1'},
+	});
+});
+
+test('a question answers only with its offered ids, matched exactly', async t => {
+	const {events, broker: b} = broker();
+	const response = b.request(
+		{
+			...request,
+			toolCall: {toolCallId: 'call_1', title: 'which rows?', status: 'pending'},
+			options: [
+				{
+					optionId: 'answer-0',
+					name: 'current filtered rows',
+					kind: 'allow_once',
+				},
+				{optionId: 'answer-1', name: 'all rows', kind: 'allow_once'},
+			],
+		},
+		true,
+	);
+	t.is(events.length, 1);
+	for (const id of [
+		'answer-01',
+		'answer-+0',
+		'Answer-0',
+		'answer-0 ',
+		'answer-2',
+		'allow',
+		'',
+	])
+		t.false(b.answer('permission-1', id), JSON.stringify(id));
+	t.true(b.answer('permission-1', 'answer-0'));
+	t.deepEqual(await response, {
+		outcome: {outcome: 'selected', optionId: 'answer-0'},
+	});
+	t.false(
+		b.answer('permission-1', 'answer-0'),
+		'a closed request stays closed',
+	);
+});
+
+test('a request is not a question unless main says so', t => {
+	const {events, broker: b} = broker();
+	void b.request(request);
+	t.false('question' in (events[0] as {request: object}).request);
+});
+
 test('refuses an option Nanocoder did not offer', async t => {
 	const {broker: b} = broker();
 	const response = b.request(request);
