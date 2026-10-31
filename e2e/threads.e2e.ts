@@ -163,8 +163,8 @@ for (const [state, glyph] of [
 	['new', '◌'],
 	['ready', '○'],
 	['running', '●'],
-	['waiting', '◐'],
-	['interrupted', '▲'],
+	['waiting', '▲'],
+	['interrupted', '◐'],
 	['archived', '░'],
 	['view-only', '◍'],
 ] as const) {
