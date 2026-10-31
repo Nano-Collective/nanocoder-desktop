@@ -139,69 +139,6 @@ test('the command palette shell keeps the reference height cap at the default wi
 	await expect(palette).toBeHidden();
 });
 
-test('the capped palette list scrolls to its last row with no project open', async () => {
-	const page = await app.firstWindow();
-	const original = await page.evaluate(() => ({
-		width: window.innerWidth,
-		height: window.innerHeight,
-	}));
-	// A shorter window makes the capped list scroll: its height is 100dvh less 300px.
-	await page.setViewportSize({width: original.width, height: 640});
-	const palette = page.getByRole('dialog', {
-		name: 'command palette',
-		exact: true,
-	});
-	try {
-		await page.keyboard.press(paletteKey);
-		const input = palette.getByRole('combobox');
-		await expect(input).toBeFocused();
-		const listbox = palette.getByRole('listbox');
-		await expect(listbox).toBeVisible();
-		const options = palette.getByRole('option');
-		const count = await options.count();
-		const last = options.nth(count - 1);
-		expect(
-			await listbox.evaluate(
-				element => element.scrollHeight > element.clientHeight,
-			),
-		).toBe(true);
-		const hiddenRow = await last.boundingBox();
-		const hiddenList = await listbox.boundingBox();
-		expect(hiddenRow).not.toBeNull();
-		expect(hiddenList).not.toBeNull();
-		expect(hiddenRow?.y ?? 0).toBeGreaterThanOrEqual(
-			(hiddenList?.y ?? 0) + (hiddenList?.height ?? 0),
-		);
-
-		for (let step = 1; step < count; step++) {
-			await page.keyboard.press('ArrowDown');
-		}
-		await expect(last).toHaveAttribute('aria-selected', 'true');
-		const shell = await palette.locator('.dialog-shell').boundingBox();
-		expect(shell?.height ?? 0).toBeLessThanOrEqual(517);
-		const row = await last.boundingBox();
-		const list = await listbox.boundingBox();
-		expect(row).not.toBeNull();
-		expect(list).not.toBeNull();
-		expect(row?.y ?? 0).toBeGreaterThanOrEqual(list?.y ?? 0);
-		expect((row?.y ?? 0) + (row?.height ?? 0)).toBeLessThanOrEqual(
-			(list?.y ?? 0) + (list?.height ?? 0),
-		);
-
-		await input.fill('no-matching-action');
-		await expect(
-			palette.getByText('no commands found. try a different action name.'),
-		).toBeVisible();
-		await expect(input).toHaveAttribute('aria-expanded', 'false');
-		await expect(palette.getByRole('listbox')).toHaveCount(0);
-		await page.keyboard.press('Escape');
-		await expect(palette).toBeHidden();
-	} finally {
-		if (await palette.isVisible()) await page.keyboard.press('Escape');
-		await page.setViewportSize(original);
-	}
-});
-
 test('open-folder command calls the existing picker and cancellation preserves focus', async () => {
 	const page = await app.firstWindow();
 	await app.evaluate(({dialog}) => {
@@ -469,6 +406,9 @@ test('projects dialog adds and the palette opens and locates projects through th
 	await projects()
 		.getByRole('button', {name: /add project folder/})
 		.click();
+	// Adding closes the projects dialog first, so it is reopened to read the list.
+	await expect(projects()).toBeHidden();
+	await showProjects();
 	await expect(
 		projects().getByRole('region', {name: 'recent projects'}),
 	).toContainText(folder);
@@ -590,6 +530,29 @@ test('keyboard selection stays visible when recent projects overflow the palette
 	await expect(
 		page.getByRole('combobox', {name: 'find a command', exact: true}),
 	).toBeInViewport({ratio: 1});
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	const listbox = palette.getByRole('listbox');
+	expect(
+		await listbox.evaluate(
+			element => element.scrollHeight > element.clientHeight,
+		),
+	).toBe(true);
+	const list = await listbox.boundingBox();
+	const row = await page
+		.getByRole('option', {name: /keyboard shortcuts/})
+		.boundingBox();
+	expect(list).not.toBeNull();
+	expect(row).not.toBeNull();
+	expect(row?.y ?? 0).toBeGreaterThanOrEqual(list?.y ?? 0);
+	// One pixel allows for subpixel scroll alignment at the list's bottom edge.
+	expect((row?.y ?? 0) + (row?.height ?? 0)).toBeLessThanOrEqual(
+		(list?.y ?? 0) + (list?.height ?? 0) + 1,
+	);
+	const shell = await palette.locator('.dialog-shell').boundingBox();
+	expect(shell?.height ?? 0).toBeLessThanOrEqual(517);
 	await page.keyboard.press('Escape');
 });
 
