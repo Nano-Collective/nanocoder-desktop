@@ -220,13 +220,21 @@ test('native yolo cancellation is the default and accepted pending yolo is never
 	).toBeDisabled();
 	await input.press('Enter');
 	await expect(input).toHaveValue('');
+	await expect(
+		page.getByText('turn ended: end_turn', {exact: true}),
+	).toBeVisible();
 	const restarted = await page.evaluate(async () => {
 		const {desktop} = window as unknown as {desktop: DesktopApi};
 		const ui = await desktop.getUiState({});
 		if (!ui.ok || !ui.value.activeProjectId) throw new Error('fixture scope');
 		return desktop.restartProject({projectId: ui.value.activeProjectId});
 	});
-	expect(restarted.ok && restarted.value.status).toBe('ready');
+	expect(
+		restarted.ok && restarted.value.status,
+		restarted.ok
+			? undefined
+			: `restartProject error code: ${restarted.error.code}`,
+	).toBe('ready');
 	await expect(mode).toHaveValue('normal');
 	const calls = await app.evaluate(
 		() =>
