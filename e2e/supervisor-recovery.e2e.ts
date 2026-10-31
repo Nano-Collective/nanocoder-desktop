@@ -19,6 +19,7 @@ import type {DesktopApi} from '@/shared/desktop-api';
 import type {ProjectEvent} from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette} from './qa/open-folder';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
@@ -71,9 +72,7 @@ test.afterEach(async () => {
 
 async function open(mode = 'ok'): Promise<string> {
 	writeFileSync(path.join(root, '.fake-nanocoder'), mode);
-	await page
-		.getByRole('button', {name: 'open a project folder', exact: true})
-		.click();
+	await openFolderFromPalette(page);
 	await expect(
 		page.getByRole('textbox', {name: 'message', exact: true}),
 	).toBeEnabled();
@@ -450,9 +449,7 @@ test('recovery remains bound to the failed attempted project when another projec
 			checkboxChecked: false,
 		})) as typeof dialog.showMessageBox;
 	}, other);
-	await page
-		.getByRole('button', {name: 'open a project folder', exact: true})
-		.click();
+	await openFolderFromPalette(page);
 	await expect(page.getByRole('alert')).toContainText('not opened');
 	await page.evaluate(async firstId => {
 		const api = (window as unknown as {desktop: DesktopApi}).desktop;
@@ -494,9 +491,7 @@ test('diagnostics export reviews the exact snapshot and cancellation never write
 		}) as typeof dialog.showSaveDialog;
 	}, target);
 	await page.getByRole('button', {name: 'diagnostics', exact: true}).click();
-	const diagnostics = page
-		.locator('[data-shell-slot="stream-tools"]')
-		.getByRole('region', {name: 'redacted diagnostics'});
+	const diagnostics = page.getByRole('region', {name: 'redacted diagnostics'});
 	await expect(diagnostics).toBeVisible();
 	const captured = await diagnostics.locator('pre').innerText();
 	await diagnostics

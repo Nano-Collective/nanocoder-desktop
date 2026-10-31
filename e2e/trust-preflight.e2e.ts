@@ -15,6 +15,7 @@ import type {DesktopApi} from '@/shared/desktop-api';
 import type {ProjectEvent, SupervisorState} from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {startFolderFromPalette} from './qa/open-folder';
 
 type FixtureWindow = {
 	desktop: DesktopApi;
@@ -113,11 +114,7 @@ test('an inconclusive preflight allows one explicit UI Retry, but an unguarded R
 							session?: boolean;
 						},
 				);
-		await unsupportedAfter(() =>
-			page
-				.getByRole('button', {name: 'open a project folder', exact: true})
-				.click(),
-		);
+		await unsupportedAfter(() => startFolderFromPalette(page));
 		expect(audit().filter(event => event.kind === 'launch')).toHaveLength(1);
 		const retry = page.getByRole('button', {
 			name: 'retry Nanocoder',

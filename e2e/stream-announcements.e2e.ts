@@ -17,6 +17,7 @@ import {
 import {build} from 'vite';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette} from './qa/open-folder';
 import type {announcementHarness} from './qa/stream-announcement-harness';
 
 interface HarnessWindow extends Window {
@@ -98,7 +99,7 @@ async function open(mode: string) {
 			filePaths: [folder],
 		})) as typeof dialog.showOpenDialog;
 	}, project);
-	await page.getByRole('button', {name: 'open a project folder'}).click();
+	await openFolderFromPalette(page);
 	await expect(input()).toBeEnabled();
 	await expect(announcement()).toHaveCount(1);
 }
@@ -135,7 +136,10 @@ async function accessibleAnnouncement() {
 
 test('fake stream is rate-limited and one AX-visible node survives palette open/close mid-announcement (A11Y-04/05)', async () => {
 	await page.emulateMedia({reducedMotion: 'reduce'});
-	const origin = page.getByRole('button', {name: 'open a project folder'});
+	const origin = page.getByRole('button', {
+		name: 'command palette',
+		exact: true,
+	});
 	await origin.focus();
 	await page.evaluate(() =>
 		(
