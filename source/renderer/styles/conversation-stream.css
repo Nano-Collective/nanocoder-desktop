@@ -86,14 +86,14 @@
 	color: var(--colors-on-surface);
 }
 
-.stream-tool-kind,
+.stream-tool-detail,
 .stream-tool-wait {
 	margin: 0;
 	padding: 0 0 8px 22px;
 	color: var(--colors-on-surface-muted);
 }
 
-.stream-tool-kind {
+.stream-tool-detail {
 	padding-bottom: 0;
 }
 
