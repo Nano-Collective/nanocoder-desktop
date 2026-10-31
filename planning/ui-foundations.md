@@ -46,7 +46,7 @@ Fira Code 400 comes from the lockfile-pinned `@fontsource/fira-code` package. Vi
 
 ## Proposed Markdown renderer
 
-Proposed, not yet approved (`DEC-39`): use `react-markdown` in U.4 with raw HTML disabled and no remote resources. Do not enable `rehype-raw`, `dangerouslySetInnerHTML`, remote images, or automatic navigation from agent-supplied URLs. Link actions must follow the main-owned external-link policy. U.0/U.1 added no Markdown dependency or rendering code. The later phase 1.6 prototype now isolates version 10.1.0 in swappable `AgentMarkdown`, adds no plugins and renders every link as inert text. See [streaming conversation](streaming-conversation.md) for its refusal tests, licence notices and boundaries. `DEC-39` remains proposed.
+Proposed, not yet approved (`DEC-39`): use `react-markdown` in U.4 with raw HTML disabled and no remote resources. Do not enable `rehype-raw`, `dangerouslySetInnerHTML`, remote images, or automatic navigation from agent-supplied URLs. Link actions must follow the main-owned external-link policy. U.0/U.1 added no Markdown dependency or rendering code. The later phase 1.6 prototype now isolates version 10.1.0 in swappable `AgentMarkdown`, adds `remark-gfm` 4.0.1 as its only plugin for GFM tables, strikethrough, disabled task checkboxes and autolinks, and renders every link as inert text. See [streaming conversation](streaming-conversation.md) for its refusal tests, licence notices and boundaries. `DEC-39` remains proposed.
 
 ## Scope of accessibility checks
 
