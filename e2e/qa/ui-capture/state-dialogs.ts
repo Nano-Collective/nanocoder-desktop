@@ -309,7 +309,7 @@ export const states: CaptureState[] = [
 		stem: 'diagnostics',
 		manifestId: 'diagnostics',
 		fixture: 'die-in-turn, no edits',
-		how: `open project tide, send "${MAIN}" (Nanocoder exits with code 3), click diagnostics in the recovery row; stops at the in-app redacted review, before "review and export" (which opens native dialogs)`,
+		how: `open project tide, send "${MAIN}" (Nanocoder exits with code 3), click diagnostics in the recovery row; stops at the "review captured diagnostics" dialog, before "choose export destination…" (which opens a native dialog)`,
 		async reach(capture) {
 			const page = await openProject(capture, 'die-in-turn');
 			await send(page, MAIN);
@@ -318,11 +318,15 @@ export const states: CaptureState[] = [
 			await recovery
 				.getByRole('button', {name: 'diagnostics', exact: true})
 				.click();
+			const review = page.getByRole('dialog', {
+				name: 'review captured diagnostics',
+			});
+			await expect(review).toBeVisible();
 			await expect(
-				page.getByRole('region', {name: 'redacted diagnostics', exact: true}),
+				review.getByRole('region', {name: 'redacted diagnostics', exact: true}),
 			).toBeVisible();
 			await expect(
-				page.getByRole('region', {name: 'captured diagnostics', exact: true}),
+				review.getByRole('region', {name: 'captured diagnostics', exact: true}),
 			).toBeVisible();
 		},
 	},

@@ -14,6 +14,7 @@ import path from 'node:path';
 import {
 	type ElectronApplication,
 	expect,
+	type Locator,
 	type Page,
 	test,
 } from '@playwright/test';
@@ -121,11 +122,12 @@ async function add(root: string) {
 }
 
 test('direct bridge additions refresh empty recents without reload or project activation (CHAT-01)', async () => {
-	await expect(page.locator('.runtime-details')).toContainText(
-		`Nanocoder 9.9.9 at ${path.join(work, 'nanocoder/dist/cli.js')}`,
-	);
+	const runtime = await openRuntimeDetails();
+	await expect(runtime).toContainText('9.9.9');
+	await expect(runtime).toContainText(path.join(work, 'nanocoder/dist/cli.js'));
+	await closeDialog(runtime);
 	await showProjects();
-	const recent = page.getByRole('region', {name: 'recent projects'});
+	const recent = projectsRecent();
 	await expect(recent).toContainText('no recent projects');
 	expect(await call('listProjects', {})).toEqual({ok: true, value: []});
 	const root = path.join(work, 'project');
@@ -134,7 +136,7 @@ test('direct bridge additions refresh empty recents without reload or project ac
 	await expect(
 		recent.getByRole('button', {name: 'open project', exact: true}),
 	).toBeEnabled();
-	await expect(recent.locator('.recent-project-path')).toHaveText(root);
+	await expect(recent.locator('.projects-dialog-meta')).toContainText(root);
 	await expect(recent).not.toContainText('no recent projects');
 	await expect(page.locator('.project-switch-root')).toHaveText(
 		'open a local folder',
@@ -164,7 +166,7 @@ test('direct bridge additions refresh empty recents without reload or project ac
 	await expect(
 		recent.getByRole('button', {name: 'open other', exact: true}),
 	).toBeEnabled();
-	await expect(recent.locator('.recent-project-path')).toHaveText([
+	await expect(recent.locator('.projects-dialog-meta')).toContainText([
 		otherRoot,
 		root,
 	]);
@@ -364,18 +366,36 @@ test('workspace and existing folder actions reuse the same canonical project pro
 	});
 });
 
+function projectsDialog() {
+	return page.getByRole('dialog', {name: 'your projects'});
+}
+
+function projectsRecent() {
+	return projectsDialog().getByRole('region', {name: 'recent projects'});
+}
+
 async function showProjects() {
-	await expect(page.locator('.recent-projects [role="status"]')).toHaveCount(0);
-	await expect(page.locator('.project-switcher')).toBeVisible();
-	if (
-		!(await page
-			.locator('.project-switcher')
-			.evaluate(element => (element as HTMLDetailsElement).open))
-	)
-		await page.getByLabel('switch project', {exact: true}).click();
-	await expect(
-		page.getByRole('region', {name: 'recent projects'}),
-	).toBeVisible();
+	const dialog = projectsDialog();
+	if (!(await dialog.isVisible()))
+		await page
+			.getByRole('button', {name: 'switch project', exact: true})
+			.click();
+	await expect(dialog).toBeVisible();
+	await expect(dialog.getByRole('status')).toHaveCount(0);
+}
+
+async function openRuntimeDetails() {
+	await page
+		.getByRole('button', {name: 'runtime details', exact: true})
+		.click();
+	const dialog = page.getByRole('dialog', {name: 'runtime details'});
+	await expect(dialog).toBeVisible();
+	return dialog;
+}
+
+async function closeDialog(dialog: Locator) {
+	await page.keyboard.press('Escape');
+	await expect(dialog).toBeHidden();
 }
 
 test('a recent-project action opens by id without reopening the folder picker (CHAT-02)', async () => {
@@ -386,7 +406,7 @@ test('a recent-project action opens by id without reopening the folder picker (C
 	await picker(root, 0);
 	await page.reload();
 	await showProjects();
-	const recent = page.getByRole('region', {name: 'recent projects'});
+	const recent = projectsRecent();
 	await expect(recent).toBeVisible();
 	await showProjects();
 	await recent.getByRole('button', {name: 'open project', exact: true}).click();
@@ -404,7 +424,7 @@ test('a recent-project action opens by id without reopening the folder picker (C
 	});
 });
 
-test('missing recent folders explain the disabled open action and offer locate (CHAT-01)', async () => {
+test('missing recent folders explain why they cannot open and offer locate (CHAT-01)', async () => {
 	const root = path.join(work, 'project');
 	mkdirSync(root);
 	const project = await add(root);
@@ -413,12 +433,14 @@ test('missing recent folders explain the disabled open action and offer locate (
 	await picker(moved);
 	await page.reload();
 	await showProjects();
-	const recent = page.getByRole('region', {name: 'recent projects'});
+	const recent = projectsRecent();
 	await showProjects();
 	await expect(
 		recent.getByRole('button', {name: 'open project', exact: true}),
-	).toBeDisabled();
-	await expect(recent).toContainText('folder missing');
+	).toHaveCount(0);
+	await expect(recent).toContainText(
+		'folder missing; locate it before opening',
+	);
 	await showProjects();
 	await recent
 		.getByRole('button', {name: 'locate project', exact: true})
@@ -436,11 +458,11 @@ test('missing recent folders explain the disabled open action and offer locate (
 test('cancelling the recent-project picker leaves the list unchanged and reports cancellation (CHAT-01)', async () => {
 	await picker();
 	await showProjects();
-	const recent = page.getByRole('region', {name: 'recent projects'});
+	const recent = projectsRecent();
 	await expect(recent).toBeVisible();
 	await showProjects();
-	await recent
-		.getByRole('button', {name: 'add project folder', exact: true})
+	await projectsDialog()
+		.getByRole('button', {name: /add project folder/})
 		.click();
 	await expect(page.getByLabel('project trust feedback')).toContainText(
 		'no folder selected',
@@ -490,7 +512,7 @@ test('opening a recent project exposes only its own thread and restores each pro
 	expect(firstThreadId).not.toBeNull();
 	if (!firstThreadId) throw new Error('Expected the first selected thread');
 	await showProjects();
-	const recent = page.getByRole('region', {name: 'recent projects'});
+	const recent = projectsRecent();
 	await showProjects();
 	await recent
 		.getByRole('button', {name: 'open second-project', exact: true})
@@ -501,9 +523,11 @@ test('opening a recent project exposes only its own thread and restores each pro
 	await expect(input).toBeEnabled();
 	await expect(input).toHaveValue('');
 	await expect(selected).not.toHaveAttribute('data-thread-id', firstThreadId);
+	const secondRuntime = await openRuntimeDetails();
 	await expect(
-		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
+		secondRuntime.getByRole('region', {name: 'connected agent'}),
 	).toContainText(second);
+	await closeDialog(secondRuntime);
 	await input.fill('second project private draft');
 	await showProjects();
 	await recent
@@ -511,9 +535,11 @@ test('opening a recent project exposes only its own thread and restores each pro
 		.click();
 	await expect(input).toHaveValue('first project private draft');
 	await expect(selected).toHaveAttribute('data-thread-id', firstThreadId);
+	const firstRuntime = await openRuntimeDetails();
 	await expect(
-		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
+		firstRuntime.getByRole('region', {name: 'connected agent'}),
 	).toContainText(first);
+	await closeDialog(firstRuntime);
 	await showProjects();
 	await recent
 		.getByRole('button', {name: 'open second-project', exact: true})
@@ -539,9 +565,7 @@ test('opening a recent project exposes only its own thread and restores each pro
 			document.documentElement.dataset.theme = theme;
 		}, theme);
 		await expect(
-			recent
-				.locator('[aria-current="true"] .recent-project-description > p')
-				.first(),
+			recent.locator('[aria-current="true"] .projects-dialog-name').first(),
 		).toHaveCSS('color', color);
 	}
 });
@@ -555,11 +579,9 @@ test('opening a folder through the legacy action refreshes the active recent pro
 		.click();
 	await expect(page.getByRole('textbox', {name: 'message'})).toBeVisible();
 	await showProjects();
-	await expect(
-		page
-			.getByRole('region', {name: 'recent projects'})
-			.locator('[aria-current="true"]'),
-	).toContainText('current-project');
+	await expect(projectsRecent().locator('[aria-current="true"]')).toContainText(
+		'current-project',
+	);
 });
 
 test('welcome keeps runtime details quiet and keyboard inspectable before any project starts', async () => {
@@ -572,21 +594,23 @@ test('welcome keeps runtime details quiet and keyboard inspectable before any pr
 			await expect(
 				page.getByRole('region', {name: 'get started'}),
 			).toBeVisible();
-			const details = page.locator('.runtime-details');
-			await expect(details).not.toHaveAttribute('open');
-			const summary = details.locator('summary');
-			await summary.focus();
+			const trigger = page.getByRole('button', {
+				name: 'runtime details',
+				exact: true,
+			});
+			const dialog = page.getByRole('dialog', {name: 'runtime details'});
+			await expect(dialog).toBeHidden();
+			await trigger.focus();
 			await page.keyboard.press('Tab');
 			await page.keyboard.press('Shift+Tab');
-			await expect(summary).toBeFocused();
-			await expect(summary).toHaveCSS('outline-width', '2px');
+			await expect(trigger).toBeFocused();
+			await expect(trigger).toHaveCSS('outline-width', '2px');
 			await page.keyboard.press('Enter');
-			await expect(details).toHaveAttribute('open');
-			await expect(
-				page.getByRole('region', {name: 'Nanocoder runtime'}),
-			).toContainText('Nanocoder 9.9.9 at');
-			await page.keyboard.press('Enter');
-			await expect(details).not.toHaveAttribute('open');
+			await expect(dialog).toBeVisible();
+			await expect(dialog).toContainText('9.9.9');
+			await page.keyboard.press('Escape');
+			await expect(dialog).toBeHidden();
+			await expect(trigger).toBeFocused();
 			expect(await visibleTextContrast(page, theme)).toEqual([]);
 		}
 	}

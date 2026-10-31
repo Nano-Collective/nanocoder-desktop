@@ -369,38 +369,40 @@ test('palette adds opens and locates projects through the existing project contr
 		).toContainText(label);
 		await page.keyboard.press('Enter');
 	};
+	const projects = () => page.getByRole('dialog', {name: 'your projects'});
 	const showProjects = async () => {
-		const switcher = page.locator('.project-switcher');
-		await expect(
-			switcher.locator('.recent-projects-heading button'),
-		).toBeEnabled();
-		if (
-			!(await switcher.evaluate(
-				element => (element as HTMLDetailsElement).open,
-			))
-		)
-			await switcher.locator('summary').click();
+		if (!(await projects().isVisible()))
+			await page
+				.getByRole('button', {name: 'switch project', exact: true})
+				.click();
+		await expect(projects()).toBeVisible();
+	};
+	const hideProjects = async () => {
+		await page.keyboard.press('Escape');
+		await expect(projects()).toBeHidden();
 	};
 	await picker(folder);
 	await command('add project folder');
 	await showProjects();
 	await expect(
-		page.getByRole('region', {name: 'recent projects'}),
+		projects().getByRole('region', {name: 'recent projects'}),
 	).toContainText(folder);
+	await expect(
+		projects().getByRole('button', {name: /add project folder/}),
+	).toBeEnabled();
+	await hideProjects();
 	await expect(
 		page.getByRole('status', {name: 'project trust feedback'}),
 	).toContainText('project ready: palette-project');
-	await expect(
-		page.getByRole('button', {name: 'add project folder', exact: true}),
-	).toBeEnabled();
 	await command('open project palette-project');
 	await showProjects();
 	await expect(
+		projects().getByRole('button', {name: /add project folder/}),
+	).toBeEnabled();
+	await hideProjects();
+	await expect(
 		page.getByRole('status', {name: 'project trust feedback'}),
 	).toContainText('project ready: palette-project');
-	await expect(
-		page.getByRole('button', {name: 'add project folder', exact: true}),
-	).toBeEnabled();
 	await expect(page.getByRole('dialog')).toBeHidden();
 	if (process.platform === 'win32') {
 		const projectId = await page.evaluate(async root => {
@@ -428,13 +430,11 @@ test('palette adds opens and locates projects through the existing project contr
 	}
 	renameSync(folder, moved);
 	await page.reload();
-	await expect(
-		page.locator('.project-switcher .recent-project-description'),
-	).toContainText('folder missing');
 	await showProjects();
 	await expect(
-		page.getByRole('region', {name: 'recent projects'}),
-	).toContainText('folder missing');
+		projects().getByRole('region', {name: 'recent projects'}),
+	).toContainText('folder missing; locate it before opening');
+	await hideProjects();
 	await page.getByRole('button', {name: 'command palette'}).click();
 	await page
 		.getByRole('combobox', {name: 'find a command', exact: true})
@@ -456,13 +456,14 @@ test('palette adds opens and locates projects through the existing project contr
 	await page.keyboard.press('Escape');
 	await picker(moved);
 	await command('locate project palette-project');
-	await showProjects();
 	await expect(
 		page.getByRole('status', {name: 'project trust feedback'}),
 	).toContainText('project ready: palette-project-moved');
+	await showProjects();
 	await expect(
-		page.getByRole('region', {name: 'recent projects'}),
+		projects().getByRole('region', {name: 'recent projects'}),
 	).toContainText(moved);
+	await hideProjects();
 });
 
 test('keyboard selection stays visible when recent projects overflow the palette', async () => {

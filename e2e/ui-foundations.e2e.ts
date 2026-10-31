@@ -183,16 +183,28 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	await expect(open).toHaveCSS('outline-width', '2px');
 	await page.keyboard.press('Enter');
 	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
-	const switcher = page.getByLabel('switch project', {exact: true});
-	if (!(await page.locator('.project-switcher').getAttribute('open'))) {
-		await page.locator('.project-switcher').evaluate(element => {
-			(element as HTMLDetailsElement).open = true;
-		});
+	const switcher = page.getByRole('button', {
+		name: 'switch project',
+		exact: true,
+	});
+	const projects = page.getByRole('dialog', {name: 'your projects'});
+	await switcher.focus();
+	await page.keyboard.press('Enter');
+	await expect(projects).toBeVisible();
+	const projectFocus = [
+		projects.getByRole('button', {name: 'dismiss dialog', exact: true}),
+		projects.getByRole('button', {name: 'open project', exact: true}),
+		projects.getByRole('button', {name: /add project folder/}),
+	];
+	await projectFocus[0].focus();
+	for (const [index, control] of projectFocus.entries()) {
+		if (index > 0) await page.keyboard.press('Tab');
+		await expect(control).toBeFocused();
+		await expect(control).toHaveCSS('outline-width', '2px');
 	}
-	const recent = page.getByRole('region', {name: 'recent projects'});
-	await expect(
-		recent.getByRole('button', {name: 'open project', exact: true}),
-	).toBeEnabled();
+	await page.keyboard.press('Escape');
+	await expect(projects).toBeHidden();
+	await expect(switcher).toBeFocused();
 	const palette = page.getByRole('button', {
 		name: 'command palette',
 		exact: true,
@@ -206,9 +218,6 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	const send = page.getByRole('button', {name: 'send', exact: true});
 	const focusOrder = [
 		switcher,
-		...['add project folder', 'open project', 'locate project'].map(name =>
-			recent.getByRole('button', {name, exact: true}),
-		),
 		rail.getByRole('button', {name: 'new thread', exact: true}),
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
@@ -217,9 +226,10 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 			name: 'import saved session: existing saved session',
 			exact: true,
 		}),
-		page.getByText('runtime and setup details', {exact: true}),
+		page.getByRole('button', {name: 'runtime details', exact: true}),
 		diagnostics,
 		palette,
+		page.getByRole('button', {name: 'open a project folder', exact: true}),
 		page.getByRole('region', {name: 'conversation', exact: true}),
 		input,
 		page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
@@ -254,20 +264,20 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	await expect(dialog).toBeFocused();
 	await expect(card).toHaveCSS('outline-width', '2px');
 	await expect(card).toHaveCSS('outline-style', 'solid');
-	const switcher = page.getByLabel('switch project', {exact: true});
-	const recent = page.getByRole('region', {name: 'recent projects'});
+	const switcher = page.getByRole('button', {
+		name: 'switch project',
+		exact: true,
+	});
 	const rail = page.getByRole('region', {name: 'project threads'});
 	const focusOrder = [
 		switcher,
-		recent.getByRole('button', {name: 'add project folder', exact: true}),
-		recent.getByRole('button', {name: 'open project', exact: true}),
-		recent.getByRole('button', {name: 'locate project', exact: true}),
 		rail.getByRole('button', {name: 'new thread', exact: true}),
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
-		page.getByText('runtime and setup details', {exact: true}),
+		page.getByRole('button', {name: 'runtime details', exact: true}),
 		page.getByRole('button', {name: 'diagnostics', exact: true}),
 		page.getByRole('button', {name: 'command palette', exact: true}),
+		page.getByRole('button', {name: 'open a project folder', exact: true}),
 		page.getByRole('region', {name: 'conversation', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),
 		card.getByRole('button', {name: 'Deny', exact: true}),
@@ -428,9 +438,15 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 			document.documentElement.dataset.theme = theme;
 		}, theme);
 		await openFolderFromPalette(page, folder);
+		await page
+			.getByRole('button', {name: 'runtime details', exact: true})
+			.click();
+		const setup = page.getByRole('dialog', {name: 'runtime details'});
 		await expect(
-			page.getByRole('region', {name: 'connected agent', includeHidden: true}),
+			setup.getByRole('region', {name: 'connected agent'}),
 		).toContainText(folder);
+		await page.keyboard.press('Escape');
+		await expect(setup).toBeHidden();
 		await page
 			.getByRole('textbox', {name: 'message'})
 			.fill('synthetic exit check');

@@ -70,9 +70,15 @@ async function open(mode = 'ok') {
 		})) as typeof dialog.showOpenDialog;
 	}, folder);
 	await openFolderFromPalette(page, folder);
+	await page
+		.getByRole('button', {name: 'runtime details', exact: true})
+		.click();
+	const setup = page.getByRole('dialog', {name: 'runtime details'});
 	await expect(
-		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
+		setup.getByRole('region', {name: 'connected agent'}),
 	).toContainText(folder);
+	await page.keyboard.press('Escape');
+	await expect(setup).toBeHidden();
 	await expect(input()).toBeEnabled();
 }
 

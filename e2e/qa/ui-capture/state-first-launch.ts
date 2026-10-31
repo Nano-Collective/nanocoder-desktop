@@ -22,7 +22,7 @@ function message(capture: Capture) {
 
 async function openReady(capture: Capture, folder: string, name: string) {
 	await capture.openProject(folder);
-	await expect(capture.page.locator('.project-switch-label')).toContainText(
+	await expect(capture.page.locator('.project-switch-name')).toContainText(
 		name,
 	);
 	await expect(message(capture)).toBeEnabled();
@@ -50,11 +50,11 @@ function imports(capture: Capture) {
 }
 
 async function openRuntimeDetails(capture: Capture) {
-	const details = capture.page.locator('details.runtime-details');
-	await details.getByText('runtime and setup details', {exact: true}).click();
-	await expect(details).toHaveAttribute('open', '');
+	await capture.page
+		.getByRole('button', {name: 'runtime details', exact: true})
+		.click();
 	await expect(
-		details.getByRole('region', {name: 'Nanocoder features'}),
+		capture.page.getByRole('dialog', {name: 'runtime details'}),
 	).toBeVisible();
 }
 
@@ -84,7 +84,7 @@ export const states: CaptureState[] = [
 			).toBeVisible();
 			await expect(recents()).toContainText('atlas-notes');
 			await expect(recents()).toContainText('tide');
-			await expect(capture.page.locator('.project-switch-label')).toContainText(
+			await expect(capture.page.locator('.project-switch-name')).toContainText(
 				'choose a project',
 			);
 		},
@@ -131,19 +131,24 @@ export const states: CaptureState[] = [
 		manifestId: 'projects',
 		fixture: `fake mode reported-usage for tide, ok for the others; edits: ${savedSessionsText}`,
 		fixtureEdits: savedSessions,
-		how: 'opened field-guide and atlas-notes, deleted the field-guide folder, opened tide and sent one message, then clicked the "switch project" switcher to open its menu',
+		how: 'opened field-guide and atlas-notes, deleted the field-guide folder, opened tide and sent one message, then clicked the "switch project" button to open the "your projects" dialog',
 		async reach(capture) {
 			const fieldGuide = capture.project('field-guide');
 			await openReady(capture, fieldGuide, 'field-guide');
 			await openReady(capture, capture.project('atlas-notes'), 'atlas-notes');
 			rmSync(fieldGuide, {recursive: true, force: true});
 			await readyConversation(capture);
-			const switcher = capture.page.locator('details.project-switcher');
-			await switcher.locator('summary[aria-label="switch project"]').click();
-			await expect(switcher).toHaveAttribute('open', '');
-			const list = switcher.getByRole('region', {name: 'recent projects'});
-			await expect(list).toBeVisible();
-			await expect(list).toContainText('folder missing');
+			await capture.page
+				.getByRole('button', {name: 'switch project', exact: true})
+				.click();
+			const dialog = capture.page.getByRole('dialog', {
+				name: 'your projects',
+			});
+			await expect(dialog).toBeVisible();
+			const list = dialog.getByRole('region', {name: 'recent projects'});
+			await expect(list).toContainText(
+				'folder missing; locate it before opening',
+			);
 		},
 	},
 	{
@@ -151,15 +156,10 @@ export const states: CaptureState[] = [
 		manifestId: 'runtime',
 		fixture: `fake mode reported-usage; edits: ${savedSessionsText}`,
 		fixtureEdits: savedSessions,
-		how: 'opened tide and sent one message, then clicked the "runtime and setup details" disclosure in the conversation workspace (the app has no sidebar info control or runtime dialog); its runtime paragraph is scrolled into view before each shot',
+		how: 'opened tide and sent one message, then clicked the "runtime details" button in the conversation workspace; the "runtime details" dialog shows the Nanocoder version, Node.js, process, project root and CLI paths',
 		async reach(capture) {
 			await readyConversation(capture);
 			await openRuntimeDetails(capture);
-		},
-		async beforeShot(capture) {
-			await capture.page
-				.getByRole('region', {name: 'Nanocoder runtime'})
-				.scrollIntoViewIfNeeded();
 		},
 	},
 	{
@@ -167,15 +167,19 @@ export const states: CaptureState[] = [
 		manifestId: 'capabilities',
 		fixture: `fake mode reported-usage; edits: ${savedSessionsText}`,
 		fixtureEdits: savedSessions,
-		how: 'same disclosure as runtime: opened tide, sent one message, clicked "runtime and setup details"; the "connected agent" capability list and the "Nanocoder features" gates with reasons are scrolled into view before each shot (the app has no separate capabilities dialog)',
+		how: 'opened tide, sent one message, clicked "runtime details", then "capabilities"; the "capabilities, with reasons" dialog lists each Nanocoder feature gate with its reason',
 		async reach(capture) {
 			await readyConversation(capture);
 			await openRuntimeDetails(capture);
-		},
-		async beforeShot(capture) {
 			await capture.page
-				.getByRole('region', {name: 'Nanocoder features'})
-				.scrollIntoViewIfNeeded();
+				.getByRole('dialog', {name: 'runtime details'})
+				.getByRole('button', {name: 'capabilities', exact: true})
+				.click();
+			await expect(
+				capture.page.getByRole('dialog', {
+					name: 'capabilities, with reasons',
+				}),
+			).toBeVisible();
 		},
 	},
 ];
