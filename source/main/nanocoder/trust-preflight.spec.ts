@@ -91,13 +91,22 @@ test('a CLI swapped during awaited cleanup cannot carry a successful verdict int
 test('an exact not-trusted refusal passes, uses only isolated state and removes both temporary roots (ACP-20)', async t => {
 	const previous = process.env.NANOCODER_TRUST_DIRECTORY;
 	const api = process.env.OPENAI_API_KEY;
+	const compileCache = process.env.NODE_DISABLE_COMPILE_CACHE;
+	const compileCachePath = process.env.NODE_COMPILE_CACHE;
 	process.env.NANOCODER_TRUST_DIRECTORY = '1';
 	process.env.OPENAI_API_KEY = 'fixture-only-no-key';
+	process.env.NODE_DISABLE_COMPILE_CACHE = '0';
+	process.env.NODE_COMPILE_CACHE = 'fixture-only-cache-not-forwarded';
 	t.teardown(() => {
 		if (previous === undefined) delete process.env.NANOCODER_TRUST_DIRECTORY;
 		else process.env.NANOCODER_TRUST_DIRECTORY = previous;
 		if (api === undefined) delete process.env.OPENAI_API_KEY;
 		else process.env.OPENAI_API_KEY = api;
+		if (compileCache === undefined)
+			delete process.env.NODE_DISABLE_COMPILE_CACHE;
+		else process.env.NODE_DISABLE_COMPILE_CACHE = compileCache;
+		if (compileCachePath === undefined) delete process.env.NODE_COMPILE_CACHE;
+		else process.env.NODE_COMPILE_CACHE = compileCachePath;
 	});
 	const f = fixture(t);
 	await f.verify();
@@ -111,10 +120,16 @@ test('an exact not-trusted refusal passes, uses only isolated state and removes 
 			'NANOCODER_CONFIG_DIR',
 			'NANOCODER_DATA_DIR',
 			'USERPROFILE',
-			...(process.platform === 'win32' ? ['SystemRoot'] : []),
+			...(process.platform === 'win32'
+				? ['SystemRoot', 'NODE_DISABLE_COMPILE_CACHE']
+				: []),
 		].sort(),
 	);
 	t.is(launch.env.HOME, launch.env.USERPROFILE);
+	t.is(
+		launch.env.NODE_DISABLE_COMPILE_CACHE,
+		process.platform === 'win32' ? '1' : undefined,
+	);
 	t.true(path.isAbsolute(launch.root));
 	t.is(
 		realpathSync.native(path.dirname(launch.root)),

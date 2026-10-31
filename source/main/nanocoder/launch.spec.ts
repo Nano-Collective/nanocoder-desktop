@@ -132,6 +132,27 @@ test('drops variables that change how Node loads code or what is trusted', t => 
 	);
 });
 
+test('normal project and trust launches do not add the preflight-only compile-cache opt-out', t => {
+	for (const trustDirectory of [false, true]) {
+		const launch = createNanocoderLauncher({
+			spawn: (_command, _args, options) => {
+				t.deepEqual(
+					options.env,
+					trustDirectory ? {NANOCODER_TRUST_DIRECTORY: '1'} : {},
+				);
+				return {} as ReturnType<typeof launchNanocoder>;
+			},
+		});
+		launch(
+			{nodePath: process.execPath, cliPath: process.execPath},
+			['--acp'],
+			path.resolve('/project'),
+			{},
+			{trustDirectory},
+		);
+	}
+});
+
 test('sets the trust variable only on the trust launch', async t => {
 	const dir = realpathSync.native(
 		mkdtempSync(path.join(tmpdir(), 'nd-launch-')),

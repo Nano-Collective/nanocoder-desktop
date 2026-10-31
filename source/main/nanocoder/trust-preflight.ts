@@ -84,8 +84,10 @@ export function createTrustPreflight(
 					NANOCODER_CONFIG_DIR: config,
 					NANOCODER_DATA_DIR: data,
 				};
-				if (process.platform === 'win32')
+				if (process.platform === 'win32') {
 					env.SystemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT;
+					env.NODE_DISABLE_COMPILE_CACHE = '1';
+				}
 				await Promise.all([mkdir(config), mkdir(data)]);
 				signal?.throwIfAborted();
 				const child = launch(
