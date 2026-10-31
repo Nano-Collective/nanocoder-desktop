@@ -23,6 +23,7 @@ import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {openFolderFromPalette, startFolderFromPalette} from './qa/open-folder';
+import {turnEnded} from './qa/turn-state';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-e2e-')));
 const fakeCli = path.join(work, 'nanocoder', 'dist', 'cli.js');
@@ -247,10 +248,10 @@ test("shows the permission request with Nanocoder's options and waits for the us
 	await expect(card.getByRole('button').first()).toHaveAccessibleName('Allow');
 	await expect(card.getByRole('button').last()).toHaveAccessibleName('Deny');
 	// Nothing answers for the user: the turn is still open.
-	await expect(page.getByText('turn ended')).toHaveCount(0);
+	await expect(page.locator('[data-stop-reason]')).toHaveCount(0);
 	await expect(page.getByRole('button', {name: 'Send'})).toBeDisabled();
 	await card.getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('allow once: the tool runs and the turn ends', async () => {
@@ -268,13 +269,11 @@ test('allow once: the tool runs and the turn ends', async () => {
 		conversation.locator('.gate-message-agent').first(),
 	).toContainText('Working on it.');
 	await expect(conversation.locator('.stream-author').first()).toHaveText(
-		'you',
+		/^you( \d{2}:\d{2})?$/,
 	);
-	await expect(conversation).toContainText(
-		'tool execute_bash: echo hi: completed',
-	);
+	await expect(conversation).toContainText('completed execute_bash: echo hi');
 	await expect(conversation).toContainText('Tool ran.');
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(
 		page.getByRole('region', {name: 'Permission request'}),
 	).toHaveCount(0);
@@ -288,11 +287,9 @@ test('reject once: the tool is marked failed and the turn goes on', async () => 
 		.click();
 
 	const conversation = page.getByRole('list', {name: 'Conversation'});
-	await expect(conversation).toContainText(
-		'tool execute_bash: echo hi: failed',
-	);
+	await expect(conversation).toContainText('failed execute_bash: echo hi');
 	await expect(conversation).toContainText('Tool denied.');
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('only an option Nanocoder offered can answer a waiting request', async () => {
@@ -317,7 +314,7 @@ test('only an option Nanocoder offered can answer a waiting request', async () =
 	// The same live request still accepts an option it offered.
 	const offered = await bridge('answer', live, 'allow');
 	expect(offered.ok).toBe(true);
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('shows every waiting request, so none is left unanswerable', async () => {
@@ -329,10 +326,10 @@ test('shows every waiting request, so none is left unanswerable', async () => {
 	await cards().last().getByRole('button', {name: 'Deny'}).click();
 	await expect(cards()).toHaveCount(1);
 	await expect(cards().first()).toContainText('echo call_1');
-	await expect(page.getByText('turn ended')).toHaveCount(0);
+	await expect(page.locator('[data-stop-reason]')).toHaveCount(0);
 
 	await cards().first().getByRole('button', {name: 'Allow'}).click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
 		'Both answered.',
 	);
@@ -350,7 +347,7 @@ test('opening another project is not blocked by a turn left open', async () => {
 	await expect(cards()).toBeVisible();
 	await expect(page.getByText('already working')).toHaveCount(0);
 	await cards().getByRole('button', {name: 'Allow'}).click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('validates a prompt', async () => {
@@ -368,7 +365,7 @@ test('conversation and tool text never enters the desktop database', async () =>
 		.fill(`synthetic bounded title ${'x'.repeat(80)} ${marker}`);
 	await page.getByRole('button', {name: 'Send'}).click();
 	await cards().getByRole('button', {name: 'Allow'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
 		marker,
 	);
@@ -442,7 +439,7 @@ test('two project processes keep simultaneous turns, events and approvals separa
 		new Set(states.map(state => state.ok && state.value.activeThreadId)).size,
 	).toBe(2);
 	await cards().getByRole('button', {name: 'Allow'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await openFolder(first);
 	await expect(cards()).toBeVisible();
 	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
@@ -452,7 +449,7 @@ test('two project processes keep simultaneous turns, events and approvals separa
 		page.getByRole('list', {name: 'Conversation'}),
 	).not.toContainText('Second project only');
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
 		'Tool denied.',
 	);
@@ -540,7 +537,7 @@ test('a missing cached session stays view-only until the user explicitly starts 
 	await openFolder(root);
 	await sendMessage();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	const projectId = await recoveryProjectId(root);
 	const stopped = await page.evaluate(
 		projectId =>
@@ -573,7 +570,7 @@ test('a missing cached session stays view-only until the user explicitly starts 
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('reloading during approval cancels hidden requests and leaves a usable session on reopen', async () => {
@@ -604,7 +601,7 @@ test('reloading during approval cancels hidden requests and leaves a usable sess
 	await expect(cards()).toHaveCount(2);
 	await cards().first().getByRole('button', {name: 'Deny'}).click();
 	await cards().first().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
@@ -659,7 +656,7 @@ test('closing and reopening the macOS window cancels hidden approval state', asy
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('reload during new or resumed mode preparation frees the latch before another folder opens', async () => {
@@ -673,7 +670,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 			await openFolder(root);
 			await sendMessage();
 			await cards().getByRole('button', {name: 'Deny'}).click();
-			await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
 			const projectId = await recoveryProjectId(root);
 			expect(
 				(
@@ -741,7 +738,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 		await sendMessage();
 		await expect(cards()).toBeVisible();
 		await cards().getByRole('button', {name: 'Deny'}).click();
-		await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+		await expect(turnEnded(page)).toBeVisible();
 		await expect(page.getByRole('alert')).toHaveCount(0);
 	}
 });
@@ -769,7 +766,7 @@ test('idle reconnect replays all feature reasons and the version warning before 
 			.map(event => event.state.status),
 	);
 	expect(states).toEqual(['ready']);
-	await expect(page.getByText('Turn ended: end_turn')).toHaveCount(0);
+	await expect(turnEnded(page)).toHaveCount(0);
 });
 
 test('a detached folder picker cannot hold the latch or reopen its late selection', async () => {
@@ -814,7 +811,7 @@ test('a detached folder picker cannot hold the latch or reopen its late selectio
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('a detached trust dialog cannot hold the latch or grant its late confirmation', async () => {
@@ -864,7 +861,7 @@ test('a detached trust dialog cannot hold the latch or grant its late confirmati
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	expect(existsSync(path.join(late, '.fake-trusted'))).toBe(false);
 });
 
@@ -920,5 +917,5 @@ test('a second reload cancels an open still queued behind bounded process cleanu
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });

@@ -13,6 +13,7 @@ import {type ElectronApplication, expect, test} from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 test('CHAT-08 SUB-05 whole-app restart reuses live execution UUIDs without inventing historical success or duplicate cards', async () => {
@@ -118,9 +119,7 @@ test('CHAT-08 SUB-05 whole-app restart reuses live execution UUIDs without inven
 			.getByRole('textbox', {name: 'message', exact: true})
 			.fill('durable fixture private prompt');
 		await page.getByRole('button', {name: 'send', exact: true}).click();
-		await expect(
-			page.getByText('turn ended: end_turn', {exact: true}),
-		).toBeVisible();
+		await expect(turnEnded(page)).toBeVisible();
 		await expect(page.locator('.subagent-run-card')).toHaveCount(2);
 		const before = rows(scope.threadId);
 		expect(before.executions.map(row => row.outcome)).toEqual([

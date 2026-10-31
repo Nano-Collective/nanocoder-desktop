@@ -20,6 +20,7 @@ import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {openFolderFromPalette, startFolderFromPalette} from './qa/open-folder';
 import type {mountShellFixture} from './qa/shell-harness';
+import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-shell-')));
@@ -155,6 +156,15 @@ test('ACP readiness is replayed on reopening after a renderer reload', async () 
 
 test('shell geometry and pinned composer follow all three widths without an empty inspector', async () => {
 	await open(project('layout'));
+	const stream = page.locator('main.shell-stream');
+	await expect(stream).toHaveAttribute('data-composer-placement', 'centred');
+	await page.getByRole('textbox', {name: 'message'}).fill('check the layout');
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	const allow = page.getByRole('button', {name: 'Allow', exact: true});
+	await expect(allow).toBeVisible();
+	await allow.click();
+	await expect(turnEnded(page)).toBeVisible();
+	await expect(stream).toHaveAttribute('data-composer-placement', 'bottom');
 	await page.emulateMedia({reducedMotion: 'reduce'});
 	await page.evaluate(() => {
 		const fixture = document.createElement('div');
@@ -195,7 +205,7 @@ test('shell geometry and pinned composer follow all three widths without an empt
 					return {
 						rail: measure('.shell-project-rail'),
 						stream: measure('.shell-stream'),
-						composer: measure('.gate-composer'),
+						composer: measure('.composer-options'),
 						header: measure('.shell-title-bar'),
 						breadcrumb: measure('.shell-breadcrumb'),
 						title: measure('.shell-identity h2'),
@@ -351,7 +361,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			await expect(deny).toHaveCSS('outline-width', '2px');
 			await page.keyboard.press('Enter');
 			await expect(permission).toHaveCount(0);
-			await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
 			await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
 		}
 	}

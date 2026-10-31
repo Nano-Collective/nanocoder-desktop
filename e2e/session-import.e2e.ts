@@ -13,6 +13,7 @@ import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {openFolderFromPalette} from './qa/open-folder';
+import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 for (const theme of ['dark', 'light'] as const) {
@@ -199,9 +200,7 @@ for (const theme of ['dark', 'light'] as const) {
 			).toHaveLength(0);
 			await input.fill('explicit imported follow-up');
 			await input.press('Enter');
-			await expect(
-				page.getByText('turn ended: end_turn', {exact: true}),
-			).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
 			expect(
 				(await snapshot()).methods.filter(row => row === 'session/prompt'),
 			).toHaveLength(1);

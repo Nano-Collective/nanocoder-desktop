@@ -1,5 +1,11 @@
 import * as React from 'react';
 import {AgentMarkdown} from '@/renderer/agent-markdown';
+import {
+	clockTime,
+	dayLabel,
+	timeStamp,
+	untimedHistoryTitle,
+} from '@/renderer/message-time';
 import {StreamAnnouncements} from '@/renderer/stream-announcements';
 import {SubagentRunCard} from '@/renderer/subagent-run-card';
 import {
@@ -49,10 +55,18 @@ function glyph(status: string) {
 		: status === 'failed' || status === 'cancelled'
 			? '✕'
 			: status === 'in_progress'
-				? '◐'
+				? '●'
 				: status === 'pending'
 					? '○'
 					: '◌';
+}
+
+function toolWord(status: string) {
+	return status === 'completed'
+		? ''
+		: status === 'in_progress'
+			? 'running'
+			: status.replaceAll('_', ' ');
 }
 
 function ToolDetails({details}: {details: StreamToolDetails}) {
@@ -89,6 +103,72 @@ function isSubagentRun(item: TranscriptItem) {
 	);
 }
 
+function isPanelTool(item: TranscriptItem | undefined) {
+	return item?.kind === 'tool' && !item.delegation;
+}
+
+function isAgentTurnItem(item: TranscriptItem) {
+	return (
+		item.kind === 'agent' ||
+		item.kind === 'thought' ||
+		item.kind === 'plan' ||
+		isPanelTool(item)
+	);
+}
+
+// One agent label per turn, timed from the turn's first live agent message.
+function agentLabels(items: readonly TranscriptItem[]) {
+	const labels = new Map<number, {at?: number}>();
+	let current: {at?: number} | null = null;
+	for (const [index, item] of items.entries()) {
+		if (item.kind === 'user') current = null;
+		else if (isAgentTurnItem(item)) {
+			if (!current) {
+				current = {};
+				labels.set(index, current);
+			}
+			if (item.kind === 'agent' && current.at === undefined)
+				current.at = item.at;
+		}
+	}
+	return labels;
+}
+
+function firstTime(items: readonly TranscriptItem[]) {
+	for (const item of items)
+		if (
+			(item.kind === 'user' || item.kind === 'agent') &&
+			item.at !== undefined
+		)
+			return item.at;
+	return undefined;
+}
+
+function toolGroup(items: readonly TranscriptItem[], index: number) {
+	if (!isPanelTool(items[index])) return undefined;
+	const first = index === 0 || !isPanelTool(items[index - 1]);
+	const last = !isPanelTool(items[index + 1]);
+	return first ? (last ? 'only' : 'first') : last ? 'last' : 'middle';
+}
+
+function AgentLabel({at}: {at?: number}) {
+	return (
+		<li className="gate-message-label">
+			<div className="stream-author stream-author-agent">
+				<span aria-hidden="true">✱ </span>Nanocoder
+				{at !== undefined && (
+					<>
+						{' '}
+						<time className="stream-time" dateTime={timeStamp(at)}>
+							{clockTime(at)}
+						</time>
+					</>
+				)}
+			</div>
+		</li>
+	);
+}
+
 const StreamRow = React.memo(function StreamRow({
 	item,
 	runPosition,
@@ -98,6 +178,8 @@ const StreamRow = React.memo(function StreamRow({
 	stopping,
 	onStopTurn,
 	outcome,
+	group,
+	notice,
 }: {
 	item: TranscriptItem;
 	runPosition: number;
@@ -107,13 +189,25 @@ const StreamRow = React.memo(function StreamRow({
 	stopping: boolean;
 	onStopTurn?: () => void;
 	outcome?: 'completed' | 'failed' | 'cancelled';
+	group?: string;
+	notice?: React.ReactNode;
 }) {
 	let content: React.ReactNode;
 	switch (item.kind) {
 		case 'user':
 			content = (
 				<>
-					<div className="stream-author">you</div>
+					<div className="stream-author">
+						you
+						{item.at !== undefined && (
+							<>
+								{' '}
+								<time className="stream-time" dateTime={timeStamp(item.at)}>
+									{clockTime(item.at)}
+								</time>
+							</>
+						)}
+					</div>
 					<div className="stream-plain">{item.text}</div>
 				</>
 			);
@@ -121,9 +215,6 @@ const StreamRow = React.memo(function StreamRow({
 		case 'agent':
 			content = (
 				<>
-					<div className="stream-author stream-author-agent">
-						<span aria-hidden="true">✱ </span>Nanocoder
-					</div>
 					<ReportedMetadata metadata={item.metadata} />
 					<AgentMarkdown text={item.text} />
 					{streaming && (
@@ -138,8 +229,8 @@ const StreamRow = React.memo(function StreamRow({
 			content = (
 				<details className="stream-reasoning" open={streaming || undefined}>
 					<summary>
-						<span aria-hidden="true">◌ </span>reasoning
-						{streaming ? ' · in progress' : ' · finished'}
+						<span className="stream-disclosure" aria-hidden="true" />
+						<span aria-hidden="true">◌ </span>reasoning · reported by Nanocoder
 					</summary>
 					<p>{item.text}</p>
 				</details>
@@ -154,7 +245,7 @@ const StreamRow = React.memo(function StreamRow({
 			);
 			break;
 		case 'failure':
-			content = (
+			content = notice ?? (
 				<>
 					<span aria-hidden="true">✕ </span>failed turn: {item.text}
 				</>
@@ -180,43 +271,65 @@ const StreamRow = React.memo(function StreamRow({
 				);
 				break;
 			}
+			const details = item.details;
+			const hasDetails =
+				!!details &&
+				(!!details.content?.length ||
+					!!details.locations?.length ||
+					details.input !== undefined ||
+					details.output !== undefined);
+			const running = item.status === 'in_progress';
+			const kindInTitle =
+				!running &&
+				!!item.toolKind &&
+				item.title.startsWith(`${item.toolKind} `);
+			const word =
+				item.approvalOnly && item.status === 'completed'
+					? 'approved · execution result not reported'
+					: toolWord(item.status);
+			const foldable = hasDetails || running;
 			const summary = (
 				<>
+					{foldable && (
+						<span className="stream-disclosure" aria-hidden="true" />
+					)}
 					<span
-						className={`stream-tool-status${item.status === 'in_progress' ? ' spinner' : ''}`}
+						className={`stream-tool-status${running ? ' spinner' : ''}`}
 						aria-hidden="true"
 					>
-						{glyph(item.status)}{' '}
+						{glyph(item.status)}
 					</span>
-					tool <code className="stream-tool-name">{item.title}</code>:{' '}
-					{item.approvalOnly && item.status === 'completed'
-						? 'approved · execution result not reported'
-						: item.status.replaceAll('_', ' ')}
+					{item.status === 'completed' && (
+						<span className="sr-only">completed </span>
+					)}
+					{word && <span className="stream-tool-state">{word} </span>}
+					{item.toolKind && !kindInTitle && (
+						<span className="stream-tool-verb">{item.toolKind} </span>
+					)}
+					{!running && <code className="stream-tool-name">{item.title}</code>}
 				</>
 			);
-			const details = item.details;
-			content =
-				details &&
-				(details.content?.length ||
-					details.locations?.length ||
-					details.input !== undefined ||
-					details.output !== undefined) ? (
-					<details
-						open={
-							item.status === 'failed' ||
-							item.status === 'cancelled' ||
-							undefined
-						}
-					>
-						<summary>
-							<span className="stream-disclosure" aria-hidden="true" />
-							{summary}
-						</summary>
-						<ToolDetails details={details} />
-					</details>
-				) : (
-					<div>{summary}</div>
-				);
+			content = foldable ? (
+				<details
+					open={
+						running ||
+						item.status === 'failed' ||
+						item.status === 'cancelled' ||
+						undefined
+					}
+				>
+					<summary>{summary}</summary>
+					{running && <p className="stream-tool-detail">{item.title}</p>}
+					{details && hasDetails && <ToolDetails details={details} />}
+					{running && (
+						<p className="stream-tool-wait">
+							waiting for Nanocoder's tool result
+						</p>
+					)}
+				</details>
+			) : (
+				<div className="stream-tool-summary">{summary}</div>
+			);
 			break;
 		}
 		case 'plan':
@@ -294,7 +407,7 @@ const StreamRow = React.memo(function StreamRow({
 	}
 	return (
 		<li
-			className={`gate-message-${item.kind}`}
+			className={`gate-message-${item.kind}${group ? ` stream-tool-${group}` : ''}`}
 			data-status={'status' in item ? item.status : undefined}
 		>
 			{content}
@@ -309,6 +422,9 @@ export function ConversationStream({
 	onStopTurn,
 	stopping = false,
 	outcome,
+	stopReason,
+	failureNotice,
+	now = Date.now,
 }: {
 	transcript: Transcript;
 	running: boolean;
@@ -316,6 +432,9 @@ export function ConversationStream({
 	onStopTurn?: () => Promise<void>;
 	stopping?: boolean;
 	outcome?: 'completed' | 'failed' | 'cancelled';
+	stopReason?: string;
+	failureNotice?: React.ReactNode;
+	now?: () => number;
 }) {
 	const stop = React.useRef(onStopTurn);
 	const pending = React.useRef(false);
@@ -344,6 +463,11 @@ export function ConversationStream({
 	const turnStart = currentTurnStart(transcript.items);
 	const keyOccurrences = new Map<string, number>();
 	const runCount = transcript.items.filter(isSubagentRun).length;
+	const labels = agentLabels(transcript.items);
+	const lastFailure = transcript.items
+		.map(item => item.kind)
+		.lastIndexOf('failure');
+	const dayTime = firstTime(transcript.items);
 	let runPosition = 0;
 	const context = transcript.context;
 	const percentage = context
@@ -353,7 +477,19 @@ export function ConversationStream({
 			)
 		: 0;
 	return (
-		<section className="conversation-stream">
+		<section
+			className="conversation-stream"
+			data-stop-reason={stopReason}
+			data-empty={transcript.items.length === 0 || undefined}
+		>
+			{transcript.items.length > 0 &&
+				(dayTime === undefined ? (
+					<p className="stream-day-label" title={untimedHistoryTitle}>
+						saved history
+					</p>
+				) : (
+					<p className="stream-day-label">{dayLabel(dayTime, now())}</p>
+				))}
 			<ol className="gate-transcript" aria-label="conversation">
 				{transcript.items.map((item, index) => {
 					if (isSubagentRun(item)) runPosition++;
@@ -365,9 +501,11 @@ export function ConversationStream({
 								: `${item.kind}:${index}`;
 					const occurrence = keyOccurrences.get(base) ?? 0;
 					keyOccurrences.set(base, occurrence + 1);
-					return (
+					const key = `${base}:${occurrence}`;
+					const label = labels.get(index);
+					const row = (
 						<StreamRow
-							key={`${base}:${occurrence}`}
+							key={key}
 							item={item}
 							runPosition={runPosition}
 							runCount={runCount}
@@ -375,12 +513,22 @@ export function ConversationStream({
 							outcome={index > turnStart ? outcome : undefined}
 							stopping={stopping || localStopping}
 							onStopTurn={onStopTurn ? stopTurn : undefined}
+							group={toolGroup(transcript.items, index)}
+							notice={index === lastFailure ? failureNotice : undefined}
 							streaming={
 								running &&
 								(item.kind === 'agent' || item.kind === 'thought') &&
 								index === transcript.items.length - 1
 							}
 						/>
+					);
+					return label ? (
+						<React.Fragment key={key}>
+							<AgentLabel at={label.at} />
+							{row}
+						</React.Fragment>
+					) : (
+						row
 					);
 				})}
 			</ol>
@@ -390,6 +538,13 @@ export function ConversationStream({
 				outcome={outcome}
 			/>
 			{stopError && <p role="alert">{stopError}</p>}
+			{stopReason !== undefined && stopReason !== 'end_turn' && (
+				<p className="stream-turn-note">
+					{stopReason === 'cancelled'
+						? 'turn interrupted'
+						: 'turn stopped early'}
+				</p>
+			)}
 			{transcript.mode && (
 				<p className="stream-session">reported mode: {transcript.mode}</p>
 			)}

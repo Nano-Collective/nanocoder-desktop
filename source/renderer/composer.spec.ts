@@ -73,7 +73,7 @@ test('mode selection distinguishes pending yolo from a project default and discl
 	t.true(html.includes('yolo · pending first message'));
 	t.true(
 		html.includes(
-			'tools in Nanocoder&#x27;s alwaysAllow list run without asking in every mode',
+			'tools in Nanocoder&#x27;s alwaysAllow list still run without asking.',
 		),
 	);
 	t.regex(
@@ -124,4 +124,71 @@ test('composer context pill and gauge require actual reported context, not draft
 	t.true(actual.includes('ctx 32%'));
 	t.true(actual.includes('role="progressbar"'));
 	t.true(actual.includes('aria-valuenow="32"'));
+});
+
+test('composer shows one draft hint, help row and control note without a prompt glyph (C-01 C-02 C-05 C-09)', t => {
+	const ready = render({draft: '', modePending: false});
+	t.true(ready.includes('ready for your next message'));
+	t.true(ready.includes('enter a message to send'));
+	t.true(ready.includes('↵ send · ⇧↵ newline'));
+	t.false(ready.includes('›'));
+	t.true(ready.includes('↑ </span>send'));
+	t.true(
+		ready.includes(
+			'model applies to every thread in fixture. tools in Nanocoder&#x27;s alwaysAllow list still run without asking.',
+		),
+	);
+	const running = render({
+		running: true,
+		modePending: false,
+		controlReason: 'model + mode locked until the project turn stops',
+		sendReason: 'turn in progress · draft is not queued',
+	});
+	t.true(running.includes('turn in progress · draft is not queued'));
+	t.true(running.includes('write a draft for later…'));
+	t.true(running.includes('✕ </span>cancel turn'));
+	t.true(
+		running.includes(
+			'model + mode locked until the project turn stops. model applies to every thread in fixture.',
+		),
+	);
+	t.false(running.includes('stop the project turn'));
+});
+
+test('the draft textarea describes its state and keyboard hint together', t => {
+	const html = render({draft: ''});
+	const described = /<textarea[^>]*aria-describedby="([^"]+)"/.exec(html)?.[1];
+	const [descriptionId, helpId] = (described ?? '').split(' ');
+	t.is(described?.split(' ').length, 2);
+	t.true(
+		html.includes(
+			`<span id="${descriptionId}" class="sr-only" aria-hidden="true">ready for your next message; enter a message to send</span>`,
+		),
+	);
+	t.true(html.includes(`aria-describedby="${descriptionId}"`));
+	t.true(html.includes(`<p id="${helpId}" class="gate-hint composer-help">`));
+	t.true(html.includes('↵ send · ⇧↵ newline'));
+	t.true(html.includes('<p class="gate-hint">ready for your next message</p>'));
+	const busy = render({
+		running: true,
+		modePending: false,
+		sendReason: 'another thread is running',
+	});
+	t.true(
+		busy.includes(
+			'class="sr-only" aria-hidden="true">another thread is running</span>',
+		),
+	);
+});
+
+test('the options disclosure is a button that controls its body (C-05)', t => {
+	const html = render({});
+	const toggle =
+		/<button type="button" class="composer-options-toggle" aria-expanded="false" aria-controls="([^"]+)"><span aria-hidden="true">▸ <\/span>mode and project default details<\/button>/.exec(
+			html,
+		);
+	const id = toggle?.[1] ?? '';
+	t.truthy(id);
+	t.true(html.includes(`<div id="${id}" class="gate-actions" hidden="">`));
+	t.false(html.includes('<details'));
 });

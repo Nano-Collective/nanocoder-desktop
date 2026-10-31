@@ -1,4 +1,5 @@
 import {expect, type Page} from '@playwright/test';
+import {turnCancelled, turnEnded} from '../turn-state';
 import type {Capture, CaptureState} from './harness';
 
 const PALETTE_KEY = process.platform === 'darwin' ? 'Meta+k' : 'Control+k';
@@ -34,7 +35,7 @@ async function finishedTurn(page: Page, text: string): Promise<void> {
 	await send(page, text);
 	const approval = page.getByRole('region', {name: 'permission request'});
 	await approval.getByRole('button', {name: 'Allow', exact: true}).click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible(SLOW);
+	await expect(turnEnded(page)).toBeVisible(SLOW);
 	await expect(row(page, text)).toBeVisible();
 }
 
@@ -190,18 +191,19 @@ export const states: CaptureState[] = [
 			await page
 				.getByRole('button', {name: 'cancel turn', exact: true})
 				.click();
-			await expect(page.getByText('turn interrupted: cancelled')).toBeVisible(
-				SLOW,
-			);
+			await expect(page.getByText('turn interrupted')).toBeVisible(SLOW);
+			await expect(turnCancelled(page)).toHaveCount(1);
 			await newThread(page);
 			await runningTurn(page, 'keyboard navigation');
 			await row(page, MAIN).locator('.thread-open').click();
 			await expect(
 				page.locator('.thread-row[data-selected="true"] .thread-title'),
 			).toHaveText(MAIN);
-			await expect(page.getByText('another thread is running')).toBeVisible(
-				SLOW,
-			);
+			await expect(
+				page
+					.locator('.composer-hint-row')
+					.getByText('another thread is running'),
+			).toBeVisible(SLOW);
 		},
 	},
 	{

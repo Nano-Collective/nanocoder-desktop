@@ -5,7 +5,11 @@ export interface StreamBatchClock {
 }
 
 export function createStreamBatcher(
-	deliver: (threadId: string, events: readonly TurnEvent[]) => void,
+	deliver: (
+		threadId: string,
+		events: readonly TurnEvent[],
+		tag?: string,
+	) => void,
 	clock: StreamBatchClock = {
 		schedule(callback, delayMs) {
 			const timer = globalThis.setTimeout(callback, delayMs);
@@ -13,7 +17,7 @@ export function createStreamBatcher(
 		},
 	},
 ) {
-	let queue: {threadId: string; events: TurnEvent[]}[] = [];
+	let queue: {threadId: string; events: TurnEvent[]; tag?: string}[] = [];
 	let cancel: (() => void) | undefined;
 	let generation = 0;
 	let disposed = false;
@@ -32,14 +36,15 @@ export function createStreamBatcher(
 				? []
 				: queue.filter(batch => batch.threadId !== threadId);
 		if (!queue.length) clearTimer();
-		for (const batch of ready) deliver(batch.threadId, batch.events);
+		for (const batch of ready) deliver(batch.threadId, batch.events, batch.tag);
 	}
 	return {
-		enqueue(threadId: string, events: readonly TurnEvent[]) {
+		enqueue(threadId: string, events: readonly TurnEvent[], tag?: string) {
 			if (disposed || !events.length) return;
 			const last = queue.at(-1);
-			if (last?.threadId === threadId) last.events.push(...events);
-			else queue.push({threadId, events: [...events]});
+			if (last?.threadId === threadId && last.tag === tag)
+				last.events.push(...events);
+			else queue.push({threadId, events: [...events], tag});
 			if (cancel) return;
 			const token = ++generation;
 			cancel = clock.schedule(() => {

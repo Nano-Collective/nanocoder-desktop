@@ -1,6 +1,7 @@
 import {writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {expect, type Page} from '@playwright/test';
+import {turnEnded} from '../turn-state';
 import type {Capture, CaptureState, FixtureEdit} from './harness';
 
 const PROMPT =
@@ -11,8 +12,6 @@ const input = (page: Page) =>
 	page.getByRole('textbox', {name: 'message', exact: true});
 const selectedRow = (page: Page) =>
 	page.locator('.thread-row[data-selected="true"]');
-const turnEnded = (page: Page) =>
-	page.getByText('turn ended: end_turn', {exact: true});
 
 async function openTide(capture: Capture, mode: string): Promise<string> {
 	const folder = capture.project('tide', mode);
@@ -64,6 +63,25 @@ async function scrollToEnd(capture: Capture): Promise<void> {
 		.poll(async () => {
 			await capture.page.mouse.wheel(0, 4000);
 			return atEnd();
+		})
+		.toBe(true);
+}
+
+async function scrollToTop(capture: Capture): Promise<void> {
+	const list = capture.page.getByRole('list', {name: 'conversation'});
+	if ((await list.count()) === 0) return;
+	await list.hover();
+	const atTop = () =>
+		list.evaluate(element => {
+			let node: Element | null = element;
+			while (node && node.scrollHeight <= node.clientHeight + 1)
+				node = node.parentElement;
+			return !node || node.scrollTop <= 1;
+		});
+	await expect
+		.poll(async () => {
+			await capture.page.mouse.wheel(0, -4000);
+			return atTop();
 		})
 		.toBe(true);
 }
@@ -147,16 +165,18 @@ const drivers: CaptureState[] = [
 		stem: 'conversation-ready',
 		manifestId: 'conversation-ready',
 		fixture: READY_FIXTURE,
-		how: 'open project folder "tide", rename the new thread to "export the audit log" from the thread menu, type the CSV export prompt and press Enter, wait for "turn ended: end_turn"',
+		how: 'open project folder "tide", rename the new thread to "export the audit log" from the thread menu, type the CSV export prompt and press Enter, wait for the turn to end, transcript scrolled to the top',
 		fixtureEdits: READY_EDITS,
 		reach: readyConversation,
+		beforeShot: scrollToTop,
 	},
 	{
 		stem: 'conversation-running',
 		manifestId: 'conversation-running',
 		fixture:
 			'wait-for-cancel; edits: "Working on it." swapped for a reasoning chunk, the reference heading and paragraph, completed read/edit tools, an in-progress tool "execute_bash: pnpm test:unit -- export" and the text "checking the result"; model edits as in conversation-ready',
-		how: 'open "tide", rename the thread to "export the audit log", send the CSV export prompt; the turn stays running until cancelled, shown with the "cancel turn" control',
+		how: 'open "tide", rename the thread to "export the audit log", send the CSV export prompt; the turn stays running until cancelled, shown with the "cancel turn" control, transcript scrolled to the top',
+		beforeShot: scrollToTop,
 		fixtureEdits: [
 			...MODEL_EDITS,
 			{
@@ -189,7 +209,7 @@ const drivers: CaptureState[] = [
 		stem: 'conversation-approval',
 		manifestId: 'conversation-approval',
 		fixture:
-			'ok (default); edits: tool title "execute_bash: echo hi" to "execute_bash: pnpm test:unit -- export", offered options changed from Allow/Deny to three: "allow once" (allow_once), "allow always" (allow_always), "reject" (reject_once), "Working on it." swapped for the reference heading and paragraph; model edits as in conversation-ready',
+			'ok (default); edits: tool title "execute_bash: echo hi" to "execute_bash: pnpm test:unit -- export", offered options changed from Allow/Deny to three: "allow once" (allow_once), "allow always" (allow_always), "reject" (reject_once), "Working on it." swapped for the reference heading and paragraph, the reference read and edit tool rows added above the shelf, and the request\'s own pending tool row kept as the product renders it (the reference has none, gap D-14, so the capture shows three tool rows against two); model edits as in conversation-ready',
 		how: 'open "tide", rename the thread to "export the audit log", send the CSV export prompt; the permission request takes focus in the approval shelf',
 		fixtureEdits: [
 			...MODEL_EDITS,
@@ -205,7 +225,10 @@ const drivers: CaptureState[] = [
 				from: "{optionId: 'deny', name: 'Deny', kind: 'reject_once'},",
 				to: "{optionId: 'deny', name: 'reject', kind: 'reject_once'},",
 			},
-			{from: "say(sessionId, 'Working on it. ');", to: INTRO},
+			{
+				from: "say(sessionId, 'Working on it. ');",
+				to: [INTRO, DONE_TOOLS].join('\n'),
+			},
 		],
 		async reach(capture) {
 			await openTide(capture, 'ok');

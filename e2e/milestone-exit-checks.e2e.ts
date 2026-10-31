@@ -17,6 +17,7 @@ import {
 import {setupProject} from '@/main/nanocoder/fixtures/real-nanocoder';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {turnEnded} from './qa/turn-state';
 
 const root = path.resolve(import.meta.dirname, '..');
 const paletteKey = process.platform === 'darwin' ? 'Meta+k' : 'Control+k';
@@ -301,9 +302,7 @@ test('keyboard project, palette and approval journey exposes named roles and sta
 		await page.keyboard.press('2');
 		await expect(approval).toHaveCount(0);
 		await expect(input).toBeFocused();
-		await expect(
-			page.getByText('turn ended: end_turn', {exact: true}),
-		).toBeVisible();
+		await expect(turnEnded(page)).toBeVisible();
 		await accessibleControls(page);
 	});
 });
