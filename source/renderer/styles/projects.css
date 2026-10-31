@@ -135,7 +135,8 @@
 }
 .welcome-runtime {
 	width: 100%;
-	margin-top: 17px;
+	/* Ends the welcome block at the 637.44px reference height. */
+	margin-top: 4.78px;
 }
 .welcome-runtime-toggle {
 	width: 100%;
