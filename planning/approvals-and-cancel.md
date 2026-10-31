@@ -41,6 +41,10 @@ A request with the question hint opens the question dialog (`DEC-41`), titled "N
 
 Closing the dialog, with its close control or Escape, does not answer the question. The request collapses to the approval shelf above the composer and stays pending until the user chooses an offered option there or cancels the turn. The dialog traps focus while open. When it closes, a waiting approval takes focus, as described above.
 
+The dialog's meta line keeps Nanocoder's `ask_user` label, as in the approved copy. Only the `ask_user` path produces this shape on pinned Nanocoder, so the label names the tool that actually asks.
+
+Accepted risk: a request from another source with the same question shape would open this dialog without the mode and approval effect lines. Pinned Nanocoder sends this shape only for `ask_user`, so this cannot happen today. A subagent request still shows its source line, and answers still pass the offered-option check.
+
 ## Cancel
 
 The `cancelThread()` bridge sends only desktop project/thread IDs on `threads:cancel`. Main resolves the saved Nanocoder session and cancels only that active owner. Renderer-supplied session IDs, extra fields and malformed scopes are rejected before the service runs. An unknown thread is refused; a known sessionless or idle thread is a local no-op. The strict schemas and service-invocation refusal tests live in `source/main/ipc/workspace.ts` and its adjacent spec.
