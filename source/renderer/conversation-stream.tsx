@@ -302,7 +302,7 @@ const StreamRow = React.memo(function StreamRow({
 					{item.toolKind && (
 						<span className="stream-tool-verb">{item.toolKind} </span>
 					)}
-					<code className="stream-tool-name">{item.title}</code>
+					{!running && <code className="stream-tool-name">{item.title}</code>}
 				</>
 			);
 			content = foldable ? (

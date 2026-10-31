@@ -281,3 +281,25 @@ test('consecutive tool calls share one panel with fold, status and verb rows (C-
 	t.false(html.includes('tool <code'));
 	t.false(html.includes(': completed'));
 });
+
+test('a running tool row shows its kind once and its reported title once (C-19)', t => {
+	const html = render(
+		[
+			{
+				kind: 'tool',
+				id: 'c',
+				title: 'execute_bash: pnpm test:unit -- export',
+				status: 'in_progress',
+				toolKind: 'execute',
+			},
+		],
+		true,
+	);
+	t.true(html.includes('<span class="stream-tool-verb">execute </span>'));
+	t.true(
+		html.includes(
+			'<p class="stream-tool-detail">execute_bash: pnpm test:unit -- export</p>',
+		),
+	);
+	t.false(html.includes('<code class="stream-tool-name">'));
+});
