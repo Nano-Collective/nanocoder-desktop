@@ -303,7 +303,7 @@ test('inactive composer controls and reasons retain readable contrast in both th
 		}, theme);
 		await expect(
 			page
-				.locator('.composer')
+				.locator('.composer-hint-row')
 				.getByText('Nanocoder is not ready. retry before sending.', {
 					exact: true,
 				}),
