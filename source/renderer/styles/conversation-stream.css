@@ -30,7 +30,7 @@
 }
 
 .stream-author-agent {
-	color: var(--colors-primary);
+	color: var(--colors-on-surface-muted);
 }
 
 .stream-time {
