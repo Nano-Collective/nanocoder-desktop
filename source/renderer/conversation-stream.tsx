@@ -315,6 +315,11 @@ const StreamRow = React.memo(function StreamRow({
 					}
 				>
 					<summary>{summary}</summary>
+					{running && item.toolKind && (
+						<p className="stream-tool-kind">
+							{item.toolKind} · {item.title}
+						</p>
+					)}
 					{details && hasDetails && <ToolDetails details={details} />}
 					{running && (
 						<p className="stream-tool-wait">
