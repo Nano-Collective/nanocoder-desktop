@@ -249,7 +249,7 @@ export const states: CaptureState[] = [
 		async reach(capture) {
 			const page = await openProject(capture, 'session-discovery');
 			await send(page, MAIN);
-			await expect(page.getByText('turn ended: end_turn')).toBeVisible(SLOW);
+			await expect(turnEnded(page)).toBeVisible(SLOW);
 			await expect(row(page, MAIN)).toBeVisible();
 		},
 		async beforeShot(capture) {
@@ -302,11 +302,20 @@ export const states: CaptureState[] = [
 				await target
 					.getByRole('button', {name: `archive: ${title}`, exact: true})
 					.click();
-				await page
-					.getByRole('dialog', {name: 'archive thread', exact: true})
+				const confirmation = page.getByRole('dialog', {
+					name: 'archive thread',
+					exact: true,
+				});
+				await confirmation
 					.getByRole('button', {name: 'archive thread', exact: true})
 					.click();
-				await expect(row(page, title)).toHaveCount(0);
+				await expect(confirmation).toBeHidden();
+				// Archived rows stay in the rail's collapsed archived group, so check the active groups only.
+				await expect(
+					page
+						.locator('section.thread-group .thread-row')
+						.filter({has: page.locator('.thread-title', {hasText: title})}),
+				).toHaveCount(0);
 			}
 			const opener = page.getByRole('button', {name: /^archived/});
 			await expect(opener).toContainText('2');
