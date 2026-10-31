@@ -648,10 +648,17 @@ test('long welcome recent paths give actions their full width without dropping p
 			await page.setViewportSize({width, height: 900});
 			await expect(action).toHaveCSS('white-space', 'nowrap');
 			await expect(action).toHaveCSS('flex-shrink', '0');
-			await expect(savedPath).toHaveCSS('overflow-wrap', 'anywhere');
-			await expect(savedPath).toHaveCSS('white-space', 'normal');
+			await expect(savedPath).toHaveCSS('white-space', 'nowrap');
+			await expect(savedPath).toHaveCSS('text-overflow', 'ellipsis');
+			await expect(savedPath).toHaveCSS('overflow', 'hidden');
+			await expect(savedPath).toHaveAttribute('title', root);
 			expect(
 				await savedPath.evaluate(
+					element => element.scrollWidth > element.clientWidth,
+				),
+			).toBe(true);
+			expect(
+				await recents.evaluate(
 					element => element.scrollWidth <= element.clientWidth,
 				),
 			).toBe(true);
@@ -659,6 +666,19 @@ test('long welcome recent paths give actions their full width without dropping p
 				await action.evaluate(
 					element => element.scrollWidth <= element.clientWidth,
 				),
+			).toBe(true);
+			expect(
+				await action.evaluate(element => {
+					const button = element.getBoundingClientRect();
+					const row = element.closest('li')?.getBoundingClientRect();
+					const list = element.closest('ul')?.getBoundingClientRect();
+					return (
+						!!row &&
+						!!list &&
+						Math.abs(button.width - list.width) < 1 &&
+						button.right <= list.right + 0.5
+					);
+				}),
 			).toBe(true);
 		}
 	}
