@@ -230,6 +230,11 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						reading: measure('.technical-gate'),
 						scrollPadding: padding('.shell-stream-scroll'),
 						footerPadding: padding('.shell-conversation-footer'),
+						composerGap:
+							(document
+								.querySelector('.shell-composer')
+								?.getBoundingClientRect().top ?? 0) -
+							scroll.getBoundingClientRect().bottom,
 						scrolls: scroll.scrollHeight > scroll.clientHeight,
 						overflows: document.documentElement.scrollWidth > innerWidth,
 					};
@@ -255,9 +260,13 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						0,
 					);
 				expect(geometry.bottomGap).toBeCloseTo(24, 0);
+				expect(geometry.composerGap).toBeCloseTo(0, 1);
 				const reading = width <= 840 ? '24px' : width <= 1050 ? '30px' : '40px';
-				expect(geometry.scrollPadding).toEqual([reading, reading]);
+				const column = width <= 840 ? '27px' : reading;
+				expect(geometry.scrollPadding).toEqual([column, column]);
 				expect(geometry.footerPadding).toEqual([reading, reading]);
+				if (width <= 840)
+					expect(geometry.reading.x - geometry.stream.x).toBeCloseTo(27, 0);
 				expect(geometry.scrolls).toBe(true);
 				expect(geometry.overflows).toBe(false);
 				expect(await visibleTextContrast(page, theme)).toEqual([]);

@@ -266,7 +266,10 @@
 	.shell-identity h2 {
 		font-size: 12px;
 	}
-	.shell-stream-scroll,
+	/* the reference reading column is inset 27px, the composer 24px */
+	.shell-stream-scroll {
+		padding-inline: 27px;
+	}
 	.shell-conversation-footer {
 		padding-inline: 24px;
 	}
