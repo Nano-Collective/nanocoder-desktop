@@ -72,6 +72,7 @@ test('quiet launch and macOS activation keep native windows and Dock hidden with
 		await search.press('Escape');
 		await expect(page.locator('dialog[open]')).toHaveCount(0);
 		await test.step('hidden renderers retain foreground frame cadence', async () => {
+			await page.evaluate(() => document.fonts.ready.then(() => undefined));
 			const native = await app.evaluate(({BrowserWindow}) => {
 				const window = BrowserWindow.getAllWindows()[0];
 				return {

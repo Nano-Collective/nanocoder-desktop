@@ -13,13 +13,17 @@ import {
 } from '@/main/security';
 import {desktopStoreFactory} from '@/main/store';
 import {createNodeSqliteDriver} from '@/main/store/node-sqlite';
-import {hiddenTestWindows, presentWindow} from '@/main/window-presentation';
+import {
+	presentWindow,
+	windowPresentationOptions,
+} from '@/main/window-presentation';
 import {APP_NAME} from '@/shared/app-info';
 
 const devServerUrl = process.env.ELECTRON_RENDERER_URL;
 // Used by the packaged-app smoke test in CI: start, then exit.
 const smokeTest = process.argv.includes('--smoke-test');
-const hiddenWindows = hiddenTestWindows(app.isPackaged, process.argv);
+const presentation = windowPresentationOptions(app.isPackaged, process.argv);
+const hiddenWindows = presentation.hidden;
 const rendererRoot = path.join(import.meta.dirname, '../renderer');
 const preloadPath = path.join(import.meta.dirname, '../preload/index.cjs');
 const allowedOrigins = devServerUrl
@@ -108,6 +112,7 @@ function createWindow(): void {
 		title: APP_NAME,
 		show: false,
 		webPreferences: {
+			...presentation.webPreferences,
 			preload: preloadPath,
 			sandbox: true,
 			contextIsolation: true,
