@@ -32,6 +32,7 @@
 		"build": "electron-vite build",
 		"start": "electron-vite preview",
 		"qa:launch": "tsx e2e/qa/launch.ts",
+		"qa:capture": "tsx e2e/qa/ui-capture/run.ts",
 		"tokens:generate": "node scripts/generate-design-tokens.mjs",
 		"package": "pnpm build && electron-builder",
 		"package:dir": "pnpm build && electron-builder --dir",
