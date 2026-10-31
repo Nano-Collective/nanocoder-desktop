@@ -210,6 +210,25 @@ details[open] > summary .stream-disclosure::before {
 	list-style-type: disc;
 }
 
+.stream-markdown table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--typography-body-sm-font-size);
+}
+
+.stream-markdown :is(th, td) {
+	padding: 7px var(--spacing-lg);
+	border-bottom: 1px solid var(--colors-stroke);
+	font-weight: var(--typography-body-md-font-weight);
+	text-align: left;
+	vertical-align: top;
+	overflow-wrap: anywhere;
+}
+
+.stream-markdown th {
+	color: var(--colors-on-surface-muted);
+}
+
 .stream-resource,
 .stream-context {
 	color: var(--colors-on-surface-muted);
