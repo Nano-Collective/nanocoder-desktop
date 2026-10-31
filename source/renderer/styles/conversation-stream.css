@@ -89,7 +89,7 @@
 .stream-tool-detail,
 .stream-tool-wait {
 	margin: 0;
-	padding: 0 0 8px 22px;
+	padding: 0 0 8px 9px;
 	color: var(--colors-on-surface-muted);
 }
 
