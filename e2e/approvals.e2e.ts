@@ -302,6 +302,10 @@ test('a question already pending when the shelf mounts returns focus to the comp
 		.locator('.thread-row[data-selected="true"]')
 		.getAttribute('data-thread-id');
 	if (!threadId) throw new Error('Missing the question thread id');
+	// The open modal question blocks the rail, so collapse it to the shelf first.
+	await page.keyboard.press('Escape');
+	await expect(question).toHaveCount(0);
+	await expect(cards()).toHaveCount(1);
 	await page.getByRole('button', {name: 'new thread', exact: true}).click();
 	await expect(
 		page.locator('.thread-row[data-selected="true"] .thread-title'),
