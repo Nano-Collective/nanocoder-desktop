@@ -162,7 +162,7 @@ test('the draft textarea describes its state and keyboard hint together', t => {
 	t.is(described?.split(' ').length, 2);
 	t.true(
 		html.includes(
-			`<span id="${descriptionId}" class="sr-only">ready for your next message; enter a message to send</span>`,
+			`<span id="${descriptionId}" class="sr-only" aria-hidden="true">ready for your next message; enter a message to send</span>`,
 		),
 	);
 	t.true(html.includes(`aria-describedby="${descriptionId}"`));
@@ -174,7 +174,11 @@ test('the draft textarea describes its state and keyboard hint together', t => {
 		modePending: false,
 		sendReason: 'another thread is running',
 	});
-	t.true(busy.includes('class="sr-only">another thread is running</span>'));
+	t.true(
+		busy.includes(
+			'class="sr-only" aria-hidden="true">another thread is running</span>',
+		),
+	);
 });
 
 test('the options disclosure is a button that controls its body (C-05)', t => {

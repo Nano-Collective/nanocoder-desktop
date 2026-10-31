@@ -135,7 +135,7 @@ export function Composer(props: ComposerProps) {
 					send();
 				}}
 			>
-				<span id={descriptionId} className="sr-only">
+				<span id={descriptionId} className="sr-only" aria-hidden="true">
 					{description}
 				</span>
 				<label className="composer-message">

@@ -199,9 +199,11 @@ export const states: CaptureState[] = [
 			await expect(
 				page.locator('.thread-row[data-selected="true"] .thread-title'),
 			).toHaveText(MAIN);
-			await expect(page.getByText('another thread is running')).toBeVisible(
-				SLOW,
-			);
+			await expect(
+				page
+					.locator('.composer-hint-row')
+					.getByText('another thread is running'),
+			).toBeVisible(SLOW);
 		},
 	},
 	{
