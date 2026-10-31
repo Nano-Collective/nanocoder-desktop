@@ -533,7 +533,11 @@ export function App() {
 						? () => openOverlay({kind: 'thread-menu', threadId: thread.id})
 						: undefined
 				}
-				projectName={currentProject?.displayName}
+				projectName={
+					importOpen && currentProject
+						? `${currentProject.displayName} / saved sessions`
+						: currentProject?.displayName
+				}
 				sidebarFooter={
 					<>
 						{processBadge && <StatusBadge {...processBadge} />}

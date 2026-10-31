@@ -52,7 +52,7 @@ export function SessionImportList(
 			aria-label="import saved sessions"
 		>
 			<div className="session-import-header">
-				<h2 className="session-import-heading">saved sessions</h2>
+				<h2 className="session-import-heading">bring a saved session here</h2>
 			</div>
 			<p className="session-import-intro">
 				sessions found for this exact project root. importing adds a desktop
@@ -131,6 +131,9 @@ export function SessionImportList(
 					</Button>
 				)}
 			</div>
+			<p className="session-import-note">
+				import is unavailable while a project turn runs.
+			</p>
 			{reason && (
 				<p id={reasonId} role="status" className="session-import-note">
 					{reason}
