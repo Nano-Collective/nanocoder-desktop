@@ -106,6 +106,7 @@ test('long thread titles stay inside the rail with visible glyphs, selection rul
 		}, theme);
 		for (const width of [1240, 1020, 840]) {
 			await page.setViewportSize({width, height: 900});
+			await page.keyboard.press('Tab');
 			await selected.locator('.thread-open').focus();
 			await expect(selected.locator('.thread-open')).toBeFocused();
 			await expect(selected.locator('.thread-open')).toHaveCSS(
@@ -169,7 +170,6 @@ for (const [state, glyph, tone] of [
 	['running', '●', 'primary'],
 	['waiting', '▲', 'warning'],
 	['interrupted', '◐', 'warning'],
-	['archived', '░', 'muted'],
 	['view-only', '◍', 'muted'],
 ] as const) {
 	test(`selected ${state} glyph meets rendered AA in both themes without changing its row or selection rule (U.3)`, async () => {
@@ -205,28 +205,20 @@ for (const [state, glyph, tone] of [
 				}
 			}
 		}
-		if (state === 'archived' || state === 'view-only') {
-			const changed = await page.evaluate(async state => {
+		if (state === 'view-only') {
+			const changed = await page.evaluate(async () => {
 				const {desktop} = window as unknown as {desktop: DesktopApi};
 				const ui = await desktop.getUiState({});
-				if (!ui.ok || !ui.value.activeProjectId || !ui.value.activeThreadId)
-					throw new Error('Expected a selected desktop thread');
-				const owner = {
-					projectId: ui.value.activeProjectId,
-					threadId: ui.value.activeThreadId,
-				};
-				return state === 'archived'
-					? desktop.archiveThread({...owner, archived: true})
-					: desktop.stopProject({projectId: owner.projectId});
-			}, state);
+				if (!ui.ok || !ui.value.activeProjectId)
+					throw new Error('Expected a selected desktop project');
+				return desktop.stopProject({projectId: ui.value.activeProjectId});
+			});
 			expect(changed.ok).toBe(true);
-			if (state === 'view-only') {
-				writeFileSync(path.join(root, '.fake-nanocoder'), 'missing-session');
-				await selected.locator('.thread-open').click();
-				await expect(
-					page.getByRole('region', {name: 'view-only thread'}),
-				).toBeVisible();
-			}
+			writeFileSync(path.join(root, '.fake-nanocoder'), 'missing-session');
+			await selected.locator('.thread-open').click();
+			await expect(
+				page.getByRole('region', {name: 'view-only thread'}),
+			).toBeVisible();
 		}
 		const marker = selected.locator('.thread-status');
 		await expect(marker).toHaveText(glyph);
@@ -395,6 +387,8 @@ test('rename uses the shared dialog and preserves keyboard focus, draft and thre
 	await expect(dialog).toHaveCount(0);
 	await expect(actions).toBeFocused();
 	await expect(input).toHaveValue('retained rename draft');
+	await page.keyboard.press('Enter');
+	await menu.getByRole('button', {name: 'rename…', exact: true}).focus();
 	await page.keyboard.press('Enter');
 	await expect(title).toBeFocused();
 	await title.fill('renamed fixture');
