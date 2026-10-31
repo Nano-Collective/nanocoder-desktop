@@ -16,7 +16,9 @@ import {
 	resolveRendererFile,
 } from '@/main/security';
 
-const work = realpathSync(mkdtempSync(path.join(tmpdir(), 'nd-renderer-')));
+const work = realpathSync.native(
+	mkdtempSync(path.join(tmpdir(), 'nd-renderer-')),
+);
 const root = path.join(work, 'renderer');
 for (const name of [
 	'index.html',

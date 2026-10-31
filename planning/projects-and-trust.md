@@ -68,6 +68,8 @@ The status command, fingerprint-bound grant and fingerprint versioning remain
 blocked on [nanocoder#1899](https://github.com/Nano-Collective/nanocoder/issues/1899).
 See [the trust integration notes](acp-integration.md#directory-trust).
 
+On Windows, a project folder cannot be moved while Nanocoder is running in it; stop it or quit first.
+
 The provisional minimum is `1.31.0` for an explicit `NANOCODER_DESKTOP_CLI`
 override only, with an isolated, fail-closed ACP directory-trust preflight before
 any selected-project launch. Published npm 1.31.0 remains unsupported. The check

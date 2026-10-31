@@ -27,7 +27,7 @@ const props = {
 
 test('recent projects escape names and paths and explain why missing roots cannot open', t => {
 	const html = renderToStaticMarkup(createElement(RecentProjects, props));
-	t.notRegex(html, /<script>/);
+	t.notRegex(html, /<script\b/i);
 	t.true(html.includes('&lt;script&gt;fixture&lt;/script&gt;'));
 	t.true(html.includes('folder missing; locate it before opening'));
 	t.true(html.includes('aria-current="true"'));
@@ -61,7 +61,7 @@ test('trust feedback escapes messages and never offers a renderer trust-grant ac
 				feedback: {status, message: '<script>fixture</script>'},
 			}),
 		);
-		t.notRegex(html, /<script>/);
+		t.notRegex(html, /<script\b/i);
 		t.false(html.includes('<button'));
 		t.true(
 			html.includes(

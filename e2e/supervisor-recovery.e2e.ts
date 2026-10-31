@@ -467,10 +467,10 @@ test('recovery remains bound to the failed attempted project when another projec
 	await page.getByRole('button', {name: 'diagnostics', exact: true}).click();
 	await expect(
 		page.getByRole('region', {name: 'captured diagnostics'}),
-	).toContainText(other);
+	).toContainText(JSON.stringify(other).slice(1, -1));
 	await expect(
 		page.getByRole('region', {name: 'captured diagnostics'}),
-	).not.toContainText(root);
+	).not.toContainText(JSON.stringify(root).slice(1, -1));
 });
 
 test('diagnostics export reviews the exact snapshot and cancellation never writes', async () => {

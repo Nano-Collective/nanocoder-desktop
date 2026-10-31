@@ -56,7 +56,7 @@ test('plain-prop rail renders scoped groups selected semantics and literal title
 	t.true(html.includes('history · earlier'));
 	t.true(html.includes('archived · 1'));
 	t.true(html.includes('&lt;script&gt;fixture&lt;/script&gt;'));
-	t.notRegex(html, /<script>/);
+	t.notRegex(html, /<script\b/i);
 	t.false(html.includes('other project fixture'));
 	t.true(html.includes('data-selected="true"'));
 	t.true(html.includes('aria-current="true"'));

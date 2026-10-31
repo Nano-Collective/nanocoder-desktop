@@ -2,6 +2,7 @@ import {
 	copyFileSync,
 	mkdirSync,
 	mkdtempSync,
+	realpathSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
@@ -14,7 +15,9 @@ import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {visibleTextContrast} from './qa/ui-contrast';
 
-const work = mkdtempSync(path.join(tmpdir(), 'nd-overlays-'));
+const work = realpathSync.native(
+	mkdtempSync(path.join(tmpdir(), 'nd-overlays-')),
+);
 const cli = path.join(work, 'nanocoder/dist/cli.js');
 let app: Awaited<ReturnType<typeof electron.launch>>;
 const paletteKey = process.platform === 'darwin' ? 'Meta+k' : 'Control+k';
@@ -308,6 +311,30 @@ test('palette adds opens and locates projects through the existing project contr
 		page.getByRole('button', {name: 'add project folder', exact: true}),
 	).toBeEnabled();
 	await expect(page.getByRole('dialog')).toBeHidden();
+	if (process.platform === 'win32') {
+		const projectId = await page.evaluate(async root => {
+			const result = await (
+				window as unknown as {desktop: DesktopApi}
+			).desktop.listProjects({});
+			if (!result.ok) throw new Error('Expected saved projects');
+			const project = result.value.find(
+				project => project.canonicalRoot === root,
+			);
+			if (!project) throw new Error('Expected the opened project');
+			return project.id;
+		}, folder);
+		const stopped = await page.evaluate(
+			projectId =>
+				(window as unknown as {desktop: DesktopApi}).desktop.stopProject({
+					projectId,
+				}),
+			projectId,
+		);
+		expect(stopped).toMatchObject({
+			ok: true,
+			value: {projectId, status: 'stopped'},
+		});
+	}
 	renameSync(folder, moved);
 	await page.reload();
 	await expect(

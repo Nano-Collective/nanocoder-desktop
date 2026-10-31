@@ -71,6 +71,42 @@ test('quiet launch and macOS activation keep native windows and Dock hidden with
 		).toBe(true);
 		await search.press('Escape');
 		await expect(page.locator('dialog[open]')).toHaveCount(0);
+		await test.step('hidden renderers retain foreground frame cadence', async () => {
+			await page.evaluate(() => document.fonts.ready.then(() => undefined));
+			const native = await app.evaluate(({BrowserWindow}) => {
+				const window = BrowserWindow.getAllWindows()[0];
+				return {
+					visible: window.isVisible(),
+					focused: window.isFocused(),
+					backgroundThrottling: window.webContents.getBackgroundThrottling(),
+				};
+			});
+			const frames = await page.evaluate(
+				() =>
+					new Promise<{gaps: number[]; visibility: string}>(resolve => {
+						const times: number[] = [];
+						const frame = (at: number) => {
+							times.push(at);
+							if (times.length === 6) {
+								resolve({
+									gaps: times
+										.slice(1)
+										.map((time, index) => time - times[index]),
+									visibility: document.visibilityState,
+								});
+								return;
+							}
+							requestAnimationFrame(frame);
+						};
+						requestAnimationFrame(frame);
+					}),
+			);
+			console.info('hidden-window frames', JSON.stringify({native, ...frames}));
+			expect(native.visible).toBe(false);
+			expect(native.focused).toBe(false);
+			expect(Math.max(...frames.gaps)).toBeLessThanOrEqual(100);
+			expect(native.backgroundThrottling).toBe(true);
+		});
 	} finally {
 		await app.close();
 		rmSync(profile, {recursive: true, force: true});
