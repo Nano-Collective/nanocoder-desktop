@@ -570,9 +570,11 @@ test('a version below the minimum is refused with a clear upgrade message', asyn
 test('an older accepted version shows a reason for every disabled feature', async () => {
 	await openFolder(project('minimum-agent', 'minimum-no-gates'));
 	await showSetup();
-	await expect(setupDialog().getByRole('status')).toContainText(
-		'Compatibility is unverified',
-	);
+	await expect(
+		setupDialog()
+			.getByRole('status')
+			.filter({hasText: 'Compatibility is unverified'}),
+	).toBeVisible();
 	await showCapabilities();
 	const features = capabilitiesDialog();
 	await expectMinimumReasons(features);
@@ -856,9 +858,11 @@ test('idle reconnect replays all feature reasons and the version warning before 
 	await page.keyboard.press('Escape');
 	await expect(capabilitiesDialog()).toBeHidden();
 	await showSetup();
-	await expect(setupDialog().getByRole('status')).toContainText(
-		'Compatibility is unverified',
-	);
+	await expect(
+		setupDialog()
+			.getByRole('status')
+			.filter({hasText: 'Compatibility is unverified'}),
+	).toBeVisible();
 	await closeSetup();
 	await expect(page.getByLabel('Message')).toBeEmpty();
 	const states = await page.evaluate(() =>

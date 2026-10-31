@@ -700,7 +700,10 @@ test('runtime details reviews diagnostics with computed presentation in both the
 			await page.setViewportSize({width, height: 900});
 			await runtime.click();
 			const details = page.getByRole('dialog', {name: 'runtime details'});
-			await expect(details).toHaveCSS('border-radius', '15px');
+			await expect(details.locator('.dialog-shell')).toHaveCSS(
+				'border-radius',
+				'15px',
+			);
 			await expect(
 				details.getByRole('button', {name: 'review diagnostics', exact: true}),
 			).toBeVisible();
@@ -718,7 +721,10 @@ test('runtime details reviews diagnostics with computed presentation in both the
 		name: 'review captured diagnostics',
 		exact: true,
 	});
-	await expect(diagnostics).toHaveCSS('border-radius', '15px');
+	await expect(diagnostics.locator('.dialog-shell')).toHaveCSS(
+		'border-radius',
+		'15px',
+	);
 	await expect(
 		diagnostics.getByRole('region', {name: 'captured diagnostics'}),
 	).toHaveCSS('font-size', '11px');
