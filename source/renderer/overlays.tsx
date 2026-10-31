@@ -1,6 +1,6 @@
+import * as React from 'react';
 import {
 	createContext,
-	type ReactNode,
 	type Ref,
 	useCallback,
 	useContext,
@@ -21,6 +21,7 @@ import {
 	focusReturn,
 	moveSelection,
 	type OverlayRequest,
+	overlayRules,
 	type PaletteAction,
 	runAction,
 	type Toast,
@@ -94,7 +95,7 @@ function Notifications({
 	);
 }
 
-function ShortcutRow({label, keys}: {label: string; keys: ReactNode}) {
+function ShortcutRow({label, keys}: {label: string; keys: React.ReactNode}) {
 	return (
 		<div>
 			<dt>{label}</dt>
@@ -120,8 +121,8 @@ export function OverlayProvider({
 	canClose?(request: OverlayRequest): boolean;
 	onClosed?(request: OverlayRequest): void;
 	onOpenChange?(open: boolean): void;
-	renderDialog(request: DialogRequest, api: DialogApi): ReactNode;
-	children: ReactNode;
+	renderDialog(request: DialogRequest, api: DialogApi): React.ReactNode;
+	children: React.ReactNode;
 }) {
 	const [current, setCurrent] = useState<OverlayRequest | null>(null);
 	const [query, setQuery] = useState('');
@@ -129,7 +130,6 @@ export function OverlayProvider({
 	const [toast, setToast] = useState<Toast | null>(null);
 	const [themeError, setThemeError] = useState('');
 	const dialog = useRef<HTMLDialogElement>(null);
-	const currentRequest = useRef<OverlayRequest | null>(null);
 	const latestHooks = useRef({canClose, onClosed, onOpenChange});
 	const returnFocus = useRef<(() => void) | null>(null);
 	const returnTarget = useRef<HTMLElement | null>(null);
@@ -137,6 +137,25 @@ export function OverlayProvider({
 	const notifications = useRef<ReturnType<typeof toastQueue> | null>(null);
 	const themeChanged = useRef(false);
 	const latestActions = useRef(actions);
+	const [rules] = useState(() =>
+		overlayRules({
+			canClose: request => latestHooks.current.canClose(request),
+			hide() {
+				dialog.current?.close();
+				const active = document.activeElement;
+				closingFocus.current = active;
+				// Do not expose native-restored editor focus before close has settled.
+				if (
+					active instanceof HTMLTextAreaElement ||
+					(active instanceof HTMLInputElement &&
+						active.selectionStart !== null) ||
+					(active instanceof HTMLElement && active.isContentEditable)
+				)
+					active.blur();
+			},
+			onClosed: request => latestHooks.current.onClosed?.(request),
+		}),
+	);
 	const mac = navigator.platform.startsWith('Mac');
 	const shortcut = `${commandModifier(navigator.platform)}K`;
 	const opened = current !== null;
@@ -179,11 +198,7 @@ export function OverlayProvider({
 	// Only the first opener is kept, so a dialog that replaces another still returns focus to the original.
 	const open = useCallback(
 		(request: OverlayRequest, opener?: HTMLElement | null) => {
-			const replaced = currentRequest.current;
-			if (replaced !== null && replaced !== request) {
-				if (!latestHooks.current.canClose(replaced)) return;
-				latestHooks.current.onClosed?.(replaced);
-			}
+			if (!rules.open(request)) return;
 			if (!dialog.current?.open) {
 				const target = opener === undefined ? document.activeElement : opener;
 				returnTarget.current = target instanceof HTMLElement ? target : null;
@@ -194,42 +209,22 @@ export function OverlayProvider({
 					) ?? document.body,
 				);
 			}
-			currentRequest.current = request;
 			setQuery('');
 			setSelected(0);
 			setCurrent(request);
 		},
-		[],
+		[rules],
 	);
 
-	const closeNow = useCallback(() => {
-		const request = currentRequest.current;
-		dialog.current?.close();
-		const active = document.activeElement;
-		closingFocus.current = active;
-		// Do not expose native-restored editor focus before close has settled.
-		if (
-			active instanceof HTMLTextAreaElement ||
-			(active instanceof HTMLInputElement && active.selectionStart !== null) ||
-			(active instanceof HTMLElement && active.isContentEditable)
-		)
-			active.blur();
-		currentRequest.current = null;
-		setCurrent(null);
-		if (request !== null) latestHooks.current.onClosed?.(request);
-	}, []);
-
 	const close = useCallback(() => {
-		const request = currentRequest.current;
-		if (request !== null && !latestHooks.current.canClose(request)) return;
-		closeNow();
-	}, [closeNow]);
+		if (rules.close()) setCurrent(null);
+	}, [rules]);
 
 	const closeIf = useCallback(
 		(request: OverlayRequest) => {
-			if (currentRequest.current === request) closeNow();
+			if (rules.closeIf(request)) setCurrent(null);
 		},
-		[closeNow],
+		[rules],
 	);
 
 	const api = useMemo<DialogApi>(() => ({open, close}), [open, close]);

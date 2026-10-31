@@ -174,3 +174,43 @@ export function notifyImported(
 		return imported;
 	};
 }
+
+export interface OverlayHooks {
+	canClose(request: OverlayRequest): boolean;
+	hide(): void;
+	onClosed(request: OverlayRequest): void;
+}
+
+// The open and close rules behind the overlay provider. A refused open or close keeps the current dialog.
+export function overlayRules(hooks: OverlayHooks) {
+	let current: OverlayRequest | null = null;
+	const closeNow = () => {
+		const request = current;
+		if (request === null) return;
+		hooks.hide();
+		current = null;
+		hooks.onClosed(request);
+	};
+	return {
+		current: () => current,
+		open(request: OverlayRequest): boolean {
+			const replaced = current;
+			if (replaced !== null && replaced !== request) {
+				if (!hooks.canClose(replaced)) return false;
+				hooks.onClosed(replaced);
+			}
+			current = request;
+			return true;
+		},
+		close(): boolean {
+			if (current !== null && !hooks.canClose(current)) return false;
+			closeNow();
+			return true;
+		},
+		closeIf(request: OverlayRequest): boolean {
+			if (current !== request) return false;
+			closeNow();
+			return true;
+		},
+	};
+}
