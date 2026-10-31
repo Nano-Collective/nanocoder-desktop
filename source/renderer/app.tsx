@@ -476,6 +476,11 @@ export function App() {
 				logoSrc={logoUrl}
 				title={info?.name ?? 'Nanocoder'}
 				threadTitle={thread?.title}
+				onOpenThreadMenu={
+					thread
+						? () => openOverlay({kind: 'thread-menu', threadId: thread.id})
+						: undefined
+				}
 				projectName={currentProject?.displayName}
 				sidebarFooter={
 					<>
