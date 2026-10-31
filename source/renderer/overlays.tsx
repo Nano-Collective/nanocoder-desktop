@@ -1,29 +1,50 @@
 import {
 	createContext,
 	type ReactNode,
+	type Ref,
 	useCallback,
 	useContext,
 	useEffect,
+	useImperativeHandle,
 	useLayoutEffect,
+	useMemo,
 	useRef,
 	useState,
 } from 'react';
+import {DialogShell} from '@/renderer/dialog-shell';
 import {
+	commandModifier,
+	type DialogApi,
+	dialogLabel,
 	filterActions,
 	focusReturn,
 	moveSelection,
+	type OverlayRequest,
 	type PaletteAction,
 	runAction,
+	type ThreadDialog,
 	type Toast,
 	toastQueue,
 } from '@/renderer/overlay-model';
 import {Button} from '@/renderer/ui';
 
-type Overlay = 'palette' | 'shortcuts';
+export interface OverlayHandle {
+	open(request: OverlayRequest): void;
+	notify(message: string): void;
+}
+
 const OverlayContext = createContext<{
-	open(kind: Overlay): void;
+	open(request: OverlayRequest): void;
 	shortcut: string;
 } | null>(null);
+
+export function useOverlayOpen() {
+	const overlays = useContext(OverlayContext);
+	return useCallback(
+		(request: OverlayRequest) => overlays?.open(request),
+		[overlays],
+	);
+}
 
 export function PaletteButton() {
 	const overlays = useContext(OverlayContext);
@@ -71,37 +92,50 @@ function Notifications({
 					className="overlay-toast"
 					data-exiting={toast.exiting}
 				>
-					<span aria-hidden="true">✓</span> {toast.message}
+					{toast.message}
 				</div>
 			)}
 		</div>
 	);
 }
 
+function ShortcutRow({label, keys}: {label: string; keys: ReactNode}) {
+	return (
+		<div>
+			<dt>{label}</dt>
+			<dd>{keys}</dd>
+		</div>
+	);
+}
+
 export function OverlayProvider({
+	ref,
 	actions,
 	pendingApprovalCount = 0,
+	renderThreadDialog,
 	children,
 }: {
+	ref?: Ref<OverlayHandle>;
 	actions: PaletteAction[];
 	pendingApprovalCount?: number;
+	renderThreadDialog(request: ThreadDialog, api: DialogApi): ReactNode;
 	children: ReactNode;
 }) {
-	const [kind, setKind] = useState<Overlay | null>(null);
+	const [current, setCurrent] = useState<OverlayRequest | null>(null);
 	const [query, setQuery] = useState('');
 	const [selected, setSelected] = useState(0);
 	const [toast, setToast] = useState<Toast | null>(null);
 	const [themeError, setThemeError] = useState('');
 	const dialog = useRef<HTMLDialogElement>(null);
-	const input = useRef<HTMLInputElement>(null);
 	const returnFocus = useRef<(() => void) | null>(null);
 	const returnTarget = useRef<HTMLElement | null>(null);
 	const closingFocus = useRef<Element | null>(null);
 	const notifications = useRef<ReturnType<typeof toastQueue> | null>(null);
 	const themeChanged = useRef(false);
+	const latestActions = useRef(actions);
 	const mac = navigator.platform.startsWith('Mac');
-	const shortcut = mac ? '⌘K' : 'Ctrl+K';
-	const opened = kind !== null;
+	const shortcut = `${commandModifier(navigator.platform)}K`;
+	const opened = current !== null;
 
 	useEffect(() => {
 		const queue = toastQueue(
@@ -118,9 +152,9 @@ export function OverlayProvider({
 	}, []);
 
 	useEffect(() => {
-		let current = true;
+		let live = true;
 		void window.desktop.getSettings({}).then(result => {
-			if (!current || themeChanged.current || !result.ok) return;
+			if (!live || themeChanged.current || !result.ok) return;
 			const theme = result.value.theme;
 			document.documentElement.dataset.theme =
 				theme === 'system'
@@ -130,11 +164,15 @@ export function OverlayProvider({
 					: theme;
 		});
 		return () => {
-			current = false;
+			live = false;
 		};
 	}, []);
 
-	const open = useCallback((next: Overlay) => {
+	const notify = useCallback((message: string) => {
+		notifications.current?.push(message);
+	}, []);
+
+	const open = useCallback((request: OverlayRequest) => {
 		if (!dialog.current?.open) {
 			const target = document.activeElement;
 			returnTarget.current = target instanceof HTMLElement ? target : null;
@@ -147,7 +185,7 @@ export function OverlayProvider({
 		}
 		setQuery('');
 		setSelected(0);
-		setKind(next);
+		setCurrent(request);
 	}, []);
 
 	const close = useCallback(() => {
@@ -161,18 +199,35 @@ export function OverlayProvider({
 			(active instanceof HTMLElement && active.isContentEditable)
 		)
 			active.blur();
-		setKind(null);
+		setCurrent(null);
 	}, []);
 
+	const api = useMemo<DialogApi>(() => ({open, close}), [open, close]);
+	const context = useMemo(() => ({open, shortcut}), [open, shortcut]);
+	useImperativeHandle(ref, () => ({open, notify}), [open, notify]);
+
 	useLayoutEffect(() => {
-		if (opened) dialog.current?.showModal();
+		if (opened && !dialog.current?.open) dialog.current?.showModal();
 	}, [opened]);
 
 	useLayoutEffect(() => {
-		if (kind === 'palette') input.current?.focus();
-		else if (kind === 'shortcuts')
-			dialog.current?.querySelector('button')?.focus();
-	}, [kind]);
+		if (current === null) return;
+		const target =
+			dialog.current?.querySelector<HTMLElement>('[data-autofocus]') ??
+			dialog.current?.querySelector<HTMLElement>('button');
+		target?.focus();
+	}, [current]);
+
+	useLayoutEffect(() => {
+		latestActions.current = actions;
+	});
+
+	const runNewThread = useCallback(() => {
+		const action = latestActions.current.find(item => item.id === 'thread-new');
+		if (!action) return;
+		if (action.disabledReason) notify(action.disabledReason);
+		else runAction(action);
+	}, [notify]);
 
 	useEffect(() => {
 		const keydown = (event: KeyboardEvent) => {
@@ -188,14 +243,14 @@ export function OverlayProvider({
 				target instanceof HTMLElement &&
 				(target.isContentEditable ||
 					!!target.closest('input, textarea, select, [role="textbox"]'));
-			if (
-				event.key.toLowerCase() === 'k' &&
-				(mac ? event.metaKey : event.ctrlKey) &&
-				!event.altKey &&
-				!event.shiftKey
-			) {
+			const modifier = mac ? event.metaKey : event.ctrlKey;
+			const key = event.key.toLowerCase();
+			if (modifier && !event.altKey && !event.shiftKey && key === 'k') {
 				event.preventDefault();
 				open('palette');
+			} else if (modifier && !event.altKey && !event.shiftKey && key === 'n') {
+				event.preventDefault();
+				if (!dialog.current?.open) runNewThread();
 			} else if (
 				event.key === '?' &&
 				!typing &&
@@ -209,7 +264,7 @@ export function OverlayProvider({
 		};
 		document.addEventListener('keydown', keydown);
 		return () => document.removeEventListener('keydown', keydown);
-	}, [close, mac, open]);
+	}, [close, mac, open, runNewThread]);
 
 	const changeTheme = async (theme: 'dark' | 'light') => {
 		themeChanged.current = true;
@@ -238,6 +293,7 @@ export function OverlayProvider({
 			label: 'keyboard shortcuts',
 			glyph: '?',
 			shortcut: '?',
+			opensDialog: true,
 			run: () => open('shortcuts'),
 		},
 	];
@@ -245,27 +301,25 @@ export function OverlayProvider({
 	const index = moveSelection(selected, 0, filtered.length);
 	const selectedId = filtered[index]?.id;
 	useLayoutEffect(() => {
-		if (kind === 'palette' && selectedId)
+		if (current === 'palette' && selectedId)
 			document
 				.getElementById(`palette-option-${selectedId}`)
 				?.scrollIntoView({block: 'nearest'});
-	}, [kind, selectedId]);
+	}, [current, selectedId]);
 	const execute = (action: PaletteAction | undefined) => {
 		if (!action || action.disabledReason) return;
-		const originalFocus = returnTarget.current;
-		if (action.id !== 'shortcuts') close();
-		runAction(action, originalFocus ?? undefined);
+		if (!action.opensDialog) close();
+		runAction(action);
 	};
+	const modifier = commandModifier(navigator.platform);
 
 	return (
-		<OverlayContext value={{open, shortcut}}>
+		<OverlayContext value={context}>
 			{children}
 			<dialog
 				ref={dialog}
 				className="overlay-dialog"
-				aria-label={
-					kind === 'shortcuts' ? 'keyboard shortcuts' : 'command palette'
-				}
+				aria-label={current ? dialogLabel(current) : 'command palette'}
 				onClose={() => {
 					if (dialog.current?.open) return;
 					const restore = returnFocus.current;
@@ -298,66 +352,56 @@ export function OverlayProvider({
 					}
 				}}
 			>
-				<div className="overlay-content">
-					<div className="overlay-heading">
-						<h2>
-							{kind === 'shortcuts' ? 'keyboard shortcuts' : 'command palette'}
-						</h2>
-						<Button
-							aria-label={`close ${kind === 'shortcuts' ? 'keyboard shortcuts' : 'command palette'}`}
-							onClick={close}
-						>
-							<span aria-hidden="true">✕</span> close <kbd>Esc</kbd>
-						</Button>
-					</div>
-					{kind === 'palette' ? (
-						<>
-							<label className="overlay-search">
-								find a command
-								<input
-									ref={input}
-									role="combobox"
-									aria-expanded={filtered.length > 0}
-									aria-autocomplete="list"
-									aria-controls={
-										filtered.length ? 'palette-results' : undefined
+				{current === 'palette' && (
+					<DialogShell
+						title="command palette"
+						closeLabel="close command palette"
+						onClose={close}
+					>
+						<div className="palette-search">
+							<input
+								data-autofocus
+								role="combobox"
+								aria-label="find a command"
+								aria-expanded={filtered.length > 0}
+								aria-autocomplete="list"
+								aria-controls={filtered.length ? 'palette-results' : undefined}
+								aria-activedescendant={
+									filtered[index]
+										? `palette-option-${filtered[index].id}`
+										: undefined
+								}
+								value={query}
+								placeholder="find an action…"
+								onChange={event => {
+									setQuery(event.target.value);
+									setSelected(0);
+								}}
+								onKeyDown={event => {
+									if (
+										event.nativeEvent.isComposing ||
+										event.nativeEvent.keyCode === 229
+									)
+										return;
+									if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+										event.preventDefault();
+										setSelected(
+											moveSelection(
+												index,
+												event.key === 'ArrowDown' ? 1 : -1,
+												filtered.length,
+											),
+										);
+									} else if (event.key === 'Enter') {
+										event.preventDefault();
+										execute(filtered[index]);
 									}
-									aria-activedescendant={
-										filtered[index]
-											? `palette-option-${filtered[index].id}`
-											: undefined
-									}
-									value={query}
-									placeholder="type a command…"
-									onChange={event => {
-										setQuery(event.target.value);
-										setSelected(0);
-									}}
-									onKeyDown={event => {
-										if (
-											event.nativeEvent.isComposing ||
-											event.nativeEvent.keyCode === 229
-										)
-											return;
-										if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-											event.preventDefault();
-											setSelected(
-												moveSelection(
-													index,
-													event.key === 'ArrowDown' ? 1 : -1,
-													filtered.length,
-												),
-											);
-										} else if (event.key === 'Enter') {
-											event.preventDefault();
-											execute(filtered[index]);
-										}
-									}}
-								/>
-							</label>
+								}}
+							/>
+						</div>
+						{filtered.length ? (
 							<div
 								id="palette-results"
-								hidden={!filtered.length}
 								role="listbox"
 								aria-label="commands"
 								className="palette-results"
@@ -379,16 +423,12 @@ export function OverlayProvider({
 										}}
 									>
 										<span aria-hidden="true">{action.glyph}</span>
-										<span>
+										<span className="palette-label">
 											{action.label}
-											{action.description && (
-												<span className="palette-description">
-													{action.description}
-												</span>
-											)}
 											{action.disabledReason && (
 												<span className="palette-reason">
-													unavailable: {action.disabledReason}
+													{' '}
+													· unavailable: {action.disabledReason}
 												</span>
 											)}
 										</span>
@@ -396,66 +436,52 @@ export function OverlayProvider({
 									</div>
 								))}
 							</div>
-							{!filtered.length && (
-								<p className="overlay-empty" role="status">
-									no matching commands
-								</p>
-							)}
-							<p className="overlay-hint">↑ ↓ choose · Enter run · Esc close</p>
-						</>
-					) : (
+						) : (
+							<p className="palette-empty" role="status">
+								no commands found. try a different action name.
+							</p>
+						)}
+						<p className="overlay-hint">↑↓ move · ↵ choose · esc close</p>
+					</DialogShell>
+				)}
+				{current === 'shortcuts' && (
+					<DialogShell
+						title="keyboard shortcuts"
+						closeLabel="close keyboard shortcuts"
+						onClose={close}
+						footer={<Button onClick={close}>close</Button>}
+					>
+						<p className="dialog-note">
+							actions remain available as labelled buttons.
+						</p>
 						<dl className="shortcut-list">
-							<div>
-								<dt>command palette</dt>
-								<dd>
-									<kbd>{shortcut}</kbd>
-								</dd>
-							</div>
-							<div>
-								<dt>keyboard shortcuts (outside text fields)</dt>
-								<dd>
-									<kbd>?</kbd>
-								</dd>
-							</div>
-							<div>
-								<dt>choose a command</dt>
-								<dd>
-									<kbd>↑ ↓</kbd>
-								</dd>
-							</div>
-							<div>
-								<dt>run selected command</dt>
-								<dd>
-									<kbd>Enter</kbd>
-								</dd>
-							</div>
-							<div>
-								<dt>close overlay</dt>
-								<dd>
-									<kbd>Esc</kbd>
-								</dd>
-							</div>
-							<div>
-								<dt>send message / insert a newline</dt>
-								<dd>
-									<kbd>Enter / Shift+Enter</kbd>
-								</dd>
-							</div>
-							<div>
-								<dt>approval, while its request has focus</dt>
-								<dd>
-									<kbd>1–9 (offered options only)</kbd>
-								</dd>
-							</div>
-							<div>
-								<dt>next / previous control</dt>
-								<dd>
-									<kbd>Tab / Shift+Tab</kbd>
-								</dd>
-							</div>
+							<ShortcutRow
+								label="command palette"
+								keys={<kbd>{shortcut}</kbd>}
+							/>
+							<ShortcutRow
+								label="new thread"
+								keys={<kbd>{`${modifier}N`}</kbd>}
+							/>
+							<ShortcutRow label="send message" keys={<kbd>Enter</kbd>} />
+							<ShortcutRow
+								label="insert a newline"
+								keys={<kbd>Shift+Enter</kbd>}
+							/>
+							<ShortcutRow
+								label="close a menu or dialog"
+								keys={<kbd>Esc</kbd>}
+							/>
+							<ShortcutRow
+								label="approval, while its request has focus"
+								keys={<kbd>1-9 (offered options only)</kbd>}
+							/>
 						</dl>
-					)}
-				</div>
+					</DialogShell>
+				)}
+				{current !== null &&
+					typeof current !== 'string' &&
+					renderThreadDialog(current, api)}
 				<div data-stream-announcement-host="modal" />
 				<Notifications
 					active={opened}

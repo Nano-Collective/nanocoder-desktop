@@ -4,8 +4,16 @@ import {ApprovalRequests} from '@/renderer/approval-requests';
 import logoUrl from '@/renderer/assets/nano-collective-avatar.png';
 import {Composer} from '@/renderer/composer';
 import {ConversationStream} from '@/renderer/conversation-stream';
-import type {FocusTarget} from '@/renderer/overlay-model';
-import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
+import {
+	commandModifier,
+	notifyImported,
+	type OverlayRequest,
+} from '@/renderer/overlay-model';
+import {
+	type OverlayHandle,
+	OverlayProvider,
+	PaletteButton,
+} from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
 import {ProjectSwitch} from '@/renderer/recent-projects';
 import {RecoveryTools} from '@/renderer/recovery-tools';
@@ -16,7 +24,8 @@ import {
 	type SupervisorIndex,
 } from '@/renderer/supervisor-state';
 import {threadComposerState} from '@/renderer/thread-composer-state';
-import {threadPalette} from '@/renderer/thread-palette';
+import {type ThreadDialogData, ThreadDialogs} from '@/renderer/thread-dialogs';
+import {importPalette, threadPalette} from '@/renderer/thread-palette';
 import {ThreadRail} from '@/renderer/thread-rail';
 import {ThreadRecoveryNotice} from '@/renderer/thread-recovery-notice';
 import {TrustFeedback} from '@/renderer/trust-feedback';
@@ -160,15 +169,6 @@ export function App() {
 	const composerInput = useRef<HTMLTextAreaElement>(null);
 	const retryFocus = useRef(false);
 	const retrying = useRef(false);
-	const [renaming, setRenaming] = useState<{
-		projectId: string;
-		threadId: string;
-		title: string;
-	} | null>(null);
-	const renameDialog = useRef<HTMLDialogElement>(null);
-	const renameInput = useRef<HTMLInputElement>(null);
-	const renameReturn = useRef<HTMLElement | null>(null);
-	const renameId = renaming?.threadId;
 	const [dialog, setDialog] = useState<WorkspaceDialogKind | null>(null);
 	// The opener of the first dialog stays the return target while dialogs replace each other.
 	const dialogOpener = useRef<HTMLElement | null | undefined>(undefined);
@@ -214,31 +214,9 @@ export function App() {
 		if (dialog === 'diagnostics' && !review.snapshot) setDialog(null);
 	}, [dialog, review.snapshot]);
 
-	useEffect(() => {
-		if (!renameId) return;
-		const renameModal = renameDialog.current;
-		renameModal?.showModal();
-		renameInput.current?.focus();
-		return () => {
-			const restore =
-				document.activeElement === document.body ||
-				!!renameModal?.contains(document.activeElement);
-			renameModal?.close();
-			if (!restore || document.querySelector('dialog[open]')) return;
-			const target = renameReturn.current;
-			renameReturn.current = null;
-			if (
-				target?.isConnected &&
-				!target.matches(':disabled') &&
-				target.checkVisibility()
-			)
-				target.focus();
-			else
-				document
-					.querySelector<HTMLButtonElement>('[aria-label="command palette"]')
-					?.focus();
-		};
-	}, [renameId]);
+	const overlays = useRef<OverlayHandle>(null);
+	const openOverlay = (request: OverlayRequest) =>
+		overlays.current?.open(request);
 
 	useEffect(() => {
 		if (
@@ -274,7 +252,6 @@ export function App() {
 			supervisorIndex.current = next;
 			setSupervisors(next);
 			if (event.type === 'project') {
-				if (selectedProject.current !== event.projectId) setRenaming(null);
 				selectedProject.current = event.projectId;
 				setAttemptedProjectId(event.projectId);
 			} else if (event.type === 'project-removed') {
@@ -282,7 +259,6 @@ export function App() {
 					selectedProject.current = null;
 					setAttemptedProjectId(null);
 					setOpened(null);
-					setRenaming(null);
 				}
 				void projectControls.refresh();
 			} else if (event.type === 'supervisor') {
@@ -334,27 +310,36 @@ export function App() {
 	const cancel = async () => {
 		if (thread) await controls.cancel(thread.id);
 	};
-	const rename = (threadId: string, originalFocus?: FocusTarget) => {
-		const row = workspace.threads.find(row => row.id === threadId);
-		if (row && projectId) {
-			const active = document.activeElement;
-			renameReturn.current =
-				originalFocus instanceof HTMLElement
-					? originalFocus
-					: active instanceof HTMLElement &&
-							active !== document.body &&
-							!active.closest('dialog')
-						? active
-						: null;
-			setRenaming({projectId, threadId, title: row.title});
-		}
+	const runningThreadId =
+		workspace.promptingThreadId ??
+		workspace.cancellingThreadIds[0] ??
+		workspace.threads.find(
+			row =>
+				row.nanocoderSessionId !== null &&
+				row.nanocoderSessionId === processState?.activeThreadId,
+		)?.id ??
+		null;
+	const onNew = () => openOverlay({kind: 'new-thread'});
+	const onRename = (threadId: string) =>
+		openOverlay({kind: 'rename', threadId});
+	const onArchive = (threadId: string, archived: boolean) => {
+		if (archived) openOverlay({kind: 'archive', threadId});
+		else void controls.archive(threadId, false);
 	};
-	const onNew = () => {
-		void controls.create();
-	};
-	const onArchive = (id: string, archived: boolean) => {
-		void controls.archive(id, archived);
-	};
+	const onRemove = (threadId: string) =>
+		openOverlay({kind: 'remove', threadId});
+	const importSession = notifyImported(sessionImports.importSession, message =>
+		overlays.current?.notify(message),
+	);
+	const focusSessionImports = () =>
+		(
+			document.querySelector<HTMLButtonElement>(
+				'.session-import button:not(:disabled)',
+			) ??
+			document.querySelector<HTMLButtonElement>(
+				'.session-imports button:not(:disabled)',
+			)
+		)?.focus();
 	const renameGate = gates[projectId ?? '']?.features.rename;
 	const deleteGate = gates[projectId ?? '']?.features.delete;
 	const renameDisabledReason = renameGate?.enabled
@@ -420,40 +405,56 @@ export function App() {
 		/>
 	);
 
+	const threadDialogData: ThreadDialogData = {
+		threads: workspace.threads,
+		projectId,
+		projectName: currentProject?.displayName ?? 'selected project',
+		defaultMode: currentProject?.defaultMode ?? 'normal',
+		pending,
+		projectBusy: rootBusy,
+		renameDisabledReason,
+		deleteHistoryDisabledReason,
+		actions: {
+			create: controls.create,
+			setDraft: controls.setDraft,
+			open: controls.open,
+			rename: controls.rename,
+			archive: controls.archive,
+			remove: controls.remove,
+			deleteHistory: controls.deleteHistory,
+		},
+	};
+
 	return (
 		<OverlayProvider
+			ref={overlays}
 			pendingApprovalCount={transcript.permissions.length}
+			renderThreadDialog={(request, api) => (
+				<ThreadDialogs request={request} data={threadDialogData} api={api} />
+			)}
 			actions={[
-				...projectPalette({
-					...projectControls,
-					pending: connecting || projectControls.pending,
-				}),
 				...threadPalette({
 					projectId,
+					projectName: currentProject?.displayName,
+					newShortcut: `${commandModifier(navigator.platform)}N`,
 					thread,
 					pending,
+					projectBusy: rootBusy,
 					renameDisabledReason: thread?.nanocoderSessionId
 						? renameDisabledReason
 						: undefined,
 					onNew,
-					onRename: rename,
+					onRename,
 					onArchive,
 				}),
-				{
-					id: 'open-folder',
-					label: 'open a project folder',
-					glyph: '⌗',
-					keywords: 'add directory',
-					disabledReason:
-						connecting || projectControls.pending
-							? 'another project request or native dialog is pending'
-							: !runtime?.ok
-								? 'Nanocoder runtime is not available'
-								: undefined,
-					run: () => {
-						void connect();
-					},
-				},
+				...importPalette({
+					ready: sessionImports.ready,
+					onImport: focusSessionImports,
+				}),
+				...projectPalette({
+					...projectControls,
+					pending: connecting || projectControls.pending,
+				}),
 			]}
 		>
 			<AppShell
@@ -506,14 +507,20 @@ export function App() {
 							deleteHistoryDisabledReason={deleteHistoryDisabledReason}
 							onNew={onNew}
 							onOpen={id => {
-								setRenaming(null);
+								if (
+									runningThreadId &&
+									id !== runningThreadId &&
+									id !== workspace.activeThreadId
+								)
+									openOverlay({
+										kind: 'other-thread',
+										threadId: runningThreadId,
+									});
 								void controls.open(id);
 							}}
-							onRename={rename}
+							onRename={onRename}
 							onArchive={onArchive}
-							onRemove={id => {
-								void controls.remove(id);
-							}}
+							onRemove={onRemove}
 							onDeleteHistory={id => {
 								void controls.deleteHistory(id);
 							}}
@@ -533,7 +540,7 @@ export function App() {
 												: undefined))
 							}
 							onRefresh={sessionImports.refresh}
-							onImport={sessionImports.importSession}
+							onImport={importSession}
 						/>
 					</>
 				}
@@ -687,7 +694,7 @@ export function App() {
 						pending={workspace.pending}
 						onRetry={() => void controls.open(thread.id)}
 						onNew={onNew}
-						onRemove={() => void controls.remove(thread.id)}
+						onRemove={() => onRemove(thread.id)}
 					/>
 				)}
 				{turn && !turn.ok && failed && (
@@ -773,53 +780,6 @@ export function App() {
 						: null
 				}
 			/>
-			{renaming && (
-				<dialog
-					ref={renameDialog}
-					className="overlay-dialog rename-dialog"
-					aria-label="rename thread"
-					onCancel={() => setRenaming(null)}
-				>
-					<form
-						className="overlay-content"
-						onSubmit={event => {
-							event.preventDefault();
-							if (renaming.projectId !== projectId) return;
-							void controls
-								.rename(renaming.threadId, renaming.title)
-								.then(saved => {
-									if (saved) setRenaming(null);
-								});
-						}}
-					>
-						<h2>rename thread</h2>
-						<p>
-							change this thread’s title. its conversation and project stay
-							unchanged.
-						</p>
-						<label>
-							thread title
-							<input
-								ref={renameInput}
-								value={renaming.title}
-								maxLength={200}
-								onChange={event =>
-									setRenaming({...renaming, title: event.target.value})
-								}
-							/>
-						</label>
-						<div className="rename-dialog-actions">
-							<Button
-								type="submit"
-								disabled={pending || !renaming.title.trim()}
-							>
-								save title
-							</Button>
-							<Button onClick={() => setRenaming(null)}>cancel</Button>
-						</div>
-					</form>
-				</dialog>
-			)}
 		</OverlayProvider>
 	);
 }

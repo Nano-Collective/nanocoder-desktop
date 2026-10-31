@@ -48,10 +48,7 @@ test('project palette exposes only existing add open and locate callbacks with p
 test('missing and replaced projects remain listed with a refusal reason while locate stays enabled', t => {
 	for (const availability of ['missing', 'changed'] as const) {
 		const {actions, calls} = fixture([{...project, availability}]);
-		t.is(
-			actions[1]?.disabledReason,
-			`folder ${availability}; locate it before opening`,
-		);
+		t.is(actions[1]?.disabledReason, `folder ${availability}`);
 		t.false(runAction(actions[1]));
 		t.true(runAction(actions[2]));
 		t.deepEqual(calls, [`locate:${project.id}`]);

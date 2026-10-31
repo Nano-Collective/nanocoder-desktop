@@ -4,9 +4,47 @@ export interface PaletteAction {
 	glyph: string;
 	shortcut?: string;
 	keywords?: string;
-	description?: string;
+	opensDialog?: boolean;
 	disabledReason?: string;
-	run(originalFocus?: FocusTarget): void;
+	run(): void;
+}
+
+export type ThreadDialog =
+	| {kind: 'thread-menu'; threadId: string}
+	| {kind: 'rename'; threadId: string}
+	| {kind: 'archive'; threadId: string}
+	| {kind: 'remove'; threadId: string}
+	| {kind: 'new-thread'}
+	| {kind: 'other-thread'; threadId: string};
+
+export type OverlayRequest = 'palette' | 'shortcuts' | ThreadDialog;
+
+export interface DialogApi {
+	open(request: OverlayRequest): void;
+	close(): void;
+}
+
+export function dialogLabel(request: OverlayRequest): string {
+	if (request === 'palette') return 'command palette';
+	if (request === 'shortcuts') return 'keyboard shortcuts';
+	switch (request.kind) {
+		case 'thread-menu':
+			return 'thread actions';
+		case 'rename':
+			return 'rename thread';
+		case 'archive':
+			return 'archive thread';
+		case 'remove':
+			return 'remove from desktop';
+		case 'new-thread':
+			return 'new thread';
+		case 'other-thread':
+			return 'another thread is running';
+	}
+}
+
+export function commandModifier(platform: string) {
+	return platform.startsWith('Mac') ? '⌘' : 'Ctrl+';
 }
 
 export function filterActions(actions: PaletteAction[], query: string) {
@@ -44,12 +82,9 @@ export function moveSelection(index: number, delta: number, length: number) {
 	return (index + delta + length) % length;
 }
 
-export function runAction(
-	action: PaletteAction | undefined,
-	originalFocus?: FocusTarget,
-) {
+export function runAction(action: PaletteAction | undefined) {
 	if (!action || action.disabledReason) return false;
-	action.run(originalFocus);
+	action.run();
 	return true;
 }
 
@@ -109,5 +144,20 @@ export function toastQueue(
 			cancel?.();
 			pending.length = 0;
 		},
+	};
+}
+
+export const importedToast =
+	'thread metadata imported. selection and draft unchanged.';
+
+// Shows the import notice only after a metadata import succeeds (E-52).
+export function notifyImported(
+	importSession: (sessionId: string) => Promise<boolean>,
+	notify: (message: string) => void,
+): (sessionId: string) => Promise<boolean> {
+	return async sessionId => {
+		const imported = await importSession(sessionId);
+		if (imported) notify(importedToast);
+		return imported;
 	};
 }

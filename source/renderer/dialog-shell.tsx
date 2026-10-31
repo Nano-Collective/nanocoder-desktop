@@ -1,0 +1,35 @@
+import * as React from 'react';
+
+export interface DialogShellProps {
+	title: string;
+	closeLabel: string;
+	onClose(): void;
+	footer?: React.ReactNode;
+	children: React.ReactNode;
+}
+
+export function DialogShell({
+	title,
+	closeLabel,
+	onClose,
+	footer,
+	children,
+}: DialogShellProps) {
+	return (
+		<div className="dialog-shell">
+			<div className="dialog-head">
+				<h2>{title}</h2>
+				<button
+					type="button"
+					className="dialog-close"
+					aria-label={closeLabel}
+					onClick={onClose}
+				>
+					<span aria-hidden="true">×</span>
+				</button>
+			</div>
+			<div className="dialog-body">{children}</div>
+			{footer && <div className="dialog-foot">{footer}</div>}
+		</div>
+	);
+}

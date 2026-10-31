@@ -1,8 +1,12 @@
 import test from 'ava';
 import {
+	commandModifier,
+	dialogLabel,
 	filterActions,
 	focusReturn,
+	importedToast,
 	moveSelection,
+	notifyImported,
 	type PaletteAction,
 	runAction,
 	type Toast,
@@ -134,6 +138,26 @@ test('focus return falls back if the saved control becomes disabled', t => {
 	t.is(focused, 'fallback');
 });
 
+test('command shortcuts use the Mac symbol on macOS and Ctrl elsewhere (E-19)', t => {
+	t.is(commandModifier('MacIntel'), '⌘');
+	t.is(commandModifier('Win32'), 'Ctrl+');
+	t.is(commandModifier('Linux x86_64'), 'Ctrl+');
+});
+
+test('every overlay request has a dialog name for assistive technology (E-02, E-03, E-37)', t => {
+	t.is(dialogLabel('palette'), 'command palette');
+	t.is(dialogLabel('shortcuts'), 'keyboard shortcuts');
+	t.is(dialogLabel({kind: 'new-thread'}), 'new thread');
+	t.is(dialogLabel({kind: 'thread-menu', threadId: 'a'}), 'thread actions');
+	t.is(dialogLabel({kind: 'rename', threadId: 'a'}), 'rename thread');
+	t.is(dialogLabel({kind: 'archive', threadId: 'a'}), 'archive thread');
+	t.is(dialogLabel({kind: 'remove', threadId: 'a'}), 'remove from desktop');
+	t.is(
+		dialogLabel({kind: 'other-thread', threadId: 'a'}),
+		'another thread is running',
+	);
+});
+
 function fixture() {
 	let now = 0;
 	let sequence = 0;
@@ -211,4 +235,40 @@ test('disposing the toast queue cancels callbacks and rejects later messages', t
 	f.queue.push('third');
 	f.advance(10000);
 	t.is(f.updates.length, 1);
+});
+
+test('import notice fires once, only after a successful metadata import (E-52)', async t => {
+	const notices: string[] = [];
+	const requested: string[] = [];
+	const importSession = notifyImported(
+		async id => {
+			requested.push(id);
+			return true;
+		},
+		message => notices.push(message),
+	);
+	t.true(await importSession('session-a'));
+	t.deepEqual(requested, ['session-a']);
+	t.deepEqual(notices, [importedToast]);
+	t.is(
+		importedToast,
+		'thread metadata imported. selection and draft unchanged.',
+	);
+});
+
+test('import notice stays silent when the import is refused or fails (E-52)', async t => {
+	const notices: string[] = [];
+	const refused = notifyImported(
+		async () => false,
+		message => notices.push(message),
+	);
+	t.false(await refused('session-a'));
+	const failed = notifyImported(
+		async () => {
+			throw new Error('bridge failed');
+		},
+		message => notices.push(message),
+	);
+	await t.throwsAsync(failed('session-a'), {message: 'bridge failed'});
+	t.deepEqual(notices, []);
 });

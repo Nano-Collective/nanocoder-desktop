@@ -28,11 +28,10 @@ export function projectPalette(controls: ProjectControls): PaletteAction[] {
 				label: `open project ${project.displayName}`,
 				glyph: '▸',
 				keywords: `recent ${project.canonicalRoot}`,
-				description: project.canonicalRoot,
 				disabledReason:
 					busy ??
 					(project.availability !== 'available'
-						? `folder ${project.availability}; locate it before opening`
+						? `folder ${project.availability}`
 						: undefined),
 				run: () => controls.onOpen(project.id),
 			},
@@ -41,7 +40,6 @@ export function projectPalette(controls: ProjectControls): PaletteAction[] {
 				label: `locate project ${project.displayName}`,
 				glyph: '⌗',
 				keywords: `moved folder ${project.canonicalRoot}`,
-				description: project.canonicalRoot,
 				disabledReason: busy,
 				run: () => controls.onLocate(project.id),
 			},
