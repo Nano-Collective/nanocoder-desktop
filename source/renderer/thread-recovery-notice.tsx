@@ -120,9 +120,10 @@ export function ThreadRecoveryNotice({
 export function ViewOnlyFooter(): React.ReactElement {
 	return (
 		<p className="view-only-footer">
-			<span aria-hidden="true">● </span>composer hidden. this metadata is not a
-			replacement for Nanocoder’s history. any messages still shown are held in
-			memory in this window only.
+			<span aria-hidden="true">● </span>composer hidden. saved history is
+			unavailable from Nanocoder. any messages still shown are held in memory in
+			this window only. removing desktop metadata does not delete Nanocoder
+			history.
 		</p>
 	);
 }

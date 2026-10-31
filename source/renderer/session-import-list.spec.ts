@@ -33,7 +33,7 @@ test('ACP-18 import list uses labelled native actions and escaped plain metadata
 	t.true(html.includes('aria-label="import saved session:'));
 	t.true(html.includes('refresh offers'));
 	t.true(html.includes('dateTime="2026-10-29T12:00:00.000Z"'));
-	t.true(html.includes('import adds metadata only'));
+	t.true(html.includes('importing adds a desktop thread only'));
 	t.is((html.match(/<button/g) ?? []).length, 2);
 	t.notRegex(html, /<script\b/i);
 	t.false(html.includes('session/resume'));

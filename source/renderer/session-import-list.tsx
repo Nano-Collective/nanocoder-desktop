@@ -55,8 +55,8 @@ export function SessionImportList(
 				<h2 className="session-import-heading">saved sessions</h2>
 			</div>
 			<p className="session-import-intro">
-				sessions found for this exact project root. import adds metadata only.
-				open the imported thread separately to resume it.
+				sessions found for this exact project root. importing adds a desktop
+				thread only. open the thread separately to resume it.
 			</p>
 			<div className="session-import-notice">
 				<p>

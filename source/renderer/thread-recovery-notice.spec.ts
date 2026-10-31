@@ -66,6 +66,11 @@ test('view-only footer keeps the composer hidden and says messages still shown a
 			'any messages still shown are held in memory in this window only',
 		),
 	);
+	t.true(
+		html.includes(
+			'removing desktop metadata does not delete Nanocoder history',
+		),
+	);
 	t.false(html.includes('<textarea'));
 });
 

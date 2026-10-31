@@ -1,7 +1,7 @@
 import * as React from 'react';
 import {dayAge, shortRoot} from '@/renderer/recency';
 import {RuntimeDetails} from '@/renderer/runtime-details';
-import {Button} from '@/renderer/ui';
+import {Button, Divider} from '@/renderer/ui';
 import type {
 	CapabilityGates,
 	ConnectedAgent,
@@ -114,6 +114,7 @@ export function WelcomePage({
 					{gates.versionPolicy.reason}
 				</p>
 			)}
+			{projects.length > 0 && <Divider />}
 			<RuntimeDetails
 				runtime={runtime}
 				agent={agent}
