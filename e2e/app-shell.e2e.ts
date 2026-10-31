@@ -156,6 +156,12 @@ test('ACP readiness is replayed on reopening after a renderer reload', async () 
 
 test('shell geometry and pinned composer follow all three widths without an empty inspector', async () => {
 	await open(project('layout'));
+	const stream = page.locator('main.shell-stream');
+	await expect(stream).toHaveAttribute('data-composer-placement', 'centred');
+	await page.getByRole('textbox', {name: 'message'}).fill('check the layout');
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	await expect(turnEnded(page)).toBeVisible();
+	await expect(stream).toHaveAttribute('data-composer-placement', 'bottom');
 	await page.emulateMedia({reducedMotion: 'reduce'});
 	await page.evaluate(() => {
 		const fixture = document.createElement('div');
