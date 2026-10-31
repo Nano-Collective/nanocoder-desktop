@@ -625,7 +625,9 @@ export function App() {
 						{workspace.error && <p role="alert">{workspace.error}</p>}
 					</>
 				}
-				composerPlacement={centredComposer ? 'centred' : 'bottom'}
+				composerPlacement={
+					centredComposer && !importOpen ? 'centred' : 'bottom'
+				}
 				approvalShelf={
 					thread && (
 						<ApprovalRequests
