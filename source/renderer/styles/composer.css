@@ -64,6 +64,10 @@
 	opacity: 1;
 }
 
+.composer textarea:focus-visible {
+	outline-offset: -2px;
+}
+
 .composer-control-rail {
 	display: flex;
 	flex-wrap: nowrap;
