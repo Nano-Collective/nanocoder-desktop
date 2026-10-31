@@ -58,7 +58,7 @@
 .shell-title-bar {
 	display: flex;
 	align-items: center;
-	gap: 12px;
+	gap: 16px;
 	min-height: 66px;
 	padding: 0 26px;
 	color: var(--colors-on-surface-muted);
@@ -111,12 +111,26 @@
 	display: flex;
 	flex: none;
 	align-items: center;
-	gap: 12px;
+	gap: 6px;
 }
 
 .shell-header-actions > .ui-button {
 	border-color: transparent;
 	background: transparent;
+}
+
+.shell-header-actions kbd {
+	padding: 2px 5px;
+	border-radius: 4px;
+	background: var(--colors-surface-elevated);
+	color: var(--colors-on-surface-muted);
+	font-size: 10px;
+	line-height: 16px;
+}
+
+.shell-header-actions .ui-badge {
+	font-size: 11px;
+	line-height: 17.6px;
 }
 
 .shell-heading {
@@ -171,6 +185,10 @@
 	padding-top: 20px;
 }
 
+.shell-stream-tools:empty {
+	display: none;
+}
+
 .shell-composer {
 	flex: none;
 	padding-bottom: 20px;
@@ -213,6 +231,13 @@
 	}
 	.shell-title-bar {
 		padding-inline: 22px;
+		gap: 10px;
+	}
+	.shell-header-actions {
+		gap: 2px;
+	}
+	.shell-header-actions > .ui-button {
+		padding-inline: 8px;
 	}
 	.shell-stream-scroll,
 	.shell-conversation-footer {
@@ -237,7 +262,6 @@
 	.shell-title-bar {
 		padding-inline: 18px;
 		min-height: 62px;
-		gap: 8px;
 	}
 	.shell-identity h2 {
 		font-size: 12px;

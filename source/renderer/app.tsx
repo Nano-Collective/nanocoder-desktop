@@ -276,10 +276,7 @@ export function App() {
 			supervisorIndex.current = next;
 			setSupervisors(next);
 			if (event.type === 'project') {
-				if (selectedProject.current !== event.projectId) {
-					setOpened(null);
-					setRenaming(null);
-				}
+				if (selectedProject.current !== event.projectId) setRenaming(null);
 				selectedProject.current = event.projectId;
 				setAttemptedProjectId(event.projectId);
 			} else if (event.type === 'project-removed') {
@@ -316,6 +313,7 @@ export function App() {
 	}, [checkRuntime]);
 	const connect = async () => {
 		setConnecting(true);
+		setOpened(null);
 		try {
 			const result = await window.desktop.connectNanocoder();
 			if (!result.ok || result.value.status !== 'cancelled') setOpened(result);

@@ -1,7 +1,7 @@
 .technical-gate {
 	display: grid;
 	gap: var(--spacing-xxl);
-	padding: 20px 40px;
+	padding-block: 20px 24px;
 	overflow-wrap: anywhere;
 }
 
@@ -102,11 +102,11 @@ dt,
 
 @media (max-width: 1050px) {
 	.technical-gate {
-		padding-inline: 30px;
+		padding-top: 17px;
 	}
 }
 @media (max-width: 840px) {
 	.technical-gate {
-		padding-inline: 24px;
+		padding-top: 15px;
 	}
 }

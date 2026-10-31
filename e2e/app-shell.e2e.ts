@@ -201,14 +201,33 @@ test('shell geometry and pinned composer follow all three widths without an empt
 					};
 					const scroll = document.querySelector('.shell-stream-scroll');
 					if (!scroll) throw new Error('Missing stream scroll region');
+					const firstRow = document.querySelector(
+						'.technical-gate > :first-child',
+					);
+					const readingOffset =
+						(firstRow?.getBoundingClientRect().top ?? 0) -
+						scroll.getBoundingClientRect().top +
+						scroll.scrollTop;
+					const tools =
+						document.querySelector('.shell-stream-tools')?.childElementCount ??
+						0;
 					scroll.scrollTop = scroll.scrollHeight;
+					const fixtureBottom =
+						document
+							.getElementById('shell-layout-fixture')
+							?.getBoundingClientRect().bottom ?? 0;
 					return {
+						readingOffset,
+						bottomGap: scroll.getBoundingClientRect().bottom - fixtureBottom,
+						tools,
 						rail: measure('.shell-project-rail'),
 						stream: measure('.shell-stream'),
 						composer: measure('.composer-options'),
 						header: measure('.shell-title-bar'),
 						breadcrumb: measure('.shell-breadcrumb'),
 						title: measure('.shell-identity h2'),
+						palette: measure('.shell-header-actions > button:last-child'),
+						reading: measure('.technical-gate'),
 						scrollPadding: padding('.shell-stream-scroll'),
 						footerPadding: padding('.shell-conversation-footer'),
 						scrolls: scroll.scrollHeight > scroll.clientHeight,
@@ -222,11 +241,20 @@ test('shell geometry and pinned composer follow all three widths without an empt
 				expect(geometry.composer.bottom).toBe(
 					width <= 840 ? 883 : width <= 1050 ? 882 : 880,
 				);
-				// Reference header 66px (62px at 840). At 840 the 12px title sits 0.8px lower than the reference's 1.11.
+				// Reference header 66px (62px at 840). At 840 the breadcrumb sits 0.8px lower than the reference's 1.11.
 				const crumbTop = width <= 840 ? 1.9 : 3.11;
 				expect(geometry.header.height).toBe(width <= 840 ? 62 : 66);
 				expect(geometry.breadcrumb.y).toBeCloseTo(crumbTop, 1);
 				expect(geometry.title.y).toBeCloseTo(crumbTop + 19, 1);
+				expect(geometry.palette.width).toBeCloseTo(width <= 1050 ? 40 : 46, 0);
+				if (width >= 1020) expect(geometry.reading.width).toBeCloseTo(740, 0);
+				else expect(geometry.reading.width).toBeLessThanOrEqual(740);
+				if (geometry.tools === 0)
+					expect(geometry.readingOffset).toBeCloseTo(
+						width <= 840 ? 15 : width <= 1050 ? 17 : 20,
+						0,
+					);
+				expect(geometry.bottomGap).toBeCloseTo(24, 0);
 				const reading = width <= 840 ? '24px' : width <= 1050 ? '30px' : '40px';
 				expect(geometry.scrollPadding).toEqual([reading, reading]);
 				expect(geometry.footerPadding).toEqual([reading, reading]);
