@@ -17,7 +17,11 @@ import {
 } from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
 import {ProjectSwitch} from '@/renderer/recent-projects';
-import {RecoveryTools, TurnFailureNotice} from '@/renderer/recovery-tools';
+import {
+	FAILED_STATUSES,
+	RecoveryTools,
+	TurnFailureNotice,
+} from '@/renderer/recovery-tools';
 import {SessionImportList} from '@/renderer/session-import-list';
 import {
 	acpBadge,
@@ -335,10 +339,15 @@ export function App() {
 		projectControls.pending ||
 		modelControls.pending;
 	const waitingForDecision = transcript.permissions.length > 0;
+	const processFailed =
+		processState !== null && FAILED_STATUSES.includes(processState.status);
+	const notReadyReason = processFailed
+		? 'retry this thread before sending'
+		: 'Nanocoder is not ready. retry before sending.';
 	const sendReason =
 		replayReason ??
 		(!accepting
-			? 'Nanocoder is not ready. retry before sending.'
+			? notReadyReason
 			: thread?.archiveState === 'archived'
 				? 'this thread is archived; unarchive it before sending'
 				: sending

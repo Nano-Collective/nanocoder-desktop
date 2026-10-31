@@ -13,7 +13,7 @@ interface RecoveryProps {
 	newPending?: boolean;
 }
 
-const FAILED_STATUSES = ['failed', 'untrusted', 'unsupported'];
+export const FAILED_STATUSES = ['failed', 'untrusted', 'unsupported'];
 
 function TurnStopped({title, reason}: {title: string; reason: string}) {
 	return (

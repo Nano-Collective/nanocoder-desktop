@@ -630,6 +630,9 @@ test('failed resume preserves the visible failed turn and cannot accept another 
 		.getByRole('main', {name: 'conversation workspace'})
 		.getByRole('region', {name: 'Nanocoder recovery'});
 	await expect(recovery).toContainText('exit code 3');
+	await expect(page.locator('.composer-hint-row')).toContainText(
+		'retry this thread before sending',
+	);
 	await page.evaluate(async projectId => {
 		await (window as unknown as {desktop: DesktopApi}).desktop.stopProject({
 			projectId,
