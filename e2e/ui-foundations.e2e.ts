@@ -270,6 +270,8 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		rail.getByRole('button', {name: 'new thread', exact: true}),
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
+		rail.locator('.sidebar-link', {hasText: 'archived'}),
+		rail.locator('.sidebar-link', {hasText: 'import sessions'}),
 		page.getByRole('button', {name: 'runtime details', exact: true}),
 		page.getByRole('button', {name: 'thread actions', exact: true}),
 		page.getByRole('button', {name: 'command palette', exact: true}),
