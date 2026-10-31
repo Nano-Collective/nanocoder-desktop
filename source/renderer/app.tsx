@@ -480,7 +480,6 @@ export function App() {
 						<Button onClick={() => openDialog('runtime')}>
 							runtime details
 						</Button>
-						{processState?.status === 'ready' && recoveryTools}
 						<span>
 							Nanocoder{' '}
 							{agent?.version ??
