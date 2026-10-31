@@ -39,7 +39,7 @@ import {
 	ViewOnlyFooter,
 } from '@/renderer/thread-recovery-notice';
 import {TrustFeedback} from '@/renderer/trust-feedback';
-import {Button, Card, StatusBadge} from '@/renderer/ui';
+import {Card, StatusBadge} from '@/renderer/ui';
 import {useDiagnosticReview} from '@/renderer/use-diagnostic-review';
 import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
