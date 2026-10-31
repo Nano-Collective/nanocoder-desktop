@@ -271,10 +271,7 @@ export function App() {
 			supervisorIndex.current = next;
 			setSupervisors(next);
 			if (event.type === 'project') {
-				if (selectedProject.current !== event.projectId) {
-					setOpened(null);
-					setRenaming(null);
-				}
+				if (selectedProject.current !== event.projectId) setRenaming(null);
 				selectedProject.current = event.projectId;
 				setAttemptedProjectId(event.projectId);
 			} else if (event.type === 'project-removed') {
