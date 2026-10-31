@@ -28,9 +28,14 @@ async function send(capture: Capture, text: string): Promise<void> {
 // A manual title set before the first prompt is kept instead of the prompt-derived one.
 async function rename(capture: Capture, title: string): Promise<void> {
 	const row = selectedRow(capture.page);
-	const menu = row.locator('.thread-actions');
-	await menu.locator('> summary').click();
-	await row.getByRole('button', {name: /^rename: /}).click();
+	await capture.page
+		.getByRole('button', {name: 'thread actions', exact: true})
+		.click();
+	const menu = capture.page.getByRole('dialog', {
+		name: 'thread actions',
+		exact: true,
+	});
+	await menu.getByRole('button', {name: 'rename…', exact: true}).click();
 	const dialog = capture.page.getByRole('dialog', {
 		name: 'rename thread',
 		exact: true,
@@ -41,8 +46,6 @@ async function rename(capture: Capture, title: string): Promise<void> {
 	await capture.page.keyboard.press('Enter');
 	await expect(dialog).toHaveCount(0);
 	await expect(row.locator('.thread-title')).toHaveText(title);
-	await menu.locator('> summary').click();
-	await expect(menu).not.toHaveAttribute('open');
 }
 
 // Wheel-scrolls the transcript to its end, as a reader would after a reflow.

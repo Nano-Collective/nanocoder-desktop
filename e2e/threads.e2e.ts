@@ -107,9 +107,8 @@ test('long thread titles stay inside the rail with visible glyphs, selection rul
 		for (const width of [1240, 1020, 840]) {
 			await page.setViewportSize({width, height: 900});
 			await selected.locator('.thread-open').focus();
-			await page.keyboard.press('Tab');
-			await expect(selected.locator('summary')).toBeFocused();
-			await expect(selected.locator('summary')).toHaveCSS(
+			await expect(selected.locator('.thread-open')).toBeFocused();
+			await expect(selected.locator('.thread-open')).toHaveCSS(
 				'outline-width',
 				'2px',
 			);
@@ -375,12 +374,14 @@ test('rename uses the shared dialog and preserves keyboard focus, draft and thre
 	const row = page.locator('.thread-row[data-selected="true"]');
 	const id = await row.getAttribute('data-thread-id');
 	if (!id) throw new Error('Missing selected thread id');
-	await row.locator('summary').focus();
-	await page.keyboard.press('Enter');
-	const rename = row.getByRole('button', {
-		name: 'rename: new thread',
+	const actions = page.getByRole('button', {
+		name: 'thread actions',
 		exact: true,
 	});
+	await actions.focus();
+	await page.keyboard.press('Enter');
+	const menu = page.getByRole('dialog', {name: 'thread actions', exact: true});
+	const rename = menu.getByRole('button', {name: 'rename…', exact: true});
 	await rename.focus();
 	await page.keyboard.press('Enter');
 	const dialog = page.getByRole('dialog', {name: 'rename thread', exact: true});
@@ -392,7 +393,7 @@ test('rename uses the shared dialog and preserves keyboard focus, draft and thre
 	await title.fill('cancelled fixture title');
 	await page.keyboard.press('Escape');
 	await expect(dialog).toHaveCount(0);
-	await expect(rename).toBeFocused();
+	await expect(actions).toBeFocused();
 	await expect(input).toHaveValue('retained rename draft');
 	await page.keyboard.press('Enter');
 	await expect(title).toBeFocused();
@@ -402,9 +403,7 @@ test('rename uses the shared dialog and preserves keyboard focus, draft and thre
 	await expect(row.locator('.thread-title')).toHaveText('renamed fixture');
 	await expect(row).toHaveAttribute('data-thread-id', id);
 	await expect(input).toHaveValue('retained rename draft');
-	await expect(
-		row.getByRole('button', {name: 'rename: renamed fixture', exact: true}),
-	).toBeFocused();
+	await expect(actions).toBeFocused();
 	await input.focus();
 	await input.evaluate(element =>
 		(element as HTMLTextAreaElement).setSelectionRange(2, 9),

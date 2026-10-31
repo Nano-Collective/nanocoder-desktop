@@ -374,10 +374,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			const focusOrder = [
 				switcher,
 				rail.getByRole('button', {name: 'new thread', exact: true}),
-				...(await rail.locator('.thread-row').all()).flatMap(thread => [
-					thread.locator('.thread-open'),
-					thread.locator('.thread-actions > summary'),
-				]),
+				...(await rail.locator('.thread-open').all()),
 				rail.locator('.sidebar-link', {hasText: 'archived'}),
 				rail.locator('.sidebar-link', {hasText: 'import sessions'}),
 				page.getByRole('button', {name: 'runtime details', exact: true}),
