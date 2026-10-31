@@ -55,6 +55,7 @@
 
 .projects-dialog-list {
 	display: grid;
+	gap: var(--spacing-xs);
 	margin: 0;
 	padding: 0;
 	list-style: none;

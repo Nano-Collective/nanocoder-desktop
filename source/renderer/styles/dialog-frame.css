@@ -47,6 +47,7 @@ dialog.dialog-frame::backdrop {
 	background: transparent;
 	color: var(--colors-on-surface);
 	font: inherit;
+	line-height: 1;
 	cursor: pointer;
 }
 

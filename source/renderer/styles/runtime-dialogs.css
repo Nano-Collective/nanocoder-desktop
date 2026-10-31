@@ -11,7 +11,7 @@
 
 .runtime-rows > div {
 	display: grid;
-	grid-template-columns: minmax(114px, max-content) minmax(0, 1fr);
+	grid-template-columns: minmax(118px, max-content) minmax(0, 1fr);
 	gap: var(--spacing-xl);
 }
 
@@ -40,7 +40,7 @@
 	display: grid;
 	gap: var(--spacing-md);
 	margin: 0;
-	padding: 12px 14px;
+	padding: var(--spacing-xl);
 	border-radius: var(--rounded-lg);
 	background: var(--colors-surface-panel);
 	list-style: none;
@@ -92,7 +92,7 @@
 
 .diagnostic-review {
 	display: grid;
-	gap: var(--spacing-lg);
+	gap: var(--spacing-xl);
 }
 
 .diagnostic-review pre {
@@ -105,7 +105,7 @@
 	background: var(--colors-surface);
 	color: var(--colors-on-surface);
 	font-size: 11px;
-	line-height: 1.7;
+	line-height: 1.6;
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 }
