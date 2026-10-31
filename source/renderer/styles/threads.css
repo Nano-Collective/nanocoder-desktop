@@ -27,7 +27,7 @@
 	position: sticky;
 	top: 0;
 	z-index: 1;
-	justify-content: space-between;
+	justify-content: flex-start;
 	width: 100%;
 	min-height: 32px;
 	padding: 4px 8px;
@@ -35,6 +35,10 @@
 	background: var(--colors-surface-elevated);
 	font-size: 10px;
 	line-height: 16px;
+}
+
+.thread-rail .thread-new .ui-key-hint {
+	margin-left: auto;
 }
 
 .thread-rail .thread-group,
@@ -78,6 +82,11 @@
 	border-left-color: var(--colors-primary);
 	background: var(--colors-primary-soft);
 	color: var(--colors-on-surface);
+}
+
+.thread-row[data-selected="true"] .thread-open {
+	padding-top: 7.8px;
+	padding-bottom: 7.8px;
 }
 
 .thread-open {
@@ -150,6 +159,7 @@
 
 .thread-state-label {
 	display: block;
+	margin-top: 1px;
 	overflow: hidden;
 	color: var(--colors-on-surface);
 	font-size: 9px;
@@ -162,7 +172,7 @@
 	flex: none;
 	color: var(--colors-on-surface-muted);
 	font-size: 9px;
-	line-height: 16px;
+	line-height: 14.4px;
 }
 
 .thread-rail-note {

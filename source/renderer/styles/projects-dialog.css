@@ -7,13 +7,13 @@
 	align-items: center;
 	gap: var(--spacing-md);
 	width: 100%;
-	min-height: 52px;
 	padding: var(--spacing-md);
 	border: 1px solid var(--colors-stroke);
 	border-radius: var(--rounded-lg);
 	background: var(--colors-surface);
 	color: var(--colors-on-surface);
 	font: inherit;
+	line-height: 1.6;
 	text-align: left;
 	cursor: pointer;
 }
@@ -33,7 +33,7 @@
 	flex: 1;
 	min-width: 0;
 	display: grid;
-	gap: 2px;
+	gap: 0;
 }
 
 .project-switch-name,
