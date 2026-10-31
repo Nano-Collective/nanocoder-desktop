@@ -185,6 +185,10 @@
 	padding-top: 20px;
 }
 
+.shell-stream-tools:empty {
+	display: none;
+}
+
 .shell-composer {
 	flex: none;
 	padding-bottom: 20px;

@@ -191,8 +191,18 @@ test('shell geometry and pinned composer follow all three widths without an empt
 					};
 					const scroll = document.querySelector('.shell-stream-scroll');
 					if (!scroll) throw new Error('Missing stream scroll region');
+					const readingOffset =
+						(document.querySelector('.technical-gate')?.getBoundingClientRect()
+							.top ?? 0) -
+						scroll.getBoundingClientRect().top +
+						scroll.scrollTop;
+					const tools =
+						document.querySelector('.shell-stream-tools')?.childElementCount ??
+						0;
 					scroll.scrollTop = scroll.scrollHeight;
 					return {
+						readingOffset,
+						tools,
 						rail: measure('.shell-project-rail'),
 						stream: measure('.shell-stream'),
 						composer: measure('.gate-composer'),
@@ -222,6 +232,8 @@ test('shell geometry and pinned composer follow all three widths without an empt
 				expect(geometry.palette.width).toBeCloseTo(width <= 1050 ? 40 : 46, 0);
 				if (width >= 1020) expect(geometry.reading.width).toBeCloseTo(740, 0);
 				else expect(geometry.reading.width).toBeLessThanOrEqual(740);
+				if (geometry.tools === 0)
+					expect(geometry.readingOffset).toBeCloseTo(20, 0);
 				const reading = width <= 840 ? '24px' : width <= 1050 ? '30px' : '40px';
 				expect(geometry.scrollPadding).toEqual([reading, reading]);
 				expect(geometry.footerPadding).toEqual([reading, reading]);
