@@ -124,7 +124,7 @@ components:
     typography: "{typography.caption}"
     rounded: "{rounded.full}"
   status-badge-running:
-    textColor: "{colors.success}"
+    textColor: "{colors.primary}"
   status-badge-approval:
     textColor: "{colors.warning}"
   status-badge-failed:
@@ -164,7 +164,7 @@ components:
     textColor: "{colors.on-surface}"
     rounded: "{rounded.lg}"
   approval-card-title:
-    textColor: "{colors.warning}"
+    textColor: "{colors.on-surface}"
     typography: "{typography.label-inline}"
   failure-banner:
     textColor: "{colors.error}"
@@ -194,9 +194,9 @@ components:
     typography: "{typography.meta}"
     rounded: "{rounded.md}"
   button-allow:
-    textColor: "{colors.success}"
+    textColor: "{colors.on-surface}"
   button-reject:
-    textColor: "{colors.error}"
+    textColor: "{colors.on-surface}"
   inspector:
     backgroundColor: "{colors.surface-panel}"
     width: "{spacing.inspector-width}"
@@ -283,13 +283,13 @@ components:
     textColor: "{colors.primary-light}"
   status-badge-running-light:
     backgroundColor: "{colors.surface-panel-light}"
-    textColor: "{colors.success-light}"
+    textColor: "{colors.primary-light}"
   status-badge-failed-light:
     backgroundColor: "{colors.surface-panel-light}"
     textColor: "{colors.error-light}"
   approval-card-title-light:
     backgroundColor: "{colors.surface-elevated-light}"
-    textColor: "{colors.warning-light}"
+    textColor: "{colors.on-surface-light}"
   skill-name-light:
     backgroundColor: "{colors.surface-light}"
     textColor: "{colors.skill-light}"
@@ -311,7 +311,7 @@ components:
 
 How Nanocoder Desktop looks. Behaviour, authority and accessibility requirements remain in [`planning/`](planning/index.md).
 
-- Status: Approved by the user as designer, 31 October 2026 (`DEC-40`).
+- Status: Approved by the user as designer, 31 October 2026 (`DEC-40`). Where the approved mockup and this file disagreed, the mockup won and this file was updated (`DEC-41`).
 - Last updated: 2026-10-31
 - Source: [UI exploration][mockup], revision 4, main direction only. Alternatives and anything labelled new idea or later are not implementation scope.
 - Format: [DESIGN.md alpha][spec]. Front-matter tokens are normative; generated CSS is never edited by hand.
@@ -334,17 +334,17 @@ Dark surfaces, ink and strokes are neutral black and grey, with equal RGB channe
 | `on-surface` | `#e6e6e6` | `#24283b` | Primary text. |
 | `on-surface-muted` | `#a8a8a8` | `#4f5678` | Secondary text and labels. |
 | `stroke` / `stroke-soft` | `#e6e6e626` / `#e6e6e614` | `#24283b26` / `#24283b14` | Hairline edges and row dividers. |
-| `primary` | `#7aa2f7` | `#0000ee` | Selection, focus, mode, links and ready send. |
+| `primary` | `#7aa2f7` | `#0000ee` | Selection, focus, mode, links, ready send and the running dot. |
 | `primary-soft` | `#202a3b` | `#dce6fa` | Selected rows. |
-| `success` | `#9ece6a` | `#28633d` | Reported success and allow actions. |
-| `error` | `#f7768e` | `#a1284c` | Failure, reject and stop. |
-| `warning` | `#e0af68` | `#76510b` | Approval and warnings. |
+| `success` | `#9ece6a` | `#28633d` | Reported success, ready markers and allow borders. |
+| `error` | `#f7768e` | `#a1284c` | Failure, stop and reject borders. |
+| `warning` | `#e0af68` | `#76510b` | Approval markers and borders. |
 | `skill` | `#e0af68` | `#76510b` | Skill labels. |
 | `mention` | `#7aa2f7` | `#185b7b` | Reported resource references. Dark links use the same blue accent. |
 | `heading` | `#7aa2f7` | `#0000ee` | Heading accent, sparingly. |
 | `diff-add` / `diff-del` | `#202020` / `#242424` | `#dfede3` / `#f4e0e7` | Later read-only review surfaces. |
 
-Every state has a glyph and word. Success, warning and error are reserved for results, not decoration. Selected text uses primary ink; muted text is never faded through opacity.
+Every state has a glyph and word. Success, warning and error are reserved for results, not decoration. Selected text uses primary ink; muted text is never faded through opacity. Allow and reject actions keep their semantic colour on the border and marker, while their label uses on-surface ink, which passes contrast on every panel.
 
 ### Known contrast gaps
 
@@ -375,7 +375,7 @@ Chat headings may step up to 16px. The centred first action uses a 26px heading.
 
 A compact full-height sidebar beside the conversation canvas. The title bar belongs to the canvas, not above the sidebar. No static session tabs, empty inspector or unfinished-feature placeholders.
 
-- Sidebar: official logo, compact project switcher, new-thread action, then today/earlier threads in last-activity order. Archived threads stay separate. One glyph, compact age and selected-thread state copy, without attention reordering.
+- Sidebar: official logo, compact project switcher, new-thread action, then today/earlier threads in last-activity order. Archived threads stay separate. One glyph, compact age and selected-thread state copy, without attention reordering. The project switcher and new-thread action open their dialogs (see Overlays and dialogs).
 - Header: project/thread identity, distinct turn and ACP states, command palette and purposeful available actions.
 - Conversation: constrained to 740px, centred in spare space. Transcript scrolls independently. The approval shelf sits above the composer within that same column, not in scrollback.
 - Empty workspace: a centred useful first action, choose a folder. After opening a new thread, centre the draft composer until there is conversation content. Never invent prompt starters.
@@ -398,19 +398,23 @@ Small control radii, comfortable message and composer radii. User messages have 
 
 ### Sidebar and header
 
-Project switcher shows the selected project and a compact root label. Its menu lists recent roots, locate and add actions. No persistent visible-project list. Thread actions remain scoped to the project and explain busy refusals. Full titles and roots remain accessible even when visually truncated.
+Project switcher shows the selected project and a compact root label. Activating it opens the projects dialog: recent roots with the selected one marked, locate for a missing folder, and add project folder. No persistent visible-project list. Thread actions remain scoped to the project and explain busy refusals. Full titles and roots remain accessible even when visually truncated.
 
-The header shows actual thread identity, not pretend tabs. ACP readiness comes only from supervisor state, independently from turn state. Version/runtime details are secondary, not the first-launch content.
+The header shows actual thread identity, not pretend tabs. The turn state is one dot and word: running uses the primary blue dot, approval required uses the warning dot, and ready uses a neutral dot. ACP readiness comes only from supervisor state, independently from turn state, and its ready marker is success green. Version/runtime details are secondary, not the first-launch content.
 
 ### Conversation
 
 User messages are inset panel bubbles. Agent text is unboxed with a quiet author label. Finished reasoning is folded but inspectable. Routine completed tool calls keep their ordered summary and fold details. Running reasoning stays visible; failed tools stay open with their reported result. Do not invent elapsed time, depth or usage.
 
+Message times are live only. A user message shows the moment it was sent, and an agent message shows the moment its first reply chunk arrived, both held in memory for the open session. Replayed history and restarted sessions show no time, because Nanocoder does not report one and the desktop never saves message times. The day label takes its time from the first timed item. Untimed history shows no time, with the title "times are not saved in Nanocoder history".
+
 Subagents use flat panel cards with reported task/state and truthful unknown values. The only stop action stops the whole owning turn, with its refusal and busy states unchanged. No child transcript tree or per-child cancellation.
 
 ### Approval shelf
 
-A warning-bordered panel immediately above the composer. Show the full offered action, source and effect, with only Nanocoder's own choices and request-scoped shortcuts. Keep request focus, assertive announcement and fallback focus return. Failures remain visible. A question offers only provided choices, no invented free-text reply.
+A warning-bordered panel immediately above the composer. Its title, "approval required", uses on-surface ink beside the warning marker. Show the full offered action, source and effect, with only Nanocoder's own choices and request-scoped shortcuts. Allow and reject buttons use on-surface labels, with success and error borders. Keep request focus, assertive announcement and fallback focus return. Failures remain visible.
+
+A question offers only provided choices, no invented free-text reply. The desktop recognises a question from the exact shape Nanocoder uses for `ask_user`: the same tool call announced this turn, matching question and option names, and `answer-N` option ids. It shows that question in the question dialog, titled "Nanocoder needs a choice", with each offered option as a numbered button. Closing that dialog does not answer it. The question collapses to the approval shelf above the composer and stays pending until the user chooses an offered option there or the turn is cancelled. A request that does not match that shape keeps the approval shelf.
 
 ### Composer
 
@@ -420,13 +424,23 @@ Only reported context use can produce the context pill/gauge. No token estimate 
 
 ### First launch and recovery
 
-The first action is choose a project, not runtime paths. Recents show exact project identity and missing-folder locate. Trust stays native and cancel-default, with the bounded launch summary. Saved-session import remains explicit metadata only, with no selection, resume or draft side effect.
+The welcome screen shows the official logo as a square tile with 3px corners on its own white ground, with no frame, shadow or caption on the tile. The first action is choose a project, not runtime paths. Recents show exact project identity and missing-folder locate. Trust stays native and cancel-default, with the bounded launch summary. Saved-session import remains explicit metadata only, with no selection, resume or draft side effect.
 
 Failure keeps draft and thread identity, with retry and reviewed diagnostics. View-only shows metadata and why history is missing, with new-thread/remove actions and no composer or invented transcript. Diagnostics uses the exact main-captured redacted snapshot, a native destination and no upload.
 
 ### Overlays and dialogs
 
-One shared elevated shell with readable target and consequence. Trap keyboard focus; Escape/dismiss returns to the original opener even when another dialog replaces it. Rename supports Enter and Escape. Native trust, yolo, desktop removal, history deletion and diagnostics review retain their existing safe defaults and main-process authority.
+One shared elevated shell with readable target and consequence. Trap keyboard focus; Escape/dismiss returns to the original opener even when another dialog replaces it. Rename supports Enter and Escape. Native trust, yolo, history deletion and diagnostics review retain their existing safe defaults and main-process authority.
+
+Renderer dialogs, all in the shared shell:
+
+- New thread: "new thread in" the project, with a draft field and the note that the session is created on the first send. Cancel and "keep as new thread draft" close it. An empty thread then centres the draft composer.
+- Projects: "your projects", with recent roots, the selected one marked, locate for a missing folder, and "add project folder". It opens from the project switcher.
+- Archive: "archive this thread?", with the thread title and root. It says the desktop row moves to archived threads, can be unarchived, and does not change Nanocoder history. Cancel holds initial focus, and Escape cancels.
+- Remove from desktop: "remove this thread from desktop?", with the thread title and root. It says only desktop metadata is removed and Nanocoder's chat history stays where it is. Cancel holds initial focus, and Escape cancels.
+- Question: described under Approval shelf.
+
+Archive and remove return focus to the opener when they close. Delete chat history keeps its separate native confirmation and its existing safe default.
 
 Palette: 520px, one search, one pointer/keyboard active result, scrolling list and explicit no-results state. Empty results do not expose a misleading expanded listbox. Shortcuts use the same shell. Toasts are quiet local feedback, never focus-taking, and sit near the lower centre of the conversation.
 
@@ -460,7 +474,7 @@ Forced colours and native screen-reader acceptance still require platform QA. Th
 
 - [UI exploration][mockup], revision 4, approved by the user as designer on 31 October 2026.
 - [Brand guidelines][brand]. The coloured logo is the original Nano Collective GitHub avatar, bundled unchanged.
-- [`planning/decisions.md`](planning/decisions.md), `DEC-36` and `DEC-40`.
+- [`planning/decisions.md`](planning/decisions.md), `DEC-36`, `DEC-40` and `DEC-41`.
 
 [mockup]: https://bubbles.adityalogs.xyz/o/nanocoder-desktop-ui-explore/
 [spec]: https://github.com/google-labs-code/design.md/blob/main/docs/spec.md
