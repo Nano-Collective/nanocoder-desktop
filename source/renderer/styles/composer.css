@@ -187,12 +187,6 @@
 	font: inherit;
 	cursor: pointer;
 }
-.composer-options-toggle::before {
-	content: "▸ ";
-}
-.composer-options-toggle[aria-expanded="true"]::before {
-	content: "▾ ";
-}
 .composer-options .ui-button {
 	min-height: 28px;
 	font-size: 10px;
@@ -212,13 +206,6 @@
 	padding: 0;
 	overflow: hidden;
 	white-space: nowrap;
-	clip-path: inset(50%);
-}
-
-/* Inline and zero-sized: the description keeps the words without taking width or height. */
-.composer-hint-row .sr-only {
-	font-size: 0;
-	line-height: 0;
 	clip-path: inset(50%);
 }
 

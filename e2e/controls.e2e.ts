@@ -118,7 +118,10 @@ test('multiline composer keeps drafts, ignores IME Enter and changes mode/defaul
 		page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
 	).toHaveValue('plan');
 	await page
-		.getByText('mode and project default details', {exact: true})
+		.getByRole('button', {
+			name: 'mode and project default details',
+			exact: true,
+		})
 		.click();
 	await page
 		.getByRole('button', {name: "use as this project's default", exact: true})
@@ -143,6 +146,30 @@ test('multiline composer keeps drafts, ignores IME Enter and changes mode/defaul
 	await expect(
 		page.getByRole('combobox', {name: /model for every thread in project/}),
 	).toBeEnabled();
+});
+
+test('the mode and project default disclosure is a button that reveals its body (C-05)', async () => {
+	const toggle = page.getByRole('button', {
+		name: 'mode and project default details',
+		exact: true,
+	});
+	await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+	const controls = await toggle.getAttribute('aria-controls');
+	expect(controls).toBeTruthy();
+	const body = page.locator(`[id="${controls}"]`);
+	await expect(body).toBeHidden();
+	await toggle.click();
+	await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+	await expect(body).toBeVisible();
+	await expect(
+		page.getByRole('button', {
+			name: "use as this project's default",
+			exact: true,
+		}),
+	).toBeVisible();
+	await toggle.click();
+	await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+	await expect(body).toBeHidden();
 });
 
 test('model controls use the confirmed provider response and remain available on a new draft-only thread (CHAT-10 ACP-14)', async () => {
@@ -211,7 +238,10 @@ test('native yolo cancellation is the default and accepted pending yolo is never
 		page.getByText('yolo · pending first message.', {exact: false}),
 	).toBeVisible();
 	await page
-		.getByText('mode and project default details', {exact: true})
+		.getByRole('button', {
+			name: 'mode and project default details',
+			exact: true,
+		})
 		.click();
 	await expect(
 		page.getByRole('button', {

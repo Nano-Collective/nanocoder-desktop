@@ -158,28 +158,29 @@ test('composer shows one draft hint, help row and control note without a prompt 
 test('the draft textarea describes its state and keyboard hint together', t => {
 	const html = render({draft: ''});
 	const described = /<textarea[^>]*aria-describedby="([^"]+)"/.exec(html)?.[1];
-	const [hintId, helpId] = (described ?? '').split(' ');
+	const [descriptionId, helpId] = (described ?? '').split(' ');
 	t.is(described?.split(' ').length, 2);
 	t.true(
 		html.includes(
-			`<p id="${hintId}" class="gate-hint">ready for your next message<span class="sr-only">; enter a message to send</span></p>`,
+			`<span id="${descriptionId}" class="sr-only">ready for your next message; enter a message to send</span>`,
 		),
 	);
-	t.true(html.includes(`aria-describedby="${hintId}"`));
+	t.true(html.includes(`aria-describedby="${descriptionId}"`));
 	t.true(html.includes(`<p id="${helpId}" class="gate-hint composer-help">`));
 	t.true(html.includes('↵ send · ⇧↵ newline'));
+	t.true(html.includes('<p class="gate-hint">ready for your next message</p>'));
 	const busy = render({
 		running: true,
 		modePending: false,
 		sendReason: 'another thread is running',
 	});
-	t.is(busy.split('another thread is running').length, 2);
+	t.true(busy.includes('class="sr-only">another thread is running</span>'));
 });
 
 test('the options disclosure is a button that controls its body (C-05)', t => {
 	const html = render({});
 	const toggle =
-		/<button type="button" class="composer-options-toggle" aria-expanded="false" aria-controls="([^"]+)">mode and project default details<\/button>/.exec(
+		/<button type="button" class="composer-options-toggle" aria-expanded="false" aria-controls="([^"]+)"><span aria-hidden="true">▸ <\/span>mode and project default details<\/button>/.exec(
 			html,
 		);
 	const id = toggle?.[1] ?? '';

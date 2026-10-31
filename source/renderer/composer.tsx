@@ -53,7 +53,7 @@ export function Composer(props: ComposerProps) {
 		element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
 	}, [input, props.draft]);
 	const id = React.useId();
-	const hintId = `${id}-hint`;
+	const descriptionId = `${id}-description`;
 	const helpId = `${id}-help`;
 	const noteId = `${id}-note`;
 	const optionsId = `${id}-options`;
@@ -92,6 +92,7 @@ export function Composer(props: ComposerProps) {
 			? 'turn in progress · draft is not queued'
 			: 'ready for your next message');
 	const idleEmpty = !props.running && !sendReason && emptyDraft;
+	const description = idleEmpty ? `${hint}; enter a message to send` : hint;
 	const lead = modelReason ?? modeReason;
 	const note = [
 		lead && `${lead.replace(/\.$/, '')}.`,
@@ -113,12 +114,7 @@ export function Composer(props: ComposerProps) {
 	return (
 		<>
 			<div className="composer-hint-row">
-				<p id={hintId} className="gate-hint">
-					{hint}
-					{idleEmpty && (
-						<span className="sr-only">; enter a message to send</span>
-					)}
-				</p>
+				<p className="gate-hint">{hint}</p>
 				{props.running && (
 					<Button
 						variant="reject"
@@ -139,6 +135,9 @@ export function Composer(props: ComposerProps) {
 					send();
 				}}
 			>
+				<span id={descriptionId} className="sr-only">
+					{description}
+				</span>
 				<label className="composer-message">
 					<span className="sr-only">message</span>
 					<textarea
@@ -166,7 +165,7 @@ export function Composer(props: ComposerProps) {
 						placeholder={
 							props.running ? 'write a draft for later…' : 'ask anything…'
 						}
-						aria-describedby={`${hintId} ${helpId}`}
+						aria-describedby={`${descriptionId} ${helpId}`}
 						rows={2}
 					/>
 				</label>
@@ -253,7 +252,7 @@ export function Composer(props: ComposerProps) {
 									: 'unavailable'
 						}
 						disabled={!!sendReason || emptyDraft}
-						aria-describedby={hintId}
+						aria-describedby={descriptionId}
 					>
 						<span aria-hidden="true">↑ </span>send
 					</Button>
@@ -287,6 +286,7 @@ export function Composer(props: ComposerProps) {
 						aria-controls={optionsId}
 						onClick={() => setOptionsOpen(open => !open)}
 					>
+						<span aria-hidden="true">{optionsOpen ? '▾ ' : '▸ '}</span>
 						mode and project default details
 					</button>
 				</p>
