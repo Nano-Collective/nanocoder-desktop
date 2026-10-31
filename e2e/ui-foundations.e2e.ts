@@ -182,7 +182,7 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	await expect(open).toHaveCSS('outline-style', 'solid');
 	await expect(open).toHaveCSS('outline-width', '2px');
 	await page.keyboard.press('Enter');
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
 	const switcher = page.getByRole('button', {
 		name: 'switch project',
 		exact: true,
