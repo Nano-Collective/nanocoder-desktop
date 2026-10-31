@@ -625,6 +625,45 @@ test('welcome keeps runtime details quiet and keyboard inspectable before any pr
 	expect(await call('listProjects', {})).toEqual({ok: true, value: []});
 });
 
+test('welcome with two recent projects fits an 800 px window without a scrollbar', async () => {
+	for (const name of ['tide', 'atlas-notes']) {
+		const root = path.join(work, name);
+		mkdirSync(root);
+		await add(root);
+	}
+	await page.reload();
+	await expect(
+		page.getByRole('region', {name: 'get started', exact: true}),
+	).toBeVisible();
+	await expect(
+		page
+			.getByRole('region', {name: 'recent folders on welcome', exact: true})
+			.getByRole('button', {name: /^open recent project/}),
+	).toHaveCount(2);
+	const scroll = page.getByRole('region', {name: 'conversation', exact: true});
+	for (const theme of ['dark', 'light'] as const) {
+		await page.evaluate(theme => {
+			document.documentElement.dataset.theme = theme;
+		}, theme);
+		for (const width of [1240, 1020, 840]) {
+			await page.setViewportSize({width, height: 800});
+			const metrics = await scroll.evaluate(element => ({
+				scrollHeight: element.scrollHeight,
+				clientHeight: element.clientHeight,
+			}));
+			expect
+				.soft(metrics.scrollHeight, `${theme} ${width}x800 scroll height`)
+				.toBeLessThanOrEqual(metrics.clientHeight);
+		}
+	}
+	await page.setViewportSize({width: 1240, height: 560});
+	expect(
+		await scroll.evaluate(
+			element => element.scrollHeight > element.clientHeight,
+		),
+	).toBe(true);
+});
+
 test('long welcome recent paths give actions their full width without dropping project identity', async () => {
 	const root = path.join(
 		work,

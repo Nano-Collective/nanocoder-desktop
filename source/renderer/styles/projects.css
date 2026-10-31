@@ -185,6 +185,10 @@
 .shell-stream-scroll:has(.thread-view-only) {
 	scrollbar-gutter: auto;
 }
+/* The empty gate adds 39-44px below the welcome page, enough to scroll at 800 px. */
+.shell-stream-scroll:has(.workspace-welcome) > .technical-gate:empty {
+	display: none;
+}
 @media (max-width: 1050px) {
 	.session-import-page {
 		width: calc(100% - 12px);
