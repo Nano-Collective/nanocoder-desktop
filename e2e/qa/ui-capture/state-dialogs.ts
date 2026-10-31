@@ -190,9 +190,9 @@ export const states: CaptureState[] = [
 		async reach(capture) {
 			const page = await runningThread(capture);
 			const dialog = await headerThreadActions(page);
-			await expect(dialog.getByRole('status')).toHaveText(
-				'wait for this thread to finish',
-			);
+			await expect(
+				dialog.getByText('wait for this thread to finish', {exact: true}),
+			).toBeVisible();
 			await expect(
 				dialog.getByRole('button', {name: 'archive thread…', exact: true}),
 			).toBeDisabled();
