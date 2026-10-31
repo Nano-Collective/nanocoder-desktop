@@ -165,13 +165,11 @@ test('CHAT-08 SUB-05 whole-app restart reuses live execution UUIDs without inven
 		const unknown = cards.filter({hasText: 'unreported delegation'});
 		await expect(failed).toHaveCount(1);
 		await expect(unknown).toHaveCount(1);
-		await expect(failed.locator('header > span').nth(2)).toHaveText('✕ failed');
-		await expect(unknown.locator('header > span').nth(2)).toContainText(
+		await expect(failed.locator('.subagent-state')).toHaveText('✕ failed');
+		await expect(unknown.locator('.subagent-state')).toContainText(
 			'not reported',
 		);
-		await expect(unknown.locator('header > span').nth(2)).not.toContainText(
-			'✓',
-		);
+		await expect(unknown.locator('.subagent-state')).not.toContainText('✓');
 		await expect(
 			cards.getByRole('button', {name: /stop whole turn/}),
 		).toHaveCount(0);
@@ -186,8 +184,7 @@ test('CHAT-08 SUB-05 whole-app restart reuses live execution UUIDs without inven
 			);
 			expect(new Set(names).size).toBe(2);
 			const unknownColour = await unknown
-				.locator('header > span')
-				.nth(2)
+				.locator('.subagent-state')
 				.evaluate(element => {
 					const card = element.closest('.subagent-run-card');
 					if (!card) throw new Error('Missing the historical card');
@@ -199,8 +196,7 @@ test('CHAT-08 SUB-05 whole-app restart reuses live execution UUIDs without inven
 			expect(unknownColour.state).toBe(unknownColour.card);
 			expect(
 				await failed
-					.locator('header > span')
-					.nth(2)
+					.locator('.subagent-state')
 					.evaluate(element => getComputedStyle(element).color),
 			).not.toBe(unknownColour.state);
 			expect(await visibleTextContrast(page, theme)).toEqual([]);
