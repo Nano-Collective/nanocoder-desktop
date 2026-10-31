@@ -123,6 +123,22 @@ test('no results remain keyboard safe', async () => {
 	await expect(palette).toBeHidden();
 });
 
+test('the command palette shell keeps the reference height cap at the default window size', async () => {
+	const page = await app.firstWindow();
+	await page.keyboard.press(paletteKey);
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	await expect(palette.getByRole('combobox')).toBeFocused();
+	await expect(palette.locator('.dialog-shell')).toHaveCSS(
+		'max-height',
+		'517px',
+	);
+	await page.keyboard.press('Escape');
+	await expect(palette).toBeHidden();
+});
+
 test('the capped palette list scrolls to its last row with no project open', async () => {
 	const page = await app.firstWindow();
 	const original = await page.evaluate(() => ({
