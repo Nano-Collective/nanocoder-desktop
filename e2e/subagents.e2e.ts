@@ -61,7 +61,7 @@ test.describe('fc01-shaped delegation cards', () => {
 	const input = () => page.getByRole('textbox', {name: 'message', exact: true});
 	const stop = () =>
 		page.getByRole('button', {
-			name: /stop turn:.*entire turn and all subagents/,
+			name: /stop whole turn:.*entire turn and all subagents/,
 		});
 	async function prompt(text: string) {
 		await input().fill(text);
@@ -89,7 +89,9 @@ test.describe('fc01-shaped delegation cards', () => {
 		await expect(cards().last()).toContainText('inspect fixture');
 		await expect(cards().last()).toContainText('1.2k tokens');
 		await expect(cards().last()).toContainText('3 tools (read_file)');
-		await expect(cards().last()).toContainText('depth not reported');
+		await expect(cards().last()).toContainText(
+			'depth, elapsed time and child tool details were not reported.',
+		);
 		await expect(page.getByRole('alertdialog')).toHaveCount(1);
 		await expect(page.getByRole('alertdialog')).toContainText(
 			'execute_bash fixture (explore)',
@@ -186,16 +188,19 @@ test.describe('fc01-shaped delegation cards', () => {
 		const retained = await cards().allTextContents();
 		await prompt('fixture fallback');
 		await expect(cards()).toHaveCount(retained.length + 1);
-		await expect(cards().last()).toContainText('child details not available');
+		await expect(cards().last()).toContainText(
+			'child tool details were not reported',
+		);
 		await expect(cards().last()).toContainText(
 			'source bounds: depth 2, batch 5',
 		);
-		await expect(cards().last()).toContainText('elapsed not reported');
+		await expect(cards().last()).toContainText('elapsed time');
+		await expect(cards().last()).toContainText('display-only progress');
 		await expect(cards().last().getByRole('combobox')).toHaveCount(0);
 		await cards()
 			.last()
 			.getByRole('button', {
-				name: /stop turn:.*entire turn and all subagents/,
+				name: /stop whole turn:.*entire turn and all subagents/,
 			})
 			.click();
 		await expect(
@@ -216,7 +221,7 @@ test.describe('fc01-shaped delegation cards', () => {
 			const runningCard = cards().nth(previousCards);
 			await expect(runningCard).toContainText('3 tools (read_file)');
 			const runningStop = runningCard.getByRole('button', {
-				name: /stop turn:.*entire turn and all subagents/,
+				name: /stop whole turn:.*entire turn and all subagents/,
 			});
 			await expect(runningStop).toBeEnabled();
 			await page.emulateMedia({reducedMotion: 'reduce'});

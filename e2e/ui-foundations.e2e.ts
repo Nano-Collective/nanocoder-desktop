@@ -250,7 +250,8 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	await expect(card).toBeVisible();
 	const dialog = card.getByRole('alertdialog');
 	await expect(dialog).toBeFocused();
-	await expect(dialog).toHaveCSS('outline-width', '2px');
+	await expect(card).toHaveCSS('outline-width', '2px');
+	await expect(card).toHaveCSS('outline-style', 'solid');
 	const switcher = page.getByLabel('switch project', {exact: true});
 	const recent = page.getByRole('region', {name: 'recent projects'});
 	const rail = page.getByRole('region', {name: 'project threads'});

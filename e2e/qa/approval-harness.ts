@@ -7,6 +7,7 @@ import type {PermissionRequestInfo} from '@/shared/ipc';
 let root: Root | undefined;
 let container: HTMLDivElement | undefined;
 let origin: HTMLButtonElement | undefined;
+let answers: string[] = [];
 
 export const approvalHarness = {
 	render(requests: PermissionRequestInfo[]) {
@@ -29,6 +30,7 @@ export const approvalHarness = {
 				mode: 'normal',
 				busy: false,
 				onAnswer: async (id, optionId) => {
+					answers.push(`${id}:${optionId}`);
 					const {desktop} = window as unknown as {desktop: DesktopApi};
 					const ui = await desktop.getUiState({});
 					return desktop.answerThreadPermission({
@@ -45,7 +47,11 @@ export const approvalHarness = {
 			}),
 		);
 	},
+	answers() {
+		return [...answers];
+	},
 	dispose() {
+		answers = [];
 		root?.unmount();
 		container?.remove();
 		root = undefined;

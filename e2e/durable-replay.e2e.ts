@@ -172,7 +172,9 @@ test('CHAT-08 SUB-05 whole-app restart reuses live execution UUIDs without inven
 		await expect(unknown.locator('header > span').nth(2)).not.toContainText(
 			'✓',
 		);
-		await expect(cards.getByRole('button', {name: /stop turn/})).toHaveCount(0);
+		await expect(
+			cards.getByRole('button', {name: /stop whole turn/}),
+		).toHaveCount(0);
 		await page.emulateMedia({reducedMotion: 'reduce'});
 		for (const theme of ['dark', 'light'] as const) {
 			await page.evaluate(theme => {

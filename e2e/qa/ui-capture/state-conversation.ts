@@ -299,7 +299,7 @@ const drivers: CaptureState[] = [
 			await expect(capture.page.locator('.subagent-run-card')).toHaveCount(1);
 			await expect(
 				capture.page.getByRole('button', {
-					name: /stop turn:.*entire turn and all subagents/,
+					name: /stop whole turn:.*entire turn and all subagents/,
 				}),
 			).toBeVisible();
 		},
@@ -321,19 +321,43 @@ const drivers: CaptureState[] = [
 				to: "name: 'current filtered rows'",
 			},
 			{from: "name: 'Second choice'", to: "name: 'all rows'"},
+			{
+				from: "options: ['First choice', 'Second choice'],",
+				to: "options: ['current filtered rows', 'all rows'],",
+			},
 			{from: "say(sessionId, 'Working on it. ');", to: INTRO},
 		],
 		async reach(capture) {
 			await openTide(capture, 'ask-user');
 			await rename(capture, TITLE);
 			await send(capture, PROMPT);
-			const card = capture.page.getByRole('region', {
-				name: 'permission request',
+			const question = capture.page.getByRole('alertdialog', {
+				name: 'Nanocoder needs a choice',
 			});
-			await expect(card).toContainText('which rows should the export include?');
-			await expect(card.getByRole('button')).toHaveCount(2);
-			await expect(card.getByRole('textbox')).toHaveCount(0);
-			await expect(capture.page.getByRole('alertdialog')).toBeFocused();
+			await expect(question).toContainText(
+				'which rows should the export include?',
+			);
+			await expect(question.locator('.question-choice')).toHaveCount(2);
+			await expect(question.getByRole('textbox')).toHaveCount(0);
+			await expect(
+				question.getByRole('button', {name: 'close choice', exact: true}),
+			).toBeFocused();
+		},
+		// The modal question makes the transcript inert, so it cannot be wheel-scrolled.
+		async beforeShot(capture) {
+			await capture.page
+				.getByRole('list', {name: 'conversation'})
+				.evaluate(element => {
+					let node: Element | null = element;
+					while (node && node.scrollHeight <= node.clientHeight + 1)
+						node = node.parentElement;
+					if (node) node.scrollTop = node.scrollHeight;
+				});
+			await expect(
+				capture.page.getByRole('alertdialog', {
+					name: 'Nanocoder needs a choice',
+				}),
+			).toHaveJSProperty('open', true);
 		},
 	},
 	{
