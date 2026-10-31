@@ -597,18 +597,6 @@ export function App() {
 							</section>
 						)}
 						{processState?.status !== 'ready' && recoveryTools}
-						{thread && runtime?.ok && (
-							<div className="workspace-setup">
-								<div className="workspace-setup-actions">
-									<Button
-										onClick={connect}
-										disabled={connecting || projectControls.pending}
-									>
-										open a project folder
-									</Button>
-								</div>
-							</div>
-						)}
 						{workspace.error && <p role="alert">{workspace.error}</p>}
 					</>
 				}

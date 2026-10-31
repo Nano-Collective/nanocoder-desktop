@@ -11,7 +11,6 @@
 	border-radius: 14px;
 }
 .workspace-eyebrow,
-.workspace-setup,
 .workspace-setup-warning {
 	color: var(--colors-on-surface-muted);
 	font-size: 11px;
@@ -64,21 +63,6 @@
 	overflow-wrap: anywhere;
 	color: var(--colors-on-surface-muted);
 	font-size: 10px;
-}
-.workspace-setup {
-	width: min(100%, 740px);
-	margin: 0 auto;
-}
-.workspace-setup-actions {
-	display: flex;
-	align-items: flex-start;
-	justify-content: space-between;
-	gap: 12px;
-}
-.workspace-setup-actions > .ui-button {
-	flex: none;
-	font-size: 10px;
-	min-height: 30px;
 }
 .workspace-setup-warning {
 	margin-bottom: 8px;
