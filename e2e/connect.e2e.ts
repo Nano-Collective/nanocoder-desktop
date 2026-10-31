@@ -22,6 +22,7 @@ import type {ProjectEvent} from '@/shared/ipc';
 import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette, startFolderFromPalette} from './qa/open-folder';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-e2e-')));
 const fakeCli = path.join(work, 'nanocoder', 'dist', 'cli.js');
@@ -58,10 +59,7 @@ async function openFolder(folder: string, trustButton = 1): Promise<void> {
 		},
 		[folder, trustButton] as const,
 	);
-	await page.getByRole('button', {name: 'Open a project folder'}).click();
-	await expect(
-		page.getByRole('button', {name: 'Open a project folder'}),
-	).toBeEnabled();
+	await openFolderFromPalette(page);
 }
 
 const trustPrompts = () =>
@@ -694,7 +692,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 				filePaths: [root],
 			})) as typeof dialog.showOpenDialog;
 		}, root);
-		await page.getByRole('button', {name: 'Open a project folder'}).click();
+		await openFolderFromPalette(page);
 		await expect(page.getByLabel('Message')).toBeEnabled();
 		const projectId = await recoveryProjectId(root);
 		await sendMessage();
@@ -787,7 +785,7 @@ test('a detached folder picker cannot hold the latch or reopen its late selectio
 			});
 		}) as typeof dialog.showOpenDialog;
 	});
-	await page.getByRole('button', {name: 'Open a project folder'}).click();
+	await startFolderFromPalette(page);
 	await expect
 		.poll(() =>
 			app.evaluate(
@@ -839,7 +837,7 @@ test('a detached trust dialog cannot hold the latch or grant its late confirmati
 			});
 		}) as typeof dialog.showMessageBox;
 	}, late);
-	await page.getByRole('button', {name: 'Open a project folder'}).click();
+	await startFolderFromPalette(page);
 	await expect
 		.poll(() =>
 			app.evaluate(() => (globalThis as {trustEntered?: boolean}).trustEntered),

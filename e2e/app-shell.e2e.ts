@@ -18,6 +18,7 @@ import {build} from 'vite';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette} from './qa/open-folder';
 import type {mountShellFixture} from './qa/shell-harness';
 import {visibleTextContrast} from './qa/ui-contrast';
 
@@ -64,10 +65,7 @@ async function open(folder: string | null) {
 			filePaths: folder ? [folder] : [],
 		})) as typeof dialog.showOpenDialog;
 	}, folder);
-	await page.getByRole('button', {name: 'open a project folder'}).click();
-	await expect(
-		page.getByRole('button', {name: 'open a project folder'}),
-	).toBeEnabled();
+	await openFolderFromPalette(page);
 	if (folder)
 		await expect(
 			page.getByRole('region', {name: 'connected agent', includeHidden: true}),
@@ -239,7 +237,6 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 		}, theme);
 		for (const width of [1240, 1020, 840]) {
 			await page.setViewportSize({width, height: 900});
-			const open = page.getByRole('button', {name: 'open a project folder'});
 			const input = page.getByRole('textbox', {name: 'message'});
 			const palette = page.getByRole('button', {
 				name: 'command palette',
@@ -286,10 +283,9 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 					name: 'import saved session: existing saved session',
 					exact: true,
 				}),
-				palette,
 				page.getByText('runtime and setup details', {exact: true}),
-				open,
 				diagnostics,
+				palette,
 				input,
 				page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
 				send,
