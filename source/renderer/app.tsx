@@ -164,6 +164,11 @@ export function App() {
 		pending: workspace.loading || workspace.pending,
 	});
 	const editable = composerState.editable;
+	const centredComposer =
+		composerState.visible &&
+		activeReplay === undefined &&
+		transcript.items.length === 0 &&
+		!sending;
 	const rootControlReason =
 		replayReason ??
 		(rootBusy
@@ -615,6 +620,7 @@ export function App() {
 						{workspace.error && <p role="alert">{workspace.error}</p>}
 					</>
 				}
+				composerPlacement={centredComposer ? 'centred' : 'bottom'}
 				approvalShelf={
 					thread && (
 						<ApprovalRequests
