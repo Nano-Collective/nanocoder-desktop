@@ -146,7 +146,7 @@ test('permission takes focus, supports only its offered numbered choices and res
 	await expect(dialogs()).toBeFocused();
 	await expect(dialogs()).toHaveAccessibleName('approval required');
 	await expect(dialogs()).toHaveAccessibleDescription(
-		/^Nanocoder · execute_bash · normal mode .+ approval is not a guarantee that the command succeeds\.$/,
+		/^Nanocoder · execute_bash · normal mode .+ approval does not guarantee success\.$/,
 	);
 	await expect(cards().getByRole('button').nth(0)).toHaveAccessibleName(
 		'Allow',
