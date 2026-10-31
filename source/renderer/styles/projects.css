@@ -195,11 +195,17 @@
 	}
 }
 
+/* The mockup's import page is 850px wide, wider than the 740px reading column. */
+.technical-gate:has(> .session-import-page) {
+	max-width: none;
+	padding: 8px 0 20px;
+}
 .session-import-page {
 	display: grid;
 	gap: 14px;
-	width: 100%;
+	width: min(100%, 850px);
 	min-width: 0;
+	margin-inline: auto;
 }
 .session-import-header {
 	display: flex;
