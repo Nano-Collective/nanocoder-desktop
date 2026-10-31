@@ -160,6 +160,9 @@ test('shell geometry and pinned composer follow all three widths without an empt
 	await expect(stream).toHaveAttribute('data-composer-placement', 'centred');
 	await page.getByRole('textbox', {name: 'message'}).fill('check the layout');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
+	const allow = page.getByRole('button', {name: 'Allow', exact: true});
+	await expect(allow).toBeVisible();
+	await allow.click();
 	await expect(turnEnded(page)).toBeVisible();
 	await expect(stream).toHaveAttribute('data-composer-placement', 'bottom');
 	await page.emulateMedia({reducedMotion: 'reduce'});
