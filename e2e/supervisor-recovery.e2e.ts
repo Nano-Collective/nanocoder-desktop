@@ -354,15 +354,23 @@ test('ordinary reopen preserves the existing conversation when no replay is prod
 		.click();
 	await expect(turnEnded(page)).toBeVisible();
 	const conversation = page.getByRole('list', {name: 'conversation'});
+	// The author label is a row of its own, so compare messages, not rows.
+	const messages = conversation.locator(':scope > li:not(.gate-message-label)');
+	const expected = [
+		/fixture conversation$/,
+		/^Working on it\.$/,
+		/execute_bash: echo hi$/,
+		/^Tool denied\.$/,
+	];
 	const before = await conversation.innerText();
-	await expect(conversation.locator('li')).toHaveCount(4);
+	await expect(messages).toHaveText(expected, {useInnerText: true});
 	await page.evaluate(async projectId => {
 		await (window as unknown as {desktop: DesktopApi}).desktop.stopProject({
 			projectId,
 		});
 	}, projectId);
 	await open();
-	await expect(conversation.locator('li')).toHaveCount(4);
+	await expect(messages).toHaveText(expected, {useInnerText: true});
 	await expect(conversation).toHaveText(before, {useInnerText: true});
 });
 
