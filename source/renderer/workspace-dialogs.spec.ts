@@ -269,21 +269,21 @@ test('each workspace dialog titles itself in the shared shell', t => {
 		lines: ['line'],
 		truncated: false,
 	};
-	const titles: Array<[WorkspaceDialog, string]> = [
-		['projects', 'your projects'],
-		['runtime', 'runtime details'],
-		['capabilities', 'capabilities, with reasons'],
-		['archives', 'archived threads'],
-		['diagnostics', 'review captured diagnostics'],
+	const titles: Array<[WorkspaceDialog, string, string]> = [
+		['projects', 'your projects', 'dialog-shell projects-dialog'],
+		['runtime', 'runtime details', 'dialog-shell'],
+		['capabilities', 'capabilities, with reasons', 'dialog-shell'],
+		['archives', 'archived threads', 'dialog-shell'],
+		['diagnostics', 'review captured diagnostics', 'dialog-shell'],
 	];
-	for (const [kind, title] of titles) {
+	for (const [kind, title, shellClass] of titles) {
 		const html = renderToStaticMarkup(
 			createElement(WorkspaceDialogs, {
 				...dialogs(kind),
 				diagnostics: {snapshot, busy: false, message: '', onExport() {}},
 			}),
 		);
-		t.true(html.includes('class="dialog-shell"'), kind);
+		t.true(html.includes(`class="${shellClass}"`), kind);
 		t.false(html.includes('dialog-frame'), kind);
 		t.true(html.includes(`>${title}</h2>`), kind);
 		t.true(html.includes('aria-label="dismiss dialog"'), kind);
