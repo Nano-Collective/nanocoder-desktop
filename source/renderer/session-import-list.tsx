@@ -134,7 +134,7 @@ export function SessionImportList(
 					<span aria-hidden="true">↻ </span>refresh offers
 				</Button>
 				{props.onBack && (
-					<Button onClick={props.onBack}>
+					<Button className="session-import-back" onClick={props.onBack}>
 						<span aria-hidden="true">← </span>
 						{props.backLabel ?? 'back to selected thread'}
 					</Button>

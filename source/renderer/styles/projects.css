@@ -218,6 +218,16 @@
 	gap: 8px;
 	margin-bottom: 18px;
 }
+.session-import-back {
+	border-color: transparent;
+	background: transparent;
+	padding-inline: 0;
+	color: var(--colors-on-surface-muted);
+}
+.session-import-back:hover:not(:disabled) {
+	border-color: transparent;
+	color: var(--colors-on-surface);
+}
 .session-import-intro {
 	max-width: 670px;
 	margin: 0 0 26px;
