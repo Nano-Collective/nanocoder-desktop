@@ -41,6 +41,26 @@ const ready = () => observeSupervisor({}, event(1));
 const failed = () =>
 	state({status: 'failed', agent: null, exit: {code: 3, signal: null}});
 
+test('recents invalidations do not select a project or invent supervisor state', t => {
+	const current = ready();
+	t.is(
+		observeSupervisor(current, {
+			type: 'projects-changed',
+			projectId: 'b',
+			sequence: 100,
+		}),
+		current,
+	);
+	t.is(
+		observeSupervisor(current, {
+			type: 'projects-changed',
+			projectId: 'a',
+			sequence: 100,
+		}),
+		current,
+	);
+});
+
 test('ready requires the current selected supervisor and a connected agent', t => {
 	const current = ready();
 	t.deepEqual(acpBadge(current, '/a'), {status: 'acp-ready'});

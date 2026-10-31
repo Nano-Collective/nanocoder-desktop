@@ -233,6 +233,14 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		});
 	}
 
+	publishProjectsChanged(projectId: string): void {
+		this.emit({
+			type: 'projects-changed',
+			projectId,
+			sequence: this.sequence(projectId),
+		});
+	}
+
 	publishThread(thread: ThreadInfo): void {
 		this.emit({
 			type: 'thread',

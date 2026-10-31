@@ -98,6 +98,16 @@ project's live supervisor events, not a saved trust flag or opening result.
 Default-mode controls and project removal remain unavailable here; their later
 phases retain the existing IPC contracts.
 
+Recent projects subscribe before their first read. Successful add, locate and
+open commits publish a `projects-changed` notification through the existing
+project-event channel, containing only its type, the changed project ID and the
+existing per-project sequence. Preload validates this exact shape and refuses
+unknown variants. The renderer re-reads the list and active ID through the
+existing methods; the notification never selects, attaches or starts a project.
+Older event sequences, superseded read results and reads completing after
+unmount cannot replace current recents or selection. Existing project and
+removal events also refresh recents, as does a supervisor trust refusal.
+
 ## Approved workspace presentation (DEC-40)
 
 The first-launch canvas centres the local logo, an open-folder action and known recent-project metadata. Opening and locating call the existing project-id callbacks; unavailable folders offer locate, never an unsafe open. Native trust consent and its cancel default stay in main. Trust refusals remain visible in the canvas.

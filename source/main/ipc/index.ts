@@ -395,6 +395,8 @@ export function registerIpcHandlers(
 							stop: stopProject,
 						},
 						signal: () => rendererAttachment.signal,
+						projectsChanged: projectId =>
+							ownedSupervisor.publishProjectsChanged(projectId),
 						announceProject: project => {
 							activeProjectId = project.id;
 							threads?.attachProject(project.id);
