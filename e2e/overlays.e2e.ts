@@ -123,6 +123,45 @@ test('no results remain keyboard safe', async () => {
 	await expect(palette).toBeHidden();
 });
 
+test('the capped palette list scrolls to its last row with no project open', async () => {
+	const page = await app.firstWindow();
+	await page.keyboard.press(paletteKey);
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	const input = palette.getByRole('combobox');
+	await expect(input).toBeFocused();
+	const listbox = palette.getByRole('listbox');
+	await expect(listbox).toBeVisible();
+	const options = palette.getByRole('option');
+	const count = await options.count();
+	for (let step = 1; step < count; step++) {
+		await page.keyboard.press('ArrowDown');
+	}
+	const last = options.nth(count - 1);
+	await expect(last).toHaveAttribute('aria-selected', 'true');
+	const shell = await palette.locator('.dialog-shell').boundingBox();
+	expect(shell?.height ?? 0).toBeLessThanOrEqual(517);
+	const row = await last.boundingBox();
+	const list = await listbox.boundingBox();
+	expect(row).not.toBeNull();
+	expect(list).not.toBeNull();
+	expect(row?.y ?? 0).toBeGreaterThanOrEqual(list?.y ?? 0);
+	expect((row?.y ?? 0) + (row?.height ?? 0)).toBeLessThanOrEqual(
+		(list?.y ?? 0) + (list?.height ?? 0),
+	);
+
+	await input.fill('no-matching-action');
+	await expect(
+		palette.getByText('no commands found. try a different action name.'),
+	).toBeVisible();
+	await expect(input).toHaveAttribute('aria-expanded', 'false');
+	await expect(palette.getByRole('listbox')).toHaveCount(0);
+	await page.keyboard.press('Escape');
+	await expect(palette).toBeHidden();
+});
+
 test('add project folder calls the existing picker and cancellation preserves focus', async () => {
 	const page = await app.firstWindow();
 	await app.evaluate(({dialog}) => {

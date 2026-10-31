@@ -75,6 +75,31 @@ test('the new thread shortcut refuses without a project and opens the draft dial
 		await expect(
 			page.locator('.thread-row[data-selected="true"] .thread-title'),
 		).toHaveText('new thread');
+
+		const selected = page.locator('.thread-row[data-selected="true"]');
+		const first = await selected.getAttribute('data-thread-id');
+		const draft = 'draft for the second new thread';
+		await page.keyboard.press(newThreadKey);
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('textbox').fill(draft);
+		await dialog
+			.getByRole('button', {name: 'keep as new thread draft', exact: true})
+			.click();
+		await expect(dialog).toBeHidden();
+		await expect
+			.poll(() => selected.getAttribute('data-thread-id'))
+			.not.toBe(first);
+		const second = await selected.getAttribute('data-thread-id');
+		const message = page.getByRole('textbox', {name: 'message', exact: true});
+		await expect(message).toHaveValue(draft);
+		await page
+			.locator(`.thread-row[data-thread-id="${first}"] .thread-open`)
+			.click();
+		await expect(message).toHaveValue('');
+		await page
+			.locator(`.thread-row[data-thread-id="${second}"] .thread-open`)
+			.click();
+		await expect(message).toHaveValue(draft);
 	} finally {
 		await test.step('close the hidden app', () => app.close(), {
 			timeout: 5_000,
