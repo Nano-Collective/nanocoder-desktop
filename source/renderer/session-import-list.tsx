@@ -7,6 +7,7 @@ export interface SessionImportListProps {
 	projectId: string | null;
 	projectName?: string;
 	active: boolean;
+	focusRequest?: number;
 	sessions: readonly DiscoveredSession[];
 	loading: boolean;
 	importing: string | null;
@@ -44,6 +45,14 @@ export function SessionImportList(
 			refresh.current?.focus();
 		}
 	});
+	const focusRequest = props.focusRequest ?? 0;
+	React.useLayoutEffect(() => {
+		if (focusRequest === 0) return;
+		const first = region.current?.querySelector<HTMLButtonElement>(
+			'.session-import-card button:not(:disabled)',
+		);
+		(first ?? refresh.current)?.focus();
+	}, [focusRequest]);
 	if (!props.active) return null;
 	return (
 		<section

@@ -378,7 +378,6 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				page.getByRole('button', {name: 'runtime details', exact: true}),
 				page.getByRole('button', {name: 'thread actions', exact: true}),
 				palette,
-				page.getByRole('button', {name: 'import saved sessions', exact: true}),
 				stream,
 				input,
 				page.getByRole('combobox', {name: 'mode for this thread', exact: true}),

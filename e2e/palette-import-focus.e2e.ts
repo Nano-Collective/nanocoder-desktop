@@ -68,7 +68,7 @@ test('palette import saved sessions focuses the first offered row, then refresh 
 			exact: true,
 		});
 		const refresh = imports.getByRole('button', {
-			name: 'refresh saved sessions',
+			name: 'refresh offers',
 			exact: true,
 		});
 		await expect(importButton).toBeEnabled();

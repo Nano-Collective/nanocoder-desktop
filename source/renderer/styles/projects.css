@@ -325,10 +325,6 @@
 .session-import-card > .ui-button {
 	flex: none;
 }
-.session-import-entry {
-	justify-self: start;
-}
-
 .thread-view-only {
 	display: grid;
 	gap: 14px;

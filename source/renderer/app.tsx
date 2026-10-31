@@ -93,6 +93,7 @@ export function App() {
 	const [importFor, setImportFor] = useState<string | null>(null);
 	const importOpen =
 		sessionImports.ready && importFor !== null && importFor === projectId;
+	const [importFocus, setImportFocus] = useState(0);
 	const thread =
 		workspace.threads.find(row => row.id === workspace.activeThreadId) ?? null;
 	const {transcript, draft, turn, cancellation} = conversation;
@@ -315,15 +316,10 @@ export function App() {
 	const importSession = notifyImported(sessionImports.importSession, message =>
 		overlays.current?.notify(message),
 	);
-	const focusSessionImports = () =>
-		(
-			document.querySelector<HTMLButtonElement>(
-				'.session-import button:not(:disabled)',
-			) ??
-			document.querySelector<HTMLButtonElement>(
-				'.session-imports button:not(:disabled)',
-			)
-		)?.focus();
+	const openImportPage = () => {
+		setImportFocus(request => request + 1);
+		setImportFor(projectId);
+	};
 	const renameGate = gates[projectId ?? '']?.features.rename;
 	const deleteGate = gates[projectId ?? '']?.features.delete;
 	const renameDisabledReason = renameGate?.enabled
@@ -503,7 +499,7 @@ export function App() {
 				}),
 				...importPalette({
 					ready: sessionImports.ready,
-					onImport: focusSessionImports,
+					onImport: openImportPage,
 				}),
 				...projectPalette({
 					...projectControls,
@@ -610,14 +606,6 @@ export function App() {
 				streamTools={
 					<>
 						<TrustFeedback feedback={projectControls.feedback} />
-						{sessionImports.ready && !importOpen && (
-							<Button
-								className="session-import-entry"
-								onClick={() => setImportFor(projectId)}
-							>
-								import saved sessions
-							</Button>
-						)}
 						{processState?.status !== 'ready' && recoveryTools}
 						{!thread && !importOpen && (
 							<WelcomePage
@@ -710,6 +698,7 @@ export function App() {
 						key={projectId}
 						{...sessionImports}
 						active
+						focusRequest={importFocus}
 						projectName={currentProject?.displayName}
 						disabledReason={
 							rootBusy
@@ -724,7 +713,7 @@ export function App() {
 						backLabel={thread ? 'back to selected thread' : 'back to start'}
 						onBack={() => setImportFor(null)}
 						onRefresh={sessionImports.refresh}
-						onImport={sessionImports.importSession}
+						onImport={importSession}
 					/>
 				)}
 				{!importOpen && thread && (

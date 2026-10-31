@@ -12,6 +12,7 @@ import {expect, test} from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openImportsFromPalette} from './qa/import-palette';
 import {openFolderFromPalette} from './qa/open-folder';
 import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
@@ -104,9 +105,7 @@ for (const theme of ['dark', 'light'] as const) {
 			const input = page.getByRole('textbox', {name: 'message', exact: true});
 			await input.fill('retained unqueued import draft');
 			const before = await snapshot();
-			await page
-				.getByRole('button', {name: 'import saved sessions', exact: true})
-				.click();
+			await openImportsFromPalette(page);
 			const imports = page.getByRole('region', {
 				name: 'import saved sessions',
 				exact: true,
@@ -217,9 +216,7 @@ for (const theme of ['dark', 'light'] as const) {
 			await expect(
 				page.getByText('<script>saved fixture</script>', {exact: true}),
 			).toHaveCount(0);
-			await page
-				.getByRole('button', {name: 'import saved sessions', exact: true})
-				.click();
+			await openImportsFromPalette(page);
 			await expect(
 				page.getByRole('region', {name: 'import saved sessions'}),
 			).toContainText('no sessions offered for import');

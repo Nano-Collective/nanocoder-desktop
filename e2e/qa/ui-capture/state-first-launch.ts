@@ -1,5 +1,6 @@
 import {rmSync} from 'node:fs';
 import {expect} from '@playwright/test';
+import {openImportsFromPalette} from '../import-palette';
 import type {Capture, CaptureState, FixtureEdit} from './harness';
 
 const native =
@@ -107,13 +108,11 @@ export const states: CaptureState[] = [
 		stem: 'import-main',
 		manifestId: 'import-main',
 		fixture: `fake mode ok (default); edits: ${savedSessionsText}`,
-		how: 'opened tide through the folder picker, waited for the ready ACP badge, opened the "import saved sessions" page from its canvas entry, and waited for both offers; the page is scrolled into view before each shot',
+		how: 'opened tide through the folder picker, waited for the ready ACP badge, ran "import saved sessions" from the command palette, and waited for both offers; the page is scrolled into view before each shot',
 		fixtureEdits: savedSessions,
 		async reach(capture) {
 			await openReady(capture, capture.project('tide'), 'tide');
-			await capture.page
-				.getByRole('button', {name: 'import saved sessions', exact: true})
-				.click();
+			await openImportsFromPalette(capture.page);
 			for (const title of [
 				'earlier export research',
 				'table navigation checks',
