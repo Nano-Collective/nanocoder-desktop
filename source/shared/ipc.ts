@@ -1,3 +1,5 @@
+import type {ProjectsChangedEvent} from '@/shared/project-events';
+
 export type ErrorCode =
 	| 'VALIDATION'
 	| 'NOT_FOUND'
@@ -491,6 +493,7 @@ export type WorkspaceMethod = keyof WorkspaceRequests;
 
 // Project sequences cover state changes; thread sequences cover transient chat only.
 export type ProjectEvent =
+	| ProjectsChangedEvent
 	| {
 			type: 'project-controls';
 			projectId: string;

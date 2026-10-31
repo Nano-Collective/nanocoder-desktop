@@ -19,6 +19,7 @@ interface ProjectOptions {
 	supervisor: Pick<ProjectSupervisor, 'probeProject' | 'stop'>;
 	signal?(): AbortSignal;
 	announceProject?(project: ProjectInfo): void;
+	projectsChanged?(projectId: string): void;
 }
 
 type AsyncProjectService = {
@@ -108,6 +109,7 @@ export function createProjectService(
 					availability: 'available',
 				};
 				options.store.projects.save(project);
+				options.projectsChanged?.(project.id);
 				return {status: 'selected', project};
 			}),
 		openProject: ({projectId}) =>
@@ -151,6 +153,7 @@ export function createProjectService(
 					};
 					options.store.projects.save(opened);
 					options.store.updateUiState({activeProjectId: projectId});
+					options.projectsChanged?.(projectId);
 					return {status: 'opened', project: opened, supervisor: state};
 				} catch (error) {
 					await options.supervisor.stop(projectId);
@@ -189,6 +192,7 @@ export function createProjectService(
 					availability: 'available' as const,
 				};
 				options.store.projects.save(located);
+				options.projectsChanged?.(projectId);
 				return {status: 'selected', project: located};
 			}),
 		removeProject: unavailable,

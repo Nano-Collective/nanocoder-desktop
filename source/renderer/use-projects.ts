@@ -1,4 +1,8 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
+import {
+	readRecentProjects,
+	subscribeProjectRefresh,
+} from '@/renderer/project-refresh';
 import type {ProjectFeedback} from '@/renderer/trust-feedback';
 import type {IpcResult, ProjectChoiceResult, ProjectInfo} from '@/shared/ipc';
 
@@ -15,24 +19,20 @@ export function useProjects(onOpened?: () => void) {
 	}, []);
 	const refresh = useCallback(async () => {
 		const sequence = ++refreshSequence.current;
-		try {
-			const [result, ui] = await Promise.all([
-				window.desktop.listProjects({}),
-				window.desktop.getUiState({}),
-			]);
-			if (!mounted.current || sequence !== refreshSequence.current) return;
-			if (ui.ok) setActiveProjectId(ui.value.activeProjectId);
-			if (result.ok) setProjects(result.value);
-			else report({status: 'failed', message: result.error.message});
-		} catch {
-			report({status: 'failed', message: 'recent projects are unavailable'});
-		}
+		await readRecentProjects(window.desktop, {
+			current: () => mounted.current && sequence === refreshSequence.current,
+			projects: setProjects,
+			activeProject: setActiveProjectId,
+			failed: message => report({status: 'failed', message}),
+		});
 	}, [report]);
 	useEffect(() => {
 		mounted.current = true;
+		const unsubscribe = subscribeProjectRefresh(window.desktop, refresh);
 		void refresh();
 		return () => {
 			mounted.current = false;
+			unsubscribe();
 		};
 	}, [refresh]);
 
