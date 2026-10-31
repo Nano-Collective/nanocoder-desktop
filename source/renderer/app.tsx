@@ -455,6 +455,21 @@ export function App() {
 					...projectControls,
 					pending: connecting || projectControls.pending,
 				}),
+				{
+					id: 'open-folder',
+					label: 'open a project folder',
+					glyph: '⌗',
+					keywords: 'add directory',
+					disabledReason:
+						connecting || projectControls.pending
+							? 'another project request or native dialog is pending'
+							: !runtime?.ok
+								? 'Nanocoder runtime is not available'
+								: undefined,
+					run: () => {
+						void connect();
+					},
+				},
 			]}
 		>
 			<AppShell

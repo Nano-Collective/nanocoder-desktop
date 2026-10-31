@@ -163,10 +163,12 @@ test('disabled actions keep a visible reason and cannot run with Enter or pointe
 		await page.getByRole('button', {name: 'command palette'}).click();
 		await page
 			.getByRole('combobox', {name: 'find a command', exact: true})
-			.fill('new thread');
-		const option = page.getByRole('option', {name: /new thread/});
+			.fill('open');
+		const option = page.getByRole('option', {name: /open a project folder/});
 		await expect(option).toHaveAttribute('aria-disabled', 'true');
-		await expect(option).toContainText('unavailable: select a project first');
+		await expect(option).toContainText(
+			'unavailable: Nanocoder runtime is not available',
+		);
 		await page.keyboard.press('Enter');
 		await expect(page.getByRole('dialog')).toBeVisible();
 		await option.click({force: true});
