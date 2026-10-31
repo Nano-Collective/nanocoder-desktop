@@ -158,6 +158,12 @@ const minimumReasons: Record<string, string> = {
 		'Nanocoder does not yet offer a verified child-event projection; subagents remain tool cards.',
 };
 
+// The model row copy depends on session state; these are main's exact copies.
+const modelReasonBeforeReconnect =
+	'available after the first message: Nanocoder supplies model options after a session exists';
+const modelReasonAfterReconnect =
+	'model options changed; wait for a prepared session';
+
 // Every row is disabled for the minimum build; the model row copy is dynamic.
 async function expectMinimumReasons(features: Locator) {
 	const rows = features.locator('.capability-row');
@@ -172,6 +178,18 @@ async function expectMinimumReasons(features: Locator) {
 		if (label === 'model + mode offers') expect(reason).not.toBe('');
 		else expect(reason).toBe(minimumReasons[label]);
 	}
+}
+
+async function reasonsByLabel(
+	features: Locator,
+): Promise<Record<string, string>> {
+	const entries = await Promise.all(
+		(await features.locator('.capability-row').all()).map(async row => [
+			(await row.locator('.capability-label').textContent())?.trim() ?? '',
+			(await row.locator('.capability-reason').textContent())?.trim() ?? '',
+		]),
+	);
+	return Object.fromEntries(entries);
 }
 
 async function expectConnectedAgent(text: string) {
@@ -805,16 +823,22 @@ test('idle reconnect replays all feature reasons and the version warning before 
 	await showCapabilities();
 	const features = () => capabilitiesDialog();
 	await expectMinimumReasons(features());
-	const reasons = await features()
-		.locator('.capability-reason')
-		.allTextContents();
+	expect(await reasonsByLabel(features())).toEqual({
+		...minimumReasons,
+		'model + mode offers': modelReasonBeforeReconnect,
+	});
 	await page.keyboard.press('Escape');
 	await expect(capabilitiesDialog()).toBeHidden();
 	await page.reload();
 	await recordRecoveryProjects();
 	await openFolder(root);
 	await showCapabilities();
-	await expect(features().locator('.capability-reason')).toHaveText(reasons);
+	await expect
+		.poll(async () => reasonsByLabel(features()))
+		.toEqual({
+			...minimumReasons,
+			'model + mode offers': modelReasonAfterReconnect,
+		});
 	await expectMinimumReasons(features());
 	await page.keyboard.press('Escape');
 	await expect(capabilitiesDialog()).toBeHidden();
