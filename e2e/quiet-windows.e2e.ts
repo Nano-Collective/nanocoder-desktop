@@ -105,7 +105,7 @@ test('quiet launch and macOS activation keep native windows and Dock hidden with
 			expect(native.visible).toBe(false);
 			expect(native.focused).toBe(false);
 			expect(Math.max(...frames.gaps)).toBeLessThanOrEqual(100);
-			expect(native.backgroundThrottling).toBe(false);
+			expect(native.backgroundThrottling).toBe(true);
 		});
 	} finally {
 		await app.close();

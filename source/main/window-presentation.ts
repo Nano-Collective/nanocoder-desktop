@@ -7,17 +7,6 @@ export function hiddenTestWindows(
 	return !isPackaged && args.includes(E2E_HIDDEN_SWITCH);
 }
 
-export function windowPresentationOptions(
-	isPackaged: boolean,
-	args: readonly string[],
-) {
-	const hidden = hiddenTestWindows(isPackaged, args);
-	return {
-		hidden,
-		webPreferences: hidden ? {backgroundThrottling: false} : {},
-	};
-}
-
 interface NativeWindow {
 	isMinimized(): boolean;
 	restore(): void;
