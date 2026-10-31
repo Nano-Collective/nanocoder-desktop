@@ -191,9 +191,11 @@ test('shell geometry and pinned composer follow all three widths without an empt
 					};
 					const scroll = document.querySelector('.shell-stream-scroll');
 					if (!scroll) throw new Error('Missing stream scroll region');
+					const firstRow = document.querySelector(
+						'.technical-gate > :first-child',
+					);
 					const readingOffset =
-						(document.querySelector('.technical-gate')?.getBoundingClientRect()
-							.top ?? 0) -
+						(firstRow?.getBoundingClientRect().top ?? 0) -
 						scroll.getBoundingClientRect().top +
 						scroll.scrollTop;
 					const tools =
