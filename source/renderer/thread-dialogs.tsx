@@ -124,6 +124,7 @@ function RenameDialog({thread, data, api}: BodyProps) {
 			}}
 		>
 			<DialogShell
+				className="dialog-shell--rename"
 				title="rename thread"
 				closeLabel="close rename thread"
 				onClose={api.close}
@@ -170,6 +171,7 @@ function ArchiveDialog({thread, data, api}: BodyProps) {
 	};
 	return (
 		<DialogShell
+			className="dialog-shell--confirm"
 			title="archive this thread?"
 			closeLabel="close archive confirmation"
 			onClose={api.close}
@@ -210,6 +212,7 @@ function RemoveDialog({thread, data, api}: BodyProps) {
 	};
 	return (
 		<DialogShell
+			className="dialog-shell--confirm"
 			title="remove this thread from desktop?"
 			closeLabel="close remove confirmation"
 			onClose={api.close}
@@ -243,6 +246,7 @@ function RemoveDialog({thread, data, api}: BodyProps) {
 function OtherThreadDialog({thread, data, api}: BodyProps) {
 	return (
 		<DialogShell
+			className="dialog-shell--other-thread"
 			title="another thread is running"
 			closeLabel="close notice"
 			onClose={api.close}
@@ -309,6 +313,7 @@ function NewThreadDialog({data, api}: Pick<BodyProps, 'data' | 'api'>) {
 			}}
 		>
 			<DialogShell
+				className="dialog-shell--new"
 				title={
 					data.projectId ? `new thread in ${data.projectName}` : 'new thread'
 				}

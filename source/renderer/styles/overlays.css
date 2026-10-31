@@ -70,6 +70,7 @@
 }
 
 .dialog-body {
+	flex: 1 0 auto;
 	min-width: 0;
 	padding: 0 24px 20px;
 }
@@ -175,6 +176,23 @@
 .dialog-foot .ui-button.dialog-quiet {
 	border-color: transparent;
 	background: transparent;
+}
+
+/* Approved shell heights at 1240px; the body takes the spare height so the footer stays at the foot. */
+.dialog-shell--rename {
+	min-height: 253px;
+}
+
+.dialog-shell--other-thread {
+	min-height: 325px;
+}
+
+.dialog-shell--confirm {
+	min-height: 305px;
+}
+
+.dialog-shell--new {
+	min-height: 365px;
 }
 
 .thread-menu-items {
@@ -330,7 +348,7 @@
 	gap: var(--spacing-xl);
 	padding: 9px 0;
 	font-size: var(--typography-body-sm-font-size);
-	line-height: 1.6;
+	line-height: 1.8;
 }
 
 .shortcut-list > div + div {
