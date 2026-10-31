@@ -90,7 +90,12 @@ export function AppShell({
 						aria-label="conversation workspace"
 						data-composer-placement={composerPlacement}
 					>
-						<div className="shell-stream-scroll">
+						<div
+							className="shell-stream-scroll"
+							role="region"
+							aria-label="conversation"
+							tabIndex={0}
+						>
 							{streamTools && (
 								<div
 									className="shell-stream-tools"

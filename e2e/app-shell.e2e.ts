@@ -265,6 +265,10 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				exact: true,
 			});
 			const send = page.getByRole('button', {name: 'send', exact: true});
+			const stream = page.getByRole('region', {
+				name: 'conversation',
+				exact: true,
+			});
 			const focusOrder = [
 				switcher,
 				add,
@@ -286,10 +290,12 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				page.getByText('runtime and setup details', {exact: true}),
 				diagnostics,
 				palette,
+				stream,
 				input,
 				page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
 				send,
 			];
+			await expect(stream).toHaveAccessibleName('conversation');
 			await focusOrder[0].focus();
 			for (const [index, control] of focusOrder.entries()) {
 				if (index > 0) await page.keyboard.press('Tab');
