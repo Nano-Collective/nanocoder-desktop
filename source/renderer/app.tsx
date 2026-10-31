@@ -624,16 +624,11 @@ export function App() {
 								busy={connecting || projectControls.pending}
 								connecting={connecting}
 								runtime={runtime}
-								agent={
-									outcome?.status === 'connected' ? outcome.agent : undefined
-								}
-								gates={gates[projectId ?? '']}
 								onConnect={() => {
 									void connect();
 								}}
 								onOpen={projectControls.onOpen}
 								onLocate={projectControls.onLocate}
-								onCheckRuntime={checkRuntime}
 							/>
 						)}
 						{workspace.error && <p role="alert">{workspace.error}</p>}

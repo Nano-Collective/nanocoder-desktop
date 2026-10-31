@@ -1,14 +1,7 @@
 import * as React from 'react';
 import {dayAge, shortRoot} from '@/renderer/recency';
-import {RuntimeDetails} from '@/renderer/runtime-details';
-import {Button, Divider} from '@/renderer/ui';
-import type {
-	CapabilityGates,
-	ConnectedAgent,
-	IpcResult,
-	NanocoderRuntime,
-	ProjectInfo,
-} from '@/shared/ipc';
+import {Button} from '@/renderer/ui';
+import type {IpcResult, NanocoderRuntime, ProjectInfo} from '@/shared/ipc';
 
 export interface WelcomePageProps {
 	logoSrc: string;
@@ -16,12 +9,9 @@ export interface WelcomePageProps {
 	busy: boolean;
 	connecting: boolean;
 	runtime: IpcResult<NanocoderRuntime> | null;
-	agent?: ConnectedAgent;
-	gates?: CapabilityGates;
 	onConnect(): void;
 	onOpen(projectId: string): void;
 	onLocate(projectId: string): void;
-	onCheckRuntime(): void;
 }
 
 export function WelcomePage({
@@ -30,12 +20,9 @@ export function WelcomePage({
 	busy,
 	connecting,
 	runtime,
-	agent,
-	gates,
 	onConnect,
 	onOpen,
 	onLocate,
-	onCheckRuntime,
 }: WelcomePageProps): React.ReactElement {
 	const now = new Date();
 	return (
@@ -109,19 +96,6 @@ export function WelcomePage({
 					</ul>
 				</section>
 			)}
-			{gates?.versionPolicy.reason && (
-				<p className="workspace-setup-warning" role="status">
-					{gates.versionPolicy.reason}
-				</p>
-			)}
-			{projects.length > 0 && <Divider />}
-			<RuntimeDetails
-				runtime={runtime}
-				agent={agent}
-				gates={gates}
-				open={Boolean(runtime && !runtime.ok)}
-				onCheckRuntime={onCheckRuntime}
-			/>
 		</section>
 	);
 }

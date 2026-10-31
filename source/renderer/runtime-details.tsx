@@ -1,11 +1,5 @@
-import {Button, Card, Divider} from '@/renderer/ui';
-import type {
-	CapabilityGates,
-	ConnectedAgent,
-	IpcResult,
-	NanocoderRuntime,
-	ThreadInfo,
-} from '@/shared/ipc';
+import {Card, Divider} from '@/renderer/ui';
+import type {CapabilityGates, ConnectedAgent, ThreadInfo} from '@/shared/ipc';
 
 export function FeatureDetails({gates}: {gates: CapabilityGates}) {
 	return (
@@ -62,41 +56,5 @@ export function AgentDetails({
 				))}
 			</dl>
 		</Card>
-	);
-}
-
-export function RuntimeDetails({
-	runtime,
-	agent,
-	gates,
-	open = false,
-	onCheckRuntime,
-}: {
-	runtime: IpcResult<NanocoderRuntime> | null;
-	agent?: ConnectedAgent;
-	gates?: CapabilityGates;
-	open?: boolean;
-	onCheckRuntime(): void;
-}) {
-	return (
-		<details className="runtime-details" open={open || undefined}>
-			<summary>runtime and setup details</summary>
-			<section className="gate-runtime" aria-label="Nanocoder runtime">
-				{runtime?.ok && (
-					<p>
-						Nanocoder {runtime.value.version} at {runtime.value.cliPath}, on
-						Node.js {runtime.value.nodeVersion} at {runtime.value.nodePath}
-					</p>
-				)}
-				{runtime && !runtime.ok && (
-					<>
-						<p role="alert">{runtime.error.message}</p>
-						<Button onClick={onCheckRuntime}>check again</Button>
-					</>
-				)}
-			</section>
-			{agent && <AgentDetails agent={agent} thread={null} />}
-			{gates && <FeatureDetails gates={gates} />}
-		</details>
 	);
 }
