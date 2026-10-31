@@ -119,7 +119,7 @@
 	--components-status-badge-font-weight: var(--typography-caption-font-weight);
 	--components-status-badge-line-height: var(--typography-caption-line-height);
 	--components-status-badge-rounded: var(--rounded-full);
-	--components-status-badge-running-text-color: var(--colors-success);
+	--components-status-badge-running-text-color: var(--colors-primary);
 	--components-status-badge-approval-text-color: var(--colors-warning);
 	--components-status-badge-failed-text-color: var(--colors-error);
 	--components-project-rail-background-color: var(--colors-surface-panel);
@@ -189,7 +189,7 @@
 	--components-approval-card-background-color: var(--colors-surface-elevated);
 	--components-approval-card-text-color: var(--colors-on-surface);
 	--components-approval-card-rounded: var(--rounded-lg);
-	--components-approval-card-title-text-color: var(--colors-warning);
+	--components-approval-card-title-text-color: var(--colors-on-surface);
 	--components-approval-card-title-font-family: var(
 		--typography-label-inline-font-family
 	);
@@ -249,8 +249,8 @@
 	--components-button-font-weight: var(--typography-meta-font-weight);
 	--components-button-line-height: var(--typography-meta-line-height);
 	--components-button-rounded: var(--rounded-md);
-	--components-button-allow-text-color: var(--colors-success);
-	--components-button-reject-text-color: var(--colors-error);
+	--components-button-allow-text-color: var(--colors-on-surface);
+	--components-button-reject-text-color: var(--colors-on-surface);
 	--components-inspector-background-color: var(--colors-surface-panel);
 	--components-inspector-width: var(--spacing-inspector-width);
 	--components-inspector-tab-text-color: var(--colors-on-surface-muted);
@@ -350,7 +350,7 @@
 		--colors-surface-panel-light
 	);
 	--components-status-badge-running-light-text-color: var(
-		--colors-success-light
+		--colors-primary-light
 	);
 	--components-status-badge-failed-light-background-color: var(
 		--colors-surface-panel-light
@@ -360,7 +360,7 @@
 		--colors-surface-elevated-light
 	);
 	--components-approval-card-title-light-text-color: var(
-		--colors-warning-light
+		--colors-on-surface-light
 	);
 	--components-skill-name-light-background-color: var(--colors-surface-light);
 	--components-skill-name-light-text-color: var(--colors-skill-light);
