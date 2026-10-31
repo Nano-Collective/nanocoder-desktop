@@ -249,7 +249,13 @@ test('keyboard project, palette and approval journey exposes named roles and sta
 	await fixture(async (app, page, project) => {
 		await accessibleControls(page);
 		await selectFolder(app, project);
-		await page.getByRole('button', {name: 'add project folder'}).press('Enter');
+		await page
+			.getByRole('button', {name: 'switch project', exact: true})
+			.press('Enter');
+		await page
+			.getByRole('dialog', {name: 'your projects'})
+			.getByRole('button', {name: 'add project folder'})
+			.press('Enter');
 		const input = page.getByRole('textbox', {name: 'message', exact: true});
 		await expect(input).toBeEnabled();
 		await input.focus();

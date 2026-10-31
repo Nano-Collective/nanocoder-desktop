@@ -386,7 +386,17 @@ for (const {failure, action} of [
 				checkboxChecked: false,
 			})) as typeof dialog.showMessageBox;
 		}, root);
-		await page.getByRole('button', {name: action, exact: true}).click();
+		if (action === 'add project folder') {
+			await page
+				.getByRole('button', {name: 'switch project', exact: true})
+				.click();
+			await page
+				.getByRole('dialog', {name: 'your projects'})
+				.getByRole('button', {name: /add project folder/})
+				.click();
+		} else {
+			await page.getByRole('button', {name: action, exact: true}).click();
+		}
 		await expect(
 			page.getByRole('region', {name: 'Nanocoder recovery'}),
 		).toContainText('Nanocoder is not ready');
