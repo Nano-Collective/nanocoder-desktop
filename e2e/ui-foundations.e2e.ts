@@ -195,6 +195,12 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 		name: 'command palette',
 		exact: true,
 	});
+	const terminal = page.getByRole('button', {
+		name: 'open terminal',
+		exact: true,
+	});
+	await expect(terminal).toHaveAttribute('aria-expanded', 'false');
+	await expect(page.locator('.shell-bottom-panel')).toHaveCount(0);
 	const rail = page.getByRole('region', {name: 'project threads'});
 	const diagnostics = page.getByRole('button', {
 		name: 'diagnostics',
@@ -215,6 +221,7 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 			name: 'import saved session: existing saved session',
 			exact: true,
 		}),
+		terminal,
 		palette,
 		page.getByText('runtime and setup details', {exact: true}),
 		open,
@@ -254,6 +261,12 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	const switcher = page.getByLabel('switch project', {exact: true});
 	const recent = page.getByRole('region', {name: 'recent projects'});
 	const rail = page.getByRole('region', {name: 'project threads'});
+	const terminal = page.getByRole('button', {
+		name: 'open terminal',
+		exact: true,
+	});
+	await expect(terminal).toHaveAttribute('aria-expanded', 'false');
+	await expect(page.locator('.shell-bottom-panel')).toHaveCount(0);
 	const focusOrder = [
 		switcher,
 		recent.getByRole('button', {name: 'add project folder', exact: true}),
@@ -262,6 +275,7 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		rail.getByRole('button', {name: 'new thread', exact: true}),
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
+		terminal,
 		page.getByRole('button', {name: 'command palette', exact: true}),
 		page.getByText('runtime and setup details', {exact: true}),
 		page.getByRole('button', {name: 'open a project folder', exact: true}),
