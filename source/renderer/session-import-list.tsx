@@ -1,15 +1,19 @@
 import * as React from 'react';
+import {recencyLabel} from '@/renderer/recency';
 import {Button} from '@/renderer/ui';
 import type {DiscoveredSession} from '@/shared/ipc';
 
 export interface SessionImportListProps {
 	projectId: string | null;
+	projectName?: string;
 	active: boolean;
 	sessions: readonly DiscoveredSession[];
 	loading: boolean;
 	importing: string | null;
 	error: string | null;
 	disabledReason?: string;
+	backLabel?: string;
+	onBack?(): void;
 	onRefresh(): Promise<boolean>;
 	onImport(sessionId: string): Promise<boolean>;
 }
@@ -44,67 +48,94 @@ export function SessionImportList(
 	return (
 		<section
 			ref={region}
-			className="session-imports"
+			className="session-import-page"
 			aria-label="import saved sessions"
 		>
-			<h2 className="thread-group-heading">saved sessions</h2>
-			<Button
-				ref={refresh}
-				aria-label="refresh saved sessions"
-				aria-describedby={reason ? reasonId : undefined}
-				disabled={Boolean(reason)}
-				onClick={() => {
-					void props.onRefresh();
-				}}
-			>
-				refresh
-			</Button>
-			<p className="thread-rail-note">
-				import adds a desktop thread only; open it to resume
+			<div className="session-import-header">
+				<h2 className="session-import-heading">saved sessions</h2>
+			</div>
+			<p className="session-import-intro">
+				sessions found for this exact project root. import adds metadata only.
+				open the imported thread separately to resume it.
 			</p>
-			{reason && (
-				<p id={reasonId} role="status" className="thread-rail-note">
-					{reason}
+			<div className="session-import-notice">
+				<p>
+					<span aria-hidden="true">○ </span>no agent will start
 				</p>
-			)}
+				<p>
+					your selected thread and draft stay unchanged. no messages or files
+					are copied into desktop storage.
+				</p>
+			</div>
 			{props.error && (
-				<p role="alert" className="thread-rail-note">
+				<p role="alert" className="session-import-note">
 					{props.error}
 				</p>
 			)}
 			{!props.loading && props.sessions.length === 0 && (
-				<p className="thread-rail-note">
+				<p className="session-import-note">
 					no sessions offered for import; this is a best-effort list
 				</p>
 			)}
-			<ul className="thread-list">
-				{props.sessions.map(session => (
-					<li key={session.id} className="session-import">
-						<span className="session-import-title">{session.title}</span>
-						<span className="thread-rail-note">
-							{session.lastActivityAt ? (
-								<time dateTime={session.lastActivityAt}>
-									last active{' '}
-									{new Date(session.lastActivityAt).toLocaleString()}
-								</time>
-							) : (
-								'last active unavailable'
-							)}
-						</span>
-						<Button
-							aria-label={`import saved session: ${session.title}`}
-							aria-describedby={reason ? reasonId : undefined}
-							disabled={Boolean(reason)}
-							onClick={() => {
-								returnFocus.current = {projectId: props.projectId};
-								void props.onImport(session.id);
-							}}
-						>
-							import
-						</Button>
-					</li>
-				))}
+			<ul className="session-import-list">
+				{props.sessions.map(session => {
+					const when = session.lastActivityAt
+						? recencyLabel(session.lastActivityAt, new Date())
+						: null;
+					return (
+						<li key={session.id} className="session-import-card">
+							<div className="session-import-body">
+								<h3 className="session-import-title">{session.title}</h3>
+								<p className="session-import-meta">
+									{props.projectName && `${props.projectName} · `}
+									{session.lastActivityAt && when ? (
+										<time dateTime={session.lastActivityAt}>{when}</time>
+									) : (
+										'last active unavailable'
+									)}
+								</p>
+								<p className="session-import-meta">
+									same project root · saved by Nanocoder
+								</p>
+							</div>
+							<Button
+								aria-label={`import saved session: ${session.title}`}
+								aria-describedby={reason ? reasonId : undefined}
+								disabled={Boolean(reason)}
+								onClick={() => {
+									returnFocus.current = {projectId: props.projectId};
+									void props.onImport(session.id);
+								}}
+							>
+								import
+							</Button>
+						</li>
+					);
+				})}
 			</ul>
+			<div className="session-import-actions">
+				<Button
+					ref={refresh}
+					aria-describedby={reason ? reasonId : undefined}
+					disabled={Boolean(reason)}
+					onClick={() => {
+						void props.onRefresh();
+					}}
+				>
+					<span aria-hidden="true">↻ </span>refresh offers
+				</Button>
+				{props.onBack && (
+					<Button onClick={props.onBack}>
+						<span aria-hidden="true">← </span>
+						{props.backLabel ?? 'back to selected thread'}
+					</Button>
+				)}
+			</div>
+			{reason && (
+				<p id={reasonId} role="status" className="session-import-note">
+					{reason}
+				</p>
+			)}
 		</section>
 	);
 }

@@ -10,6 +10,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {
 	ThreadRecoveryNotice,
 	type ThreadRecoveryNoticeProps,
+	ViewOnlyFooter,
 } from '@/renderer/thread-recovery-notice';
 import type {ThreadInfo} from '@/shared/ipc';
 import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
@@ -41,7 +42,7 @@ test('CHAT-09 view-only notice explains missing history and retains escaped desk
 	t.true(html.includes('aria-label="view-only thread"'));
 	t.true(html.includes('thread-view-only-notice'));
 	t.true(html.includes('view-only'));
-	t.true(html.includes('nanocoder can&#x27;t find this session'));
+	t.true(html.includes('Nanocoder could not find this session'));
 	t.true(html.includes('start a new thread in this project'));
 	t.true(html.includes('remove from desktop'));
 	t.true(html.includes('&lt;script&gt;manual fixture&lt;/script&gt;'));
@@ -50,16 +51,22 @@ test('CHAT-09 view-only notice explains missing history and retains escaped desk
 	t.false(html.includes('<textarea'));
 	t.true(
 		html.includes(
-			'any messages still shown are held in memory in this window only',
-		),
-	);
-	t.true(
-		html.includes(
-			'removing desktop metadata does not delete Nanocoder history',
+			'remove affects desktop metadata only. deleting Nanocoder history is a separate, confirmed action.',
 		),
 	);
 	t.false(html.includes('retry this thread'));
 	t.is((html.match(/<button/g) ?? []).length, 2);
+});
+
+test('view-only footer keeps the composer hidden and says messages still shown are memory-only', t => {
+	const html = renderToStaticMarkup(createElement(ViewOnlyFooter));
+	t.true(html.includes('composer hidden'));
+	t.true(
+		html.includes(
+			'any messages still shown are held in memory in this window only',
+		),
+	);
+	t.false(html.includes('<textarea'));
 });
 
 test('retryable failure offers only explicit same-thread retry with its safe reason and no replacement-session action', t => {

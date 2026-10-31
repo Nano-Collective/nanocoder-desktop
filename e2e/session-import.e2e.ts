@@ -101,6 +101,9 @@ for (const theme of ['dark', 'light'] as const) {
 					{timeout: 5_000},
 				);
 			await open(project);
+			await page
+				.getByRole('button', {name: 'import saved sessions', exact: true})
+				.click();
 			const imports = page.getByRole('region', {
 				name: 'import saved sessions',
 				exact: true,
@@ -120,11 +123,11 @@ for (const theme of ['dark', 'light'] as const) {
 			await input.fill('retained unqueued import draft');
 			const before = await snapshot();
 			const refresh = imports.getByRole('button', {
-				name: 'refresh saved sessions',
+				name: 'refresh offers',
 				exact: true,
 			});
 			await refresh.focus();
-			await page.keyboard.press('Tab');
+			await page.keyboard.press('Shift+Tab');
 			await expect(importButton).toBeFocused();
 			expect(
 				await importButton.evaluate(button => ({
@@ -208,6 +211,9 @@ for (const theme of ['dark', 'light'] as const) {
 			await expect(
 				page.getByText('<script>saved fixture</script>', {exact: true}),
 			).toHaveCount(0);
+			await page
+				.getByRole('button', {name: 'import saved sessions', exact: true})
+				.click();
 			await expect(
 				page.getByRole('region', {name: 'import saved sessions'}),
 			).toContainText('no sessions offered for import');

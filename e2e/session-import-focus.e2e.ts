@@ -23,7 +23,7 @@ let page: Page;
 const imports = () =>
 	page.getByRole('region', {name: 'import saved sessions', exact: true});
 const refresh = () =>
-	imports().getByRole('button', {name: 'refresh saved sessions', exact: true});
+	imports().getByRole('button', {name: 'refresh offers', exact: true});
 const add = () =>
 	imports().getByRole('button', {
 		name: 'import saved session: saved project-a',
@@ -159,7 +159,7 @@ for (const theme of ['dark', 'light'] as const) {
 	test(`ACP-18 ${theme} keyboard-only import still returns focus inside its originating region`, async () => {
 		await mount(theme);
 		await refresh().focus();
-		await page.keyboard.press('Tab');
+		await page.keyboard.press('Shift+Tab');
 		await expect(add()).toBeFocused();
 		await expect(add()).toHaveCSS('outline-width', '2px');
 		await page.keyboard.press('Enter');

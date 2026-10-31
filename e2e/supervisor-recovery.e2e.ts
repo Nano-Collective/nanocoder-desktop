@@ -218,13 +218,14 @@ for (const theme of ['dark', 'light'] as const) {
 					expect(count(after.lines, method)).toBe(count(diagnostics, method));
 			} else {
 				await expect(input).toHaveCount(0);
-				await expect(notice).toHaveCSS('border-top-style', 'dashed');
-				await expect(notice).toHaveCSS(
+				const dashed = notice.locator('.thread-view-only-notice');
+				await expect(dashed).toHaveCSS('border-top-style', 'dashed');
+				await expect(dashed).toHaveCSS(
 					'color',
 					theme === 'dark' ? 'rgb(168, 168, 168)' : 'rgb(79, 86, 120)',
 				);
-				await expect(notice).toContainText(
-					"nanocoder can't find this session · it may have been deleted, expired or never saved",
+				await expect(dashed).toContainText(
+					'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.',
 				);
 				const button = notice.getByRole('button', {
 					name:
@@ -310,7 +311,7 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 		.fill('synthetic failed request');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
 	const recovery = page
-		.locator('[data-shell-slot="stream-tools"]')
+		.getByRole('main', {name: 'conversation workspace'})
 		.getByRole('region', {name: 'Nanocoder recovery'});
 	await expect(recovery).toContainText('exit code 3');
 	await expect(
@@ -580,7 +581,7 @@ test('failed resume preserves the visible failed turn and cannot accept another 
 	).toHaveCount(0);
 	const notice = page.getByRole('region', {name: 'view-only thread'});
 	await expect(notice).toContainText(
-		"nanocoder can't find this session · it may have been deleted, expired or never saved",
+		'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.',
 	);
 	await expect(
 		notice.getByRole('button', {

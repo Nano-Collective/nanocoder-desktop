@@ -15,6 +15,22 @@
 	font-size: 11px;
 	line-height: 1.8;
 }
+.ui-card.nc-failure-notice {
+	border: 0;
+	border-left: 2px solid var(--colors-error);
+	border-radius: 0 var(--rounded-lg) var(--rounded-lg) 0;
+	background: var(--colors-surface-panel);
+	color: var(--colors-on-surface-muted);
+}
+.ui-card.nc-failure-notice > h2,
+.nc-failure-title {
+	color: var(--colors-on-surface);
+}
+.nc-turn-stopped {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
 .ui-card.nc-recovery--ready {
 	display: flex;
 	align-items: center;

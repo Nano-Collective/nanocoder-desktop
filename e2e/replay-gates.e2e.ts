@@ -20,6 +20,8 @@ const restoring =
 const failed = 'Nanocoder could not resume the session';
 const missing =
 	"nanocoder can't find this session · it may have been deleted, expired or never saved";
+const missingNotice =
+	'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.';
 interface GateWindow {
 	desktop: DesktopApi;
 	replayRestart?: Promise<IpcResult<SupervisorState>>;
@@ -241,7 +243,7 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 			if (outcome !== 'complete') {
 				if (outcome === 'missing') {
 					const notice = page.getByRole('region', {name: 'view-only thread'});
-					await expect(notice).toContainText(missing);
+					await expect(notice).toContainText(missingNotice);
 					await expect(input).toHaveCount(0);
 					await expect(send).toHaveCount(0);
 					await expect(mode).toHaveCount(0);

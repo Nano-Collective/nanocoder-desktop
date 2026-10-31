@@ -17,7 +17,7 @@ import {
 } from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
 import {ProjectSwitch} from '@/renderer/recent-projects';
-import {RecoveryTools} from '@/renderer/recovery-tools';
+import {RecoveryTools, TurnFailureNotice} from '@/renderer/recovery-tools';
 import {SessionImportList} from '@/renderer/session-import-list';
 import {
 	acpBadge,
@@ -28,7 +28,10 @@ import {threadComposerState} from '@/renderer/thread-composer-state';
 import {type ThreadDialogData, ThreadDialogs} from '@/renderer/thread-dialogs';
 import {importPalette, threadPalette} from '@/renderer/thread-palette';
 import {ThreadRail} from '@/renderer/thread-rail';
-import {ThreadRecoveryNotice} from '@/renderer/thread-recovery-notice';
+import {
+	ThreadRecoveryNotice,
+	ViewOnlyFooter,
+} from '@/renderer/thread-recovery-notice';
 import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, StatusBadge} from '@/renderer/ui';
 import {useDiagnosticReview} from '@/renderer/use-diagnostic-review';
@@ -36,6 +39,7 @@ import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
 import {useSessionImports} from '@/renderer/use-session-imports';
 import {useThreads} from '@/renderer/use-threads';
+import {WelcomePage} from '@/renderer/welcome-page';
 import {
 	WorkspaceDialogs,
 	type WorkspaceDialogsProps,
@@ -86,6 +90,9 @@ export function App() {
 			processState.gates?.features.list.enabled === true,
 		workspace.threads,
 	);
+	const [importFor, setImportFor] = useState<string | null>(null);
+	const importOpen =
+		sessionImports.ready && importFor !== null && importFor === projectId;
 	const thread =
 		workspace.threads.find(row => row.id === workspace.activeThreadId) ?? null;
 	const {transcript, draft, turn, cancellation} = conversation;
@@ -293,7 +300,10 @@ export function App() {
 				row.nanocoderSessionId === processState?.activeThreadId,
 		)?.id ??
 		null;
-	const onNew = () => openOverlay({kind: 'new-thread'});
+	const onNew = () => {
+		setImportFor(null);
+		openOverlay({kind: 'new-thread'});
+	};
 	const onRename = (threadId: string) =>
 		openOverlay({kind: 'rename', threadId});
 	const onArchive = (threadId: string, archived: boolean) => {
@@ -347,9 +357,11 @@ export function App() {
 								? CONFIG_UNCERTAINTY_REASON
 								: null);
 
+	const turnFailure = turn && !turn.ok && failed ? turn.error.message : null;
 	const recoveryTools = (
 		<RecoveryTools
 			state={processState}
+			turnFailure={processState?.status === 'ready' ? null : turnFailure}
 			onRetry={async id => {
 				retryFocus.current = true;
 				retrying.current = true;
@@ -576,6 +588,7 @@ export function App() {
 										kind: 'other-thread',
 										threadId: runningThreadId,
 									});
+								setImportFor(null);
 								void controls.open(id);
 							}}
 							onRename={onRename}
@@ -585,82 +598,40 @@ export function App() {
 								void controls.deleteHistory(id);
 							}}
 						/>
-						<SessionImportList
-							key={projectId}
-							{...sessionImports}
-							active={sessionImports.ready}
-							disabledReason={
-								rootBusy
-									? 'stop the project turn before importing'
-									: (replayReason ??
-										(!accepting
-											? 'Nanocoder is not ready'
-											: pending
-												? 'another thread request is pending'
-												: undefined))
-							}
-							onRefresh={sessionImports.refresh}
-							onImport={importSession}
-						/>
 					</>
 				}
 				statusBadges={thread && <StatusBadge status={turnStatus} />}
 				streamTools={
 					<>
 						<TrustFeedback feedback={projectControls.feedback} />
-						{!thread && (
-							<section className="workspace-welcome" aria-label="get started">
-								<img src={logoUrl} alt="" width="56" height="56" />
-								<p className="workspace-eyebrow">
-									local-first workspace / pre-v0.1
-								</p>
-								<h2>what are you working on?</h2>
-								<p>
-									open a project folder to start a Nanocoder thread. you’ll
-									review what can run before you trust the folder.
-								</p>
-								{runtime?.ok && (
-									<Button
-										onClick={connect}
-										disabled={connecting || projectControls.pending}
-									>
-										{connecting
-											? 'starting Nanocoder'
-											: 'open a project folder'}
-									</Button>
-								)}
-								{projectControls.projects.length > 0 && (
-									<section
-										className="welcome-recents"
-										aria-label="recent folders on welcome"
-									>
-										<h3>recent projects</h3>
-										{projectControls.projects.map(project => (
-											<div key={project.id}>
-												<span>
-													<span>{project.displayName}</span>
-													<small>{project.canonicalRoot}</small>
-												</span>
-												<Button
-													aria-label={`${project.availability === 'available' ? 'open' : 'locate'} recent project ${project.displayName}`}
-													disabled={connecting || projectControls.pending}
-													onClick={() =>
-														project.availability === 'available'
-															? projectControls.onOpen(project.id)
-															: projectControls.onLocate(project.id)
-													}
-												>
-													{project.availability === 'available'
-														? 'open'
-														: 'locate'}
-												</Button>
-											</div>
-										))}
-									</section>
-								)}
-							</section>
+						{sessionImports.ready && !importOpen && (
+							<Button
+								className="session-import-entry"
+								onClick={() => setImportFor(projectId)}
+							>
+								import saved sessions
+							</Button>
 						)}
 						{processState?.status !== 'ready' && recoveryTools}
+						{!thread && !importOpen && (
+							<WelcomePage
+								logoSrc={logoUrl}
+								projects={projectControls.projects}
+								busy={connecting || projectControls.pending}
+								connecting={connecting}
+								runtime={runtime}
+								agent={
+									outcome?.status === 'connected' ? outcome.agent : undefined
+								}
+								gates={gates[projectId ?? '']}
+								onConnect={() => {
+									void connect();
+								}}
+								onOpen={projectControls.onOpen}
+								onLocate={projectControls.onLocate}
+								onCheckRuntime={checkRuntime}
+							/>
+						)}
 						{workspace.error && <p role="alert">{workspace.error}</p>}
 					</>
 				}
@@ -680,56 +651,82 @@ export function App() {
 					)
 				}
 				composer={
-					outcome?.status === 'connected' &&
-					thread &&
-					composerState.visible && (
-						<Composer
-							draft={draft}
-							editable={editable}
-							sendReason={sendReason}
-							controlReason={
-								rootControlReason ??
-								(modelControls.pending
-									? 'a project control change is pending'
-									: null)
-							}
-							projectName={currentProject?.displayName ?? 'selected project'}
-							projectControls={modelControls.controls}
-							mode={thread.mode}
-							defaultMode={currentProject?.defaultMode ?? 'normal'}
-							modePending={thread.nanocoderSessionId === null}
-							running={sending}
-							stopping={connecting || stopping}
-							error={
-								modelControls.error ??
-								(cancellation && !cancellation.ok
-									? cancellation.error.message
-									: null)
-							}
-							commands={transcript.commands ?? []}
-							context={transcript.context}
-							inputRef={composerInput}
-							onDraft={controls.setDraft}
-							onSend={send}
-							onCancel={() => {
-								void cancel();
-							}}
-							onMode={mode => {
-								void controls.setMode(thread.id, mode);
-							}}
-							onDefault={mode => {
-								void modelControls.setDefault(mode).then(result => {
-									if (result) void projectControls.refresh();
-								});
-							}}
-							onConfig={(id, value) => {
-								void modelControls.setConfig(id, value);
-							}}
-						/>
+					thread?.runState === 'view-only' ? (
+						<ViewOnlyFooter />
+					) : (
+						outcome?.status === 'connected' &&
+						thread &&
+						composerState.visible && (
+							<Composer
+								draft={draft}
+								editable={editable}
+								sendReason={sendReason}
+								controlReason={
+									rootControlReason ??
+									(modelControls.pending
+										? 'a project control change is pending'
+										: null)
+								}
+								projectName={currentProject?.displayName ?? 'selected project'}
+								projectControls={modelControls.controls}
+								mode={thread.mode}
+								defaultMode={currentProject?.defaultMode ?? 'normal'}
+								modePending={thread.nanocoderSessionId === null}
+								running={sending}
+								stopping={connecting || stopping}
+								error={
+									modelControls.error ??
+									(cancellation && !cancellation.ok
+										? cancellation.error.message
+										: null)
+								}
+								commands={transcript.commands ?? []}
+								context={transcript.context}
+								inputRef={composerInput}
+								onDraft={controls.setDraft}
+								onSend={send}
+								onCancel={() => {
+									void cancel();
+								}}
+								onMode={mode => {
+									void controls.setMode(thread.id, mode);
+								}}
+								onDefault={mode => {
+									void modelControls.setDefault(mode).then(result => {
+										if (result) void projectControls.refresh();
+									});
+								}}
+								onConfig={(id, value) => {
+									void modelControls.setConfig(id, value);
+								}}
+							/>
+						)
 					)
 				}
 			>
-				{thread && (
+				{importOpen && (
+					<SessionImportList
+						key={projectId}
+						{...sessionImports}
+						active
+						projectName={currentProject?.displayName}
+						disabledReason={
+							rootBusy
+								? 'stop the project turn before importing'
+								: (replayReason ??
+									(!accepting
+										? 'Nanocoder is not ready'
+										: pending
+											? 'another thread request is pending'
+											: undefined))
+						}
+						backLabel={thread ? 'back to selected thread' : 'back to start'}
+						onBack={() => setImportFor(null)}
+						onRefresh={sessionImports.refresh}
+						onImport={sessionImports.importSession}
+					/>
+				)}
+				{!importOpen && thread && (
 					<ConversationStream
 						key={`${projectId}:${thread.id}`}
 						transcript={transcript}
@@ -748,22 +745,18 @@ export function App() {
 						}
 					/>
 				)}
-				{thread && (
+				{!importOpen && thread && (
 					<ThreadRecoveryNotice
 						thread={thread}
+						projectName={currentProject?.displayName}
 						pending={workspace.pending}
 						onRetry={() => void controls.open(thread.id)}
 						onNew={onNew}
 						onRemove={() => onRemove(thread.id)}
 					/>
 				)}
-				{turn && !turn.ok && failed && (
-					<Card variant="failure" role="alert">
-						<span>
-							<span aria-hidden="true">✕ </span>
-							{turn.error.message}
-						</span>
-					</Card>
+				{processState?.status === 'ready' && turnFailure && (
+					<TurnFailureNotice reason={turnFailure} />
 				)}
 				{outcome?.status === 'untrusted' && (
 					<Card variant="failure" role="alert">

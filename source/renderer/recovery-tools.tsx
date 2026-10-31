@@ -5,39 +5,71 @@ import '@/renderer/styles/recovery-tools.css';
 
 interface RecoveryProps {
 	state: SupervisorState | null;
+	turnFailure?: string | null;
 	onRetry(projectId: string): Promise<IpcResult<SupervisorState>>;
 	onDiagnostics(): void;
 	diagnosticsBusy: boolean;
 	diagnosticsMessage: string;
 }
 
+const FAILED_STATUSES = ['failed', 'untrusted', 'unsupported'];
+
+function TurnStopped({reason}: {reason: string}) {
+	return (
+		<>
+			<p className="nc-failure-title">
+				<span aria-hidden="true">✕ </span>Nanocoder stopped unexpectedly
+			</p>
+			<p>your thread and unsent draft are still here.</p>
+			<p>{reason}</p>
+		</>
+	);
+}
+
+export function TurnFailureNotice({reason}: {reason: string}) {
+	return (
+		<Card role="alert" className="nc-recovery nc-failure-notice">
+			<TurnStopped reason={reason} />
+		</Card>
+	);
+}
+
 function ProcessRecovery({
 	state,
 	busy,
+	turnFailure,
 	onRetry,
 	onDiagnostics,
 }: {
 	state: SupervisorState;
 	busy: boolean;
+	turnFailure: string | null;
 	onRetry(): void;
 	onDiagnostics(): void;
 }) {
-	const failed = ['failed', 'untrusted', 'unsupported'].includes(state.status);
+	const failed = FAILED_STATUSES.includes(state.status);
 	const preparing = state.status === 'starting' || state.status === 'stopping';
 	return (
 		<Card
-			variant={failed ? 'failure' : 'default'}
-			className={`nc-recovery${state.status === 'ready' ? ' nc-recovery--ready' : ''}`}
+			className={`nc-recovery${state.status === 'ready' ? ' nc-recovery--ready' : ''}${failed ? ' nc-failure-notice' : ''}`}
 			aria-label="Nanocoder recovery"
 		>
-			<p role="status">
-				<span aria-hidden="true">{failed ? '✕' : preparing ? '◐' : '○'} </span>
-				{state.status === 'ready'
-					? 'Nanocoder is ready'
-					: preparing
-						? `${state.status} Nanocoder`
-						: 'Nanocoder is not ready'}
-			</p>
+			{failed && turnFailure ? (
+				<div role="alert" className="nc-turn-stopped">
+					<TurnStopped reason={turnFailure} />
+				</div>
+			) : (
+				<p role="status" className={failed ? 'nc-failure-title' : undefined}>
+					<span aria-hidden="true">
+						{failed ? '✕' : preparing ? '◐' : '○'}{' '}
+					</span>
+					{state.status === 'ready'
+						? 'Nanocoder is ready'
+						: preparing
+							? `${state.status} Nanocoder`
+							: 'Nanocoder is not ready'}
+				</p>
+			)}
 			{state.reason && <p>{state.reason}</p>}
 			{state.exit && (
 				<p>
@@ -74,6 +106,7 @@ function ProcessRecovery({
 
 export function RecoveryTools({
 	state,
+	turnFailure = null,
 	onRetry,
 	onDiagnostics,
 	diagnosticsBusy,
@@ -91,7 +124,13 @@ export function RecoveryTools({
 		setMessage('');
 		setBusy(false);
 	}, [projectId]);
-	if (!state) return null;
+	const processFailed =
+		state !== null && FAILED_STATUSES.includes(state.status);
+	const notice =
+		turnFailure && !processFailed ? (
+			<TurnFailureNotice reason={turnFailure} />
+		) : null;
+	if (!state) return notice;
 
 	const retry = async () => {
 		if (busy) return;
@@ -112,9 +151,11 @@ export function RecoveryTools({
 	const shown = message || diagnosticsMessage;
 	return (
 		<>
+			{notice}
 			<ProcessRecovery
 				state={state}
 				busy={busy || diagnosticsBusy}
+				turnFailure={turnFailure}
 				onRetry={() => {
 					void retry();
 				}}
