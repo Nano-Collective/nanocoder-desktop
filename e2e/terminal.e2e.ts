@@ -20,6 +20,7 @@ import type {IpcResult} from '@/shared/ipc';
 import type {TerminalRequests, TerminalSnapshot} from '@/shared/terminal';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openSeededProject} from './qa/seeded-project';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
@@ -237,10 +238,7 @@ test('TERM-01 a native utility-process crash leaves main alive and cleans the se
 });
 
 test('TERM-12 agent command approval metadata never starts or writes the user PTY', async () => {
-	await page.getByRole('button', {name: 'open project', exact: true}).click();
-	await expect(page.getByLabel('project trust feedback')).toContainText(
-		'project ready',
-	);
+	await openSeededProject(page, path.join(work, 'project'));
 	await page.getByRole('button', {name: 'open terminal', exact: true}).click();
 	const strip = page.getByRole('complementary', {
 		name: 'Nanocoder agent activity',
@@ -423,10 +421,7 @@ test('TERM-02/04/06/11 mounted terminal types, escapes, restarts, clears and sto
 	};
 	const input = page.getByRole('textbox', {name: 'your terminal input'});
 	await step('open project and terminal', async () => {
-		await page.getByRole('button', {name: 'open project', exact: true}).click();
-		await expect(page.getByLabel('project trust feedback')).toContainText(
-			'project ready',
-		);
+		await openSeededProject(page, path.join(work, 'project'));
 		await page
 			.getByRole('button', {name: 'open terminal', exact: true})
 			.click();
