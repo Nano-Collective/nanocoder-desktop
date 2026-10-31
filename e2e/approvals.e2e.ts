@@ -20,6 +20,7 @@ import type {PermissionRequestInfo} from '@/shared/ipc';
 import type {approvalHarness} from './qa/approval-harness';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {createDraftThread} from './qa/new-thread';
 import {openFolderFromPalette} from './qa/open-folder';
 import {turnCancelled, turnEnded} from './qa/turn-state';
 
@@ -317,7 +318,10 @@ test('a question already pending when the shelf mounts returns focus to the comp
 	await page.keyboard.press('Escape');
 	await expect(question).toHaveCount(0);
 	await expect(cards()).toHaveCount(1);
-	await page.getByRole('button', {name: 'new thread', exact: true}).click();
+	await createDraftThread(
+		page,
+		page.getByRole('button', {name: 'new thread', exact: true}),
+	);
 	await expect(
 		page.locator('.thread-row[data-selected="true"] .thread-title'),
 	).toHaveText('new thread');
