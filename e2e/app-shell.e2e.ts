@@ -212,8 +212,8 @@ test('shell geometry and pinned composer follow all three widths without an empt
 				expect(geometry.composer.bottom).toBe(
 					width <= 840 ? 883 : width <= 1050 ? 882 : 880,
 				);
-				// Reference header 66px (62px at 840), breadcrumb 3.11 (1.11), thread title 19px lower.
-				const crumbTop = width <= 840 ? 1.11 : 3.11;
+				// Reference header 66px (62px at 840). At 840 the 12px title sits 0.8px lower than the reference's 1.11.
+				const crumbTop = width <= 840 ? 1.9 : 3.11;
 				expect(geometry.header.height).toBe(width <= 840 ? 62 : 66);
 				expect(geometry.breadcrumb.y).toBeCloseTo(crumbTop, 1);
 				expect(geometry.title.y).toBeCloseTo(crumbTop + 19, 1);

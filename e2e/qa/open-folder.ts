@@ -26,16 +26,19 @@ export async function startFolderFromPalette(page: Page): Promise<void> {
 }
 
 // Opens a folder and waits for its own outcome: the folder is the selected project and shows ACP ready or its own retry.
-// A refused folder shows the refusal that names it. Other alerts and badges on the page never count.
-// 'caller-checks' returns once the palette closes, for policy refusals the caller asserts itself.
+// A refused folder shows the refusal that names it. A policy refusal passes the alert text it must show.
+// Other alerts and badges on the page never count.
 export async function openFolderFromPalette(
 	page: Page,
 	folder: string,
-	result: 'opened' | 'refused' | 'caller-checks' = 'opened',
+	result: 'opened' | 'refused' | {alert: string} = 'opened',
 ): Promise<void> {
 	await startFolderFromPalette(page);
-	if (result === 'caller-checks') return;
-	if (result === 'refused') {
+	if (typeof result !== 'string') {
+		await expect(
+			page.getByRole('alert').filter({hasText: result.alert}).first(),
+		).toBeVisible();
+	} else if (result === 'refused') {
 		await expect(
 			page
 				.getByRole('alert')

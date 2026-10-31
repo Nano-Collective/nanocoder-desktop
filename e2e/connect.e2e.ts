@@ -46,7 +46,7 @@ interface Prompt {
 async function openFolder(
 	folder: string,
 	trustButton = 1,
-	result: 'opened' | 'refused' | 'caller-checks' = 'opened',
+	result: 'opened' | 'refused' | {alert: string} = 'opened',
 ): Promise<void> {
 	await app.evaluate(
 		({dialog}, [picked, button]) => {
@@ -480,10 +480,9 @@ test('two project processes keep simultaneous turns, events and approvals separa
 });
 
 test('a version below the minimum is refused with a clear upgrade message', async () => {
-	await openFolder(project('old-agent', 'old-version'), 1, 'caller-checks');
-	await expect(page.getByRole('alert')).toContainText(
-		'Nanocoder 1.30.0 is below the minimum 1.31.0',
-	);
+	await openFolder(project('old-agent', 'old-version'), 1, {
+		alert: 'Nanocoder 1.30.0 is below the minimum 1.31.0',
+	});
 	await expect(page.getByRole('alert')).toContainText('Upgrade Nanocoder');
 	await expect(page.getByLabel('Message')).toHaveCount(0);
 });
@@ -506,10 +505,9 @@ test('an older accepted version shows a reason for every disabled feature', asyn
 });
 
 test('the native-picked root is used to refuse a project-local runtime override', async () => {
-	await openFolder(work, 1, 'caller-checks');
-	await expect(page.getByRole('alert')).toContainText(
-		'Refusing a Nanocoder inside the project folder',
-	);
+	await openFolder(work, 1, {
+		alert: 'Refusing a Nanocoder inside the project folder',
+	});
 	await expect(page.getByLabel('Message')).toHaveCount(0);
 });
 
