@@ -44,7 +44,10 @@ const turn = (
 	events,
 });
 
-function fixture(onChange?: (state: ThreadConversationState) => void) {
+function fixture(
+	onChange?: (state: ThreadConversationState) => void,
+	now?: () => number,
+) {
 	const changes: ThreadConversationState[] = [];
 	const timers: {callback(): void; delayMs: number; cancelled: boolean}[] = [];
 	const conversations = createThreadConversations({
@@ -61,6 +64,7 @@ function fixture(onChange?: (state: ThreadConversationState) => void) {
 				};
 			},
 		},
+		...(now && {now}),
 	});
 	conversations.selectProject('project-a');
 	conversations.selectThread('a');
@@ -663,4 +667,133 @@ test('replay without a terminal clears the old result but keeps its failure noti
 			.transcript.items.filter(item => item.kind === 'failure').length,
 		1,
 	);
+});
+
+const epoch = '00000000-0000-4000-8000-000000000001';
+const marker = (phase: 'begin' | 'complete' | 'failed', threadId = 'a') => ({
+	...turn([], threadId),
+	replay: {epoch, phase},
+});
+const times = (state: ThreadConversationState) =>
+	state.transcript.items.map(item =>
+		Object.hasOwn(item, 'at') ? Reflect.get(item, 'at') : 'none',
+	);
+
+test('live user and first agent chunks take the injected clock time when applied and joins keep it', t => {
+	let clock = 1000;
+	const {conversations, timers} = fixture(undefined, () => clock);
+	conversations.receive(
+		turn([
+			{type: 'user', text: 'sent'},
+			{type: 'thought', text: 'thinking'},
+			{type: 'text', text: 'first'},
+		]),
+	);
+	clock = 2000;
+	timers[0].callback();
+	t.deepEqual(times(conversations.getState()), [2000, 'none', 2000]);
+	clock = 3000;
+	conversations.receive(turn([{type: 'text', text: ' more'}]));
+	conversations.flush('a');
+	t.is(conversations.getState().transcript.items[2]?.text, 'first more');
+	clock = 4000;
+	conversations.receive(
+		turn([
+			{type: 'tool', id: 'tool', status: 'completed'},
+			{type: 'notice', severity: 'info', title: 'notice'},
+			{type: 'text', text: 'after tool'},
+		]),
+	);
+	conversations.flush('a');
+	t.deepEqual(times(conversations.getState()), [
+		2000,
+		'none',
+		2000,
+		'none',
+		'none',
+		4000,
+	]);
+});
+
+test('replay markers flush live content first and keep replayed messages unstamped until replay completes', t => {
+	const {conversations} = fixture(undefined, () => 5);
+	conversations.receive(turn([{type: 'user', text: 'live before'}]));
+	conversations.receive(marker('begin'));
+	t.deepEqual(times(conversations.getState()), [5]);
+	conversations.receive(
+		turn([
+			{type: 'user', text: 'replayed'},
+			{type: 'text', text: 'replayed answer'},
+		]),
+	);
+	conversations.receive(marker('complete'));
+	t.deepEqual(times(conversations.getState()), [5, 'none', 'none']);
+	conversations.receive(turn([{type: 'user', text: 'after'}]));
+	conversations.flush('a');
+	t.deepEqual(times(conversations.getState()), [5, 'none', 'none', 5]);
+});
+
+test('a replaying snapshot marks later unmarked events as replay for its thread only until replay fails', t => {
+	const {conversations} = fixture(undefined, () => 7);
+	t.true(
+		conversations.snapshot({
+			...snapshot('a', [{type: 'user', text: 'saved'}]),
+			replaying: true,
+		}),
+	);
+	conversations.receive(turn([{type: 'text', text: 'saved answer'}]));
+	conversations.receive(turn([{type: 'user', text: 'other live'}], 'b'));
+	conversations.flush();
+	t.deepEqual(times(conversations.getState()), ['none', 'none']);
+	conversations.receive(marker('failed'));
+	conversations.receive(turn([{type: 'user', text: 'retry live'}]));
+	conversations.flush();
+	t.deepEqual(times(conversations.getState()), ['none', 'none', 7]);
+	conversations.selectThread('b');
+	t.deepEqual(times(conversations.getState()), [7]);
+});
+
+test('a settled snapshot ends replay and carries live times only to matching messages', t => {
+	let clock = 100;
+	const {conversations} = fixture(undefined, () => clock);
+	const saved: TurnEvent[] = [
+		{type: 'user', text: 'saved'},
+		{type: 'text', text: 'saved answer'},
+	];
+	conversations.receive(marker('begin'));
+	t.true(conversations.snapshot(snapshot('a', saved)));
+	conversations.receive(
+		turn([
+			{type: 'user', text: 'live'},
+			{type: 'text', text: 'partial'},
+		]),
+	);
+	conversations.flush('a');
+	t.deepEqual(times(conversations.getState()), ['none', 'none', 100, 100]);
+	clock = 200;
+	t.true(
+		conversations.snapshot(
+			snapshot('a', [
+				...saved,
+				{type: 'user', text: 'live'},
+				{type: 'text', text: 'partial and more'},
+			]),
+		),
+	);
+	t.deepEqual(times(conversations.getState()), ['none', 'none', 100, 'none']);
+	t.true(
+		conversations.snapshot(
+			snapshot('a', [
+				...saved,
+				{type: 'user', text: 'edited'},
+				{type: 'text', text: 'different'},
+			]),
+		),
+	);
+	t.deepEqual(times(conversations.getState()), [
+		'none',
+		'none',
+		'none',
+		'none',
+	]);
 });

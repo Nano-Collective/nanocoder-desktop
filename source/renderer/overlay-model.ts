@@ -4,9 +4,60 @@ export interface PaletteAction {
 	glyph: string;
 	shortcut?: string;
 	keywords?: string;
-	description?: string;
+	opensDialog?: boolean;
 	disabledReason?: string;
-	run(originalFocus?: FocusTarget): void;
+	run(): void;
+}
+
+export type ThreadDialog =
+	| {kind: 'thread-menu'; threadId: string}
+	| {kind: 'rename'; threadId: string}
+	| {kind: 'archive'; threadId: string}
+	| {kind: 'remove'; threadId: string}
+	| {kind: 'new-thread'}
+	| {kind: 'other-thread'; threadId: string};
+
+export const workspaceDialogLabels = {
+	projects: 'your projects',
+	runtime: 'runtime details',
+	capabilities: 'capabilities, with reasons',
+	archives: 'archived threads',
+	diagnostics: 'review captured diagnostics',
+} as const;
+
+export type WorkspaceDialog = keyof typeof workspaceDialogLabels;
+
+export type DialogRequest = WorkspaceDialog | ThreadDialog;
+
+export type OverlayRequest = 'palette' | 'shortcuts' | DialogRequest;
+
+export interface DialogApi {
+	open(request: OverlayRequest): void;
+	close(): void;
+}
+
+export function dialogLabel(request: OverlayRequest): string {
+	if (request === 'palette') return 'command palette';
+	if (request === 'shortcuts') return 'keyboard shortcuts';
+	if (typeof request === 'string') return workspaceDialogLabels[request];
+	switch (request.kind) {
+		case 'thread-menu':
+			return 'thread actions';
+		case 'rename':
+			return 'rename thread';
+		case 'archive':
+			return 'archive thread';
+		case 'remove':
+			return 'remove from desktop';
+		case 'new-thread':
+			return 'new thread';
+		case 'other-thread':
+			return 'another thread is running';
+	}
+}
+
+export function commandModifier(platform: string) {
+	return platform.startsWith('Mac') ? '⌘' : 'Ctrl+';
 }
 
 export function filterActions(actions: PaletteAction[], query: string) {
@@ -44,12 +95,9 @@ export function moveSelection(index: number, delta: number, length: number) {
 	return (index + delta + length) % length;
 }
 
-export function runAction(
-	action: PaletteAction | undefined,
-	originalFocus?: FocusTarget,
-) {
+export function runAction(action: PaletteAction | undefined) {
 	if (!action || action.disabledReason) return false;
-	action.run(originalFocus);
+	action.run();
 	return true;
 }
 
@@ -108,6 +156,61 @@ export function toastQueue(
 			disposed = true;
 			cancel?.();
 			pending.length = 0;
+		},
+	};
+}
+
+export const importedToast =
+	'thread metadata imported. selection and draft unchanged.';
+
+// Shows the import notice only after a metadata import succeeds (E-52).
+export function notifyImported(
+	importSession: (sessionId: string) => Promise<boolean>,
+	notify: (message: string) => void,
+): (sessionId: string) => Promise<boolean> {
+	return async sessionId => {
+		const imported = await importSession(sessionId);
+		if (imported) notify(importedToast);
+		return imported;
+	};
+}
+
+export interface OverlayHooks {
+	canClose(request: OverlayRequest): boolean;
+	hide(): void;
+	onClosed(request: OverlayRequest): void;
+}
+
+// The open and close rules behind the overlay provider. A refused open or close keeps the current dialog.
+export function overlayRules(hooks: OverlayHooks) {
+	let current: OverlayRequest | null = null;
+	const closeNow = () => {
+		const request = current;
+		if (request === null) return;
+		hooks.hide();
+		current = null;
+		hooks.onClosed(request);
+	};
+	return {
+		current: () => current,
+		open(request: OverlayRequest): boolean {
+			const replaced = current;
+			if (replaced !== null && replaced !== request) {
+				if (!hooks.canClose(replaced)) return false;
+				hooks.onClosed(replaced);
+			}
+			current = request;
+			return true;
+		},
+		close(): boolean {
+			if (current !== null && !hooks.canClose(current)) return false;
+			closeNow();
+			return true;
+		},
+		closeIf(request: OverlayRequest): boolean {
+			if (current !== request) return false;
+			closeNow();
+			return true;
 		},
 	};
 }

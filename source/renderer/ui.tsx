@@ -29,14 +29,31 @@ export function Button({
 	);
 }
 
+// Header turn states are plain: a coloured glyph and an ink word. ACP states keep their pill.
 const badges = {
-	running: {glyph: '●', label: 'running', tone: 'success'},
-	approval: {glyph: '◐', label: 'approval', tone: 'warning'},
-	idle: {glyph: '○', label: 'idle', tone: 'muted'},
-	interrupted: {glyph: '○', label: 'interrupted', tone: 'muted'},
-	failed: {glyph: '✕', label: 'failed', tone: 'error'},
-	'acp-ready': {glyph: '✓', label: 'acp · ready', tone: 'success'},
-	'acp-exited': {glyph: '○', label: 'acp · exited', tone: 'muted'},
+	running: {glyph: '●', label: 'running', tone: 'running', plain: true},
+	approval: {
+		glyph: '●',
+		label: 'approval required',
+		tone: 'approval',
+		plain: true,
+	},
+	ready: {glyph: '●', label: 'ready', tone: 'success', plain: true},
+	interrupted: {glyph: '●', label: 'interrupted', tone: 'muted', plain: true},
+	'view-only': {glyph: '●', label: 'view-only', tone: 'muted', plain: true},
+	failed: {glyph: '●', label: 'failed', tone: 'failed', plain: true},
+	'acp-ready': {
+		glyph: '✓',
+		label: 'acp · ready',
+		tone: 'success',
+		plain: false,
+	},
+	'acp-exited': {
+		glyph: '○',
+		label: 'acp · exited',
+		tone: 'muted',
+		plain: false,
+	},
 } as const;
 
 export function StatusBadge({
@@ -46,13 +63,27 @@ export function StatusBadge({
 	status: keyof typeof badges;
 	exitCode?: number;
 }) {
-	const {glyph, label, tone} = badges[status];
+	const {glyph, label, tone, plain} = badges[status];
 	return (
 		<span
-			className={`ui-badge ui-badge--${tone} ui-badge--${status}`}
+			className={
+				plain
+					? `ui-badge ui-badge--plain ui-badge--${status}`
+					: `ui-badge ui-badge--${tone} ui-badge--${status}`
+			}
 			role="status"
 		>
-			<span aria-hidden="true">{glyph}</span> {label}
+			{plain ? (
+				<span
+					aria-hidden="true"
+					className={`ui-badge-glyph ui-badge-glyph--${tone}`}
+				>
+					{glyph}
+				</span>
+			) : (
+				<span aria-hidden="true">{glyph}</span>
+			)}{' '}
+			{label}
 			{status === 'acp-exited' && exitCode !== undefined && ` (${exitCode})`}
 		</span>
 	);

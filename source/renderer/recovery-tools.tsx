@@ -1,50 +1,88 @@
-import {useEffect, useRef, useState} from 'react';
+import * as React from 'react';
 import {Button, Card} from '@/renderer/ui';
-import type {
-	DiagnosticsSnapshot,
-	IpcResult,
-	SupervisorState,
-	WorkspaceRequests,
-	WorkspaceValues,
-} from '@/shared/ipc';
-import '@/renderer/styles/recovery-tools.css';
+import type {IpcResult, SupervisorState} from '@/shared/ipc';
 
 interface RecoveryProps {
 	state: SupervisorState | null;
+	turnFailure?: string | null;
 	onRetry(projectId: string): Promise<IpcResult<SupervisorState>>;
-	onCapture(projectId: string): Promise<IpcResult<DiagnosticsSnapshot>>;
-	onExport(
-		request: WorkspaceRequests['exportDiagnostics'],
-	): Promise<IpcResult<WorkspaceValues['exportDiagnostics']>>;
+	onDiagnostics(): void;
+	diagnosticsBusy: boolean;
+	diagnosticsMessage: string;
+	onNew?(): void;
+	newPending?: boolean;
+}
+
+export const FAILED_STATUSES = ['failed', 'untrusted', 'unsupported'];
+
+function TurnStopped({title, reason}: {title: string; reason: string}) {
+	return (
+		<>
+			<p className="nc-failure-title">
+				<span aria-hidden="true">✕ </span>
+				{title}
+			</p>
+			<p>your thread and unsent draft are still here.</p>
+			<p>{reason}</p>
+		</>
+	);
+}
+
+export function TurnFailureNotice({reason}: {reason: string}) {
+	return (
+		<Card role="alert" className="nc-recovery nc-failure-notice">
+			<TurnStopped title="this turn failed" reason={reason} />
+		</Card>
+	);
 }
 
 function ProcessRecovery({
 	state,
 	busy,
+	newPending,
+	turnFailure,
 	onRetry,
 	onDiagnostics,
+	onNew,
 }: {
 	state: SupervisorState;
 	busy: boolean;
+	newPending: boolean;
+	turnFailure: string | null;
 	onRetry(): void;
 	onDiagnostics(): void;
+	onNew?(): void;
 }) {
-	const failed = ['failed', 'untrusted', 'unsupported'].includes(state.status);
+	const failed = FAILED_STATUSES.includes(state.status);
 	const preparing = state.status === 'starting' || state.status === 'stopping';
 	return (
 		<Card
-			variant={failed ? 'failure' : 'default'}
-			className={`nc-recovery${state.status === 'ready' ? ' nc-recovery--ready' : ''}`}
+			className={`nc-recovery${state.status === 'ready' ? ' nc-recovery--ready' : ''}${failed ? ' nc-failure-notice' : ''}`}
 			aria-label="Nanocoder recovery"
 		>
-			<p role="status">
-				<span aria-hidden="true">{failed ? '✕' : preparing ? '◐' : '○'} </span>
-				{state.status === 'ready'
-					? 'Nanocoder is ready'
-					: preparing
-						? `${state.status} Nanocoder`
-						: 'Nanocoder is not ready'}
-			</p>
+			{failed && turnFailure ? (
+				<div role="alert" className="nc-turn-stopped">
+					<TurnStopped
+						title={
+							state.status === 'failed'
+								? 'Nanocoder stopped unexpectedly'
+								: 'this turn failed'
+						}
+						reason={turnFailure}
+					/>
+				</div>
+			) : (
+				<p role="status" className={failed ? 'nc-failure-title' : undefined}>
+					<span aria-hidden="true">
+						{failed ? '✕' : preparing ? '◐' : '○'}{' '}
+					</span>
+					{state.status === 'ready'
+						? 'Nanocoder is ready'
+						: preparing
+							? `${state.status} Nanocoder`
+							: 'Nanocoder is not ready'}
+				</p>
+			)}
 			{state.reason && <p>{state.reason}</p>}
 			{state.exit && (
 				<p>
@@ -65,6 +103,9 @@ function ProcessRecovery({
 				!state.restart.nextAttemptAt && (
 					<p>automatic recovery stopped after {state.restart.limit} attempts</p>
 				)}
+			{failed && onNew && newPending && (
+				<p role="status">waiting for the thread request or native dialog</p>
+			)}
 			<div className="nc-recovery-actions">
 				{state.status !== 'ready' && (
 					<Button onClick={onRetry} disabled={busy || preparing}>
@@ -72,79 +113,57 @@ function ProcessRecovery({
 					</Button>
 				)}
 				<Button onClick={onDiagnostics} disabled={busy}>
-					diagnostics
+					review diagnostics
 				</Button>
+				{failed && onNew && (
+					<Button onClick={onNew} disabled={busy || newPending}>
+						start a new thread
+					</Button>
+				)}
 			</div>
-		</Card>
-	);
-}
-
-function DiagnosticsView({
-	snapshot,
-	busy,
-	message,
-	onExport,
-	onClose,
-}: {
-	snapshot: DiagnosticsSnapshot;
-	busy: boolean;
-	message: string;
-	onExport(): void;
-	onClose(): void;
-}) {
-	return (
-		<Card className="nc-diagnostics" aria-label="redacted diagnostics">
-			<h2>redacted diagnostics</h2>
-			<p>
-				review this captured snapshot. exporting asks again in a native dialog,
-				then asks where to save it. nothing is sent automatically.
-			</p>
-			{snapshot.truncated && <p>older or oversized diagnostics were omitted</p>}
-			<pre tabIndex={0} role="region" aria-label="captured diagnostics">
-				{snapshot.lines.join('\n') || 'No diagnostics were captured.'}
-			</pre>
-			<div className="nc-recovery-actions">
-				<Button onClick={onExport} disabled={busy}>
-					review and export
-				</Button>
-				<Button onClick={onClose} disabled={busy}>
-					close diagnostics
-				</Button>
-			</div>
-			{message && <p role="status">{message}</p>}
 		</Card>
 	);
 }
 
 export function RecoveryTools({
 	state,
+	turnFailure = null,
 	onRetry,
-	onCapture,
-	onExport,
+	onDiagnostics,
+	diagnosticsBusy,
+	diagnosticsMessage,
+	onNew,
+	newPending = false,
 }: RecoveryProps) {
-	const [snapshot, setSnapshot] = useState<DiagnosticsSnapshot | null>(null);
-	const [busy, setBusy] = useState(false);
-	const [message, setMessage] = useState('');
-	const generation = useRef(0);
+	const [busy, setBusy] = React.useState(false);
+	const [message, setMessage] = React.useState('');
+	const generation = React.useRef(0);
 	const projectId = state?.projectId;
-	const selectedProject = useRef<string | undefined>(undefined);
-	useEffect(() => {
+	const selectedProject = React.useRef<string | undefined>(undefined);
+	React.useEffect(() => {
 		if (selectedProject.current === projectId) return;
 		selectedProject.current = projectId;
 		generation.current++;
-		setSnapshot(null);
 		setMessage('');
 		setBusy(false);
 	}, [projectId]);
-	if (!state) return null;
+	const processFailed =
+		state !== null && FAILED_STATUSES.includes(state.status);
+	const notice =
+		turnFailure && !processFailed ? (
+			<TurnFailureNotice reason={turnFailure} />
+		) : null;
+	if (!state) return notice;
 
-	const run = async (action: () => Promise<void>) => {
+	const retry = async () => {
 		if (busy) return;
 		const selected = generation.current;
 		setBusy(true);
 		setMessage('');
 		try {
-			await action();
+			const result = await onRetry(state.projectId);
+			if (selected === generation.current && !result.ok)
+				setMessage(result.error.message);
 		} catch {
 			if (selected === generation.current)
 				setMessage('the request could not finish');
@@ -152,66 +171,22 @@ export function RecoveryTools({
 			if (selected === generation.current) setBusy(false);
 		}
 	};
-	const retry = () =>
-		run(async () => {
-			const selected = generation.current;
-			const result = await onRetry(state.projectId);
-			if (selected === generation.current && !result.ok)
-				setMessage(result.error.message);
-		});
-	const capture = () =>
-		run(async () => {
-			const selected = generation.current;
-			const result = await onCapture(state.projectId);
-			if (selected !== generation.current) return;
-			if (result.ok) setSnapshot(result.value);
-			else setMessage(result.error.message);
-		});
-	const exportSnapshot = () =>
-		run(async () => {
-			if (!snapshot) return;
-			const selected = generation.current;
-			const result = await onExport({
-				projectId: snapshot.projectId,
-				snapshotId: snapshot.id,
-			});
-			if (selected === generation.current)
-				setMessage(
-					result.ok
-						? result.value.status === 'exported'
-							? 'diagnostics exported'
-							: 'export cancelled'
-						: result.error.message,
-				);
-		});
+	const shown = message || diagnosticsMessage;
 	return (
 		<>
+			{notice}
 			<ProcessRecovery
 				state={state}
-				busy={busy}
+				busy={busy || diagnosticsBusy}
+				newPending={newPending}
+				turnFailure={turnFailure}
 				onRetry={() => {
 					void retry();
 				}}
-				onDiagnostics={() => {
-					void capture();
-				}}
+				onDiagnostics={onDiagnostics}
+				onNew={onNew}
 			/>
-			{snapshot?.projectId === state.projectId ? (
-				<DiagnosticsView
-					snapshot={snapshot}
-					busy={busy}
-					message={message}
-					onExport={() => {
-						void exportSnapshot();
-					}}
-					onClose={() => {
-						setSnapshot(null);
-						setMessage('');
-					}}
-				/>
-			) : (
-				message && <p role="status">{message}</p>
-			)}
+			{shown && <p role="status">{shown}</p>}
 		</>
 	);
 }

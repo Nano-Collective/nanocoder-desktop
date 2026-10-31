@@ -22,17 +22,17 @@ export async function confirmProjectTrust(
 		options.ask({
 			type: 'question',
 			title: {
-				'not-trusted': 'Trust this folder?',
-				changed: 'Trust this changed folder?',
-				'needs-re-approval': 'Approve this folder again?',
+				'not-trusted': 'trust this project folder?',
+				changed: 'trust this changed folder?',
+				'needs-re-approval': 'approve this folder again?',
 			}[refusal.reason],
 			message: refusal.summary,
 			detail: [
-				root,
+				`canonical root · resolved folder\n${root}`,
 				summary.details,
-				'Trusting this folder allows project-defined code to run on this computer.',
+				'trusting this folder allows project-defined code to run on this computer.',
 			].join('\n\n'),
-			buttons: ['Trust folder', 'Cancel'],
+			buttons: ['trust folder and open', 'cancel'],
 			defaultId: 1,
 			cancelId: 1,
 			noLink: true,

@@ -126,6 +126,8 @@ export interface PermissionRequestInfo {
 	title: string;
 	options: PermissionOptionInfo[];
 	source?: import('@/shared/subagents').SubagentPermissionSource;
+	// Display only: set by main when the request has Nanocoder's ask_user shape.
+	question?: true;
 }
 
 export interface StreamCommand {

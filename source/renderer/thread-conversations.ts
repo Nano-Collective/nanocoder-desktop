@@ -4,6 +4,7 @@ import {
 } from '@/renderer/stream-batcher';
 import {
 	applyEvents,
+	carryMessageTimes,
 	emptyTranscript,
 	settleSubagentTurn,
 	type Transcript,
@@ -35,7 +36,9 @@ interface TurnTicket {
 export function createThreadConversations(options: {
 	onChange(state: ThreadConversationState): void;
 	clock?: StreamBatchClock;
+	now?: () => number;
 }) {
+	const now = options.now ?? Date.now;
 	type View = Omit<ThreadConversationState, 'projectId' | 'activeThreadId'>;
 	const empty: View = {
 		transcript: emptyTranscript,
@@ -45,6 +48,7 @@ export function createThreadConversations(options: {
 	};
 	const views = new Map<string, View>();
 	const removed = new Set<string>();
+	const replaying = new Set<string>();
 	const tickets = new Map<string, TurnTicket>();
 	let projectId: string | null = null;
 	let activeThreadId: string | null = null;
@@ -95,10 +99,14 @@ export function createThreadConversations(options: {
 					: settled,
 		};
 	};
-	const batcher = createStreamBatcher((threadId, events) => {
+	const batcher = createStreamBatcher((threadId, events, tag) => {
 		if (allowed(threadId))
 			put(threadId, {
-				transcript: applyEvents(view(threadId).transcript, events),
+				transcript: applyEvents(
+					view(threadId).transcript,
+					events,
+					tag === 'live' ? now() : undefined,
+				),
 				...(events.some(event => event.type === 'user') && {turn: null}),
 			});
 	}, options.clock);
@@ -108,6 +116,7 @@ export function createThreadConversations(options: {
 			if (disposed || selected === projectId) return;
 			batcher.flush();
 			tickets.clear();
+			replaying.clear();
 			generation++;
 			projectId = selected;
 			activeThreadId = null;
@@ -132,8 +141,16 @@ export function createThreadConversations(options: {
 		receive(event: Extract<ProjectEvent, {type: 'turn'}>) {
 			if (event.projectId !== projectId || !allowed(event.threadId)) return;
 			const current = generation;
-			if (event.replay) batcher.flush(event.threadId);
-			batcher.enqueue(event.threadId, event.events);
+			if (event.replay) {
+				batcher.flush(event.threadId);
+				if (event.replay.phase === 'begin') replaying.add(key(event.threadId));
+				else replaying.delete(key(event.threadId));
+			}
+			batcher.enqueue(
+				event.threadId,
+				event.events,
+				replaying.has(key(event.threadId)) ? 'replay' : 'live',
+			);
 			if (
 				event.events.some(
 					item =>
@@ -167,8 +184,14 @@ export function createThreadConversations(options: {
 				!allowed(threadId)
 			)
 				return false;
+			// The stream folds a replay begin marker into this snapshot.
+			if (snapshot.replaying) replaying.add(key(threadId));
+			else replaying.delete(key(threadId));
 			const previous = view(threadId).transcript;
-			const transcript = applyEvents(emptyTranscript, snapshot.events);
+			const transcript = carryMessageTimes(
+				previous,
+				applyEvents(emptyTranscript, snapshot.events),
+			);
 			const prefix = {
 				...transcript,
 				items: [
@@ -269,6 +292,7 @@ export function createThreadConversations(options: {
 			batcher.remove(threadId);
 			views.delete(key(threadId));
 			tickets.delete(key(threadId));
+			replaying.delete(key(threadId));
 			removed.add(key(threadId));
 			if (activeThreadId === threadId) activeThreadId = null;
 			emit();
@@ -279,6 +303,7 @@ export function createThreadConversations(options: {
 			tickets.clear();
 			views.clear();
 			removed.clear();
+			replaying.clear();
 			projectId = null;
 			activeThreadId = null;
 		},

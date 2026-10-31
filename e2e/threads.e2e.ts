@@ -18,6 +18,7 @@ import type {DesktopApi} from '@/shared/desktop-api';
 import type {IpcResult, ProjectEvent, ThreadSnapshot} from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {turnCancelled, turnEnded} from './qa/turn-state';
 import {contrast} from './qa/ui-contrast';
 
 let work: string;
@@ -105,10 +106,10 @@ test('long thread titles stay inside the rail with visible glyphs, selection rul
 		}, theme);
 		for (const width of [1240, 1020, 840]) {
 			await page.setViewportSize({width, height: 900});
-			await selected.locator('.thread-open').focus();
 			await page.keyboard.press('Tab');
-			await expect(selected.locator('summary')).toBeFocused();
-			await expect(selected.locator('summary')).toHaveCSS(
+			await selected.locator('.thread-open').focus();
+			await expect(selected.locator('.thread-open')).toBeFocused();
+			await expect(selected.locator('.thread-open')).toHaveCSS(
 				'outline-width',
 				'2px',
 			);
@@ -158,14 +159,18 @@ test('long thread titles stay inside the rail with visible glyphs, selection rul
 	}
 });
 
-for (const [state, glyph] of [
-	['new', '◌'],
-	['ready', '○'],
-	['running', '●'],
-	['waiting', '◐'],
-	['interrupted', '▲'],
-	['archived', '░'],
-	['view-only', '◍'],
+const stateInk = {
+	muted: {dark: 'rgb(168, 168, 168)', light: 'rgb(79, 86, 120)'},
+	primary: {dark: 'rgb(122, 162, 247)', light: 'rgb(0, 0, 238)'},
+	warning: {dark: 'rgb(224, 175, 104)', light: 'rgb(118, 81, 11)'},
+} as const;
+for (const [state, glyph, tone] of [
+	['new', '◌', 'muted'],
+	['ready', '○', 'muted'],
+	['running', '●', 'primary'],
+	['waiting', '▲', 'warning'],
+	['interrupted', '◐', 'warning'],
+	['view-only', '◍', 'muted'],
 ] as const) {
 	test(`selected ${state} glyph meets rendered AA in both themes without changing its row or selection rule (U.3)`, async () => {
 		await page.emulateMedia({reducedMotion: 'reduce'});
@@ -186,9 +191,8 @@ for (const [state, glyph] of [
 					await page
 						.getByRole('button', {name: 'cancel turn', exact: true})
 						.click();
-					await expect(
-						page.getByText('turn interrupted: cancelled'),
-					).toBeVisible();
+					await expect(page.getByText('turn interrupted')).toBeVisible();
+					await expect(turnCancelled(page)).toHaveCount(1);
 				}
 			} else {
 				const approval = page.getByRole('region', {name: 'permission request'});
@@ -197,32 +201,24 @@ for (const [state, glyph] of [
 					await approval
 						.getByRole('button', {name: 'Deny', exact: true})
 						.click();
-					await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+					await expect(turnEnded(page)).toBeVisible();
 				}
 			}
 		}
-		if (state === 'archived' || state === 'view-only') {
-			const changed = await page.evaluate(async state => {
+		if (state === 'view-only') {
+			const changed = await page.evaluate(async () => {
 				const {desktop} = window as unknown as {desktop: DesktopApi};
 				const ui = await desktop.getUiState({});
-				if (!ui.ok || !ui.value.activeProjectId || !ui.value.activeThreadId)
-					throw new Error('Expected a selected desktop thread');
-				const owner = {
-					projectId: ui.value.activeProjectId,
-					threadId: ui.value.activeThreadId,
-				};
-				return state === 'archived'
-					? desktop.archiveThread({...owner, archived: true})
-					: desktop.stopProject({projectId: owner.projectId});
-			}, state);
+				if (!ui.ok || !ui.value.activeProjectId)
+					throw new Error('Expected a selected desktop project');
+				return desktop.stopProject({projectId: ui.value.activeProjectId});
+			});
 			expect(changed.ok).toBe(true);
-			if (state === 'view-only') {
-				writeFileSync(path.join(root, '.fake-nanocoder'), 'missing-session');
-				await selected.locator('.thread-open').click();
-				await expect(
-					page.getByRole('region', {name: 'view-only thread'}),
-				).toBeVisible();
-			}
+			writeFileSync(path.join(root, '.fake-nanocoder'), 'missing-session');
+			await selected.locator('.thread-open').click();
+			await expect(
+				page.getByRole('region', {name: 'view-only thread'}),
+			).toBeVisible();
 		}
 		const marker = selected.locator('.thread-status');
 		await expect(marker).toHaveText(glyph);
@@ -261,16 +257,17 @@ for (const [state, glyph] of [
 				'border-left-color',
 				theme === 'dark' ? 'rgb(122, 162, 247)' : 'rgb(0, 0, 238)',
 			);
-			if (state === 'waiting' || state === 'interrupted')
-				await expect(marker).toHaveCSS(
-					'color',
-					theme === 'dark' ? 'rgb(224, 175, 104)' : 'rgb(118, 81, 11)',
-				);
-			if (state === 'running')
-				await expect(marker).toHaveCSS(
-					'color',
-					theme === 'dark' ? 'rgb(122, 162, 247)' : 'rgb(0, 0, 238)',
-				);
+			await expect(marker).toHaveCSS(
+				'color',
+				theme === 'dark' ? 'rgb(230, 230, 230)' : 'rgb(36, 40, 59)',
+			);
+			const dash = await marker.evaluate(element =>
+				getComputedStyle(element, '::after').getPropertyValue(
+					'background-color',
+				),
+			);
+			const ink = stateInk[tone];
+			expect(dash).toBe(theme === 'dark' ? ink.dark : ink.light);
 		}
 	});
 }
@@ -369,12 +366,14 @@ test('rename uses the shared dialog and preserves keyboard focus, draft and thre
 	const row = page.locator('.thread-row[data-selected="true"]');
 	const id = await row.getAttribute('data-thread-id');
 	if (!id) throw new Error('Missing selected thread id');
-	await row.locator('summary').focus();
-	await page.keyboard.press('Enter');
-	const rename = row.getByRole('button', {
-		name: 'rename: new thread',
+	const actions = page.getByRole('button', {
+		name: 'thread actions',
 		exact: true,
 	});
+	await actions.focus();
+	await page.keyboard.press('Enter');
+	const menu = page.getByRole('dialog', {name: 'thread actions', exact: true});
+	const rename = menu.getByRole('button', {name: 'rename…', exact: true});
 	await rename.focus();
 	await page.keyboard.press('Enter');
 	const dialog = page.getByRole('dialog', {name: 'rename thread', exact: true});
@@ -386,8 +385,10 @@ test('rename uses the shared dialog and preserves keyboard focus, draft and thre
 	await title.fill('cancelled fixture title');
 	await page.keyboard.press('Escape');
 	await expect(dialog).toHaveCount(0);
-	await expect(rename).toBeFocused();
+	await expect(actions).toBeFocused();
 	await expect(input).toHaveValue('retained rename draft');
+	await page.keyboard.press('Enter');
+	await menu.getByRole('button', {name: 'rename…', exact: true}).focus();
 	await page.keyboard.press('Enter');
 	await expect(title).toBeFocused();
 	await title.fill('renamed fixture');
@@ -396,9 +397,7 @@ test('rename uses the shared dialog and preserves keyboard focus, draft and thre
 	await expect(row.locator('.thread-title')).toHaveText('renamed fixture');
 	await expect(row).toHaveAttribute('data-thread-id', id);
 	await expect(input).toHaveValue('retained rename draft');
-	await expect(
-		row.getByRole('button', {name: 'rename: renamed fixture', exact: true}),
-	).toBeFocused();
+	await expect(actions).toBeFocused();
 	await input.focus();
 	await input.evaluate(element =>
 		(element as HTMLTextAreaElement).setSelectionRange(2, 9),

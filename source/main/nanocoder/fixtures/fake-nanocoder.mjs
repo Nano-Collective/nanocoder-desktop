@@ -513,6 +513,20 @@ async function runTurn(id, params) {
 		return;
 	}
 	if (mode === 'die-in-turn') process.exit(3);
+	if (mode === 'die-in-held-turn') {
+		await new Promise(resolve => {
+			const watcher = watch('.', {persistent: false}, () => {
+				if (!existsSync('.fake-turn-release')) return;
+				watcher.close();
+				resolve();
+			});
+			if (existsSync('.fake-turn-release')) {
+				watcher.close();
+				resolve();
+			}
+		});
+		process.exit(3);
+	}
 	if (mode === 'durable-replay') {
 		durableDelegations(sessionId, false);
 		send({id, result: {stopReason: 'end_turn'}});
@@ -556,12 +570,22 @@ async function runTurn(id, params) {
 				? `execute_bash: echo ${toolCallId}`
 				: 'execute_bash: echo hi';
 	for (const toolCallId of calls) {
+		// Nanocoder's ask_user reports kind 'other' and its own arguments as rawInput.
 		notify('session/update', {
 			sessionId,
 			update: {
 				sessionUpdate: 'tool_call',
 				toolCallId,
 				title: title(toolCallId),
+				...(mode === 'ask-user'
+					? {
+							kind: 'other',
+							rawInput: {
+								question: title(toolCallId),
+								options: ['First choice', 'Second choice'],
+							},
+						}
+					: {}),
 				status: 'pending',
 			},
 		});

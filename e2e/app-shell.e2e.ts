@@ -18,7 +18,9 @@ import {build} from 'vite';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette, startFolderFromPalette} from './qa/open-folder';
 import type {mountShellFixture} from './qa/shell-harness';
+import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-shell-')));
@@ -64,14 +66,22 @@ async function open(folder: string | null) {
 			filePaths: folder ? [folder] : [],
 		})) as typeof dialog.showOpenDialog;
 	}, folder);
-	await page.getByRole('button', {name: 'open a project folder'}).click();
+	if (!folder) return startFolderFromPalette(page);
+	await openFolderFromPalette(page, folder);
 	await expect(
-		page.getByRole('button', {name: 'open a project folder'}),
+		page.getByRole('textbox', {name: 'message', exact: true}),
 	).toBeEnabled();
-	if (folder)
-		await expect(
-			page.getByRole('region', {name: 'connected agent', includeHidden: true}),
-		).toContainText(folder);
+	if (folder) await expectConnectedAgent(folder);
+}
+
+async function expectConnectedAgent(text: string) {
+	await page
+		.getByRole('button', {name: 'runtime details', exact: true})
+		.click();
+	const setup = page.getByRole('dialog', {name: 'runtime details'});
+	await expect(setup.locator('.runtime-rows')).toContainText(text);
+	await page.keyboard.press('Escape');
+	await expect(setup).toBeHidden();
 }
 
 test('ACP badge follows child exit, not unrelated provider failure, in both themes', async () => {
@@ -82,15 +92,15 @@ test('ACP badge follows child exit, not unrelated provider failure, in both them
 		}, theme);
 		const folder = project(`exit-${theme}`, 'die-in-turn');
 		await open(folder);
-		await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+		await expect(page.locator('.footer-acp--success')).toBeVisible();
 		await page.getByRole('textbox', {name: 'message'}).fill('fixture exit');
 		await page.getByRole('button', {name: 'send', exact: true}).click();
 		await expect(page.getByRole('alert')).toContainText(
 			'Nanocoder stopped during the turn',
 		);
 		await expect(page.locator('.ui-badge--failed')).toBeVisible();
-		await expect(page.locator('.ui-badge--acp-exited')).toHaveText(
-			'○ acp · exited (3)',
+		await expect(page.locator('.footer-acp--error')).toContainText(
+			'× acp · exited (3)',
 		);
 		await expect(page.locator('.ui-badge--success')).toHaveCount(0);
 		await open(project(`provider-${theme}`, 'prompt-error'));
@@ -102,11 +112,11 @@ test('ACP badge follows child exit, not unrelated provider failure, in both them
 			'could not finish the turn',
 		);
 		await expect(page.locator('.ui-badge--failed')).toBeVisible();
-		await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
-		await expect(page.locator('.ui-badge--acp-exited')).toHaveCount(0);
+		await expect(page.locator('.footer-acp--success')).toBeVisible();
+		await expect(page.locator('.footer-acp--error')).toHaveCount(0);
 		writeFileSync(path.join(folder, '.fake-nanocoder'), 'ok');
 		await open(folder);
-		await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+		await expect(page.locator('.footer-acp--success')).toBeVisible();
 	}
 });
 
@@ -123,12 +133,10 @@ test('ACP badge stays scoped when a picker is cancelled or another project stops
 	});
 	const first = project('scoped-a');
 	await open(first);
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
 	await open(null);
-	await expect(
-		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
-	).toContainText(first);
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await expectConnectedAgent(first);
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
 	const second = project('scoped-b');
 	await open(second);
 	const result = await page.evaluate(async root => {
@@ -141,22 +149,31 @@ test('ACP badge stays scoped when a picker is cancelled or another project stops
 		});
 	}, first);
 	expect(result.ok).toBe(true);
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
-	await expect(page.locator('.ui-badge--acp-exited')).toHaveCount(0);
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
+	await expect(page.locator('.footer-acp--error')).toHaveCount(0);
 });
 
 test('ACP readiness is replayed on reopening after a renderer reload', async () => {
 	const folder = project('replay');
 	await open(folder);
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
 	await page.reload();
-	await expect(page.locator('.ui-badge--acp-ready')).toHaveCount(0);
+	await expect(page.locator('.footer-acp--success')).toHaveCount(0);
 	await open(folder);
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
 });
 
 test('shell geometry and pinned composer follow all three widths without an empty inspector', async () => {
 	await open(project('layout'));
+	const stream = page.locator('main.shell-stream');
+	await expect(stream).toHaveAttribute('data-composer-placement', 'centred');
+	await page.getByRole('textbox', {name: 'message'}).fill('check the layout');
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	const allow = page.getByRole('button', {name: 'Allow', exact: true});
+	await expect(allow).toBeVisible();
+	await allow.click();
+	await expect(turnEnded(page)).toBeVisible();
+	await expect(stream).toHaveAttribute('data-composer-placement', 'bottom');
 	await page.emulateMedia({reducedMotion: 'reduce'});
 	await page.evaluate(() => {
 		const fixture = document.createElement('div');
@@ -169,7 +186,7 @@ test('shell geometry and pinned composer follow all three widths without an empt
 			await page.evaluate(theme => {
 				document.documentElement.dataset.theme = theme;
 			}, theme);
-			for (const width of [1240, 1020, 840, 841, 839]) {
+			for (const width of [1240, 1050, 1020, 840, 841, 839]) {
 				await page.setViewportSize({width, height: 900});
 				await expect(page.locator('.shell-workbench')).toHaveCount(0);
 				const geometry = await page.evaluate(() => {
@@ -177,15 +194,56 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						const element = document.querySelector(selector);
 						if (!element) throw new Error('Missing shell region');
 						const rect = element.getBoundingClientRect();
-						return {x: rect.x, width: rect.width, bottom: rect.bottom};
+						return {
+							x: rect.x,
+							y: rect.y,
+							width: rect.width,
+							height: rect.height,
+							bottom: rect.bottom,
+						};
+					};
+					const padding = (selector: string) => {
+						const element = document.querySelector(selector);
+						if (!element) throw new Error('Missing shell region');
+						const style = getComputedStyle(element);
+						return [style.paddingLeft, style.paddingRight];
 					};
 					const scroll = document.querySelector('.shell-stream-scroll');
 					if (!scroll) throw new Error('Missing stream scroll region');
+					const firstRow = document.querySelector(
+						'.technical-gate > :first-child',
+					);
+					const readingOffset =
+						(firstRow?.getBoundingClientRect().top ?? 0) -
+						scroll.getBoundingClientRect().top +
+						scroll.scrollTop;
+					const tools =
+						document.querySelector('.shell-stream-tools')?.childElementCount ??
+						0;
 					scroll.scrollTop = scroll.scrollHeight;
+					const fixtureBottom =
+						document
+							.getElementById('shell-layout-fixture')
+							?.getBoundingClientRect().bottom ?? 0;
 					return {
+						readingOffset,
+						bottomGap: scroll.getBoundingClientRect().bottom - fixtureBottom,
+						tools,
 						rail: measure('.shell-project-rail'),
 						stream: measure('.shell-stream'),
-						composer: measure('.gate-composer'),
+						composer: measure('.composer-options'),
+						header: measure('.shell-title-bar'),
+						breadcrumb: measure('.shell-breadcrumb'),
+						title: measure('.shell-identity h2'),
+						palette: measure('.shell-header-actions > button:last-child'),
+						reading: measure('.technical-gate'),
+						scrollPadding: padding('.shell-stream-scroll'),
+						footerPadding: padding('.shell-conversation-footer'),
+						composerGap:
+							(document
+								.querySelector('.shell-composer')
+								?.getBoundingClientRect().top ?? 0) -
+							scroll.getBoundingClientRect().bottom,
 						scrolls: scroll.scrollHeight > scroll.clientHeight,
 						overflows: document.documentElement.scrollWidth > innerWidth,
 					};
@@ -197,6 +255,27 @@ test('shell geometry and pinned composer follow all three widths without an empt
 				expect(geometry.composer.bottom).toBe(
 					width <= 840 ? 883 : width <= 1050 ? 882 : 880,
 				);
+				// Reference header 66px (62px at 840). At 840 the breadcrumb sits 0.8px lower than the reference's 1.11.
+				const crumbTop = width <= 840 ? 1.9 : 3.11;
+				expect(geometry.header.height).toBe(width <= 840 ? 62 : 66);
+				expect(geometry.breadcrumb.y).toBeCloseTo(crumbTop, 1);
+				expect(geometry.title.y).toBeCloseTo(crumbTop + 19, 1);
+				expect(geometry.palette.width).toBeCloseTo(width <= 1050 ? 40 : 46, 0);
+				if (width >= 1020) expect(geometry.reading.width).toBeCloseTo(740, 0);
+				else expect(geometry.reading.width).toBeLessThanOrEqual(740);
+				if (geometry.tools === 0)
+					expect(geometry.readingOffset).toBeCloseTo(
+						width <= 840 ? 15 : width <= 1050 ? 17 : 20,
+						0,
+					);
+				expect(geometry.bottomGap).toBeCloseTo(24, 0);
+				expect(geometry.composerGap).toBeCloseTo(0, 1);
+				const reading = width <= 840 ? '24px' : width <= 1050 ? '30px' : '40px';
+				const column = width <= 840 ? '27px' : reading;
+				expect(geometry.scrollPadding).toEqual([column, column]);
+				expect(geometry.footerPadding).toEqual([reading, reading]);
+				if (width <= 840)
+					expect(geometry.reading.x - geometry.stream.x).toBeCloseTo(27, 0);
 				expect(geometry.scrolls).toBe(true);
 				expect(geometry.overflows).toBe(false);
 				expect(await visibleTextContrast(page, theme)).toEqual([]);
@@ -212,6 +291,9 @@ test('shell geometry and pinned composer follow all three widths without an empt
 test('the compact shell exposes real controls and omits unused later surfaces', async () => {
 	await page.setViewportSize({width: 1240, height: 900});
 	await expect(page.getByRole('banner')).not.toContainText('not built yet');
+	const crumb = page.locator('.shell-breadcrumb');
+	await expect(crumb).toHaveCSS('line-height', '16px');
+	expect((await crumb.boundingBox())?.height).toBeCloseTo(16, 0);
 	await expect(
 		page.getByRole('banner').getByRole('button', {name: 'command palette'}),
 	).toBeVisible();
@@ -225,12 +307,17 @@ test('the compact shell exposes real controls and omits unused later surfaces', 
 	await expect(
 		page.locator('.shell-workbench,.shell-bottom-panel,.shell-placeholder'),
 	).toHaveCount(0);
-	const switcher = page.getByLabel('switch project', {exact: true});
+	const switcher = page.getByRole('button', {
+		name: 'switch project',
+		exact: true,
+	});
+	const projects = page.getByRole('dialog', {name: 'your projects'});
 	await switcher.click();
 	await expect(
-		page.getByRole('region', {name: 'recent projects'}),
+		projects.getByRole('region', {name: 'recent projects'}),
 	).toBeVisible();
-	await switcher.click();
+	await page.keyboard.press('Escape');
+	await expect(projects).toBeHidden();
 });
 test('keyboard controls remain reachable and visibly focused inside the stream in both themes and all widths', async () => {
 	for (const theme of ['dark', 'light']) {
@@ -239,7 +326,6 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 		}, theme);
 		for (const width of [1240, 1020, 840]) {
 			await page.setViewportSize({width, height: 900});
-			const open = page.getByRole('button', {name: 'open a project folder'});
 			const input = page.getByRole('textbox', {name: 'message'});
 			const palette = page.getByRole('button', {
 				name: 'command palette',
@@ -250,50 +336,57 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			await page.keyboard.press('Shift+Tab');
 			await expect(palette).toBeFocused();
 			await expect(palette).toHaveCSS('outline-width', '2px');
-			const recent = page.getByRole('region', {name: 'recent projects'});
-			const add = recent.getByRole('button', {
-				name: 'add project folder',
+			const switcher = page.getByRole('button', {
+				name: 'switch project',
 				exact: true,
 			});
-			const switcher = page.getByLabel('switch project', {exact: true});
-			await page.locator('.project-switcher').evaluate(element => {
-				(element as HTMLDetailsElement).open = true;
-			});
-			await expect(recent).toBeVisible();
-			const projects = recent.getByRole('listitem');
-			expect(await projects.count()).toBeGreaterThan(0);
+			const projects = page.getByRole('dialog', {name: 'your projects'});
+			await switcher.focus();
+			await page.keyboard.press('Enter');
+			await expect(projects).toBeVisible();
+			const rows = projects
+				.getByRole('region', {name: 'recent projects'})
+				.getByRole('listitem');
+			expect(await rows.count()).toBeGreaterThan(0);
+			const dialogOrder = [
+				projects.getByRole('button', {name: 'dismiss dialog', exact: true}),
+				...(await rows.all()).map(row => row.locator('button')),
+				projects.getByRole('button', {name: /add project folder/}),
+			];
+			await dialogOrder[0].focus();
+			for (const [index, control] of dialogOrder.entries()) {
+				if (index > 0) await page.keyboard.press('Tab');
+				await expect(control).toBeFocused();
+				await expect(control).toHaveCSS('outline-width', '2px');
+			}
+			await page.keyboard.press('Escape');
+			await expect(projects).toBeHidden();
+			await expect(switcher).toBeFocused();
 			const rail = page.getByRole('region', {name: 'project threads'});
-			const diagnostics = page.getByRole('button', {
-				name: 'diagnostics',
+			const send = page.getByRole('button', {name: 'send', exact: true});
+			const stream = page.getByRole('region', {
+				name: 'conversation',
 				exact: true,
 			});
-			const send = page.getByRole('button', {name: 'send', exact: true});
+			await expect(
+				rail.locator('.sidebar-link', {hasText: 'import sessions'}),
+			).toBeVisible();
 			const focusOrder = [
 				switcher,
-				add,
-				...(await projects.all()).flatMap(project =>
-					[/^open /, /^locate /].map(name =>
-						project.getByRole('button', {name}),
-					),
-				),
 				rail.getByRole('button', {name: 'new thread', exact: true}),
-				...(await rail.locator('.thread-row').all()).flatMap(thread => [
-					thread.locator('.thread-open'),
-					thread.locator('.thread-actions > summary'),
-				]),
-				page.getByRole('button', {name: 'refresh saved sessions', exact: true}),
-				page.getByRole('button', {
-					name: 'import saved session: existing saved session',
-					exact: true,
-				}),
+				...(await rail.locator('.thread-open').all()),
+				rail.locator('.sidebar-link', {hasText: 'archived'}),
+				rail.locator('.sidebar-link', {hasText: 'import sessions'}),
+				page.getByRole('button', {name: 'runtime details', exact: true}),
+				page.getByRole('button', {name: 'keyboard shortcuts', exact: true}),
+				page.getByRole('button', {name: 'thread actions', exact: true}),
 				palette,
-				page.getByText('runtime and setup details', {exact: true}),
-				open,
-				diagnostics,
+				stream,
 				input,
 				page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
 				send,
 			];
+			await expect(stream).toHaveAccessibleName('conversation');
 			await focusOrder[0].focus();
 			for (const [index, control] of focusOrder.entries()) {
 				if (index > 0) await page.keyboard.press('Tab');
@@ -321,8 +414,8 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			await expect(deny).toHaveCSS('outline-width', '2px');
 			await page.keyboard.press('Enter');
 			await expect(permission).toHaveCount(0);
-			await expect(page.getByText('turn ended: end_turn')).toBeVisible();
-			await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
+			await expect(page.locator('.footer-acp--success')).toBeVisible();
 		}
 	}
 });

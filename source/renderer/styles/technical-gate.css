@@ -1,13 +1,8 @@
 .technical-gate {
 	display: grid;
 	gap: var(--spacing-xxl);
-	padding: 20px 40px;
+	padding-block: 20px 24px;
 	overflow-wrap: anywhere;
-}
-
-.gate-runtime {
-	display: grid;
-	gap: var(--spacing-md);
 }
 
 .gate-meta,
@@ -21,21 +16,6 @@ dt,
 	align-items: center;
 	flex-wrap: wrap;
 	gap: var(--spacing-md);
-}
-
-.gate-runtime .ui-button {
-	justify-self: start;
-}
-
-.gate-capabilities {
-	display: grid;
-	grid-template-columns: max-content 1fr;
-	gap: var(--spacing-xs) var(--spacing-xl);
-	font-size: var(--typography-body-sm-font-size);
-}
-
-.gate-capabilities dd {
-	margin: 0;
 }
 
 .gate-composer {
@@ -102,11 +82,11 @@ dt,
 
 @media (max-width: 1050px) {
 	.technical-gate {
-		padding-inline: 30px;
+		padding-top: 17px;
 	}
 }
 @media (max-width: 840px) {
 	.technical-gate {
-		padding-inline: 24px;
+		padding-top: 15px;
 	}
 }

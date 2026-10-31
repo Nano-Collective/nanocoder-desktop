@@ -94,10 +94,10 @@ test('55% key hints need a design decision before they can be used', t => {
 });
 
 test('the approved light running badge pairing passes without an exception', t => {
-	const foreground = themedColor('success', 'light');
+	const foreground = themedColor('primary', 'light');
 	const background = themedColor('surface-panel', 'light');
 	t.true(
-		usedPairs.some(([fg, bg]) => fg === 'success' && bg === 'surface-panel'),
+		usedPairs.some(([fg, bg]) => fg === 'primary' && bg === 'surface-panel'),
 	);
 	t.true(contrast(foreground, background) >= 4.5);
 	t.false(isKnownGap(foreground, background, 'light'));

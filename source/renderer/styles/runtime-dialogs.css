@@ -1,0 +1,111 @@
+.dialog-foot-start {
+	margin-right: auto;
+}
+
+.runtime-rows {
+	display: grid;
+	gap: var(--spacing-md);
+	margin: 0;
+	font-size: var(--typography-body-sm-font-size);
+}
+
+.runtime-rows > div {
+	display: grid;
+	grid-template-columns: minmax(118px, max-content) minmax(0, 1fr);
+	gap: var(--spacing-xl);
+}
+
+.runtime-rows dt {
+	color: var(--colors-on-surface-muted);
+}
+
+.runtime-rows dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.capability-agent {
+	display: grid;
+	gap: var(--spacing-md);
+	margin-bottom: var(--spacing-lg);
+	font-size: var(--typography-body-sm-font-size);
+	overflow-wrap: anywhere;
+}
+
+.capability-agent p {
+	margin: 0;
+}
+
+.capability-rows {
+	display: grid;
+	gap: var(--spacing-md);
+	margin: 0;
+	padding: var(--spacing-xl);
+	border-radius: var(--rounded-lg);
+	background: var(--colors-surface-panel);
+	list-style: none;
+	font-size: var(--typography-body-sm-font-size);
+}
+
+.capability-row {
+	overflow-wrap: anywhere;
+}
+
+.capability-reason {
+	color: var(--colors-on-surface-muted);
+}
+
+.archives-dialog-list {
+	display: grid;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.archives-dialog-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--spacing-lg);
+	padding: 10px 0;
+	border-bottom: 1px solid var(--colors-stroke-soft);
+}
+
+.archives-dialog-row:last-child {
+	border-bottom: 0;
+}
+
+.archives-dialog-text {
+	display: grid;
+	min-width: 0;
+	gap: var(--spacing-xs);
+}
+
+.archives-dialog-title {
+	overflow-wrap: anywhere;
+}
+
+.archives-dialog-meta {
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-caption-font-size);
+}
+
+.diagnostic-review {
+	display: grid;
+	gap: var(--spacing-xl);
+}
+
+.diagnostic-review pre {
+	max-height: min(260px, 36dvh);
+	margin: 0;
+	padding: 12px;
+	overflow: auto;
+	border: 1px solid var(--colors-stroke);
+	border-radius: var(--rounded-md);
+	background: var(--colors-surface);
+	color: var(--colors-on-surface);
+	font-size: 11px;
+	line-height: 1.6;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}

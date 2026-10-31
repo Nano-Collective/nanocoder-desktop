@@ -1,5 +1,4 @@
-.nc-recovery,
-.ui-card.nc-diagnostics {
+.nc-recovery {
 	min-width: 0;
 	overflow-wrap: anywhere;
 }
@@ -10,24 +9,27 @@
 	gap: var(--spacing-md);
 }
 
-.nc-diagnostics pre {
-	max-height: 18rem;
-	overflow: auto;
-	margin: 0;
-	padding: var(--spacing-md);
-	border: 1px solid var(--colors-stroke);
-	border-radius: var(--rounded-md);
-	background: var(--colors-surface);
-	color: var(--colors-on-surface);
-	white-space: pre-wrap;
-	overflow-wrap: anywhere;
-}
-
 .ui-card.nc-recovery {
 	padding: 16px 18px;
 	gap: 10px;
 	font-size: 11px;
 	line-height: 1.8;
+}
+.ui-card.nc-failure-notice {
+	border: 0;
+	border-left: 2px solid var(--colors-error);
+	border-radius: 0 var(--rounded-lg) var(--rounded-lg) 0;
+	background: var(--colors-surface-panel);
+	color: var(--colors-on-surface-muted);
+}
+.ui-card.nc-failure-notice > h2,
+.nc-failure-title {
+	color: var(--colors-on-surface);
+}
+.nc-turn-stopped {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
 }
 .ui-card.nc-recovery--ready {
 	display: flex;
@@ -42,18 +44,4 @@
 .nc-recovery--ready .ui-button {
 	min-height: 28px;
 	font-size: 10px;
-}
-.ui-card.nc-diagnostics {
-	padding: 18px 20px;
-	gap: 14px;
-	font-size: 11px;
-	line-height: 1.8;
-}
-.nc-diagnostics h2 {
-	font-size: 16px;
-	font-weight: 400;
-}
-.nc-diagnostics pre {
-	font-size: 11px;
-	line-height: 1.7;
 }
