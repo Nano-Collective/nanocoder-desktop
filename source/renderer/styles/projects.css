@@ -24,9 +24,10 @@
 	letter-spacing: 0.1em;
 }
 .workspace-welcome h2 {
+	justify-self: stretch;
 	font-size: 26px;
 	font-weight: 400;
-	line-height: 1.5;
+	line-height: 1.35;
 }
 .welcome-lead {
 	color: var(--colors-on-surface-muted);
@@ -35,7 +36,7 @@
 }
 .welcome-open {
 	min-height: 38px;
-	padding: 10px 15px;
+	padding: 10px 11px;
 	border-color: var(--colors-on-surface);
 	background: var(--colors-on-surface);
 	color: var(--colors-surface);
@@ -162,9 +163,6 @@
 @media (max-width: 840px) {
 	.workspace-welcome {
 		margin-top: 40px;
-	}
-	.workspace-welcome h2 {
-		font-size: 22px;
 	}
 }
 
