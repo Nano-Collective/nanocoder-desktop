@@ -349,6 +349,7 @@ export function OverlayProvider({
 						title="command palette"
 						closeLabel="close command palette"
 						onClose={close}
+						className="dialog-shell--palette"
 					>
 						<div className="palette-search">
 							<input

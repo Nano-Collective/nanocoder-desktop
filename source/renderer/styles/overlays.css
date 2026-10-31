@@ -235,6 +235,28 @@
 	opacity: 1;
 }
 
+.dialog-shell--palette {
+	max-height: 517px;
+}
+
+.dialog-shell--palette .dialog-body {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	min-height: 0;
+}
+
+.dialog-shell--palette .palette-results {
+	flex: 1 1 auto;
+	min-height: 0;
+	max-height: none;
+}
+
+.dialog-shell--palette .palette-search,
+.dialog-shell--palette .overlay-hint {
+	flex: none;
+}
+
 .palette-results {
 	display: grid;
 	gap: 3px;
