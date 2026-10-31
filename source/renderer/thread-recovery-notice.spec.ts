@@ -29,6 +29,7 @@ const thread: ThreadInfo = {
 };
 const props: ThreadRecoveryNoticeProps = {
 	thread,
+	projectName: 'tide',
 	pending: false,
 	onRetry() {},
 	onNew() {},
@@ -43,7 +44,7 @@ test('CHAT-09 view-only notice explains missing history and retains escaped desk
 	t.true(html.includes('thread-view-only-notice'));
 	t.true(html.includes('view-only'));
 	t.true(html.includes('Nanocoder could not find this session'));
-	t.true(html.includes('start a new thread in this project'));
+	t.true(html.includes('＋ new thread in tide'));
 	t.true(html.includes('remove from desktop'));
 	t.true(html.includes('&lt;script&gt;manual fixture&lt;/script&gt;'));
 	t.true(html.includes(`dateTime="${thread.lastActivityAt}"`));
@@ -57,6 +58,14 @@ test('CHAT-09 view-only notice explains missing history and retains escaped desk
 	t.true(html.includes('retry this same thread'));
 	t.false(html.includes('retry this thread'));
 	t.is((html.match(/<button/g) ?? []).length, 3);
+});
+
+test('view-only new-thread action names the project and never invents one', t => {
+	const named = render();
+	t.true(named.includes('＋ new thread in tide</button>'));
+	const unnamed = render({...props, projectName: undefined});
+	t.true(unnamed.includes('＋ new thread</button>'));
+	t.false(unnamed.includes('new thread in'));
 });
 
 test('view-only footer keeps the composer hidden and says messages still shown are memory-only', t => {

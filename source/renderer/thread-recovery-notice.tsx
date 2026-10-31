@@ -103,7 +103,7 @@ export function ThreadRecoveryNotice({
 					disabled={pending}
 					onClick={onNew}
 				>
-					start a new thread in this project
+					{projectName ? `＋ new thread in ${projectName}` : '＋ new thread'}
 				</Button>
 				<Button disabled={pending} onClick={onRetry}>
 					retry this same thread

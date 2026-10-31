@@ -659,7 +659,7 @@ test('a missing cached session stays view-only until the user explicitly starts 
 	await openFolder(root);
 	await createDraftThread(
 		page,
-		page.getByRole('button', {name: 'start a new thread in this project'}),
+		page.getByRole('button', {name: '＋ new thread in resume-clean-retry'}),
 	);
 	await sendMessage();
 	await expect(cards()).toBeVisible();

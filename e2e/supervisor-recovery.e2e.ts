@@ -230,7 +230,7 @@ for (const theme of ['dark', 'light'] as const) {
 				const button = notice.getByRole('button', {
 					name:
 						action === 'new'
-							? 'start a new thread in this project'
+							? '＋ new thread in project'
 							: action === 'view-retry'
 								? 'retry this same thread'
 								: 'remove from desktop',
@@ -649,7 +649,7 @@ test('failed resume preserves the visible failed turn and cannot accept another 
 	);
 	await expect(
 		notice.getByRole('button', {
-			name: 'start a new thread in this project',
+			name: '＋ new thread in project',
 			exact: true,
 		}),
 	).toBeEnabled();

@@ -249,7 +249,7 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 					await expect(mode).toHaveCount(0);
 					await expect(
 						notice.getByRole('button', {
-							name: 'start a new thread in this project',
+							name: '＋ new thread in project',
 							exact: true,
 						}),
 					).toBeEnabled();
