@@ -192,14 +192,18 @@
 	margin-block: 4px;
 }
 
-.composer .sr-only,
-.composer-hint-row .sr-only {
+.composer .sr-only {
 	position: absolute;
 	width: 1px;
 	height: 1px;
 	padding: 0;
 	overflow: hidden;
 	white-space: nowrap;
+	clip-path: inset(50%);
+}
+
+/* Inline, so the accessible description joins it without a block-level gap. */
+.composer-hint-row .sr-only {
 	clip-path: inset(50%);
 }
 
