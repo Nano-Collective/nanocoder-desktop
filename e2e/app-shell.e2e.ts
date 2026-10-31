@@ -69,7 +69,7 @@ async function open(folder: string | null) {
 	if (!folder) return startFolderFromPalette(page);
 	await openFolderFromPalette(page, folder);
 	await expect(
-		page.getByRole('button', {name: 'open a project folder'}),
+		page.getByRole('textbox', {name: 'message', exact: true}),
 	).toBeEnabled();
 	if (folder) await expectConnectedAgent(folder);
 }
@@ -350,7 +350,6 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				page.getByRole('button', {name: 'runtime details', exact: true}),
 				diagnostics,
 				palette,
-				page.getByRole('button', {name: 'open a project folder', exact: true}),
 				stream,
 				input,
 				page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
