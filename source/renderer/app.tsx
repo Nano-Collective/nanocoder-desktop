@@ -3,6 +3,7 @@ import {AppShell} from '@/renderer/app-shell';
 import {ApprovalRequests} from '@/renderer/approval-requests';
 import logoUrl from '@/renderer/assets/nano-collective-avatar.png';
 import {Composer} from '@/renderer/composer';
+import {clearsConnectAlert} from '@/renderer/connect-alert';
 import {ConversationStream} from '@/renderer/conversation-stream';
 import type {FocusTarget} from '@/renderer/overlay-model';
 import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
@@ -111,6 +112,8 @@ export function App() {
 		null,
 	);
 	const selectedProject = useRef<string | null>(null);
+	const connectProject = useRef<string | null>(null);
+	const changedProject = useRef<string | null>(null);
 	const projectId = attemptedProjectId ?? projectControls.activeProjectId;
 	const selected = supervisors[projectId ?? ''];
 	const processState = selected?.state ?? null;
@@ -265,6 +268,8 @@ export function App() {
 
 	useEffect(() => {
 		return window.desktop.onProjectEvent(event => {
+			if (event.type === 'projects-changed')
+				changedProject.current = event.projectId;
 			const previous = supervisorIndex.current;
 			const next = observeSupervisor(previous, event);
 			if (next === previous) return;
@@ -272,7 +277,8 @@ export function App() {
 			setSupervisors(next);
 			if (event.type === 'project') {
 				if (selectedProject.current !== event.projectId) {
-					setOpened(null);
+					if (clearsConnectAlert(connectProject.current, event.projectId))
+						setOpened(null);
 					setRenaming(null);
 				}
 				selectedProject.current = event.projectId;
@@ -311,9 +317,13 @@ export function App() {
 	}, [checkRuntime]);
 	const connect = async () => {
 		setConnecting(true);
+		changedProject.current = null;
 		try {
 			const result = await window.desktop.connectNanocoder();
-			if (!result.ok || result.value.status !== 'cancelled') setOpened(result);
+			if (!result.ok || result.value.status !== 'cancelled') {
+				connectProject.current = changedProject.current;
+				setOpened(result);
+			}
 		} finally {
 			setConnecting(false);
 			void projectControls.refresh();
