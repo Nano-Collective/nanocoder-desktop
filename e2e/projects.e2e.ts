@@ -524,9 +524,7 @@ test('opening a recent project exposes only its own thread and restores each pro
 	await expect(input).toHaveValue('');
 	await expect(selected).not.toHaveAttribute('data-thread-id', firstThreadId);
 	const secondRuntime = await openRuntimeDetails();
-	await expect(
-		secondRuntime.getByRole('region', {name: 'connected agent'}),
-	).toContainText(second);
+	await expect(secondRuntime.locator('.runtime-rows')).toContainText(second);
 	await closeDialog(secondRuntime);
 	await input.fill('second project private draft');
 	await showProjects();
@@ -536,9 +534,7 @@ test('opening a recent project exposes only its own thread and restores each pro
 	await expect(input).toHaveValue('first project private draft');
 	await expect(selected).toHaveAttribute('data-thread-id', firstThreadId);
 	const firstRuntime = await openRuntimeDetails();
-	await expect(
-		firstRuntime.getByRole('region', {name: 'connected agent'}),
-	).toContainText(first);
+	await expect(firstRuntime.locator('.runtime-rows')).toContainText(first);
 	await closeDialog(firstRuntime);
 	await showProjects();
 	await recent

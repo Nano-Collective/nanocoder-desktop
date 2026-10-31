@@ -79,9 +79,7 @@ async function expectConnectedAgent(text: string) {
 		.getByRole('button', {name: 'runtime details', exact: true})
 		.click();
 	const setup = page.getByRole('dialog', {name: 'runtime details'});
-	await expect(
-		setup.getByRole('region', {name: 'connected agent'}),
-	).toContainText(text);
+	await expect(setup.locator('.runtime-rows')).toContainText(text);
 	await page.keyboard.press('Escape');
 	await expect(setup).toBeHidden();
 }

@@ -192,11 +192,11 @@ async function reasonsByLabel(
 	return Object.fromEntries(entries);
 }
 
-async function expectConnectedAgent(text: string) {
+async function expectConnectedAgent(root: string) {
 	await showSetup();
-	await expect(
-		setupDialog().getByRole('region', {name: 'connected agent'}),
-	).toContainText(text);
+	const rows = setupDialog().locator('.runtime-rows');
+	await expect(rows).toContainText(root);
+	await expect(rows).toContainText('✓ ACP connected');
 	await closeSetup();
 }
 
@@ -251,14 +251,15 @@ test('refuses a prompt before any project is open', async () => {
 test('initialises a trusted folder without eagerly creating a session or asking', async () => {
 	const root = project('trusted');
 	await openFolder(root);
-	await expectConnectedAgent(
-		`connected to nanocoder 9.9.9 over ACP protocol version 1 in ${root}`,
-	);
-	await showSetup();
-	const agent = setupDialog().getByRole('region', {name: 'connected agent'});
-	await expect(agent).not.toContainText('session fake-session');
-	await closeSetup();
+	await expectConnectedAgent(root);
 	await showCapabilities();
+	const agent = capabilitiesDialog().getByRole('region', {
+		name: 'connected agent',
+	});
+	await expect(agent).toContainText(
+		'connected to nanocoder 9.9.9 over ACP protocol version 1',
+	);
+	await expect(agent).not.toContainText('session fake-session');
 	await expect(
 		capabilitiesDialog().locator('.capability-row', {
 			hasText: 'session resume',
@@ -292,7 +293,7 @@ test('trusts the folder through Nanocoder when the user agrees, then opens it', 
 	await openFolder(root, 0);
 	expect(await trustPrompts()).toHaveLength(1);
 	expect(existsSync(path.join(root, '.fake-trusted'))).toBe(true);
-	await expectConnectedAgent(`in ${root}`);
+	await expectConnectedAgent(root);
 	await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
