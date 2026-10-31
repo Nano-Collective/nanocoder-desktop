@@ -3,7 +3,7 @@
 How each part of the plan is tested, the measurable targets results are judged against, and the cross-platform CI that runs them.
 
 - Status: Draft
-- Last updated: 2026-10-29
+- Last updated: 2026-10-31
 - Drafted by: @akramcodez
 
 ## Conventions
@@ -75,7 +75,9 @@ Run `pnpm build`, then `pnpm qa:launch`. The test-only launcher at `e2e/qa/launc
 
 All end-to-end tests and the QA launcher use `e2e/qa/electron.ts`. By default it adds `--nanocoder-e2e-hidden`: development main keeps `show: false`, suppresses native restore/show/focus on startup, activation and second-instance requests, and uses a prohibited macOS activation policy with the Dock hidden before readiness. Startup error dialogs also stay hidden. Packaged apps ignore the switch, and normal unflagged launches retain their native presentation policy. No renderer capability, IPC, CSP or sandbox setting changes.
 
-Hidden renderers still paint. The shared launcher uses CDP `Emulation.setFocusEmulationEnabled` for initial and reopened pages, awaiting it before returning `firstWindow()` or a window event. This emulates page activation, not `document.activeElement`, element focus, keyboard input, `:focus-visible` or editable selection. Keyboard tests must check actual typing after focus return, not only `toBeFocused()` (`A11Y-01`, `A11Y-02`). Quiet automation does not prove native OS focus or assistive-technology behaviour.
+Hidden renderers still paint, but Chromium throttles undrawn frames to one per second after three outstanding frames. For hidden development Linux/Windows runs only, `e2e/qa/hidden-frame-sink.ts` starts a 1×1 CDP screencast so real compositor frames are consumed (`PERF-03`, `PERF-04`). Frames are immediately acknowledged and discarded in memory, never read, logged, written or attached to artifacts; capture stops before app close. macOS needs no frame sink and retains its existing path. Packaged and unswitched runs never start a sink. The product main process and its default scheduling remain unchanged. Tests check actual frame cadence, native visibility, scope guards and frame disposal.
+
+The shared launcher uses CDP `Emulation.setFocusEmulationEnabled` for initial and reopened pages, awaiting it before returning `firstWindow()` or a window event. This emulates page activation, not `document.activeElement`, element focus, keyboard input, `:focus-visible` or editable selection. Page activation alone does not prevent the undrawn-frame throttle. Keyboard tests must check actual typing after focus return, not only `toBeFocused()` (`A11Y-01`, `A11Y-02`). Quiet automation does not prove native OS focus or assistive-technology behaviour.
 
 For deliberate visible native-focus or screen-reader QA, opt in with `NANOCODER_E2E_VISIBLE=1 pnpm qa:launch` (or `NANOCODER_E2E_VISIBLE=1 pnpm test:e2e`). This removes both the hidden switch and CDP focus emulation. Do not set it for routine gates. Unit tests prove the packaged refusal and normal restore/show/focus path without flashing windows; built-main tests prove quiet activation, second-instance ownership and hidden reopened windows.
 
