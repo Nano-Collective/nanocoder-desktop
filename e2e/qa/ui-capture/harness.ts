@@ -84,8 +84,6 @@ export function pngSize(bytes: Buffer): {width: number; height: number} {
 
 interface LaunchOptions {
 	edits?: readonly FixtureEdit[];
-	// Reuse a root from an earlier launch, to keep its profile and projects.
-	work?: string;
 }
 
 async function startApp(
@@ -140,9 +138,9 @@ export async function launchCapture(
 	options: LaunchOptions = {},
 ): Promise<Capture> {
 	const edits = options.edits ?? [];
-	const work =
-		options.work ??
-		realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-ui-capture-')));
+	const work = realpathSync.native(
+		mkdtempSync(path.join(tmpdir(), 'nd-ui-capture-')),
+	);
 	mkdirSync(path.join(work, 'projects'), {recursive: true});
 	const started = await startApp(work, edits);
 	const capture: Capture = {
