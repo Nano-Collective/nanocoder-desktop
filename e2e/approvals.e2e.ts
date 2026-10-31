@@ -144,8 +144,9 @@ test('permission takes focus, supports only its offered numbered choices and res
 	await open();
 	await prompt();
 	await expect(dialogs()).toBeFocused();
-	await expect(dialogs()).toHaveAccessibleName(
-		'approval required · protected tool · normal mode',
+	await expect(dialogs()).toHaveAccessibleName('approval required');
+	await expect(dialogs()).toHaveAccessibleDescription(
+		/^Nanocoder · execute_bash · normal mode .+ approval is not a guarantee that the command succeeds\.$/,
 	);
 	await expect(cards().getByRole('button').nth(0)).toHaveAccessibleName(
 		'Allow',
@@ -224,7 +225,38 @@ test('all offered permission kinds keep their labels and their reported outcomes
 test('ask_user presents only Nanocoder question options and sends the selected answer', async () => {
 	await open('ask-user');
 	await prompt();
+	const question = page.locator('dialog.question-dialog');
+	await expect(question).toBeVisible();
+	await expect(question).toHaveJSProperty('open', true);
+	await expect(question).toHaveAttribute('role', 'alertdialog');
+	await expect(question).toHaveAccessibleName('Nanocoder needs a choice');
+	await expect(
+		question.getByRole('button', {name: 'close choice', exact: true}),
+	).toBeFocused();
+	await expect(question).toContainText('Which fixture option?');
+	await expect(question).toContainText(
+		'ask_user · ACP supports selectable options only. no free-text answer is invented.',
+	);
+	await expect(question.getByRole('textbox')).toHaveCount(0);
+	await expect(question.locator('.question-choice')).toHaveText([
+		'1 · First choice',
+		'2 · Second choice',
+	]);
+	await expect(
+		question.locator('.question-choice').nth(0),
+	).toHaveAccessibleName('First choice');
+	await expect(
+		question.locator('.question-choice').nth(1),
+	).toHaveAccessibleName('Second choice');
+	await expect(cards()).toHaveCount(0);
+	await page.keyboard.press('9');
+	await expect(question).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(question).toHaveCount(0);
+	await expect(cards()).toHaveCount(1);
 	await expect(dialogs()).toBeFocused();
+	await expect(page.getByText('turn ended: end_turn')).toHaveCount(0);
+	await expect(page.getByText('selected answer-')).toHaveCount(0);
 	await expect(cards()).toContainText('Which fixture option?');
 	await expect(cards().getByRole('textbox')).toHaveCount(0);
 	await expect(cards().getByRole('button').nth(0)).toHaveAccessibleName(
@@ -239,6 +271,57 @@ test('ask_user presents only Nanocoder question options and sends the selected a
 	await expect(page.locator('.gate-message-tool code')).toHaveText(
 		'selected answer-1',
 	);
+	await expect(input()).toBeFocused();
+});
+
+test('closing an ask_user question with its close control sends no answer and the shelf still answers', async () => {
+	await open('ask-user');
+	await prompt();
+	const question = page.locator('dialog.question-dialog');
+	await expect(question).toBeVisible();
+	await question
+		.getByRole('button', {name: 'close choice', exact: true})
+		.click();
+	await expect(question).toHaveCount(0);
+	await expect(cards()).toHaveCount(1);
+	await expect(page.getByText('turn ended: end_turn')).toHaveCount(0);
+	await expect(page.getByText('selected answer-')).toHaveCount(0);
+	await cards()
+		.getByRole('button', {name: 'Second choice', exact: true})
+		.click();
+	await expect(cards()).toHaveCount(0);
+	await expect(page.locator('.gate-message-tool code')).toHaveText(
+		'selected answer-1',
+	);
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+});
+
+test('a question already pending when the shelf mounts returns focus to the composer after answering', async () => {
+	await open('ask-user');
+	await prompt();
+	const question = page.locator('dialog.question-dialog');
+	await expect(question).toBeVisible();
+	const threadId = await page
+		.locator('.thread-row[data-selected="true"]')
+		.getAttribute('data-thread-id');
+	if (!threadId) throw new Error('Missing the question thread id');
+	// The open modal question blocks the rail, so collapse it to the shelf first.
+	await page.keyboard.press('Escape');
+	await expect(question).toHaveCount(0);
+	await expect(cards()).toHaveCount(1);
+	await page.getByRole('button', {name: 'new thread', exact: true}).click();
+	await expect(
+		page.locator('.thread-row[data-selected="true"] .thread-title'),
+	).toHaveText('new thread');
+	await expect(question).toHaveCount(0);
+	await page.locator(`[data-thread-id="${threadId}"] .thread-open`).click();
+	await expect(question).toBeVisible();
+	await expect(
+		question.getByRole('button', {name: 'close choice', exact: true}),
+	).toBeFocused();
+	await page.keyboard.press('2');
+	await expect(question).toHaveCount(0);
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 	await expect(input()).toBeFocused();
 });
 
@@ -289,9 +372,17 @@ test('focused approvals stay fully visible across turns and widths in both theme
 			await expect(cards()).toHaveCSS('animation-duration', '2.2s');
 			await expect(cards()).toHaveCSS(
 				'border-top-color',
+				theme === 'dark' ? 'rgb(122, 162, 247)' : 'rgb(0, 0, 238)',
+			);
+			await expect(cards()).toHaveCSS('outline-width', '2px');
+			await input().focus();
+			await expect(cards()).toHaveCSS(
+				'border-top-color',
 				theme === 'dark' ? 'rgb(224, 175, 104)' : 'rgb(118, 81, 11)',
 			);
-			await expect(dialogs()).toHaveCSS('outline-width', '2px');
+			await expect(cards()).toHaveCSS('outline-style', 'none');
+			await dialogs().focus();
+			await expect(dialogs()).toBeFocused();
 			for (const hint of await cards().locator('kbd').all())
 				await expect(hint).toHaveCSS('opacity', '1');
 			const geometry = await cards().evaluate(card => {
@@ -531,6 +622,99 @@ test.describe('approval focus recovery', () => {
 		await expect(option).toBeEnabled();
 		await expect(dialog).toBeFocused();
 		await expect(fixture().getByRole('alertdialog')).toHaveCount(1);
+	});
+
+	const question = (id: string): PermissionRequestInfo => ({
+		id,
+		title: `fixture question ${id}?`,
+		question: true,
+		options: [
+			{id: 'answer-0', name: 'first fixture choice', kind: 'allow_once'},
+			{id: 'answer-1', name: 'second fixture choice', kind: 'allow_once'},
+		],
+	});
+	const render = (requests: PermissionRequestInfo[]) =>
+		page.evaluate(
+			requests =>
+				(
+					window as unknown as HarnessWindow
+				).approvalFixture.approvalHarness.render(requests),
+			requests,
+		);
+	const answers = () =>
+		page.evaluate(() =>
+			(
+				window as unknown as HarnessWindow
+			).approvalFixture.approvalHarness.answers(),
+		);
+	const choice = () => page.locator('dialog.question-dialog');
+
+	for (const dismiss of ['Escape', 'close'] as const) {
+		test(`question ${dismiss} collapses to the shelf without answering and keeps the request pending`, async () => {
+			await render([question('Q')]);
+			await expect(choice()).toBeVisible();
+			const close = choice().getByRole('button', {
+				name: 'close choice',
+				exact: true,
+			});
+			await expect(close).toBeFocused();
+			await expect(
+				page.locator('#approval-focus-fixture .ui-card--approval'),
+			).toHaveCount(0);
+			for (let index = 0; index < 4; index++) {
+				await page.keyboard.press(index % 2 ? 'Shift+Tab' : 'Tab');
+				expect(
+					await choice().evaluate(dialog =>
+						dialog.contains(document.activeElement),
+					),
+				).toBe(true);
+			}
+			await close.focus();
+			if (dismiss === 'Escape') await page.keyboard.press('Escape');
+			else await close.click();
+			await expect(choice()).toHaveCount(0);
+			const card = fixture().getByRole('alertdialog');
+			await expect(card).toHaveCount(1);
+			await expect(card).toBeFocused();
+			await expect(card).toContainText('fixture question Q?');
+			await expect(card.getByRole('textbox')).toHaveCount(0);
+			expect(await answers()).toEqual([]);
+			await page.keyboard.press('2');
+			await expect.poll(answers).toEqual(['Q:answer-1']);
+		});
+	}
+
+	test('question digits answer only offered choices once, keep failures in the dialog and return focus on resolution', async () => {
+		// Mount the shelf first so it records the focus origin, as the app does.
+		await render([]);
+		await render([question('R')]);
+		await expect(choice()).toBeVisible();
+		for (const key of ['9', '3', '0']) await page.keyboard.press(key);
+		await choice().dispatchEvent('keydown', {key: '1', repeat: true});
+		await choice().dispatchEvent('keydown', {key: '1', shiftKey: true});
+		expect(await answers()).toEqual([]);
+		await choice().evaluate(dialog => {
+			for (const key of ['1', '2'])
+				dialog.dispatchEvent(
+					new KeyboardEvent('keydown', {key, bubbles: true}),
+				);
+		});
+		await expect.poll(answers).toEqual(['R:answer-0']);
+		await expect(choice().getByRole('alert')).toBeVisible();
+		await expect(choice()).toBeVisible();
+		await expect(
+			choice().getByRole('button', {name: 'first fixture choice'}),
+		).toBeEnabled();
+		expect(
+			await choice().evaluate(dialog =>
+				dialog.contains(document.activeElement),
+			),
+		).toBe(true);
+		await render([]);
+		await expect(choice()).toHaveCount(0);
+		await expect(
+			fixture().getByRole('button', {name: 'fixture focus origin'}),
+		).toBeFocused();
 	});
 
 	test('same-size queue replacement recovers the oldest request when the focused card disappears', async () => {

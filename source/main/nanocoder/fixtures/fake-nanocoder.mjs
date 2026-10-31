@@ -556,12 +556,22 @@ async function runTurn(id, params) {
 				? `execute_bash: echo ${toolCallId}`
 				: 'execute_bash: echo hi';
 	for (const toolCallId of calls) {
+		// Nanocoder's ask_user reports kind 'other' and its own arguments as rawInput.
 		notify('session/update', {
 			sessionId,
 			update: {
 				sessionUpdate: 'tool_call',
 				toolCallId,
 				title: title(toolCallId),
+				...(mode === 'ask-user'
+					? {
+							kind: 'other',
+							rawInput: {
+								question: title(toolCallId),
+								options: ['First choice', 'Second choice'],
+							},
+						}
+					: {}),
 				status: 'pending',
 			},
 		});

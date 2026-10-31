@@ -17,6 +17,7 @@ import {
 } from '@/main/nanocoder/diagnostics';
 import {connectProject} from '@/main/nanocoder/open-project';
 import {PermissionBroker} from '@/main/nanocoder/permissions';
+import {QuestionHints} from '@/main/nanocoder/question-hint';
 import type {Resolution} from '@/main/nanocoder/runtime';
 import type {SessionTitleChange} from '@/main/nanocoder/session-title';
 import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
@@ -44,7 +45,12 @@ interface Entry {
 	starting?: Promise<SupervisorState>;
 	stopping?: Promise<SupervisorState>;
 	permissions: Map<string, PermissionBroker>;
-	activeTurn?: {sessionId: string; cancelled: boolean; settled: Promise<void>};
+	activeTurn?: {
+		sessionId: string;
+		cancelled: boolean;
+		settled: Promise<void>;
+		questions: QuestionHints;
+	};
 	cancelRetry?: () => void;
 	cancelIdle?: () => void;
 	lastActivityAt: number;
@@ -525,6 +531,8 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				onSessionUpdate: notification => {
 					if (signal.aborted) return;
 					entry.lastActivityAt = this.clock.now();
+					if (entry.activeTurn?.sessionId === notification.sessionId)
+						entry.activeTurn.questions.observe(notification);
 					const event = toTurnEvent(notification.update);
 					if (event) this.turn(entry, notification.sessionId, event);
 				},
@@ -549,7 +557,10 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 						);
 						entry.permissions.set(request.sessionId, broker);
 					}
-					return broker.request(request);
+					return broker.request(
+						request,
+						entry.activeTurn.questions.matches(request),
+					);
 				},
 			});
 			if ('status' in result) {
@@ -662,6 +673,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			settled: new Promise<void>(resolve => {
 				settle = resolve;
 			}),
+			questions: new QuestionHints(sessionId),
 		};
 		entry.activeTurn = turn;
 		entry.state.activeThreadId = sessionId;
@@ -670,6 +682,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			if (turn.cancelled) return {stopReason: 'cancelled'};
 			return await connection.prompt(sessionId, text);
 		} finally {
+			turn.questions.clear();
 			if (entry.activeTurn === turn) {
 				entry.activeTurn = undefined;
 				entry.lastActivityAt = this.clock.now();

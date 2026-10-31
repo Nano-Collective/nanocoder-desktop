@@ -194,10 +194,18 @@ test('SUB-01/04 renders a flat U.7 card with truthful depth and whole-turn stop'
 	);
 	t.true(html.includes('subagent-run-card'));
 	t.true(html.includes('inspect fixture'));
-	t.true(html.includes('depth not reported'));
-	t.true(html.includes('limit 2'));
+	t.true(
+		html.includes(
+			'depth, elapsed time and child tool details were not reported.',
+		),
+	);
+	t.false(html.includes('source bounds'));
+	t.true(html.includes('display-only progress'));
+	t.true(html.includes('reported role · explore'));
 	t.true(html.includes('entire turn and all subagents'));
-	t.true(html.includes('stop turn'));
+	t.true(html.includes('aria-label="stop whole turn: explore;'));
+	t.true(html.includes('stop whole turn</button>'));
+	t.is((html.match(/<button /g) ?? []).length, 1);
 	t.false(html.includes('stop subagent'));
 	t.false(html.includes('private fixture prompt'));
 });
@@ -230,7 +238,7 @@ test('SUB-07 replay and SDK child rows are fallback cards without live controls'
 	t.true(html.includes('aria-label="subagent run 1 of 2: subagent"'));
 	t.true(html.includes('aria-label="subagent run 2 of 2: subagent"'));
 	t.true(html.includes('historical outcome not reported'));
-	t.true(html.includes('child details not available'));
+	t.true(html.includes('child tool details were not reported'));
 	t.false(html.includes('<button'));
 	t.notRegex(html, /<script\b/i);
 });

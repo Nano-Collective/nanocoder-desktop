@@ -11,7 +11,7 @@ Phase 1.10 and U.7 render what Nanocoder `fc01e239a80ddb2e09ca174e3c909508832d53
 
 Role, description and progress labels are escaped text, bounded by UTF-8 bytes, and reject control/format characters. No getter or inherited role property is read. Task prompts are not card labels. Title-only updates retain the initial descriptor, kind and details through the existing transcript reducer. Tool IDs are scoped after the latest user boundary. Pending progress cannot revive terminal tools or a settled delegation.
 
-Cards report the root call state and literal title progress. They explicitly say depth, elapsed time and child details are unavailable. The depth-2/batch-5 source bounds are information, not editable settings or a live concurrency count. There is no fabricated tree or child session link. SDK child rows are passive fallback cards. Replayed calls say historical outcome is not reported, even if the synthetic packet says completed.
+Cards report the root call state and literal title progress. They explicitly say depth, elapsed time and child details are unavailable. The depth-2/batch-5 source bounds are information, not editable settings or a live concurrency count. The card does not show them. There is no fabricated tree or child session link. SDK child rows are passive fallback cards. Replayed calls say historical outcome is not reported, even if the synthetic packet says completed.
 
 ## Approval and stop ownership
 

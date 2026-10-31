@@ -125,7 +125,7 @@ test('subagent and file-plan rows are inert truthful display, not child capabili
 	t.true(html.includes('state not reported'));
 	t.true(html.includes('plan file not opened'));
 	t.notRegex(html, /<button|<a\b|\shref=|\ssrc=/);
-	t.false(html.includes('stop turn'));
+	t.false(html.includes('stop whole turn'));
 });
 
 test('context is shown only from an actual usage_update, never turn token totals (CHAT-19)', t => {
