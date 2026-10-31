@@ -46,9 +46,7 @@ export function ProjectsDialogBody({
 											{[
 												project.canonicalRoot,
 												selected ? 'selected' : null,
-												available
-													? null
-													: `folder ${project.availability}; locate it before opening`,
+												available ? null : `folder ${project.availability}`,
 											]
 												.filter(Boolean)
 												.join(' · ')}
@@ -78,7 +76,10 @@ export function ProjectsDialogBody({
 											)}
 										</button>
 									) : (
-										<div className="projects-dialog-row projects-dialog-row--missing">
+										<div
+											className="projects-dialog-row projects-dialog-row--missing"
+											aria-current={selected ? 'true' : undefined}
+										>
 											{body}
 											<Button
 												aria-label={`locate ${project.displayName}`}

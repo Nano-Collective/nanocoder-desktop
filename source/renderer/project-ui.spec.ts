@@ -48,8 +48,8 @@ test('recent projects escape names and paths and explain why missing roots canno
 	const html = renderToStaticMarkup(createElement(ProjectsDialogBody, props));
 	t.notRegex(html, /<script\b/i);
 	t.true(html.includes('&lt;script&gt;fixture&lt;/script&gt;'));
-	t.true(html.includes('folder missing; locate it before opening'));
-	t.true(html.includes('selected'));
+	t.true(html.includes('· selected · folder missing</span>'));
+	t.true(html.includes('aria-current="true"'));
 	const buttons = html.match(/<button[^>]*>/g) ?? [];
 	t.is(buttons.length, 1);
 	t.true(buttons[0]?.includes('aria-label="locate '));
