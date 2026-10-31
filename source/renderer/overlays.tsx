@@ -38,14 +38,6 @@ const OverlayContext = createContext<{
 	shortcut: string;
 } | null>(null);
 
-export function useOverlayOpen() {
-	const overlays = useContext(OverlayContext);
-	return useCallback(
-		(request: OverlayRequest) => overlays?.open(request),
-		[overlays],
-	);
-}
-
 export function PaletteButton() {
 	const overlays = useContext(OverlayContext);
 	if (!overlays) return null;
