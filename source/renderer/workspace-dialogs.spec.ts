@@ -7,11 +7,9 @@ import {
 	capabilityRows,
 } from '@/renderer/capabilities-dialog';
 import {DiagnosticsDialogBody} from '@/renderer/diagnostics-dialog';
+import type {WorkspaceDialog} from '@/renderer/overlay-model';
 import {RuntimeDialogBody} from '@/renderer/runtime-dialog';
-import {
-	type WorkspaceDialogKind,
-	WorkspaceDialogs,
-} from '@/renderer/workspace-dialogs';
+import {WorkspaceDialogs} from '@/renderer/workspace-dialogs';
 import type {
 	CapabilityGates,
 	ConnectedAgent,
@@ -87,7 +85,7 @@ const runtimeProps = {
 	onDiagnostics() {},
 };
 
-function dialogs(kind: WorkspaceDialogKind | null) {
+function dialogs(kind: WorkspaceDialog) {
 	return {
 		kind,
 		onClose() {},
@@ -264,22 +262,29 @@ test('diagnostics review shows the captured lines escaped and says nothing is se
 	t.true(html.includes('aria-label="captured diagnostics"'));
 });
 
-test('each workspace dialog titles itself and nothing renders when closed', t => {
-	t.is(
-		renderToStaticMarkup(createElement(WorkspaceDialogs, dialogs(null))),
-		'',
-	);
-	const titles: Array<[WorkspaceDialogKind, string]> = [
+test('each workspace dialog titles itself in the shared shell', t => {
+	const snapshot: DiagnosticsSnapshot = {
+		id: '44444444-4444-4444-8444-444444444444',
+		projectId: gates.projectId,
+		lines: ['line'],
+		truncated: false,
+	};
+	const titles: Array<[WorkspaceDialog, string]> = [
 		['projects', 'your projects'],
 		['runtime', 'runtime details'],
 		['capabilities', 'capabilities, with reasons'],
 		['archives', 'archived threads'],
+		['diagnostics', 'review captured diagnostics'],
 	];
 	for (const [kind, title] of titles) {
 		const html = renderToStaticMarkup(
-			createElement(WorkspaceDialogs, dialogs(kind)),
+			createElement(WorkspaceDialogs, {
+				...dialogs(kind),
+				diagnostics: {snapshot, busy: false, message: '', onExport() {}},
+			}),
 		);
-		t.true(html.includes('class="overlay-dialog dialog-frame"'), kind);
+		t.true(html.includes('class="dialog-shell"'), kind);
+		t.false(html.includes('dialog-frame'), kind);
 		t.true(html.includes(`>${title}</h2>`), kind);
 		t.true(html.includes('aria-label="dismiss dialog"'), kind);
 	}

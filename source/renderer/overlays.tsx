@@ -15,6 +15,7 @@ import {DialogShell} from '@/renderer/dialog-shell';
 import {
 	commandModifier,
 	type DialogApi,
+	type DialogRequest,
 	dialogLabel,
 	filterActions,
 	focusReturn,
@@ -22,14 +23,16 @@ import {
 	type OverlayRequest,
 	type PaletteAction,
 	runAction,
-	type ThreadDialog,
 	type Toast,
 	toastQueue,
 } from '@/renderer/overlay-model';
 import {Button} from '@/renderer/ui';
 
 export interface OverlayHandle {
-	open(request: OverlayRequest): void;
+	// The opener is the element focus returns to after the last dialog closes.
+	open(request: OverlayRequest, opener?: HTMLElement | null): void;
+	close(): void;
+	closeIf(request: OverlayRequest): void;
 	notify(message: string): void;
 }
 
@@ -104,13 +107,20 @@ export function OverlayProvider({
 	ref,
 	actions,
 	pendingApprovalCount = 0,
-	renderThreadDialog,
+	canClose = () => true,
+	onClosed,
+	onOpenChange,
+	renderDialog,
 	children,
 }: {
 	ref?: Ref<OverlayHandle>;
 	actions: PaletteAction[];
 	pendingApprovalCount?: number;
-	renderThreadDialog(request: ThreadDialog, api: DialogApi): ReactNode;
+	// A dismissal or replacement is refused when this returns false; the dialog stays open.
+	canClose?(request: OverlayRequest): boolean;
+	onClosed?(request: OverlayRequest): void;
+	onOpenChange?(open: boolean): void;
+	renderDialog(request: DialogRequest, api: DialogApi): ReactNode;
 	children: ReactNode;
 }) {
 	const [current, setCurrent] = useState<OverlayRequest | null>(null);
@@ -119,6 +129,8 @@ export function OverlayProvider({
 	const [toast, setToast] = useState<Toast | null>(null);
 	const [themeError, setThemeError] = useState('');
 	const dialog = useRef<HTMLDialogElement>(null);
+	const currentRequest = useRef<OverlayRequest | null>(null);
+	const latestHooks = useRef({canClose, onClosed, onOpenChange});
 	const returnFocus = useRef<(() => void) | null>(null);
 	const returnTarget = useRef<HTMLElement | null>(null);
 	const closingFocus = useRef<Element | null>(null);
@@ -164,23 +176,34 @@ export function OverlayProvider({
 		notifications.current?.push(message);
 	}, []);
 
-	const open = useCallback((request: OverlayRequest) => {
-		if (!dialog.current?.open) {
-			const target = document.activeElement;
-			returnTarget.current = target instanceof HTMLElement ? target : null;
-			returnFocus.current = focusReturn(
-				target instanceof HTMLElement ? target : null,
-				document.querySelector<HTMLButtonElement>(
-					'[aria-label="command palette"]',
-				) ?? document.body,
-			);
-		}
-		setQuery('');
-		setSelected(0);
-		setCurrent(request);
-	}, []);
+	// Only the first opener is kept, so a dialog that replaces another still returns focus to the original.
+	const open = useCallback(
+		(request: OverlayRequest, opener?: HTMLElement | null) => {
+			const replaced = currentRequest.current;
+			if (replaced !== null && replaced !== request) {
+				if (!latestHooks.current.canClose(replaced)) return;
+				latestHooks.current.onClosed?.(replaced);
+			}
+			if (!dialog.current?.open) {
+				const target = opener === undefined ? document.activeElement : opener;
+				returnTarget.current = target instanceof HTMLElement ? target : null;
+				returnFocus.current = focusReturn(
+					target instanceof HTMLElement ? target : null,
+					document.querySelector<HTMLButtonElement>(
+						'[aria-label="command palette"]',
+					) ?? document.body,
+				);
+			}
+			currentRequest.current = request;
+			setQuery('');
+			setSelected(0);
+			setCurrent(request);
+		},
+		[],
+	);
 
-	const close = useCallback(() => {
+	const closeNow = useCallback(() => {
+		const request = currentRequest.current;
 		dialog.current?.close();
 		const active = document.activeElement;
 		closingFocus.current = active;
@@ -191,15 +214,44 @@ export function OverlayProvider({
 			(active instanceof HTMLElement && active.isContentEditable)
 		)
 			active.blur();
+		currentRequest.current = null;
 		setCurrent(null);
+		if (request !== null) latestHooks.current.onClosed?.(request);
 	}, []);
+
+	const close = useCallback(() => {
+		const request = currentRequest.current;
+		if (request !== null && !latestHooks.current.canClose(request)) return;
+		closeNow();
+	}, [closeNow]);
+
+	const closeIf = useCallback(
+		(request: OverlayRequest) => {
+			if (currentRequest.current === request) closeNow();
+		},
+		[closeNow],
+	);
 
 	const api = useMemo<DialogApi>(() => ({open, close}), [open, close]);
 	const context = useMemo(() => ({open, shortcut}), [open, shortcut]);
-	useImperativeHandle(ref, () => ({open, notify}), [open, notify]);
+	useImperativeHandle(ref, () => ({open, close, closeIf, notify}), [
+		open,
+		close,
+		closeIf,
+		notify,
+	]);
+
+	useLayoutEffect(() => {
+		latestActions.current = actions;
+		latestHooks.current = {canClose, onClosed, onOpenChange};
+	});
 
 	useLayoutEffect(() => {
 		if (opened && !dialog.current?.open) dialog.current?.showModal();
+	}, [opened]);
+
+	useLayoutEffect(() => {
+		latestHooks.current.onOpenChange?.(opened);
 	}, [opened]);
 
 	useLayoutEffect(() => {
@@ -209,10 +261,6 @@ export function OverlayProvider({
 			dialog.current?.querySelector<HTMLElement>('button');
 		target?.focus();
 	}, [current]);
-
-	useLayoutEffect(() => {
-		latestActions.current = actions;
-	});
 
 	const runNewThread = useCallback(() => {
 		const action = latestActions.current.find(item => item.id === 'thread-new');
@@ -473,8 +521,9 @@ export function OverlayProvider({
 					</DialogShell>
 				)}
 				{current !== null &&
-					typeof current !== 'string' &&
-					renderThreadDialog(current, api)}
+					current !== 'palette' &&
+					current !== 'shortcuts' &&
+					renderDialog(current, api)}
 				<div data-stream-announcement-host="modal" />
 				<Notifications
 					active={opened}

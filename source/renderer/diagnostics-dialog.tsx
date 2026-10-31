@@ -2,8 +2,6 @@ import * as React from 'react';
 import {Button} from '@/renderer/ui';
 import type {DiagnosticsSnapshot} from '@/shared/ipc';
 
-export const diagnosticsDialogTitle = 'review captured diagnostics';
-
 export interface DiagnosticsDialogProps {
 	snapshot: DiagnosticsSnapshot;
 	busy: boolean;

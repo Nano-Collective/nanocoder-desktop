@@ -158,6 +158,14 @@ test('every overlay request has a dialog name for assistive technology (E-02, E-
 	);
 });
 
+test('workspace dialogs take their accessible names from the overlay labels (E-02, E-03)', t => {
+	t.is(dialogLabel('projects'), 'your projects');
+	t.is(dialogLabel('runtime'), 'runtime details');
+	t.is(dialogLabel('capabilities'), 'capabilities, with reasons');
+	t.is(dialogLabel('archives'), 'archived threads');
+	t.is(dialogLabel('diagnostics'), 'review captured diagnostics');
+});
+
 function fixture() {
 	let now = 0;
 	let sequence = 0;

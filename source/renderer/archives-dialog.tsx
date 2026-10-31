@@ -2,8 +2,6 @@ import * as React from 'react';
 import {Button} from '@/renderer/ui';
 import type {ThreadInfo} from '@/shared/ipc';
 
-export const archivesDialogTitle = 'archived threads';
-
 export interface ArchivesDialogProps {
 	threads: readonly ThreadInfo[];
 	projectName: string | undefined;
@@ -41,7 +39,7 @@ export function ArchivesDialogBody({
 		if (rows === 0) {
 			root.current
 				?.closest('dialog')
-				?.querySelector<HTMLButtonElement>('.dialog-frame-dismiss')
+				?.querySelector<HTMLButtonElement>('.dialog-close')
 				?.focus();
 			return;
 		}

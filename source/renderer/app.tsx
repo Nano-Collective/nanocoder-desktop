@@ -8,6 +8,7 @@ import {
 	commandModifier,
 	notifyImported,
 	type OverlayRequest,
+	type WorkspaceDialog,
 } from '@/renderer/overlay-model';
 import {
 	type OverlayHandle,
@@ -36,8 +37,8 @@ import {useProjects} from '@/renderer/use-projects';
 import {useSessionImports} from '@/renderer/use-session-imports';
 import {useThreads} from '@/renderer/use-threads';
 import {
-	type WorkspaceDialogKind,
 	WorkspaceDialogs,
+	type WorkspaceDialogsProps,
 } from '@/renderer/workspace-dialogs';
 import {CONFIG_UNCERTAINTY_REASON} from '@/shared/control-reasons';
 import type {
@@ -169,24 +170,15 @@ export function App() {
 	const composerInput = useRef<HTMLTextAreaElement>(null);
 	const retryFocus = useRef(false);
 	const retrying = useRef(false);
-	const [dialog, setDialog] = useState<WorkspaceDialogKind | null>(null);
-	// The opener of the first dialog stays the return target while dialogs replace each other.
-	const dialogOpener = useRef<HTMLElement | null | undefined>(undefined);
+	const [overlayOpen, setOverlayOpen] = useState(false);
+	const overlays = useRef<OverlayHandle>(null);
 	const review = useDiagnosticReview(projectId, {
 		capture: id => window.desktop.getDiagnostics({projectId: id}),
 		exportSnapshot: request => window.desktop.exportDiagnostics(request),
 	});
-	const openDialog = (kind: WorkspaceDialogKind, opener = focusedElement()) => {
-		if (dialogOpener.current === undefined) dialogOpener.current = opener;
-		setDialog(kind);
-	};
-	const closeDialog = () => {
-		if (dialog === 'diagnostics') {
-			if (review.busy) return;
-			review.close();
-		}
-		setDialog(null);
-	};
+	// The shared overlay keeps the first opener as the return target across replacements.
+	const openDialog = (kind: WorkspaceDialog, opener = focusedElement()) =>
+		overlays.current?.open(kind, opener);
 	const captureDiagnostics = () => {
 		const opener = focusedElement();
 		void review.capture().then(captured => {
@@ -194,27 +186,9 @@ export function App() {
 		});
 	};
 	useEffect(() => {
-		if (dialog !== null || dialogOpener.current === undefined) return;
-		const target = dialogOpener.current;
-		dialogOpener.current = undefined;
-		const focused = document.activeElement;
-		if (focused && focused !== document.body) return;
-		if (
-			target?.isConnected &&
-			!target.matches(':disabled') &&
-			target.checkVisibility()
-		)
-			target.focus();
-		else
-			document
-				.querySelector<HTMLButtonElement>('[aria-label="command palette"]')
-				?.focus();
-	}, [dialog]);
-	useEffect(() => {
-		if (dialog === 'diagnostics' && !review.snapshot) setDialog(null);
-	}, [dialog, review.snapshot]);
+		if (!review.snapshot) overlays.current?.closeIf('diagnostics');
+	}, [review.snapshot]);
 
-	const overlays = useRef<OverlayHandle>(null);
 	const openOverlay = (request: OverlayRequest) =>
 		overlays.current?.open(request);
 
@@ -401,7 +375,7 @@ export function App() {
 			}}
 			onDiagnostics={captureDiagnostics}
 			diagnosticsBusy={review.busy}
-			diagnosticsMessage={dialog === null ? review.message : ''}
+			diagnosticsMessage={overlayOpen ? '' : review.message}
 		/>
 	);
 
@@ -424,14 +398,80 @@ export function App() {
 			deleteHistory: controls.deleteHistory,
 		},
 	};
+	const workspaceDialogData: Omit<WorkspaceDialogsProps, 'kind' | 'onClose'> = {
+		projects: {
+			projects: projectControls.projects,
+			activeProjectId: projectId,
+			pending: connecting || projectControls.pending,
+			onAdd: () => {
+				overlays.current?.closeIf('projects');
+				projectControls.onAdd();
+			},
+			onOpen: id => {
+				overlays.current?.closeIf('projects');
+				projectControls.onOpen(id);
+			},
+			onLocate: id => {
+				overlays.current?.closeIf('projects');
+				projectControls.onLocate(id);
+			},
+		},
+		runtime: {
+			runtime,
+			processState,
+			projectRoot: currentProject?.canonicalRoot ?? null,
+			gates: gates[projectId ?? ''] ?? null,
+			diagnosticsBusy: review.busy,
+			diagnosticsMessage: review.message,
+			onCheckAgain: checkRuntime,
+			onCapabilities: () => openDialog('capabilities'),
+			onDiagnostics: captureDiagnostics,
+		},
+		capabilities: {
+			gates: gates[projectId ?? ''] ?? null,
+			modelGate: modelControls.controls?.modelGate ?? null,
+			agent: agent ?? null,
+			thread,
+		},
+		archives: {
+			threads: workspace.threads.filter(row => row.archiveState === 'archived'),
+			projectName: currentProject?.displayName,
+			now: new Date(),
+			pending,
+			onUnarchive: id => {
+				void controls.archive(id, false);
+			},
+		},
+		diagnostics: review.snapshot
+			? {
+					snapshot: review.snapshot,
+					busy: review.busy,
+					message: review.message,
+					onExport: review.exportSnapshot,
+				}
+			: null,
+	};
 
 	return (
 		<OverlayProvider
 			ref={overlays}
 			pendingApprovalCount={transcript.permissions.length}
-			renderThreadDialog={(request, api) => (
-				<ThreadDialogs request={request} data={threadDialogData} api={api} />
-			)}
+			canClose={request => request !== 'diagnostics' || !review.busy}
+			onClosed={request => {
+				if (request === 'diagnostics') review.close();
+			}}
+			onOpenChange={setOverlayOpen}
+			renderDialog={(request, api) =>
+				typeof request === 'string' ? (
+					<WorkspaceDialogs
+						kind={request}
+						onClose={api.close}
+						{...workspaceDialogData}
+					/>
+				) : (
+					<ThreadDialogs request={request} data={threadDialogData} api={api} />
+				)
+			}
 			actions={[
 				...threadPalette({
 					projectId,
@@ -741,65 +781,6 @@ export function App() {
 					</Card>
 				)}
 			</AppShell>
-			<WorkspaceDialogs
-				kind={dialog}
-				onClose={closeDialog}
-				projects={{
-					projects: projectControls.projects,
-					activeProjectId: projectId,
-					pending: connecting || projectControls.pending,
-					onAdd: () => {
-						closeDialog();
-						projectControls.onAdd();
-					},
-					onOpen: id => {
-						closeDialog();
-						projectControls.onOpen(id);
-					},
-					onLocate: id => {
-						closeDialog();
-						projectControls.onLocate(id);
-					},
-				}}
-				runtime={{
-					runtime,
-					processState,
-					projectRoot: currentProject?.canonicalRoot ?? null,
-					gates: gates[projectId ?? ''] ?? null,
-					diagnosticsBusy: review.busy,
-					diagnosticsMessage: review.message,
-					onCheckAgain: checkRuntime,
-					onCapabilities: () => openDialog('capabilities'),
-					onDiagnostics: captureDiagnostics,
-				}}
-				capabilities={{
-					gates: gates[projectId ?? ''] ?? null,
-					modelGate: modelControls.controls?.modelGate ?? null,
-					agent: agent ?? null,
-					thread,
-				}}
-				archives={{
-					threads: workspace.threads.filter(
-						row => row.archiveState === 'archived',
-					),
-					projectName: currentProject?.displayName,
-					now: new Date(),
-					pending,
-					onUnarchive: id => {
-						void controls.archive(id, false);
-					},
-				}}
-				diagnostics={
-					review.snapshot
-						? {
-								snapshot: review.snapshot,
-								busy: review.busy,
-								message: review.message,
-								onExport: review.exportSnapshot,
-							}
-						: null
-				}
-			/>
 		</OverlayProvider>
 	);
 }

@@ -3,43 +3,35 @@ import {
 	ArchivesDialogBody,
 	ArchivesDialogFooter,
 	type ArchivesDialogProps,
-	archivesDialogTitle,
 } from '@/renderer/archives-dialog';
 import {
 	CapabilitiesDialogBody,
 	CapabilitiesDialogFooter,
 	type CapabilitiesDialogProps,
-	capabilitiesDialogTitle,
 } from '@/renderer/capabilities-dialog';
 import {
 	DiagnosticsDialogBody,
 	DiagnosticsDialogFooter,
 	type DiagnosticsDialogProps,
-	diagnosticsDialogTitle,
 } from '@/renderer/diagnostics-dialog';
-import {DialogFrame} from '@/renderer/dialog-frame';
+import {DialogShell} from '@/renderer/dialog-shell';
+import {
+	type WorkspaceDialog,
+	workspaceDialogLabels,
+} from '@/renderer/overlay-model';
 import {
 	ProjectsDialogBody,
 	ProjectsDialogFooter,
 	type ProjectsDialogProps,
-	projectsDialogTitle,
 } from '@/renderer/projects-dialog';
 import {
 	RuntimeDialogBody,
 	RuntimeDialogFooter,
 	type RuntimeDialogProps,
-	runtimeDialogTitle,
 } from '@/renderer/runtime-dialog';
 
-export type WorkspaceDialogKind =
-	| 'projects'
-	| 'runtime'
-	| 'capabilities'
-	| 'archives'
-	| 'diagnostics';
-
 export interface WorkspaceDialogsProps {
-	kind: WorkspaceDialogKind | null;
+	kind: WorkspaceDialog;
 	onClose(): void;
 	projects: ProjectsDialogProps;
 	runtime: RuntimeDialogProps;
@@ -48,7 +40,7 @@ export interface WorkspaceDialogsProps {
 	diagnostics: DiagnosticsDialogProps | null;
 }
 
-// One frame per open dialog; the key remounts it when one replaces another.
+// Renders inside the shared overlay dialog, which owns focus return and Escape.
 export function WorkspaceDialogs({
 	kind,
 	onClose,
@@ -58,12 +50,13 @@ export function WorkspaceDialogs({
 	archives,
 	diagnostics,
 }: WorkspaceDialogsProps): React.ReactElement | null {
+	const closeLabel = 'dismiss dialog';
 	switch (kind) {
 		case 'projects':
 			return (
-				<DialogFrame
-					key={kind}
-					title={projectsDialogTitle}
+				<DialogShell
+					title={workspaceDialogLabels.projects}
+					closeLabel={closeLabel}
 					onClose={onClose}
 					footer={
 						<ProjectsDialogFooter
@@ -73,13 +66,13 @@ export function WorkspaceDialogs({
 					}
 				>
 					<ProjectsDialogBody {...projects} />
-				</DialogFrame>
+				</DialogShell>
 			);
 		case 'runtime':
 			return (
-				<DialogFrame
-					key={kind}
-					title={runtimeDialogTitle}
+				<DialogShell
+					title={workspaceDialogLabels.runtime}
+					closeLabel={closeLabel}
 					onClose={onClose}
 					footer={
 						<RuntimeDialogFooter
@@ -91,36 +84,36 @@ export function WorkspaceDialogs({
 					}
 				>
 					<RuntimeDialogBody {...runtime} />
-				</DialogFrame>
+				</DialogShell>
 			);
 		case 'capabilities':
 			return (
-				<DialogFrame
-					key={kind}
-					title={capabilitiesDialogTitle}
+				<DialogShell
+					title={workspaceDialogLabels.capabilities}
+					closeLabel={closeLabel}
 					onClose={onClose}
 					footer={<CapabilitiesDialogFooter onClose={onClose} />}
 				>
 					<CapabilitiesDialogBody {...capabilities} />
-				</DialogFrame>
+				</DialogShell>
 			);
 		case 'archives':
 			return (
-				<DialogFrame
-					key={kind}
-					title={archivesDialogTitle}
+				<DialogShell
+					title={workspaceDialogLabels.archives}
+					closeLabel={closeLabel}
 					onClose={onClose}
 					footer={<ArchivesDialogFooter onClose={onClose} />}
 				>
 					<ArchivesDialogBody {...archives} />
-				</DialogFrame>
+				</DialogShell>
 			);
 		case 'diagnostics':
 			if (!diagnostics) return null;
 			return (
-				<DialogFrame
-					key={kind}
-					title={diagnosticsDialogTitle}
+				<DialogShell
+					title={workspaceDialogLabels.diagnostics}
+					closeLabel={closeLabel}
 					onClose={onClose}
 					footer={
 						<DiagnosticsDialogFooter
@@ -134,7 +127,7 @@ export function WorkspaceDialogs({
 						snapshot={diagnostics.snapshot}
 						message={diagnostics.message}
 					/>
-				</DialogFrame>
+				</DialogShell>
 			);
 		default:
 			return null;

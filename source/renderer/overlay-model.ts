@@ -17,7 +17,19 @@ export type ThreadDialog =
 	| {kind: 'new-thread'}
 	| {kind: 'other-thread'; threadId: string};
 
-export type OverlayRequest = 'palette' | 'shortcuts' | ThreadDialog;
+export const workspaceDialogLabels = {
+	projects: 'your projects',
+	runtime: 'runtime details',
+	capabilities: 'capabilities, with reasons',
+	archives: 'archived threads',
+	diagnostics: 'review captured diagnostics',
+} as const;
+
+export type WorkspaceDialog = keyof typeof workspaceDialogLabels;
+
+export type DialogRequest = WorkspaceDialog | ThreadDialog;
+
+export type OverlayRequest = 'palette' | 'shortcuts' | DialogRequest;
 
 export interface DialogApi {
 	open(request: OverlayRequest): void;
@@ -27,6 +39,7 @@ export interface DialogApi {
 export function dialogLabel(request: OverlayRequest): string {
 	if (request === 'palette') return 'command palette';
 	if (request === 'shortcuts') return 'keyboard shortcuts';
+	if (typeof request === 'string') return workspaceDialogLabels[request];
 	switch (request.kind) {
 		case 'thread-menu':
 			return 'thread actions';
