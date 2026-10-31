@@ -326,10 +326,6 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			await expect(projects).toBeHidden();
 			await expect(switcher).toBeFocused();
 			const rail = page.getByRole('region', {name: 'project threads'});
-			const diagnostics = page.getByRole('button', {
-				name: 'diagnostics',
-				exact: true,
-			});
 			const send = page.getByRole('button', {name: 'send', exact: true});
 			const stream = page.getByRole('region', {
 				name: 'conversation',
@@ -348,7 +344,6 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 					exact: true,
 				}),
 				page.getByRole('button', {name: 'runtime details', exact: true}),
-				diagnostics,
 				palette,
 				stream,
 				input,

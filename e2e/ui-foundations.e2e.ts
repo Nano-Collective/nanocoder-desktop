@@ -210,10 +210,6 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 		exact: true,
 	});
 	const rail = page.getByRole('region', {name: 'project threads'});
-	const diagnostics = page.getByRole('button', {
-		name: 'diagnostics',
-		exact: true,
-	});
 	const input = page.getByRole('textbox', {name: 'message'});
 	const send = page.getByRole('button', {name: 'send', exact: true});
 	const focusOrder = [
@@ -227,7 +223,6 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 			exact: true,
 		}),
 		page.getByRole('button', {name: 'runtime details', exact: true}),
-		diagnostics,
 		palette,
 		page.getByRole('region', {name: 'conversation', exact: true}),
 		input,
@@ -274,7 +269,6 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
 		page.getByRole('button', {name: 'runtime details', exact: true}),
-		page.getByRole('button', {name: 'diagnostics', exact: true}),
 		page.getByRole('button', {name: 'command palette', exact: true}),
 		page.getByRole('region', {name: 'conversation', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),

@@ -502,7 +502,13 @@ test('diagnostics export reviews the exact snapshot and cancellation never write
 			return {canceled: false, filePath: target};
 		}) as typeof dialog.showSaveDialog;
 	}, target);
-	await page.getByRole('button', {name: 'diagnostics', exact: true}).click();
+	await page
+		.getByRole('button', {name: 'runtime details', exact: true})
+		.click();
+	await page
+		.getByRole('dialog', {name: 'runtime details'})
+		.getByRole('button', {name: 'review diagnostics', exact: true})
+		.click();
 	const diagnostics = page.getByRole('dialog', {
 		name: 'review captured diagnostics',
 	});
@@ -657,26 +663,34 @@ test('built main refuses unknown recovery handles and renderer-supplied paths or
 	).toEqual(['NOT_FOUND', 'VALIDATION', 'VALIDATION']);
 });
 
-test('compact ready row and reviewed diagnostics keep their computed presentation in both themes and widths', async () => {
+test('runtime details reviews diagnostics with computed presentation in both themes and widths', async () => {
 	await open();
-	const ready = page.getByRole('region', {name: 'Nanocoder recovery'});
+	const runtime = page.getByRole('button', {
+		name: 'runtime details',
+		exact: true,
+	});
 	for (const theme of ['dark', 'light']) {
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
 		}, theme);
 		for (const width of [1240, 1020, 840]) {
 			await page.setViewportSize({width, height: 900});
-			await expect(ready).toHaveCSS('display', 'flex');
-			await expect(ready).toHaveCSS('padding', '0px');
-			await expect(ready).toHaveCSS('border-top-width', '0px');
-			await expect(ready).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-			await expect(ready).toHaveCSS(
-				'color',
-				theme === 'dark' ? 'rgb(168, 168, 168)' : 'rgb(79, 86, 120)',
-			);
+			await runtime.click();
+			const details = page.getByRole('dialog', {name: 'runtime details'});
+			await expect(details).toHaveCSS('border-radius', '15px');
+			await expect(
+				details.getByRole('button', {name: 'review diagnostics', exact: true}),
+			).toBeVisible();
+			await page.keyboard.press('Escape');
+			await expect(details).toBeHidden();
+			await expect(runtime).toBeFocused();
 		}
 	}
-	await ready.getByRole('button', {name: 'diagnostics', exact: true}).click();
+	await runtime.click();
+	await page
+		.getByRole('dialog', {name: 'runtime details'})
+		.getByRole('button', {name: 'review diagnostics', exact: true})
+		.click();
 	const diagnostics = page.getByRole('dialog', {
 		name: 'review captured diagnostics',
 		exact: true,
