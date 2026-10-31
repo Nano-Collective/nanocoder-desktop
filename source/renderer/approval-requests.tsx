@@ -57,6 +57,14 @@ function canFocus(
 	);
 }
 
+// Asks the DOM, not the shelf ref: a dialog focuses itself before the ref attaches.
+export function isOutsideShelf(
+	active: Element | null,
+	body: Element | null,
+): active is HTMLElement {
+	return !!active && active !== body && !active.closest('.approval-requests');
+}
+
 function useApprovalFocus(
 	requests: readonly PermissionRequestInfo[],
 	answering: boolean,
@@ -74,12 +82,7 @@ function useApprovalFocus(
 	React.useEffect(() => {
 		const remember = () => {
 			const active = document.activeElement;
-			if (
-				active instanceof HTMLElement &&
-				active !== document.body &&
-				!container.current?.contains(active)
-			)
-				lastOutside.current = active;
+			if (isOutsideShelf(active, document.body)) lastOutside.current = active;
 		};
 		remember();
 		document.addEventListener('focusin', remember);
@@ -90,12 +93,9 @@ function useApprovalFocus(
 		const firstId = requests[0]?.id;
 		if (firstId && origin.current === undefined) {
 			const active = document.activeElement;
-			origin.current =
-				active instanceof HTMLElement &&
-				active !== document.body &&
-				!container.current?.contains(active)
-					? active
-					: lastOutside.current;
+			origin.current = isOutsideShelf(active, document.body)
+				? active
+				: lastOutside.current;
 		}
 		const focus = () => {
 			if (answering || questionId || document.querySelector('dialog:modal'))

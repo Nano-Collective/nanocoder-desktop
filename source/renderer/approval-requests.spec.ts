@@ -3,6 +3,7 @@ import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {
 	ApprovalRequests,
+	isOutsideShelf,
 	openQuestionId,
 	shortcutOption,
 } from '@/renderer/approval-requests';
@@ -327,4 +328,17 @@ test('a subagent question names its source inside the dialog it is described by'
 	t.true(markup.includes(question.title));
 	t.true(sourceId !== undefined && describedBy.split(' ').includes(sourceId));
 	t.is((markup.match(/class="question-choice"/g) ?? []).length, 2);
+});
+
+test('focus outside the shelf is an origin, but focus inside it never is (ask_user focus return)', t => {
+	const body = {closest: () => null} as unknown as Element;
+	const outside = {closest: () => null} as unknown as Element;
+	const inside = {
+		closest: (selector: string) =>
+			selector === '.approval-requests' ? {} : null,
+	} as unknown as Element;
+	t.true(isOutsideShelf(outside, body));
+	t.false(isOutsideShelf(inside, body));
+	t.false(isOutsideShelf(body, body));
+	t.false(isOutsideShelf(null, body));
 });
