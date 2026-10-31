@@ -85,10 +85,9 @@ function renderWithNew(status: SupervisorState['status'], newPending = false) {
 
 test('a failed process offers a metadata-only new thread after diagnostics, refused with its reason while a thread request is pending', t => {
 	const idle = renderWithNew('failed');
-	t.true(idle.includes('start a new thread in this project'));
+	t.true(idle.includes('start a new thread'));
 	t.true(
-		idle.indexOf('review diagnostics') <
-			idle.indexOf('start a new thread in this project'),
+		idle.indexOf('review diagnostics') < idle.indexOf('start a new thread'),
 	);
 	t.false(idle.includes('waiting for the thread request'));
 	const pending = renderWithNew('failed', true);
@@ -96,12 +95,10 @@ test('a failed process offers a metadata-only new thread after diagnostics, refu
 	const button =
 		pending
 			.split('<button')
-			.find(part => part.includes('start a new thread in this project')) ?? '';
+			.find(part => part.includes('start a new thread')) ?? '';
 	t.true(button.includes('disabled=""'));
 });
 
 test('a process that is not failed offers no new thread action', t => {
-	t.false(
-		renderWithNew('ready').includes('start a new thread in this project'),
-	);
+	t.false(renderWithNew('ready').includes('start a new thread'));
 });

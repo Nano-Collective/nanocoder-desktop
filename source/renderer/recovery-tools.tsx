@@ -117,7 +117,7 @@ function ProcessRecovery({
 				</Button>
 				{failed && onNew && (
 					<Button onClick={onNew} disabled={busy || newPending}>
-						start a new thread in this project
+						start a new thread
 					</Button>
 				)}
 			</div>
