@@ -179,17 +179,30 @@
 	font-size: 9px;
 	color: var(--colors-on-surface-muted);
 }
-.composer-options > summary {
+.composer-options-toggle {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
 	cursor: pointer;
-	min-height: 16px;
+}
+.composer-options-toggle::before {
+	content: "▸ ";
+}
+.composer-options-toggle[aria-expanded="true"]::before {
+	content: "▾ ";
 }
 .composer-options .ui-button {
 	min-height: 28px;
 	font-size: 10px;
 	margin-top: 7px;
 }
-.composer-options .gate-hint {
+.composer-options .gate-actions > .gate-hint {
 	margin-block: 4px;
+}
+.composer-options .gate-actions[hidden] {
+	display: none;
 }
 
 .composer .sr-only {

@@ -56,6 +56,8 @@ export function Composer(props: ComposerProps) {
 	const hintId = `${id}-hint`;
 	const helpId = `${id}-help`;
 	const noteId = `${id}-note`;
+	const optionsId = `${id}-options`;
+	const [optionsOpen, setOptionsOpen] = React.useState(false);
 	const defaultHintId = `${id}-default`;
 	const missingOffers =
 		'available after the first message: Nanocoder supplies model options after a session exists';
@@ -275,15 +277,23 @@ export function Composer(props: ComposerProps) {
 					</div>
 				)}
 			</form>
-			<p id={noteId} className="gate-hint composer-control-note">
-				{note}
-			</p>
-			{props.modePending && (
-				<p className="gate-hint">{props.mode} · pending first message.</p>
-			)}
-			<details className="composer-options">
-				<summary>mode and project default details</summary>
-				<div className="gate-actions">
+			<div className="composer-options">
+				<p className="gate-hint composer-control-note">
+					<span id={noteId}>{note}</span>{' '}
+					<button
+						type="button"
+						className="composer-options-toggle"
+						aria-expanded={optionsOpen}
+						aria-controls={optionsId}
+						onClick={() => setOptionsOpen(open => !open)}
+					>
+						mode and project default details
+					</button>
+				</p>
+				{props.modePending && (
+					<p className="gate-hint">{props.mode} · pending first message.</p>
+				)}
+				<div id={optionsId} className="gate-actions" hidden={!optionsOpen}>
 					<Button
 						disabled={!!defaultReason}
 						aria-describedby={defaultHintId}
@@ -299,7 +309,7 @@ export function Composer(props: ComposerProps) {
 						{defaultReason ? ` · ${defaultReason}` : ''}
 					</p>
 				</div>
-			</details>
+			</div>
 		</>
 	);
 }
