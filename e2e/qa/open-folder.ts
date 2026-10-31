@@ -2,14 +2,12 @@ import {realpathSync} from 'node:fs';
 import path from 'node:path';
 import {expect, type Page} from '@playwright/test';
 
-// Starts the open-folder command from the header palette and waits for the palette to close.
+const paletteKey = process.platform === 'darwin' ? 'Meta+k' : 'Control+k';
+
+// Starts the open-folder command from the palette shortcut and waits for the palette to close.
 // The welcome button exists only before a thread is open, so the palette is the entry in a thread.
 export async function startFolderFromPalette(page: Page): Promise<void> {
 	const palette = page.getByRole('dialog', {
-		name: 'command palette',
-		exact: true,
-	});
-	const trigger = page.getByRole('button', {
 		name: 'command palette',
 		exact: true,
 	});
@@ -18,9 +16,13 @@ export async function startFolderFromPalette(page: Page): Promise<void> {
 		name: 'find a command',
 		exact: true,
 	});
-	await trigger.click();
+	await page.keyboard.press(paletteKey);
 	await search.fill('open a project folder');
 	await expect(command).not.toHaveAttribute('aria-disabled', 'true');
+	await expect(search).toHaveAttribute(
+		'aria-activedescendant',
+		'palette-option-open-folder',
+	);
 	await page.keyboard.press('Enter');
 	await expect(palette).toBeHidden();
 }
