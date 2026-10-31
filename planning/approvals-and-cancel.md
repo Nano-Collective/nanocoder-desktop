@@ -3,15 +3,17 @@
 Implementation notes for phase 1.7 and U.6 from [work list #17](https://github.com/Nano-Collective/nanocoder-desktop/issues/17).
 
 - Status: Draft
-- Last updated: 2026-10-29
+- Last updated: 2026-10-31
 
-Requirements: `CHAT-06`, `ACP-10`, `CHAT-07`, `ACP-09`, `CHAT-21`, `A11Y-02`. Visual decisions remain in [`DESIGN.md`](../DESIGN.md).
+Requirements: `CHAT-06`, `ACP-10`, `CHAT-07`, `ACP-09`, `CHAT-21`, `A11Y-02`. Visual decisions remain in [`DESIGN.md`](../DESIGN.md), which follows the approved mockup where they differ (`DEC-41`).
 
 ## Permission ownership
 
 Nanocoder supplies the title, option IDs, kinds and labels. `PermissionBroker` remains the main-process authority: only an offered option on a waiting request counts. Unknown IDs, duplicate answers and closed requests are refused. With no permission handler, the ACP client answers cancelled, never allowed.
 
 The renderer forwards only the request ID and option ID. It never records a remembered allow/reject policy, fabricates options or interprets an option's name as permission. `ask_user` uses the same selection-only flow, with Nanocoder's own question and option labels; there is no free-text answer.
+
+Main adds one display-only question hint (`DEC-41`). It marks a permission request as a question only when the tool call Nanocoder reports for that request is `ask_user`. With no hint, the request is an ordinary approval. The hint never adds, renames or reorders an option, never changes an option ID, and never lets the renderer answer. Its security review is required before merge.
 
 The pinned Nanocoder `fc01e239` offers Allow/allow_once and Deny/reject_once for protected tools. All four ACP option kinds are covered with the fake fixture. The desktop does not invent allow-always or reject-all controls when Nanocoder does not offer them.
 
@@ -31,7 +33,13 @@ Focus recovery also runs after an answer settles and after any request-array cha
 
 Native palette and shortcut dialogs keep focus while open. Incoming approvals are announced by count only through the dialog's pre-existing polite region, without request titles, labels or IDs. Only the non-inert layer's notification region is active. After the dialog closes, a waiting approval takes focus, or a cancelled queue returns focus to its original control or composer. Explicitly opening an overlay from an approval and closing it returns to that exact approval control; Escape never chooses an option.
 
-Design deviation, agreed for accessibility: `.approval-key-hints .ui-key-hint` uses full-opacity muted ink rather than the design's 55% opacity. This keeps required key hints readable and avoids the known contrast conflict. `DESIGN.md` remains unchanged for the designer to resolve.
+`.approval-key-hints .ui-key-hint` uses full-opacity muted ink. `DESIGN.md` retires the 55% key-hint style, so this is no longer a deviation (`DEC-41`).
+
+## Question dialog
+
+A request with the question hint opens the question dialog (`DEC-41`), titled "Nanocoder needs a choice". It shows Nanocoder's question text and each offered option as a numbered button. Choosing an option sends the same request ID and option ID as the approval card, through the same main-process check. There is no free-text field.
+
+Closing the dialog, with its close control or Escape, does not answer the question. The request collapses to the approval shelf above the composer and stays pending until the user chooses an offered option there or cancels the turn. The dialog traps focus while open. When it closes, a waiting approval takes focus, as described above.
 
 ## Cancel
 
@@ -48,3 +56,5 @@ Logic and refusal work follows red, green, refactor. Main tests cover missing co
 Use fake Nanocoder only for visual QA, taking `/tmp/nc-m1-qa.lock` before the launcher. Capture both themes at 1240, 1020 and 840px, with a focused card and after answering, plus accessibility audits. Save safe captures under `.qa/wave-3/approvals/`; stop the printed launcher PID, verify port 9333 is clear, then release the lock. Known design contrast gaps remain reported, not silently changed.
 
 macOS QA recorded all twelve states, asserting `app://renderer/index.html` before each audit. Dark focused cards and every answered state had no violations. Light focused cards retained the documented title (3.88:1) and allow-label (4.35:1) contrast gaps. Full-opacity key hints measured 5.834:1 in dark and 5.295:1 in light. These known design gaps are not an AA waiver; independent security review remains required.
+
+`DEC-41` moves the approval title and allow/reject labels to on-surface ink. Calculated from the tokens, the title is 11.46:1 in light and 12.13:1 in dark, and the labels are 12.46:1 and 13.51:1 in light and dark on the shelf panel. The old title and allow-label gaps are therefore closed by token change, not by waiver. The rendered recheck in the UI verifier's captures still has to confirm these figures.

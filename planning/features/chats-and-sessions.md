@@ -3,7 +3,7 @@
 Projects, threads, durable resume, view-only threads, approvals, and model and mode controls.
 
 - Status: Draft
-- Last updated: 2026-10-27
+- Last updated: 2026-10-31
 - Drafted by: @akramcodez
 
 ## Purpose
@@ -26,15 +26,15 @@ Let the user add a project, start or resume durable Nanocoder chats, follow each
 | CHAT-10 | Model and provider controls use Nanocoder's config options, are labelled as applying to the whole project, and are disabled while any turn in the project runs (`ACP-14`). | Decided that model state is process-global ([whitepaper][wp-risks]); the guard is Suggestion (not discussed) |
 | CHAT-11 | A mode control offers Nanocoder's five modes, is set on every new or resumed session, and changes only between turns (`ACP-13`). New threads start in the project default, `normal` unless the user chose another with "Use as this project's default". `yolo` needs a confirmation and is never a default or restored ([Session mode](../acp-integration.md#session-mode)). | Proposed (awaiting @will-lamerton) (`DEC-31`) |
 | CHAT-12 | Titles come from `_nanocoder/sessionTitleChanged`; the user can rename through `renameSession` when available. | Suggestion (not discussed), based on [#122][pr122] |
-| CHAT-13 | Archive and unarchive are desktop metadata only. | Decided ([whitepaper][wp-states]) |
-| CHAT-14 | "Remove from desktop" removes desktop rows. "Delete chat history" also calls `session/delete`, after a separate confirmation. | Suggestion (not discussed) |
+| CHAT-13 | Archive and unarchive are desktop metadata only. Archive asks for confirmation in the renderer first, with cancel holding initial focus and Escape cancelling. | Decided ([whitepaper][wp-states]); confirmation per `DEC-41` |
+| CHAT-14 | "Remove from desktop" removes desktop rows, after a renderer confirmation with cancel holding initial focus. "Delete chat history" also calls `session/delete`, after a separate native confirmation. | Suggestion (not discussed); confirmations per `DEC-41` |
 | CHAT-15 | Process failures, unsupported capabilities and version problems are shown in the thread and the project, with the redacted diagnostics available. | Decided ([whitepaper, Engineering requirements][wp-scope]) |
 | CHAT-16 | The composer sends text plus attached resources: files from the browser (`FILE-08`), review comments (`GIT-07`) and the browser URL and title (`BRW-10`). Attached context is transient: it goes into the prompt, not into desktop storage. | Decided ([whitepaper][wp-git-section]) |
 | CHAT-17 | Only one root turn runs per project process. While one thread runs, other threads in the project can be read but not prompted, and say why. | Decided ([whitepaper, Process policy][wp-process]) |
 | CHAT-18 | The conversation is fully keyboard operable; new content is announced to assistive technology at a polite rate; permission requests move focus to the request and are announced assertively. | Decided as a v1 goal ([whitepaper, Milestone 4][wp-next]); specifics are Suggestion (not discussed) |
 | CHAT-19 | Show per-turn usage and cost when Nanocoder provides it in `_meta`. Show a context-window gauge only when Nanocoder reports context use; at `8a5f4d4` it sends per-turn token counts but no context-window figure, so the gauge stays hidden. | Suggestion (not discussed) |
 | CHAT-20 | Offer Nanocoder's custom slash commands from `available_commands_update`. Do not present Nanocoder's built-in `/help` reply as desktop help, since it is written for the VS Code sidebar. | Suggestion (not discussed), based on [source][nc-slash] |
-| CHAT-21 | `ask_user` questions render as selectable options only, since ACP permission options have no text input. | Decided by Nanocoder's behaviour ([docs][nc-acp-limits]) |
+| CHAT-21 | `ask_user` questions render as selectable options only, since ACP permission options have no text input. Main marks them with a display-only hint, and the desktop shows them in the question dialog. Closing the dialog does not answer. | Decided by Nanocoder's behaviour ([docs][nc-acp-limits]); hint per `DEC-41` |
 
 ## Behaviour
 
@@ -52,7 +52,7 @@ Let the user add a project, start or resume durable Nanocoder chats, follow each
 
 ### Permission requests
 
-Nanocoder sends the options; the desktop shows them as given. ACP defines four option kinds: `allow_once`, `allow_always`, `reject_once` and `reject_always` (SDK 1.4.0 schema). Each request shows the tool call it belongs to, its kind and the files or command it names. "Always" options change Nanocoder's policy, not the desktop's, so the request says so.
+Nanocoder sends the options; the desktop shows them as given. ACP defines four option kinds: `allow_once`, `allow_always`, `reject_once` and `reject_always` (SDK 1.4.0 schema). Each request shows the tool call it belongs to, its kind and the files or command it names. "Always" options change Nanocoder's policy, not the desktop's, so the request says so. A request that Nanocoder marks as an `ask_user` question opens the question dialog with the same offered options instead; see [approvals and cancel](../approvals-and-cancel.md#question-dialog).
 
 ### Stop reasons
 
