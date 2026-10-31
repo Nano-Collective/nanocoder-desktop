@@ -14,6 +14,7 @@ import {
 } from '@/renderer/workspace-dialogs';
 import type {
 	CapabilityGates,
+	ConnectedAgent,
 	DiagnosticsSnapshot,
 	NanocoderRuntime,
 	ThreadInfo,
@@ -54,6 +55,18 @@ const thread: ThreadInfo = {
 	mode: 'normal',
 	viewOnlyReason: null,
 };
+const agent: ConnectedAgent = {
+	root: '/fixture',
+	protocolVersion: 1,
+	name: 'nanocoder',
+	version: '9.9.9',
+	capabilities: {
+		loadSession: true,
+		sessions: {close: false, delete: false, list: true, resume: true},
+		prompt: {image: false, audio: false, embeddedContext: false},
+		mcp: {http: false, sse: false},
+	},
+};
 const projectProps = {
 	projects: [],
 	activeProjectId: null,
@@ -67,8 +80,6 @@ const runtimeProps = {
 	processState: null,
 	projectRoot: '/fixture',
 	gates,
-	agent: null,
-	thread: null,
 	diagnosticsBusy: false,
 	diagnosticsMessage: '',
 	onCheckAgain() {},
@@ -82,7 +93,7 @@ function dialogs(kind: WorkspaceDialogKind | null) {
 		onClose() {},
 		projects: projectProps,
 		runtime: runtimeProps,
-		capabilities: {gates, modelGate: null},
+		capabilities: {gates, modelGate: null, agent: null, thread: null},
 		archives: {
 			threads: [thread],
 			projectName: 'fixture',
@@ -128,15 +139,51 @@ test('the model and mode row uses the reported model gate', t => {
 
 test('capabilities show each reason and say when nothing has been reported', t => {
 	const html = renderToStaticMarkup(
-		createElement(CapabilitiesDialogBody, {gates, modelGate: null}),
+		createElement(CapabilitiesDialogBody, {
+			gates,
+			modelGate: null,
+			agent: null,
+			thread: null,
+		}),
 	);
 	t.true(html.includes('the agent does not report close'));
 	t.false(html.includes('milestone 3'));
 	t.true(html.includes('aria-label="Nanocoder capabilities"'));
 	const empty = renderToStaticMarkup(
-		createElement(CapabilitiesDialogBody, {gates: null, modelGate: null}),
+		createElement(CapabilitiesDialogBody, {
+			gates: null,
+			modelGate: null,
+			agent: null,
+			thread: null,
+		}),
 	);
 	t.true(empty.includes('has not reported capabilities for this project yet'));
+});
+
+test('capabilities name the connected agent, ACP version and session mode', t => {
+	const html = renderToStaticMarkup(
+		createElement(CapabilitiesDialogBody, {
+			gates,
+			modelGate: null,
+			agent,
+			thread: {...thread, nanocoderSessionId: 'session-1', mode: 'normal'},
+		}),
+	).replace(/<!-- -->/g, '');
+	t.true(
+		html.includes('connected to nanocoder 9.9.9 over ACP protocol version 1'),
+	);
+	t.true(html.includes('session session-1 in normal mode'));
+	t.true(html.includes('aria-label="connected agent"'));
+	const noSession = renderToStaticMarkup(
+		createElement(CapabilitiesDialogBody, {
+			gates,
+			modelGate: null,
+			agent,
+			thread: null,
+		}),
+	);
+	t.true(noSession.includes('ACP protocol version'));
+	t.false(noSession.includes('in normal mode'));
 });
 
 test('archive ages are compact and never invented', t => {
@@ -184,6 +231,8 @@ test('runtime details name the runtime source and report a failure', t => {
 	t.true(html.includes('v22.1.0'));
 	t.true(html.includes('/opt/nanocoder/dist/cli.js'));
 	t.false(html.includes('role="alert"'));
+	t.false(html.includes('connected agent'));
+	t.false(html.includes('ACP protocol version'));
 	const failed = renderToStaticMarkup(
 		createElement(RuntimeDialogBody, {
 			...runtimeProps,
@@ -234,6 +283,10 @@ test('each workspace dialog titles itself and nothing renders when closed', t =>
 		t.true(html.includes(`>${title}</h2>`), kind);
 		t.true(html.includes('aria-label="dismiss dialog"'), kind);
 	}
+	const runtimeHtml = renderToStaticMarkup(
+		createElement(WorkspaceDialogs, dialogs('runtime')),
+	);
+	t.true(runtimeHtml.includes('review diagnostics'));
 	t.is(
 		renderToStaticMarkup(
 			createElement(WorkspaceDialogs, dialogs('diagnostics')),

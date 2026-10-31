@@ -1,12 +1,10 @@
 import * as React from 'react';
-import {Button, Card} from '@/renderer/ui';
+import {Button} from '@/renderer/ui';
 import type {
 	CapabilityGates,
-	ConnectedAgent,
 	IpcResult,
 	NanocoderRuntime,
 	SupervisorState,
-	ThreadInfo,
 } from '@/shared/ipc';
 
 export const runtimeDialogTitle = 'runtime details';
@@ -16,8 +14,6 @@ export interface RuntimeDialogProps {
 	processState: SupervisorState | null;
 	projectRoot: string | null;
 	gates: CapabilityGates | null;
-	agent: ConnectedAgent | null;
-	thread: ThreadInfo | null;
 	diagnosticsBusy: boolean;
 	diagnosticsMessage: string;
 	onCheckAgain(): void;
@@ -41,8 +37,6 @@ export function RuntimeDialogBody({
 	processState,
 	projectRoot,
 	gates,
-	agent,
-	thread,
 	diagnosticsMessage,
 	onCheckAgain,
 }: RuntimeDialogProps): React.ReactElement {
@@ -88,20 +82,6 @@ export function RuntimeDialogBody({
 					</div>
 				</>
 			)}
-			{agent && (
-				<Card aria-label="connected agent" className="runtime-agent">
-					<p>
-						connected to {agent.name ?? 'an unnamed agent'}{' '}
-						{agent.version ?? '(no version)'} over ACP protocol version{' '}
-						{agent.protocolVersion} in {agent.root}
-					</p>
-					{thread?.nanocoderSessionId && (
-						<p>
-							session {thread.nanocoderSessionId} in {thread.mode} mode
-						</p>
-					)}
-				</Card>
-			)}
 			{diagnosticsMessage && <p role="status">{diagnosticsMessage}</p>}
 		</>
 	);
@@ -123,7 +103,7 @@ export function RuntimeDialogFooter({
 				onClick={onDiagnostics}
 				disabled={diagnosticsBusy}
 			>
-				diagnostics
+				review diagnostics
 			</Button>
 			<Button onClick={onCapabilities}>capabilities</Button>
 			<Button onClick={onClose}>close</Button>

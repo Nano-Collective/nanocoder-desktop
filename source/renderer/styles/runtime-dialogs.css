@@ -11,7 +11,7 @@
 
 .runtime-rows > div {
 	display: grid;
-	grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
+	grid-template-columns: minmax(114px, max-content) minmax(0, 1fr);
 	gap: var(--spacing-xl);
 }
 
@@ -24,15 +24,15 @@
 	overflow-wrap: anywhere;
 }
 
-.runtime-agent {
+.capability-agent {
 	display: grid;
 	gap: var(--spacing-md);
-	padding: 12px 14px;
+	margin-bottom: var(--spacing-lg);
 	font-size: var(--typography-body-sm-font-size);
 	overflow-wrap: anywhere;
 }
 
-.runtime-agent p {
+.capability-agent p {
 	margin: 0;
 }
 

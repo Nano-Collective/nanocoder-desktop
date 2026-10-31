@@ -754,8 +754,6 @@ export function App() {
 					processState,
 					projectRoot: currentProject?.canonicalRoot ?? null,
 					gates: gates[projectId ?? ''] ?? null,
-					agent: agent ?? null,
-					thread,
 					diagnosticsBusy: review.busy,
 					diagnosticsMessage: review.message,
 					onCheckAgain: checkRuntime,
@@ -765,6 +763,8 @@ export function App() {
 				capabilities={{
 					gates: gates[projectId ?? ''] ?? null,
 					modelGate: modelControls.controls?.modelGate ?? null,
+					agent: agent ?? null,
+					thread,
 				}}
 				archives={{
 					threads: workspace.threads.filter(
