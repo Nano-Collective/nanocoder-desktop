@@ -315,9 +315,9 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 	await retry.focus();
 	await expect(retry).toBeFocused();
 	await retry.press('Enter');
-	await expect(
-		page.getByRole('textbox', {name: 'message', exact: true}),
-	).toBeEnabled();
+	const composer = page.getByRole('textbox', {name: 'message', exact: true});
+	await expect(composer).toBeEnabled();
+	await expect(composer).toBeFocused();
 	await expect(page.getByRole('list', {name: 'conversation'})).toContainText(
 		'Earlier answer',
 	);
@@ -490,9 +490,17 @@ test('diagnostics export reviews the exact snapshot and cancellation never write
 			return {canceled: false, filePath: target};
 		}) as typeof dialog.showSaveDialog;
 	}, target);
-	await page.getByRole('button', {name: 'diagnostics', exact: true}).click();
-	const diagnostics = page.getByRole('region', {name: 'redacted diagnostics'});
+	const footer = page.locator('footer.shell-sidebar-footer');
+	await footer.getByRole('button', {name: 'diagnostics', exact: true}).click();
+	const diagnostics = footer.getByRole('region', {
+		name: 'redacted diagnostics',
+	});
 	await expect(diagnostics).toBeVisible();
+	await expect(
+		page
+			.locator('[data-shell-slot="stream-tools"]')
+			.getByRole('region', {name: 'redacted diagnostics'}),
+	).toHaveCount(0);
 	const captured = await diagnostics.locator('pre').innerText();
 	await diagnostics
 		.getByRole('button', {name: 'review and export', exact: true})
