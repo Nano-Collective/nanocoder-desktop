@@ -296,3 +296,7 @@
 .shell-approval-shelf {
 	padding-bottom: 12px;
 }
+
+.shell-approval-shelf:empty {
+	display: none;
+}
