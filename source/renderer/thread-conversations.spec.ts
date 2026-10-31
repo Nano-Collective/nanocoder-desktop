@@ -780,7 +780,7 @@ test('a settled snapshot ends replay and carries live times only to matching mes
 			]),
 		),
 	);
-	t.deepEqual(times(conversations.getState()), ['none', 'none', 100, 100]);
+	t.deepEqual(times(conversations.getState()), ['none', 'none', 100, 'none']);
 	t.true(
 		conversations.snapshot(
 			snapshot('a', [

@@ -577,18 +577,37 @@ test('replayed or snapshot events applied without a time add no time field', t =
 	t.false(transcript.items.some(item => Object.hasOwn(item, 'at')));
 });
 
-test('carried times need equal user text and an agent text prefix at the same position', t => {
+test('carried times follow the shared message id and never a text prefix (A2)', t => {
 	const previous = applyEvents(
-		applyEvents(emptyTranscript, [
-			{type: 'user', text: 'saved'},
-			{type: 'text', text: 'saved answer'},
-		]),
+		emptyTranscript,
 		[
-			{type: 'user', text: 'first'},
+			{type: 'user', text: 'first', messageId: 'u1'},
+			{type: 'text', text: 'partial', messageId: 'a1'},
+			{type: 'user', text: 'second', messageId: 'u2'},
+			{type: 'text', text: 'reply', messageId: 'a2'},
+		],
+		50,
+	);
+	const next = carryMessageTimes(
+		previous,
+		applyEvents(emptyTranscript, [
+			{type: 'user', text: 'first', messageId: 'u1'},
+			{type: 'text', text: 'partial and more', messageId: 'a1'},
+			{type: 'user', text: 'second', messageId: 'u3'},
+			{type: 'text', text: 'reply'},
+		]),
+	);
+	t.deepEqual(next.items.map(at), [50, 50, 'none', 'none']);
+});
+
+test('id-less messages carry only on one exact text match and never by prefix (A2)', t => {
+	const previous = applyEvents(
+		emptyTranscript,
+		[
+			{type: 'user', text: 'saved'},
 			{type: 'text', text: 'partial'},
-			{type: 'tool', id: 'tool'},
-			{type: 'text', text: 'after tool'},
-			{type: 'user', text: 'second'},
+			{type: 'user', text: 'twice'},
+			{type: 'user', text: 'twice'},
 			{type: 'text', text: 'reply'},
 		],
 		50,
@@ -597,25 +616,25 @@ test('carried times need equal user text and an agent text prefix at the same po
 		previous,
 		applyEvents(emptyTranscript, [
 			{type: 'user', text: 'saved'},
-			{type: 'text', text: 'saved answer'},
-			{type: 'user', text: 'first'},
 			{type: 'text', text: 'partial and more'},
-			{type: 'tool', id: 'tool'},
-			{type: 'text', text: 'rewritten'},
-			{type: 'user', text: 'second edited'},
-			{type: 'text', text: 'reply'},
+			{type: 'user', text: 'twice'},
+			{type: 'text', text: 'reply', messageId: 'a9'},
 		]),
 	);
-	t.deepEqual(next.items.map(at), [
-		'none',
-		'none',
+	t.deepEqual(next.items.map(at), [50, 'none', 'none', 'none']);
+});
+
+test('an id on only one side never carries a time (A2)', t => {
+	const previous = applyEvents(
+		emptyTranscript,
+		[{type: 'text', text: 'reply', messageId: 'a1'}],
 		50,
-		50,
-		'none',
-		'none',
-		'none',
-		50,
-	]);
+	);
+	const next = carryMessageTimes(
+		previous,
+		applyEvents(emptyTranscript, [{type: 'text', text: 'reply'}]),
+	);
+	t.is(next.items.map(at)[0], 'none');
 });
 
 test('carrying times never overwrites a time, ignores empty agent text and keeps an unmatched transcript', t => {

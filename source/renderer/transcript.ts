@@ -384,30 +384,42 @@ export function applyEvents(
 	);
 }
 
+type Message = Extract<TranscriptItem, {kind: 'user' | 'agent'}>;
+
+// A shared message id is the only proof of identity. Exact text counts only
+// when neither side has an id, and empty agent text never counts.
+function sameMessage(earlier: Message, item: Message): boolean {
+	if (earlier.kind !== item.kind) return false;
+	if (earlier.messageId !== undefined || item.messageId !== undefined)
+		return earlier.messageId === item.messageId;
+	return (
+		earlier.text === item.text &&
+		(earlier.kind === 'user' || earlier.text !== '')
+	);
+}
+
 export function carryMessageTimes(
 	previous: Transcript,
 	next: Transcript,
 ): Transcript {
-	type Message = Extract<TranscriptItem, {kind: 'user' | 'agent'}>;
-	const isMessage = (item: TranscriptItem): item is Message =>
-		item.kind === 'user' || item.kind === 'agent';
-	const earlier = previous.items.filter(isMessage);
-	const of = (kind: Message['kind']) =>
-		earlier.filter(item => item.kind === kind);
-	const known = {user: of('user'), agent: of('agent')};
-	const seen = {user: 0, agent: 0};
+	const earlier = previous.items.filter(
+		(item): item is Message => item.kind === 'user' || item.kind === 'agent',
+	);
+	const used = new Set<Message>();
 	let changed = false;
 	const items = next.items.map(item => {
-		if (!isMessage(item)) return item;
-		const match = known[item.kind][seen[item.kind]++];
 		if (
-			match?.at === undefined ||
-			item.at !== undefined ||
-			!(item.kind === 'user'
-				? item.text === match.text
-				: match.text !== '' && item.text.startsWith(match.text))
+			(item.kind !== 'user' && item.kind !== 'agent') ||
+			item.at !== undefined
 		)
 			return item;
+		const matches = earlier.filter(
+			candidate => !used.has(candidate) && sameMessage(candidate, item),
+		);
+		if (matches.length !== 1) return item;
+		const [match] = matches;
+		used.add(match);
+		if (match.at === undefined) return item;
 		changed = true;
 		return {...item, at: match.at};
 	});
