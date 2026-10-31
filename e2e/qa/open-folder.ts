@@ -23,7 +23,7 @@ export async function startFolderFromPalette(page: Page): Promise<void> {
 	await expect(palette).toBeHidden();
 }
 
-// Also waits until the command is enabled again, so the folder has finished connecting.
+// Waits for a visible outcome (ACP ready, a failure alert or retry), then for the command to be enabled.
 export async function openFolderFromPalette(page: Page): Promise<void> {
 	await startFolderFromPalette(page);
 	const palette = page.getByRole('dialog', {
@@ -35,10 +35,24 @@ export async function openFolderFromPalette(page: Page): Promise<void> {
 		exact: true,
 	});
 	const command = page.getByRole('option', {name: /open a project folder/});
+	const search = page.getByRole('combobox', {
+		name: 'find a command',
+		exact: true,
+	});
+	await expect
+		.poll(
+			async () =>
+				(await page.locator('.ui-badge--acp-ready').first().isVisible()) ||
+				(await page.getByRole('alert').first().isVisible()) ||
+				(await page
+					.getByRole('button', {name: 'retry Nanocoder', exact: true})
+					.first()
+					.isVisible()),
+			{timeout: 15_000},
+		)
+		.toBe(true);
 	await trigger.click();
-	await page
-		.getByRole('combobox', {name: 'find a command', exact: true})
-		.fill('open a project folder');
+	await search.fill('open a project folder');
 	await expect(command).not.toHaveAttribute('aria-disabled', 'true');
 	await page.keyboard.press('Escape');
 	await expect(palette).toBeHidden();
