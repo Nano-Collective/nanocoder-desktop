@@ -23,6 +23,8 @@ import {
 	TurnFailureNotice,
 } from '@/renderer/recovery-tools';
 import {SessionImportList} from '@/renderer/session-import-list';
+import {type FooterAcpState, SidebarFooter} from '@/renderer/sidebar-footer';
+import {SidebarRecents} from '@/renderer/sidebar-recents';
 import {
 	acpBadge,
 	observeSupervisor,
@@ -179,6 +181,16 @@ export function App() {
 					: thread?.runState === 'view-only'
 						? 'view-only'
 						: 'ready';
+	const footerAcp: FooterAcpState =
+		processBadge ??
+		(processState?.status === 'starting'
+			? {status: 'acp-starting'}
+			: processState?.status === 'failed'
+				? {status: 'acp-exited'}
+				: null);
+	const [archivesProjectId, setArchivesProjectId] = useState<string | null>(
+		null,
+	);
 	const composerInput = useRef<HTMLTextAreaElement>(null);
 	const retryFocus = useRef(false);
 	const retrying = useRef(false);
@@ -539,7 +551,11 @@ export function App() {
 		>
 			<AppShell
 				logoSrc={logoUrl}
-				title={info?.name ?? 'Nanocoder'}
+				title={
+					<>
+						Nanocoder <span className="brand-desktop">Desktop</span>
+					</>
+				}
 				threadTitle={importOpen ? 'saved sessions' : thread?.title}
 				onOpenThreadMenu={
 					thread
@@ -552,29 +568,25 @@ export function App() {
 						: currentProject?.displayName
 				}
 				sidebarFooter={
-					<>
-						{processBadge && <StatusBadge {...processBadge} />}
-						{gates[projectId ?? '']?.versionPolicy.reason && (
-							<p className="workspace-setup-warning" role="status">
-								{gates[projectId ?? '']?.versionPolicy.reason}
-							</p>
-						)}
-						{runtime && !runtime.ok && (
-							<>
-								<p role="alert">{runtime.error.message}</p>
-								<Button onClick={checkRuntime}>check again</Button>
-							</>
-						)}
-						<Button onClick={() => openDialog('runtime')}>
-							runtime details
-						</Button>
-						<span>
-							Nanocoder{' '}
-							{agent?.version ??
-								(runtime?.ok ? runtime.value.version : 'not connected')}
-						</span>
-						<span>desktop {info?.version ?? 'pre-v0.1'}</span>
-					</>
+					<SidebarFooter
+						acp={footerAcp}
+						nanocoderVersion={
+							agent?.version ?? (runtime?.ok ? runtime.value.version : null)
+						}
+						notice={
+							gates[projectId ?? '']?.versionPolicy.status === 'untested'
+								? 'untested'
+								: gates[projectId ?? '']?.versionPolicy.status === 'refused'
+									? 'not supported'
+									: undefined
+						}
+						desktopVersion={info?.version ?? 'pre-v0.1'}
+						runtimeError={
+							runtime && !runtime.ok ? runtime.error.message : undefined
+						}
+						onCheckRuntime={checkRuntime}
+						onOpenRuntime={() => openDialog('runtime')}
+					/>
 				}
 				palette={<PaletteButton />}
 				projectRail={
@@ -592,6 +604,10 @@ export function App() {
 							activeThreadId={workspace.activeThreadId}
 							pending={pending}
 							now={new Date()}
+							archivesOpen={archivesProjectId === projectId}
+							importCount={
+								sessionImports.ready ? sessionImports.sessions.length : null
+							}
 							renameDisabledReason={renameDisabledReason}
 							deleteHistoryDisabledReason={deleteHistoryDisabledReason}
 							onNew={onNew}
@@ -608,6 +624,12 @@ export function App() {
 								setImportFor(null);
 								void controls.open(id);
 							}}
+							onOpenArchives={() =>
+								setArchivesProjectId(current =>
+									current === projectId ? null : projectId,
+								)
+							}
+							onOpenImport={openImportPage}
 							onRename={onRename}
 							onArchive={onArchive}
 							onRemove={onRemove}
@@ -615,6 +637,15 @@ export function App() {
 								void controls.deleteHistory(id);
 							}}
 						/>
+						{!projectId && (
+							<SidebarRecents
+								projects={projectControls.projects}
+								pending={connecting || projectControls.pending}
+								now={new Date()}
+								onOpen={projectControls.onOpen}
+								onLocate={projectControls.onLocate}
+							/>
+						)}
 					</>
 				}
 				statusBadges={thread && <StatusBadge status={turnStatus} />}

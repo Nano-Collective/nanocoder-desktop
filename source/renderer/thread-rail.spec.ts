@@ -23,8 +23,12 @@ const props: Parameters<typeof ThreadRail>[0] = {
 	activeThreadId: thread.id,
 	pending: false,
 	now: new Date(2026, 9, 29, 13),
+	archivesOpen: false,
+	importCount: null,
 	onNew: () => {},
 	onOpen: () => {},
+	onOpenArchives: () => {},
+	onOpenImport: () => {},
 	onRename: () => {},
 	onArchive: () => {},
 	onRemove: () => {},
@@ -52,9 +56,15 @@ test('plain-prop rail renders scoped groups selected semantics and literal title
 			},
 		],
 	});
-	t.true(html.includes('history · today'));
-	t.true(html.includes('history · earlier'));
-	t.true(html.includes('archived · 1'));
+	t.regex(
+		html,
+		/<h3 class="thread-group-heading"><span>today<\/span><span class="thread-group-count">2<\/span><\/h3>/,
+	);
+	t.regex(
+		html,
+		/<h3 class="thread-group-heading"><span>earlier<\/span><span class="thread-group-count">1<\/span><\/h3>/,
+	);
+	t.regex(html, /<span class="sidebar-link-count">1<\/span>/);
 	t.true(html.includes('&lt;script&gt;fixture&lt;/script&gt;'));
 	t.notRegex(html, /<script\b/i);
 	t.false(html.includes('other project fixture'));
@@ -62,6 +72,73 @@ test('plain-prop rail renders scoped groups selected semantics and literal title
 	t.true(html.includes('aria-current="true"'));
 	t.true(html.includes('thread-status--primary'));
 	t.true(html.includes('aria-label="fixture running · running"'));
+	t.false(html.includes('fixture archived'));
+});
+
+test('archived rows stay behind the archived link until opened (CHAT-13, A-03)', t => {
+	const archived = {
+		...thread,
+		id: 'archived',
+		title: 'fixture archived',
+		archiveState: 'archived' as const,
+	};
+	const closed = render({threads: [thread, archived]});
+	t.regex(
+		closed,
+		/<button type="button" class="sidebar-link" aria-expanded="false"[^>]*>/,
+	);
+	t.false(closed.includes('fixture archived'));
+	t.false(closed.includes('aria-label="archived threads"'));
+	const open = render({threads: [thread, archived], archivesOpen: true});
+	t.regex(open, /aria-expanded="true" aria-controls="[^"]+"/);
+	t.true(open.includes('aria-label="archived threads"'));
+	t.true(open.includes('aria-label="fixture archived · archived"'));
+	const empty = render({archivesOpen: true});
+	t.true(empty.includes('no archived threads'));
+});
+
+test('import link shows its count only when import is ready for the project (A-03, B-12)', t => {
+	const html = render({importCount: 2});
+	t.regex(
+		html,
+		/<button type="button" class="sidebar-link"[^>]*>[\s\S]*?import sessions[\s\S]*?sidebar-link-count">2</,
+	);
+	t.false(html.includes('saved sessions'));
+	t.false(render({importCount: null}).includes('import sessions'));
+	t.false(
+		render({projectId: null, importCount: 2}).includes('import sessions'),
+	);
+});
+
+test('a selected archived thread keeps its archived list open so it stays visible (CHAT-13)', t => {
+	const archived = {
+		...thread,
+		title: 'fixture archived',
+		archiveState: 'archived' as const,
+	};
+	const html = render({threads: [archived], activeThreadId: archived.id});
+	t.regex(html, /class="sidebar-link" aria-expanded="true"/);
+	t.true(html.includes('aria-label="fixture archived · archived"'));
+});
+
+test('new thread shows its shortcut only when the shell passes one (A-21)', t => {
+	t.false(render().includes('ui-key-hint'));
+	const html = render({newThreadShortcut: '⌘N'});
+	t.regex(html, /class="ui-key-hint"[^>]*>⌘N</);
+});
+
+test('selected row shows state and age in its meta line, others show age on the right (A-16, A-18)', t => {
+	const html = render();
+	t.regex(
+		html,
+		/<span class="thread-state-label">ready · <time[^>]*>1h<\/time><\/span>/,
+	);
+	const other = render({
+		activeThreadId: null,
+		threads: [{...thread, runState: 'failed', title: 'fixture failed'}],
+	});
+	t.regex(other, /<time class="thread-age"[^>]*>1h<\/time>/);
+	t.false(other.includes('thread-state-label'));
 });
 
 test('rail separates desktop removal from history deletion with visible capability reasons (CHAT-12, CHAT-14)', t => {
@@ -98,7 +175,7 @@ test('rail explains absent project and pending states instead of hiding disabled
 	t.regex(absent, /aria-label="new thread"[^>]*disabled/);
 	const pending = render({pending: true});
 	t.true(pending.includes('another thread request is pending'));
-	t.notRegex(pending, /<button(?![^>]*disabled)/);
+	t.notRegex(pending, /<button(?![^>]*(?:disabled|sidebar-link))/);
 });
 
 test('shell accepts a plain thread child without replacing project or stream slots (U.3)', t => {

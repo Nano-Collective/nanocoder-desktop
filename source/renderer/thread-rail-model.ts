@@ -31,16 +31,27 @@ export function threadGroups(
 	];
 }
 
+export function compactAge(iso: string, now: Date): string {
+	const then = Date.parse(iso);
+	if (Number.isNaN(then)) return '';
+	const minutes = Math.floor(Math.max(0, now.getTime() - then) / 60000);
+	if (minutes < 1) return 'now';
+	if (minutes < 60) return `${minutes}m`;
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) return `${hours}h`;
+	return `${Math.floor(hours / 24)}d`;
+}
+
 const appearances = {
 	new: {glyph: '◌', tone: 'muted', label: 'new'},
 	ready: {glyph: '○', tone: 'muted', label: 'ready'},
 	running: {glyph: '●', tone: 'primary', label: 'running'},
 	'waiting-approval': {
-		glyph: '◐',
+		glyph: '▲',
 		tone: 'warning',
-		label: 'waiting for approval',
+		label: 'approval required',
 	},
-	interrupted: {glyph: '▲', tone: 'warning', label: 'interrupted'},
+	interrupted: {glyph: '◐', tone: 'warning', label: 'interrupted'},
 	failed: {glyph: '✕', tone: 'error', label: 'failed'},
 	'view-only': {glyph: '◍', tone: 'muted', label: 'view-only'},
 } as const;
