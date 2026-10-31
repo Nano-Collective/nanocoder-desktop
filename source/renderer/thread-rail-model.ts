@@ -61,9 +61,7 @@ export function threadAppearance(thread: ThreadInfo): {
 	tone: 'muted' | 'primary' | 'warning' | 'error';
 	label: string;
 } {
-	return thread.archiveState === 'archived'
-		? {glyph: '░', tone: 'muted', label: 'archived'}
-		: appearances[thread.runState];
+	return appearances[thread.runState];
 }
 
 export function threadMutationReason(

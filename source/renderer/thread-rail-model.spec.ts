@@ -59,7 +59,7 @@ test('rail ages use compact units and stay empty for invalid dates (A-16)', t =>
 	t.is(compactAge('not a date', now), '');
 });
 
-test('rail state glyphs have words and the design tones, with archive taking precedence (U.3)', t => {
+test('rail state glyphs have words and the design tones (U.3)', t => {
 	for (const [state, glyph, tone, label] of [
 		['new', '◌', 'muted', 'new'],
 		['ready', '○', 'muted', 'ready'],
@@ -75,12 +75,4 @@ test('rail state glyphs have words and the design tones, with archive taking pre
 			label,
 		});
 	}
-	t.deepEqual(
-		threadAppearance({
-			...thread,
-			runState: 'running',
-			archiveState: 'archived',
-		}),
-		{glyph: '░', tone: 'muted', label: 'archived'},
-	);
 });
