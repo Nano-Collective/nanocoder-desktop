@@ -14,6 +14,7 @@ import path from 'node:path';
 import {
 	type ElectronApplication,
 	expect,
+	type Locator,
 	type Page,
 	test,
 } from '@playwright/test';
@@ -140,6 +141,37 @@ async function showCapabilities() {
 		.getByRole('button', {name: 'capabilities', exact: true})
 		.click();
 	await expect(capabilitiesDialog()).toBeVisible();
+}
+
+const minimumReasons: Record<string, string> = {
+	'session resume': 'Nanocoder did not advertise session/resume.',
+	'session close': 'Nanocoder did not advertise session/close.',
+	'session delete': 'Nanocoder did not advertise session/delete.',
+	'session list': 'Nanocoder did not advertise session/list.',
+	'session rename':
+		'Nanocoder did not confirm the renameSession extension with a safe probe.',
+	'tool timeline':
+		'Nanocoder did not confirm the timeline/list extension with a safe probe; tool locations remain available.',
+	'exact agent changes':
+		'Nanocoder does not yet offer a verified snapshot-read method.',
+	'child run tree':
+		'Nanocoder does not yet offer a verified child-event projection; subagents remain tool cards.',
+};
+
+// Every row is disabled for the minimum build; the model row copy is dynamic.
+async function expectMinimumReasons(features: Locator) {
+	const rows = features.locator('.capability-row');
+	await expect(rows).toHaveCount(9);
+	for (const row of await rows.all()) {
+		await expect(row.locator('span').first()).toHaveText('○');
+		const label =
+			(await row.locator('.capability-label').textContent())?.trim() ?? '';
+		const reason =
+			(await row.locator('.capability-reason').textContent())?.trim() ?? '';
+		expect(reason).not.toBe('available');
+		if (label === 'model + mode offers') expect(reason).not.toBe('');
+		else expect(reason).toBe(minimumReasons[label]);
+	}
 }
 
 async function expectConnectedAgent(text: string) {
@@ -523,16 +555,7 @@ test('an older accepted version shows a reason for every disabled feature', asyn
 	);
 	await showCapabilities();
 	const features = capabilitiesDialog();
-	await expect(features.locator('.capability-row')).toHaveCount(9);
-	for (const reason of await features
-		.locator('.capability-reason')
-		.allTextContents()) {
-		expect(reason).toMatch(/\S/);
-		expect(reason).not.toBe('available');
-	}
-	await expect(features).toContainText(
-		'Nanocoder did not advertise session/resume',
-	);
+	await expectMinimumReasons(features);
 	await expect(features).toContainText('safe probe');
 	await page.keyboard.press('Escape');
 	await expect(capabilitiesDialog()).toBeHidden();
@@ -781,7 +804,7 @@ test('idle reconnect replays all feature reasons and the version warning before 
 	await openFolder(root);
 	await showCapabilities();
 	const features = () => capabilitiesDialog();
-	await expect(features().locator('.capability-row')).toHaveCount(9);
+	await expectMinimumReasons(features());
 	const reasons = await features()
 		.locator('.capability-reason')
 		.allTextContents();
@@ -792,7 +815,7 @@ test('idle reconnect replays all feature reasons and the version warning before 
 	await openFolder(root);
 	await showCapabilities();
 	await expect(features().locator('.capability-reason')).toHaveText(reasons);
-	for (const reason of reasons) expect(reason).not.toBe('available');
+	await expectMinimumReasons(features());
 	await page.keyboard.press('Escape');
 	await expect(capabilitiesDialog()).toBeHidden();
 	await showSetup();
