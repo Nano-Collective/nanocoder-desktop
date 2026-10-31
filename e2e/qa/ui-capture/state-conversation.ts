@@ -209,7 +209,7 @@ const drivers: CaptureState[] = [
 		stem: 'conversation-approval',
 		manifestId: 'conversation-approval',
 		fixture:
-			'ok (default); edits: tool title "execute_bash: echo hi" to "execute_bash: pnpm test:unit -- export", offered options changed from Allow/Deny to three: "allow once" (allow_once), "allow always" (allow_always), "reject" (reject_once), "Working on it." swapped for the reference heading and paragraph, the reference read and edit tool rows added above the shelf, and the request\'s own pending tool row left out (reference has none, gap D-14); model edits as in conversation-ready',
+			'ok (default); edits: tool title "execute_bash: echo hi" to "execute_bash: pnpm test:unit -- export", offered options changed from Allow/Deny to three: "allow once" (allow_once), "allow always" (allow_always), "reject" (reject_once), "Working on it." swapped for the reference heading and paragraph, the reference read and edit tool rows added above the shelf, and the request\'s own pending tool row kept as the product renders it (the reference has none, gap D-14, so the capture shows three tool rows against two); model edits as in conversation-ready',
 		how: 'open "tide", rename the thread to "export the audit log", send the CSV export prompt; the permission request takes focus in the approval shelf',
 		fixtureEdits: [
 			...MODEL_EDITS,
@@ -228,10 +228,6 @@ const drivers: CaptureState[] = [
 			{
 				from: "say(sessionId, 'Working on it. ');",
 				to: [INTRO, DONE_TOOLS].join('\n'),
-			},
-			{
-				from: "\tfor (const toolCallId of calls) {\n\t\tnotify('session/update', {\n\t\t\tsessionId,\n\t\t\tupdate: {\n\t\t\t\tsessionUpdate: 'tool_call',\n\t\t\t\ttoolCallId,\n\t\t\t\ttitle: title(toolCallId),\n\t\t\t\tstatus: 'pending',\n\t\t\t},\n\t\t});\n\t}\n",
-				to: '',
 			},
 		],
 		async reach(capture) {
