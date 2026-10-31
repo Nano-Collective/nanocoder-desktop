@@ -279,6 +279,10 @@ const StreamRow = React.memo(function StreamRow({
 					details.input !== undefined ||
 					details.output !== undefined);
 			const running = item.status === 'in_progress';
+			const kindInTitle =
+				!running &&
+				!!item.toolKind &&
+				item.title.startsWith(`${item.toolKind} `);
 			const word =
 				item.approvalOnly && item.status === 'completed'
 					? 'approved · execution result not reported'
@@ -299,7 +303,7 @@ const StreamRow = React.memo(function StreamRow({
 						<span className="sr-only">completed </span>
 					)}
 					{word && <span className="stream-tool-state">{word} </span>}
-					{item.toolKind && (
+					{item.toolKind && !kindInTitle && (
 						<span className="stream-tool-verb">{item.toolKind} </span>
 					)}
 					{!running && <code className="stream-tool-name">{item.title}</code>}

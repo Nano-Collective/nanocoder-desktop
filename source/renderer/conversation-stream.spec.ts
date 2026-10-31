@@ -303,3 +303,29 @@ test('a running tool row shows its kind once and its reported title once (C-19)'
 	);
 	t.false(html.includes('<code class="stream-tool-name">'));
 });
+
+test('a finished tool row shows its kind word once, dropping it when the title already has it', t => {
+	const kept = render([
+		{
+			kind: 'tool',
+			id: 'e',
+			title: 'src/export.ts',
+			status: 'completed',
+			toolKind: 'read',
+		},
+	]);
+	t.true(kept.includes('<span class="stream-tool-verb">read </span>'));
+	const once = render([
+		{
+			kind: 'tool',
+			id: 'f',
+			title: 'read src/export.ts',
+			status: 'completed',
+			toolKind: 'read',
+		},
+	]);
+	t.false(once.includes('<span class="stream-tool-verb">read </span>'));
+	t.true(
+		once.includes('<code class="stream-tool-name">read src/export.ts</code>'),
+	);
+});
