@@ -200,6 +200,7 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						breadcrumb: measure('.shell-breadcrumb'),
 						title: measure('.shell-identity h2'),
 						palette: measure('.shell-header-actions > button:last-child'),
+						reading: measure('.technical-gate'),
 						scrollPadding: padding('.shell-stream-scroll'),
 						footerPadding: padding('.shell-conversation-footer'),
 						scrolls: scroll.scrollHeight > scroll.clientHeight,
@@ -219,6 +220,8 @@ test('shell geometry and pinned composer follow all three widths without an empt
 				expect(geometry.breadcrumb.y).toBeCloseTo(crumbTop, 1);
 				expect(geometry.title.y).toBeCloseTo(crumbTop + 19, 1);
 				expect(geometry.palette.width).toBeCloseTo(width <= 1050 ? 40 : 46, 0);
+				if (width >= 1020) expect(geometry.reading.width).toBeCloseTo(740, 0);
+				else expect(geometry.reading.width).toBeLessThanOrEqual(740);
 				const reading = width <= 840 ? '24px' : width <= 1050 ? '30px' : '40px';
 				expect(geometry.scrollPadding).toEqual([reading, reading]);
 				expect(geometry.footerPadding).toEqual([reading, reading]);
