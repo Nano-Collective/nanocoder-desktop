@@ -297,7 +297,7 @@ test('closing an ask_user question with its close control sends no answer and th
 	await expect(page.locator('.gate-message-tool code')).toHaveText(
 		'selected answer-1',
 	);
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('a question already pending when the shelf mounts returns focus to the composer after answering', async () => {
@@ -325,7 +325,7 @@ test('a question already pending when the shelf mounts returns focus to the comp
 	).toBeFocused();
 	await page.keyboard.press('2');
 	await expect(question).toHaveCount(0);
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(input()).toBeFocused();
 });
 
