@@ -21,7 +21,9 @@ const temps: string[] = [];
 const v22 = async () => 'v22.20.0';
 
 function tempDir(): string {
-	const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'nd-runtime-')));
+	const dir = realpathSync.native(
+		mkdtempSync(path.join(tmpdir(), 'nd-runtime-')),
+	);
 	temps.push(dir);
 	return dir;
 }

@@ -516,10 +516,12 @@ test('signal exit records the signal, fails the active turn and cancels its pend
 	process.kill(started.pid, 'SIGTERM');
 	await failed;
 	await turn;
-	t.deepEqual(supervisor.getState(chosen.id).exit, {
-		code: null,
-		signal: 'SIGTERM',
-	});
+	t.deepEqual(
+		supervisor.getState(chosen.id).exit,
+		process.platform === 'win32'
+			? {code: 1, signal: null}
+			: {code: null, signal: 'SIGTERM'},
+	);
 	t.is(supervisor.getState(chosen.id).activeThreadId, null);
 	if (approval.type !== 'turn' || approval.events[0].type !== 'permission')
 		throw new Error('Missing approval');

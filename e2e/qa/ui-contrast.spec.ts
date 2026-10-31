@@ -2,12 +2,30 @@ import test from 'ava';
 import {
 	composite,
 	contrast,
+	designColors,
 	isKnownGap,
 	knownGaps,
 	rgb,
 	themedColor,
 	usedPairs,
 } from './ui-contrast';
+
+test('DESIGN colour front matter accepts LF and CRLF without losing either theme', t => {
+	for (const newline of ['\n', '\r\n']) {
+		t.deepEqual(
+			designColors(
+				[
+					'---',
+					'colors:',
+					'  primary: "#459bf7"',
+					'  primary-light: "#0000ee"',
+					'---',
+				].join(newline),
+			),
+			{primary: '#459bf7', 'primary-light': '#0000ee'},
+		);
+	}
+});
 
 test('contrast maths matches WCAG reference black and white', t => {
 	t.is(contrast(rgb('#000000'), rgb('#ffffff')), 21);

@@ -158,6 +158,7 @@ These hold in every change:
 ## Code Style Guidelines
 
 - Biome formats and lints (tabs, single quotes, 80 columns). Run `pnpm format`.
+- Text files check out with LF on every platform (`.gitattributes`); parsers still accept CRLF input.
 - Strict TypeScript. Import from `source/` through the `@/` alias.
 - Comments are rare: one line, only where the reason is not obvious.
 - Docs and UI text follow the [Brand Guidelines](https://docs.nanocollective.org/collective/organisation/brand): British spelling, no em dashes in docs, no marketing language.

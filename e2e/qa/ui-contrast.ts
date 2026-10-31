@@ -30,11 +30,14 @@ const design = readFileSync(
 	new URL('../../DESIGN.md', import.meta.url),
 	'utf8',
 );
-const colors = (
-	parse(/^---\n([\s\S]*?)\n---/.exec(design)?.[1] ?? '') as {
-		colors: Record<string, string>;
-	}
-).colors;
+export function designColors(markdown: string): Record<string, string> {
+	return (
+		parse(/^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown)?.[1] ?? '') as {
+			colors: Record<string, string>;
+		}
+	).colors;
+}
+const colors = designColors(design);
 
 export const knownGaps = [
 	...design.matchAll(
