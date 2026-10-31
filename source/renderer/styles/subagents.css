@@ -1,0 +1,61 @@
+.subagent-run-card {
+	background: var(--components-subagent-card-background-color);
+	color: var(--components-subagent-card-text-color);
+	font-size: var(--components-subagent-card-font-size);
+	line-height: var(--components-subagent-card-line-height);
+	border: 1px solid var(--colors-stroke);
+	border-radius: var(--components-subagent-card-rounded);
+	padding: var(--spacing-lg);
+	overflow-wrap: anywhere;
+	min-width: 0;
+}
+
+.subagent-run-card header {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--spacing-md);
+}
+
+.subagent-task {
+	color: var(--colors-on-surface);
+}
+
+.subagent-status--error {
+	color: var(--colors-error);
+}
+
+.subagent-depth {
+	border: 1px solid var(--colors-stroke);
+	border-radius: var(--rounded-sm);
+	padding: 0 var(--spacing-xs);
+}
+
+.subagent-depth,
+.subagent-fallback {
+	font-size: var(--typography-caption-font-size);
+}
+
+.subagent-progress,
+.subagent-fallback {
+	margin-top: var(--spacing-md);
+}
+
+.subagent-run-card {
+	padding: 15px;
+	border-radius: 10px;
+	font-size: 11px;
+}
+.subagent-run-card header {
+	gap: 8px 12px;
+}
+.subagent-task {
+	flex: 1 1 100%;
+	font-size: 12px;
+}
+.subagent-run-card .ui-button {
+	font-size: 10px;
+}
+.subagent-fallback {
+	font-size: 10px;
+}

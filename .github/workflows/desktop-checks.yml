@@ -196,8 +196,55 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           command -v xvfb-run || (sudo apt-get update && sudo apt-get install -y xvfb)
 
-      - if: runner.os == 'Linux'
-        run: xvfb-run -a pnpm test:e2e
+      - name: Run fake-fixture E2E
+        id: e2e
+        shell: bash
+        env:
+          NANOCODER_CLI: ''
+          NANOCODER_E2E_VISIBLE: ''
+        run: |
+          mkdir -p .qa/e2e-ci
+          cat > .qa/e2e-ci/playwright.config.ts <<'CONFIG'
+          import path from 'node:path';
+          import config from '../../playwright.config';
+          export default {
+            ...config,
+            testDir: path.resolve('e2e'),
+            outputDir: path.resolve('.qa/e2e-ci/test-results'),
+            use: {
+              ...config.use,
+              trace: {mode: 'retain-on-failure', sources: false},
+              screenshot: 'only-on-failure',
+            },
+          };
+          CONFIG
+          # Isolate runtime/config lookup and user home/profile data.
+          sandbox="$RUNNER_TEMP/nanocoder-e2e"
+          export HOME="$sandbox/home" USERPROFILE="$sandbox/home"
+          export XDG_CONFIG_HOME="$sandbox/config" XDG_DATA_HOME="$sandbox/data"
+          export APPDATA="$sandbox/appdata" LOCALAPPDATA="$sandbox/localappdata"
+          export NANOCODER_CONFIG_DIR="$sandbox/config"
+          export NANOCODER_DATA_DIR="$sandbox/data"
+          export NANOCODER_DESKTOP_CLI="$sandbox/unavailable/dist/cli.js"
+          mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$APPDATA" "$LOCALAPPDATA"
+          if [ "$RUNNER_OS" = 'Linux' ]; then
+            xvfb-run -a pnpm test:e2e --config .qa/e2e-ci/playwright.config.ts
+          else
+            pnpm test:e2e --config .qa/e2e-ci/playwright.config.ts
+          fi 2>&1 | tee .qa/e2e-ci/playwright.log
 
-      - if: runner.os != 'Linux'
-        run: pnpm test:e2e
+      # Artifacts may quote checked-in fake test source, but contain no
+      # environment dumps, home/profile files or real Nanocoder data.
+      - name: Upload failed fake-fixture E2E diagnostics
+        if: failure() && steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-failure-${{ matrix.os }}
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            .qa/e2e-ci/playwright.log
+            .qa/e2e-ci/test-results/**/trace.zip
+            .qa/e2e-ci/test-results/**/test-failed-*.png
+            .qa/e2e-ci/test-results/**/error-context.md

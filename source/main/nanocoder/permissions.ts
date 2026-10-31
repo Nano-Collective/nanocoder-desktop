@@ -2,6 +2,7 @@ import type {
 	RequestPermissionRequest,
 	RequestPermissionResponse,
 } from '@agentclientprotocol/sdk';
+import {permissionSource} from '@/main/nanocoder/subagent-display';
 import type {PermissionRequestInfo, TurnEvent} from '@/shared/ipc';
 
 interface Pending {
@@ -16,12 +17,16 @@ export class PermissionBroker {
 	private readonly pending = new Map<string, Pending>();
 	private counter = 0;
 
-	constructor(private readonly emit: (event: TurnEvent) => void) {}
+	constructor(
+		private readonly emit: (event: TurnEvent) => void,
+		private readonly nextId = () => `permission-${++this.counter}`,
+	) {}
 
 	request(
 		params: RequestPermissionRequest,
 	): Promise<RequestPermissionResponse> {
-		const id = `permission-${++this.counter}`;
+		const id = this.nextId();
+		const source = permissionSource(params.toolCall);
 		const info: PermissionRequestInfo = {
 			id,
 			title: params.toolCall.title ?? params.toolCall.toolCallId,
@@ -30,6 +35,7 @@ export class PermissionBroker {
 				name: option.name,
 				kind: option.kind,
 			})),
+			...(source ? {source} : {}),
 		};
 		return new Promise(resolve => {
 			this.pending.set(id, {

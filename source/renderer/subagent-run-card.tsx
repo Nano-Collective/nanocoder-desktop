@@ -1,0 +1,119 @@
+import * as React from 'react';
+import {Button} from '@/renderer/ui';
+import {subagentLabel} from '@/shared/subagents';
+
+export const SubagentRunCard = React.memo(function SubagentRunCard({
+	title,
+	role,
+	task,
+	position,
+	total,
+	status,
+	history = false,
+	historyOutcome,
+	running = false,
+	stopping = false,
+	outcome,
+	onStopTurn,
+}: {
+	title?: string | null;
+	role?: string;
+	task?: string | null;
+	position: number;
+	total: number;
+	status?: string | null;
+	history?: boolean;
+	historyOutcome?: unknown;
+	running?: boolean;
+	stopping?: boolean;
+	outcome?: 'completed' | 'failed' | 'cancelled';
+	onStopTurn?: () => void;
+}) {
+	const card = React.useRef<HTMLElement>(null);
+	const stopButton = React.useCallback((button: HTMLButtonElement | null) => {
+		if (!button) return;
+		return () => {
+			if (document.activeElement === button && card.current?.isConnected) {
+				card.current.focus({preventScroll: true});
+			}
+		};
+	}, []);
+	const unfinished = status === 'pending' || status === 'in_progress';
+	const state = history
+		? historyOutcome === 'failed' || historyOutcome === 'interrupted'
+			? historyOutcome
+			: historyOutcome === 'completed'
+				? 'previously reported completed'
+				: 'historical outcome not reported'
+		: unfinished && outcome === 'cancelled'
+			? 'interrupted'
+			: unfinished && outcome === 'failed'
+				? 'failed'
+				: unfinished && !running
+					? 'result not reported'
+					: status === 'in_progress'
+						? 'running'
+						: status
+							? (subagentLabel(status.replaceAll('_', ' '), 80) ??
+								'state not reported')
+							: 'state not reported';
+	const canStop = running && !history && !outcome && unfinished && onStopTurn;
+	const name = subagentLabel(role, 160) ?? 'subagent';
+	const progress = subagentLabel(title);
+	return (
+		<section
+			ref={card}
+			className="subagent-run-card"
+			aria-label={`subagent run ${position} of ${total}: ${name}`}
+			tabIndex={-1}
+		>
+			<header>
+				<span className="subagent-task">
+					<span aria-hidden="true">⌗ </span>
+					{subagentLabel(task) ?? name}
+				</span>
+				<span className="subagent-depth">depth not reported · limit 2</span>
+				<span
+					className={
+						history && (state === 'failed' || state === 'interrupted')
+							? 'subagent-status--error'
+							: undefined
+					}
+				>
+					<span aria-hidden="true">
+						{state === 'completed'
+							? '✓'
+							: state === 'failed' || (history && state === 'interrupted')
+								? '✕'
+								: state === 'running'
+									? '◐'
+									: '○'}{' '}
+					</span>
+					{state}
+				</span>
+				<span>elapsed not reported</span>
+				{canStop && (
+					<Button
+						ref={stopButton}
+						variant="reject"
+						disabled={stopping}
+						aria-label={`stop turn: ${name}; stops the entire turn and all subagents`}
+						onClick={onStopTurn}
+					>
+						<span aria-hidden="true">✕ </span>
+						{stopping ? 'stopping turn' : 'stop turn'}
+					</Button>
+				)}
+			</header>
+			{progress && (
+				<p className="subagent-progress">
+					<span aria-hidden="true">└ </span>reported: {progress}
+				</p>
+			)}
+			<p className="subagent-fallback">
+				child details not available · source bounds: depth 2, batch 5 · not
+				configurable here
+			</p>
+		</section>
+	);
+});

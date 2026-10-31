@@ -1,5 +1,6 @@
 // Stands in for `nanocoder --acp` in tests. A .fake-nanocoder file in the working directory picks the behaviour.
-import {existsSync, readFileSync, writeFileSync} from 'node:fs';
+import {createHash, randomUUID} from 'node:crypto';
+import {existsSync, readFileSync, watch, writeFileSync} from 'node:fs';
 import {createInterface} from 'node:readline';
 
 const mode = existsSync('.fake-nanocoder')
@@ -10,8 +11,43 @@ const TRUST_REASONS = {
 	untrusted: 'is not trusted',
 	changed: 'changed since you trusted it',
 };
+let nextSession = 0;
+const scopedSessions = process.env.NANOCODER_TEST_SCOPED_SESSIONS === '1';
+const sessionPrefix = `fake-session-${createHash('sha256').update(process.cwd()).digest('hex').slice(0, 12)}`;
+let replayModel = 'old';
+const replayConfig = () => [
+	{
+		id: 'model',
+		name: 'model',
+		type: 'select',
+		category: 'model',
+		currentValue: replayModel,
+		options: [
+			{name: 'old', value: 'old'},
+			{name: 'confirmed', value: 'confirmed'},
+		],
+	},
+];
 
-const log = event => process.stderr.write(`${JSON.stringify(event)}\n`);
+const log = event => {
+	const line = `${JSON.stringify(event)}\n`;
+	if (
+		event.method !== 'session/list' ||
+		!existsSync('.fake-hold-list-stderr')
+	) {
+		return process.stderr.write(line);
+	}
+	let flushed = false;
+	let watcher;
+	const flush = () => {
+		if (flushed || !existsSync('.fake-release-list-stderr')) return;
+		flushed = true;
+		watcher?.close();
+		process.stderr.write(line);
+	};
+	watcher = watch('.', {persistent: false}, flush);
+	flush();
+};
 const send = message =>
 	process.stdout.write(`${JSON.stringify({jsonrpc: '2.0', ...message})}\n`);
 
@@ -25,25 +61,58 @@ function refuse(reason) {
 const results = {
 	initialize: () => ({
 		protocolVersion: mode === 'future' ? 2 : 1,
-		agentCapabilities: {
-			loadSession: true,
-			providers: {},
-			sessionCapabilities: {
-				close: {},
-				list: {},
-				...(mode === 'no-delete' ? {} : {delete: {}}),
-				...(mode === 'no-resume' ? {} : {resume: {}}),
-			},
+		agentCapabilities:
+			mode === 'no-gates' || mode === 'minimum-no-gates'
+				? {}
+				: {
+						loadSession: true,
+						providers: {},
+						sessionCapabilities: {
+							...(mode === 'no-close' ? {} : {close: {}}),
+							...(mode === 'no-list' ? {} : {list: {}}),
+							...(mode === 'no-delete' ? {} : {delete: {}}),
+							...(mode === 'no-resume' ? {} : {resume: {}}),
+						},
+					},
+		agentInfo: {
+			name: 'nanocoder',
+			title: 'Nanocoder',
+			version:
+				mode === 'old-version'
+					? '1.30.0'
+					: mode === 'minimum-version' || mode === 'minimum-no-gates'
+						? '1.32.0'
+						: '9.9.9',
 		},
-		agentInfo: {name: 'nanocoder', title: 'Nanocoder', version: '9.9.9'},
 		authMethods: [],
 	}),
 	'session/new': () =>
 		mode === 'no-session'
 			? undefined
 			: {
-					sessionId: 'fake-session',
+					sessionId: scopedSessions
+						? `${sessionPrefix}-${randomUUID()}`
+						: mode === 'multiple-sessions'
+							? `fake-session-${++nextSession}`
+							: 'fake-session',
 					modes: modeState(),
+					...(mode === 'replay-gates' && {configOptions: replayConfig()}),
+				},
+	'session/list': () =>
+		mode === 'list-fails'
+			? undefined
+			: {
+					sessions: [
+						{
+							sessionId: 'discovered-session',
+							cwd: process.cwd(),
+							title:
+								mode === 'session-discovery'
+									? '<script>saved fixture</script>'
+									: 'existing saved session',
+							updatedAt: '2026-10-29T12:00:00.000Z',
+						},
+					],
 				},
 	'session/set_mode': () => (mode === 'mode-fails' ? undefined : {}),
 	'session/close': () => ({}),
@@ -57,10 +126,47 @@ const modeState = () => ({
 	).map(id => ({id, name: id})),
 });
 
+function durableDelegations(sessionId, history) {
+	const update = body => notify('session/update', {sessionId, update: body});
+	if (history)
+		update({
+			sessionUpdate: 'user_message_chunk',
+			content: {type: 'text', text: 'durable fixture private prompt'},
+		});
+	for (const [toolCallId, description] of [
+		['durable-known', 'known delegation'],
+		['durable-unknown', 'unreported delegation'],
+	]) {
+		update({
+			sessionUpdate: 'tool_call',
+			toolCallId,
+			title: `explore: ${description}`,
+			kind: 'think',
+			status: history ? 'completed' : 'in_progress',
+			rawInput: {
+				subagent_type: 'explore',
+				description,
+				prompt: 'private durable delegation arguments',
+			},
+		});
+		if (!history && toolCallId === 'durable-known')
+			tool(sessionId, toolCallId, {status: 'failed'});
+	}
+}
+
 // Replays an earlier exchange, as Nanocoder does, then answers with the mode state.
-function resume(id, {sessionId}) {
+async function resume(id, {sessionId}) {
 	if (mode === 'die-in-resume') process.exit(3);
-	if (sessionId !== 'fake-session' || mode === 'missing-session') {
+	const knownSession =
+		(mode === 'session-discovery' && sessionId === 'discovered-session') ||
+		(scopedSessions
+			? typeof sessionId === 'string' &&
+				sessionId.startsWith(`${sessionPrefix}-`) &&
+				/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(
+					sessionId.slice(sessionPrefix.length + 1),
+				)
+			: sessionId === 'fake-session');
+	if (!knownSession || mode === 'missing-session') {
 		send({
 			id,
 			error: {
@@ -75,7 +181,105 @@ function resume(id, {sessionId}) {
 		send({id, error: {code: -32603, message: 'Internal error'}});
 		return;
 	}
+	if (mode === 'replay-gates') {
+		await new Promise(resolve => {
+			if (existsSync('.fake-replay-release')) return resolve();
+			const watcher = watch('.', {persistent: false}, () => {
+				if (!existsSync('.fake-replay-release')) return;
+				watcher.close();
+				resolve();
+			});
+			if (existsSync('.fake-replay-release')) {
+				watcher.close();
+				resolve();
+			}
+		});
+		if (readFileSync('.fake-replay-release', 'utf8') === 'fail') {
+			send({id, error: {code: -32603, message: 'fixture replay failure'}});
+			return;
+		}
+		if (readFileSync('.fake-replay-release', 'utf8') === 'missing') {
+			send({
+				id,
+				error: {
+					code: -32603,
+					message: 'Internal error',
+					data: {details: `Session not found on disk: ${sessionId}`},
+				},
+			});
+			return;
+		}
+		for (let index = 0; index < 100; index++) {
+			notify('session/update', {
+				sessionId,
+				update: {
+					sessionUpdate: 'user_message_chunk',
+					content: {type: 'text', text: `restored user ${index}`},
+				},
+			});
+			notify('session/update', {
+				sessionId,
+				update: {
+					sessionUpdate: 'agent_message_chunk',
+					content: {type: 'text', text: `restored answer ${index}`},
+				},
+			});
+		}
+		send({id, result: {modes: modeState(), configOptions: replayConfig()}});
+		return;
+	}
+	if (mode === 'durable-replay') {
+		durableDelegations(sessionId, true);
+		send({id, result: {modes: modeState()}});
+		return;
+	}
 	const update = body => notify('session/update', {sessionId, update: body});
+	if (mode === 'replay-foreign')
+		notify('session/update', {
+			sessionId: 'foreign-session',
+			update: {
+				sessionUpdate: 'user_message_chunk',
+				content: {type: 'text', text: 'private foreign history'},
+			},
+		});
+	if (
+		[
+			'replay-count-overflow',
+			'replay-count-limit',
+			'replay-bytes-overflow',
+			'replay-utf8-overflow',
+			'replay-bytes-limit',
+		].includes(mode)
+	) {
+		const empty = {
+			sessionUpdate: 'agent_message_chunk',
+			content: {type: 'text', text: ''},
+		};
+		const count =
+			mode === 'replay-count-limit'
+				? 100000
+				: mode === 'replay-count-overflow'
+					? 100001
+					: mode === 'replay-utf8-overflow'
+						? 6
+						: mode === 'replay-bytes-limit'
+							? 1
+							: 17;
+		const text = mode.startsWith('replay-count-')
+			? 'x'
+			: mode === 'replay-bytes-limit'
+				? 'x'.repeat(
+						16 * 1024 * 1024 - Buffer.byteLength(JSON.stringify(empty), 'utf8'),
+					)
+				: (mode === 'replay-utf8-overflow' ? '€' : 'x').repeat(1024 * 1024);
+		for (let index = 0; index < count; index++)
+			update({
+				sessionUpdate: 'agent_message_chunk',
+				content: {type: 'text', text},
+			});
+		send({id, result: {modes: modeState()}});
+		return;
+	}
 	update({
 		sessionUpdate: 'user_message_chunk',
 		content: {type: 'text', text: 'Earlier question'},
@@ -107,6 +311,21 @@ const OPTIONS = [
 	{optionId: 'allow', name: 'Allow', kind: 'allow_once'},
 	{optionId: 'deny', name: 'Deny', kind: 'reject_once'},
 ];
+const permissionOptions =
+	mode === 'all-permissions'
+		? [
+				{optionId: 'allow', name: 'Allow once', kind: 'allow_once'},
+				{optionId: 'allow-always', name: 'Allow always', kind: 'allow_always'},
+				{optionId: 'deny', name: 'Reject once', kind: 'reject_once'},
+				{optionId: 'deny-always', name: 'Reject all', kind: 'reject_always'},
+			]
+		: mode === 'ask-user'
+			? [
+					{optionId: 'answer-0', name: 'First choice', kind: 'allow_once'},
+					{optionId: 'answer-1', name: 'Second choice', kind: 'allow_once'},
+				]
+			: OPTIONS;
+const cancellations = new Map();
 const say = (sessionId, text) =>
 	notify('session/update', {
 		sessionId,
@@ -121,9 +340,200 @@ const tool = (sessionId, toolCallId, update) =>
 		update: {sessionUpdate: 'tool_call_update', toolCallId, ...update},
 	});
 
+async function streamFixture(id, sessionId) {
+	const update = body => notify('session/update', {sessionId, update: body});
+	update({
+		sessionUpdate: 'available_commands_update',
+		availableCommands: [
+			{
+				name: '/review',
+				description: 'review fixture changes',
+				input: {hint: 'focus'},
+			},
+		],
+	});
+	update({
+		sessionUpdate: 'agent_thought_chunk',
+		content: {type: 'text', text: 'checking the scripted fixture'},
+	});
+	update({
+		sessionUpdate: 'tool_call',
+		toolCallId: 'subagent:fixture',
+		title: 'fixture tool',
+		kind: 'execute',
+		status: 'in_progress',
+		content: [
+			{type: 'content', content: {type: 'text', text: 'fixture tool detail'}},
+		],
+		rawInput: {fixture: true},
+	});
+	say(
+		sessionId,
+		'# streamed fixture\n\n[fixture link](https://fixture.invalid) ![fixture image](https://fixture.invalid/image)\n\n<script>fixture</script>\n\n',
+	);
+	await new Promise(resolve => {
+		let index = 0;
+		const started = performance.now();
+		const period = 1000 / 105;
+		const tick = () => {
+			const due = Math.min(
+				300,
+				Math.floor((performance.now() - started) / period),
+			);
+			while (index < due) say(sessionId, `item ${++index}\n\n`);
+			if (index === 300) resolve();
+			else
+				setTimeout(
+					tick,
+					Math.max(0, started + (index + 1) * period - performance.now()),
+				);
+		};
+		tick();
+	});
+	tool(sessionId, 'subagent:fixture', {title: 'fixture tool finished'});
+	tool(sessionId, 'subagent:fixture', {status: 'completed'});
+	update({
+		sessionUpdate: 'usage_update',
+		used: 1250,
+		size: 10000,
+		cost: {amount: 0.5, currency: 'USD'},
+	});
+	send({
+		id,
+		result: {
+			stopReason: 'end_turn',
+			usage: {inputTokens: 100, outputTokens: 300, totalTokens: 400},
+			_meta: {
+				'nanocoder/usage': {cost: 0.01, privatePayload: 'synthetic-private'},
+				unknown: 'synthetic-private',
+			},
+		},
+	});
+}
+
+let subagentTurn = 0;
+async function subagentFixture(id, {sessionId, prompt}) {
+	const text = prompt
+		.filter(part => part.type === 'text')
+		.map(part => part.text)
+		.join('');
+	const update = body => notify('session/update', {sessionId, update: body});
+	const turn = ++subagentTurn;
+	const roots = text.includes('two')
+		? [`delegate-${turn}-1`, `delegate-${turn}-2`]
+		: [`delegate-${turn}-1`];
+	const fallback = text.includes('fallback');
+	for (const toolCallId of roots) {
+		update({
+			sessionUpdate: 'tool_call',
+			toolCallId,
+			title: fallback ? 'agent' : 'explore: inspect fixture',
+			kind: 'think',
+			status: 'pending',
+			rawInput: fallback
+				? {}
+				: {
+						subagent_type: 'explore',
+						description: 'inspect fixture',
+						prompt: 'private fixture task',
+					},
+		});
+		tool(sessionId, toolCallId, {status: 'in_progress'});
+		if (!fallback)
+			tool(sessionId, toolCallId, {
+				title: 'explore • 1.2k tokens • 3 tools (read_file)',
+			});
+	}
+	if (text.includes('fast')) {
+		for (const root of roots) tool(sessionId, root, {status: 'completed'});
+		send({id, result: {stopReason: 'end_turn'}});
+		return;
+	}
+	let cancelled = false;
+	const cancellation = new Promise(resolve =>
+		cancellations.set(sessionId, () => {
+			cancelled = true;
+			resolve();
+		}),
+	);
+	try {
+		if (text.includes('no approval') || fallback) {
+			await cancellation;
+			send({id, result: {stopReason: 'cancelled'}});
+			return;
+		}
+		const calls = roots.map((_, index) => `subagent:inner-${turn}-${index}`);
+		const answers = await Promise.all(
+			calls.map(toolCallId => {
+				const title = 'execute_bash fixture (explore)';
+				update({
+					sessionUpdate: 'tool_call',
+					toolCallId,
+					title,
+					kind: 'execute',
+					status: 'pending',
+				});
+				return ask('session/request_permission', {
+					sessionId,
+					toolCall: {toolCallId, title, status: 'pending'},
+					options: OPTIONS,
+				});
+			}),
+		);
+		if (
+			cancelled ||
+			answers.some(answer => answer.outcome.outcome !== 'selected')
+		) {
+			send({id, result: {stopReason: 'cancelled'}});
+			return;
+		}
+		calls.forEach((call, index) =>
+			tool(sessionId, call, {
+				status:
+					answers[index].outcome.optionId === 'allow' ? 'completed' : 'failed',
+			}),
+		);
+		for (const root of roots)
+			tool(sessionId, root, {
+				status: text.includes('failure') ? 'failed' : 'completed',
+			});
+		say(sessionId, 'fixture delegation settled');
+		send({id, result: {stopReason: 'end_turn'}});
+	} finally {
+		cancellations.delete(sessionId);
+	}
+}
+
 // One turn: some text, protected tool calls that wait for the client's answers, more text.
-async function runTurn(id, {sessionId}) {
+async function runTurn(id, params) {
+	const {sessionId} = params;
+	if (mode === 'replay-gates') {
+		say(sessionId, 'live replay gate fixture');
+		send({id, result: {stopReason: 'end_turn'}});
+		return;
+	}
 	if (mode === 'die-in-turn') process.exit(3);
+	if (mode === 'durable-replay') {
+		durableDelegations(sessionId, false);
+		send({id, result: {stopReason: 'end_turn'}});
+		return;
+	}
+	if (mode === 'streaming') return streamFixture(id, sessionId);
+	if (mode === 'subagents') return subagentFixture(id, params);
+	if (mode === 'reported-usage' || mode === 'session-discovery') {
+		say(sessionId, 'Reported usage fixture.');
+		send({
+			id,
+			result: {
+				stopReason: 'end_turn',
+				usage: {inputTokens: 12, outputTokens: 8, totalTokens: 20},
+				_meta: {
+					'nanocoder/usage': {cost: 0.01, privatePayload: 'synthetic-private'},
+				},
+			},
+		});
+		return;
+	}
 	if (mode === 'prompt-error') {
 		send({
 			id,
@@ -132,15 +542,26 @@ async function runTurn(id, {sessionId}) {
 		return;
 	}
 	say(sessionId, 'Working on it. ');
+	if (mode === 'wait-for-cancel') {
+		await new Promise(resolve => cancellations.set(sessionId, resolve));
+		cancellations.delete(sessionId);
+		send({id, result: {stopReason: 'cancelled'}});
+		return;
+	}
 	const calls = mode === 'two-tools' ? ['call_1', 'call_2'] : ['call_1'];
-	const title = toolCallId => `execute_bash: echo ${toolCallId}`;
+	const title = toolCallId =>
+		mode === 'ask-user'
+			? 'Which fixture option?'
+			: calls.length > 1
+				? `execute_bash: echo ${toolCallId}`
+				: 'execute_bash: echo hi';
 	for (const toolCallId of calls) {
 		notify('session/update', {
 			sessionId,
 			update: {
 				sessionUpdate: 'tool_call',
 				toolCallId,
-				title: calls.length > 1 ? title(toolCallId) : 'execute_bash: echo hi',
+				title: title(toolCallId),
 				status: 'pending',
 			},
 		});
@@ -151,10 +572,10 @@ async function runTurn(id, {sessionId}) {
 				sessionId,
 				toolCall: {
 					toolCallId,
-					title: calls.length > 1 ? title(toolCallId) : 'execute_bash: echo hi',
+					title: title(toolCallId),
 					status: 'pending',
 				},
-				options: OPTIONS,
+				options: permissionOptions,
 			}),
 		),
 	);
@@ -165,10 +586,17 @@ async function runTurn(id, {sessionId}) {
 		send({id, result: {stopReason: 'cancelled'}});
 		return;
 	}
-	const allowed = answers.map(({outcome}) => outcome.optionId === 'allow');
+	const allowed = answers.map(({outcome}) =>
+		permissionOptions
+			.find(option => option.optionId === outcome.optionId)
+			?.kind.startsWith('allow'),
+	);
 	calls.forEach((toolCallId, index) =>
 		tool(sessionId, toolCallId, {
 			status: allowed[index] ? 'completed' : 'failed',
+			...(mode === 'all-permissions' || mode === 'ask-user'
+				? {title: `selected ${answers[index].outcome.optionId}`}
+				: {}),
 		}),
 	);
 	say(
@@ -195,8 +623,66 @@ function serve() {
 				return;
 			}
 			log({method, params});
+			if (
+				[
+					'renameSession',
+					'_renameSession',
+					'timeline/list',
+					'_timeline/list',
+				].includes(method)
+			) {
+				if (mode === 'silent-probes') return;
+				if (mode === 'ambiguous-probes') {
+					send({id, error: {code: -32603, message: 'Internal error'}});
+					return;
+				}
+				if (mode === 'successful-probes') {
+					send({id, result: {}});
+					return;
+				}
+				const bare = method.replace(/^_/, '');
+				const supported =
+					(mode === 'extensions' && !method.startsWith('_')) ||
+					mode === 'prefixed-extensions';
+				send({
+					id,
+					error: supported
+						? {
+								code: -32603,
+								message: 'Internal error',
+								data: {
+									details:
+										bare === 'renameSession'
+											? 'renameSession requires string sessionId and title params'
+											: 'timeline/list requires a string sessionId',
+								},
+							}
+						: {code: -32601, message: 'Method not found'},
+				});
+				return;
+			}
+			if (method === 'session/set_mode' && mode === 'slow-mode') {
+				say(params.sessionId, 'mode waiting');
+				return;
+			}
+			if (
+				(method === 'session/new' && mode === 'slow-new') ||
+				(method === 'session/resume' && mode === 'slow-resume')
+			) {
+				say('fake-session', `${method} waiting`);
+				return;
+			}
 			if (method === 'session/prompt') {
 				void runTurn(id, params);
+				return;
+			}
+			if (method === 'session/set_config_option' && mode === 'replay-gates') {
+				replayModel = params.value;
+				send({id, result: {configOptions: replayConfig()}});
+				return;
+			}
+			if (method === 'session/cancel') {
+				cancellations.get(params.sessionId)?.();
 				return;
 			}
 			if (method === 'session/resume') {
@@ -213,10 +699,23 @@ function serve() {
 					: {id, result},
 			);
 		})
-		.on('close', () => process.exit(0));
+		.on('close', () => {
+			if (mode === 'multiple-sessions') log({stdinClosed: true});
+			if (mode !== 'ignore-shutdown') process.exit(0);
+		});
 }
 
-log({started: true, trustEnv: process.env.NANOCODER_TRUST_DIRECTORY ?? null});
+log({
+	started: true,
+	pid: process.pid,
+	cwd: process.cwd(),
+	trustEnv: process.env.NANOCODER_TRUST_DIRECTORY ?? null,
+});
+
+if (mode === 'ignore-shutdown') {
+	process.on('SIGTERM', () => {});
+	setInterval(() => {}, 1000);
+}
 
 if (mode === 'refuse') {
 	process.stderr.write('(node:1) Warning: an unrelated warning\n');

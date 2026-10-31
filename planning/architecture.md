@@ -3,7 +3,7 @@
 The processes, trust boundaries, IPC contract, process policy, thread state machine and key sequences of Nanocoder Desktop.
 
 - Status: Draft
-- Last updated: 2026-10-27
+- Last updated: 2026-10-29
 - Drafted by: @akramcodez
 
 ## Scope
@@ -93,6 +93,9 @@ The following detail is Suggestion (not discussed):
   | `OUTSIDE_ROOT` | The resolved path left the canonical project root. |
   | `LIMIT` | A size, entry or time limit was hit. The message says which. |
   | `UNSUPPORTED` | The connected Nanocoder does not offer the capability. |
+  | `UNAVAILABLE` | The desktop service has not been installed yet. |
+  | `STORE_CORRUPT` | The metadata store could not be recovered. |
+  | `STORE_TOO_NEW` | The database needs a newer desktop version. |
   | `AGENT_UNAVAILABLE` | The Nanocoder process is not running or not ready. |
   | `BUSY` | Another root turn is running in this project's process (`CHAT-17`). |
   | `DENIED` | The user or policy refused the action. |
@@ -102,6 +105,32 @@ The following detail is Suggestion (not discussed):
 - **Ordered streams.** Events pushed from main carry a per-thread sequence number. A renderer that sees a gap asks for a fresh snapshot instead of guessing.
 - **Bounded event rate.** High-rate ACP chunks are batched before they cross IPC, so a fast model cannot flood the renderer.
 - **Cancellable work.** Long requests (large diffs, deep listings) accept a cancellation ID.
+
+### Milestone 1 shared contracts
+
+Step 0 defines the workspace requests, values and events in [`source/shared/ipc.ts`](../source/shared/ipc.ts), beside the unchanged technical-gate bridge. [`workspace.ts`](../source/main/ipc/workspace.ts) registers every workspace request through `registerHandler`, with strict schemas and the usual sender check (`SEC-02`). A missing service returns `UNAVAILABLE`, not a privileged fallback.
+
+| Contract | Implemented by |
+|---|---|
+| `store:get-settings`, `store:update-settings`, `store:get-ui-state`, `store:update-ui-state`; `DesktopStore`, `DesktopStoreFactory`, `SqlDriver`, `SqlDatabase`, `SqlStatement` | Phase 1.1 (`DATA-01`, `DATA-09`, `DATA-10`, `DEC-04`) |
+| `projects:list`, `projects:add`, `projects:open`, `projects:locate`, `projects:remove`, `projects:set-default-mode`; `ProjectService` | Phase 1.2 (`CHAT-01`, `CHAT-02`, `DEC-30`, `DEC-31`), using phase 1.1 repositories |
+| `supervisor:get-state`, `supervisor:start`, `supervisor:stop`; `NanocoderSupervisor` | Phase 1.3, first build item |
+| `supervisor:get-capability-gates`; `CapabilityGate`, `CapabilityGates`, `VersionPolicyResult` | Phase 1.4 (`ACP-03`, `ACP-04`, `CHAT-15`) |
+| `supervisor:restart`, `supervisor:get-diagnostics`, `supervisor:export-diagnostics`; `DiagnosticsService`, exit and retry fields in `SupervisorState` | Phase 1.3 recovery and diagnostics follow-up (`ACP-17`, `SEC-08`), not step 0 or wave 1 |
+| `threads:*`; `ThreadService`, `ThreadInfo`, `ThreadSnapshot` | Phases 1.5 to 1.9, including discovery, resume, archive, removal, explicit history deletion, mode, prompt, cancel and permission intents |
+| `projects:event`; `ProjectEvent` | Supervisor and project/thread services as they land |
+
+`registerIpcHandlers` accepts `WorkspaceServices`; implementations supply the store, project service, supervisor and thread service without changing the bridge. Main-only interfaces live in `source/main/store/contracts.ts`, `source/main/nanocoder/supervisor-contracts.ts` and `source/main/ipc/workspace-services.ts`. No SQLite library types or process handles reach the renderer. The supervisor's connection accessor is main-only.
+
+Phase 1.1 supplies the real store from [`source/main/store/index.ts`](../source/main/store/index.ts), opened at `userData/desktop.sqlite` before any window and only after Electron grants the profile's single-instance lock. A second instance quits and asks the owner to show and focus its window, or create one if none remains. Second-instance and activation requests share one gate: first readiness fulfils the initial window demand after the store and IPC are ready, coalescing startup requests without opening the store again. Both `before-quit` and `will-quit` stop the gate permanently, discarding startup demand and all later window requests. Startup skips opening the store after stop; an in-flight open that completes after stop is closed without registering IPC or creating windows. `store:*` requests persist validated settings and UI state in atomic read/merge/write transactions; project/thread actions still wait for their services. The `node:sqlite` adapter is isolated behind `SqlDriver`. Numbered migrations, upgrade backups and integrity recovery are described in [`data-model.md`](data-model.md#migrations). Shutdown uses the existing disposal order: supervisor and ACP cleanup finish before the store closes.
+
+Projects and threads use desktop UUIDs. A renderer supplies IDs, not roots, trust flags or a deletion-confirmed flag. Project selection, relocation, trust and history-deletion confirmation remain main-owned. Start requires a trusted stored project. Explicit retry resolves an existing stored identity and repeats the native trust flow when Nanocoder refuses; it never grants trust from renderer data. Both paths re-check canonical roots and Nanocoder's own trust, and preserve `DEC-30` and `DEC-31`.
+
+Settings and UI updates allow known fields only, with bounded lists and window coordinates. Runtime override paths can be stored by main but cannot be set through a renderer settings patch. Neither patch accepts secrets, transcripts, file contents or tool output (`DATA-04`, `SEC-07`). Thread snapshots and turn events are transient only.
+
+Every disabled feature has a reason in the gate result. Version results distinguish bundled, supported, untested and refused versions. `ProjectEvent` carries its project ID; turn batches also carry the thread ID. Project-state sequences and per-thread turn sequences are separate. On a gap, callers fetch supervisor state, capability gates, project/thread lists or a thread snapshot as appropriate. Subscriptions pass event data only and return an unsubscribe function.
+
+Diagnostics export requests identify a captured snapshot, never renderer-supplied lines or a destination path. The main-only diagnostics service reviews that exact snapshot with the user and asks for the destination before writing; an expired, foreign or unknown snapshot is refused (`SEC-08`). Step 0 exported nothing; phase 1.3 implements this reviewed export.
 
 ## ACP over stdio
 
@@ -113,7 +142,7 @@ Decided ([whitepaper, Architecture][wp-arch]): standard output is protocol only,
 | Framing | Newline-delimited JSON-RPC through the ACP SDK's NDJSON stream. Nanocoder writes the protocol to stdout and startup failures to stderr ([source][nc-server]). | Decided |
 | Protocol violations | A line on stdout that is not a valid frame ends the connection and marks the process failed, with the raw line kept only in the stderr ring (`ACP-15`). | Suggestion (not discussed) |
 | stderr ring | In memory only, bounded by size (256 KiB is a starting point), redacted before storage, never written to disk, shown in a diagnostics view, exported only after the user reviews it (`ACP-16`, `SEC-08`). | Decided (ring); the size is a Suggestion (not discussed) |
-| Shutdown | Close stdin first. Nanocoder shuts down gracefully when the connection closes ([source][nc-shutdown]). After a grace period, end the process tree. | Suggestion (not discussed) |
+| Shutdown | Close every loaded session when advertised, let cancelled prompts settle, then close stdin ([source][nc-shutdown]). Escalate to termination and forced kill on bounded deadlines. | Suggestion (not discussed) |
 
 ## Process policy
 
@@ -125,6 +154,26 @@ Decided ([whitepaper, Architecture][wp-arch]): standard output is protocol only,
 | Idle shutdown | After a period with no running turn and no open thread for the project, close open sessions (`session/close`) and stop the process. Resume on next use (`ACP-23`). | Decided in principle ("resumes persisted sessions after idle shutdown"); the period is a Suggestion (not discussed) |
 | One active project | v1 shows one active project at a time ([Main window][wp-window]). What happens to a background project's running turn is `OQ-19`. | Decided (one active); background behaviour Open |
 | Parallel root turns | Future work, after Nanocoder isolates model state per session. | Decided (deferred) |
+
+## Phase 1.3 supervisor implementation
+
+[`supervisor.ts`](../source/main/nanocoder/supervisor.ts) implements the main-only supervisor contract without importing Electron. Its project-ID map coalesces starts for the same project and refuses a second live identity for the same canonical root. Ordinary starts require trusted, available main-owned metadata. Native and recent-project opening use the explicit pre-trust probe (`DEC-30`) and the same stored project identity. Before probing, main announces the actual stored project through the supervisor's sequenced `project` event. Recovery controls stay bound to that attempted ID and derive process state from `SupervisorIndex`, never from the last unrelated project event.
+
+Every launch resolves the runtime with the canonical root as an excluded location. Explicit overrides do not bypass containment. Native realpath resolves symlinks and the volume's case aliases before component comparisons; POSIX names are not blindly case-folded. Roots and runtime paths are checked again immediately before each ACP or trust launch, including after an asynchronous lookup or trust confirmation. A changed root or runtime fails closed.
+
+Session notifications and permissions retain their project and session IDs inside main. Supervisor and capability events share the per-project metadata sequence. ThreadService alone maps saved Nanocoder identities to desktop thread IDs and owns independent per-thread transient snapshot sequences. Main forwards only these mapped turn events, never raw supervisor session IDs. Conversations, drafts, permission cards and terminal results remain project/thread-scoped in memory. The optional terminal result advances the same thread sequence, even with no content events; accepted user turns and replay-prefix replacement clear it.
+
+Connecting initialises the ACP process without creating or resuming a session. New threads are metadata-only until their first prompt. ThreadService stores the actual mode-ready session ID before publishing content. A failed history open or recovery keeps that ID, title, activity and readable prefix. Only Nanocoder's `NOT_FOUND` marks the owning thread view-only, with the shared missing-history reason, hidden composer and metadata-only new/remove actions (`CHAT-09`). Retryable resume, capability and mode failures mark it failed with the safe reason and an explicit same-thread retry. Sending and controls remain refused until that same saved history reopens successfully. This deliberately replaces TechnicalSessions' former fresh-session retry. A changed root/cwd refuses before resume. Automatic recovery of an already-crashed process remains unavailable until the saved history and safe mode are restored, with no replacement session or re-prompt. Reloading, losing or closing the renderer cancels pending approvals and stops active, starting or scheduled-recovery processes; idle projects become eligible for idle shutdown. Detach also cancels reopen demand queued behind an idle stop and awaits every tracked operation, even if another stop fails. No hidden approval is allowed on the user's behalf.
+
+Stop cancels timers and pending approvals, and aborts lookups, initialisation, probes and trust confirmations. A late lookup or confirmation cannot start or trust anything. Shutdown closes advertised sessions, lets cancelled prompts settle, closes stdin and the connection, then escalates to termination and forced kill on bounded deadlines. All project stops settle before supervisor disposal returns, even when one fails, so the existing lifecycle can close storage afterwards. Descendant process-tree hardening remains later work.
+
+Only an unexpected exit of a ready process schedules recovery (`ACP-17`). Initialisation failures, trust refusals, unsupported versions, failed session recovery and explicit stops never do. Recovery repeats the runtime, canonical-root, trust and capability gates. It resumes the selected Nanocoder session and confirms a supported non-`yolo` mode before publishing ready, then applies Nanocoder's saved replay, including an empty replay. An ordinary reopen without replay preserves the conversation. Successful recovery clears the current failure banner and badge, while the failed turn remains a transient history item. It never resends a prompt. Stale completion cannot overwrite the recovered generation. Explicit retry uses an existing stored identity, refuses changed roots and resets the bounded retry budget. After an initial failure with no prepared session, retry also finishes main-owned opening and safe-mode session preparation before enabling the composer.
+
+Idle shutdown uses a small injected activity source rather than owning ThreadService (`ACP-08`, `ACP-23`). A running turn, open thread, preparation or recent activity prevents it. Turn completion starts a fresh idle period. The technical gate supplies attachment activity; phase 1.5 must supply durable thread activity. Next use starts the process through the same gates and resumes its cached session.
+
+Diagnostics combine retained and current redacted stderr into an immutable, project-scoped capture (`SEC-07`, `SEC-08`). Main owns the ring before initialisation, so a failed launch cannot lose it. Captures project only recognised metadata: allowlisted method names, typed startup PID and the matching main-owned root, and the stdin-closed marker. Arbitrary text, unknown fields, protocol stdout and private payloads are omitted, including multiline continuations and escaped credential keys. Oversized partial lines are discarded without exposing a secret split over chunks. Main shows the exact captured lines in a native review dialog, defaults to cancel, then asks for a new file destination. Export refuses existing files and symlinks, writes with mode `0600`, and never transmits anything. Expiry is checked before review, after review and after destination selection.
+
+Current engineering defaults are Suggestions (not discussed), not new product decisions: three automatic attempts after 1, 2 and 4 seconds; a five-minute idle period; a 256 KiB capture limit; eight captures retained for ten minutes. Successful initialisation alone does not reset the crash-loop budget. Explicit retry does. Clocks and idle activity are injectable for deterministic tests. Recovery/diagnostics controls have their own styles and plain props so the workspace shell can mount them without taking process ownership.
 
 ## Sources of truth
 

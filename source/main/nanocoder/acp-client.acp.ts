@@ -9,15 +9,89 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import test from 'ava';
 import {connectNanocoder, NanocoderFailure} from '@/main/nanocoder/acp-client';
+import {systemClock} from '@/main/nanocoder/clock';
+import {launchNanocoder} from '@/main/nanocoder/launch';
 import {openProject} from '@/main/nanocoder/open-project';
+import {StderrRing} from '@/main/nanocoder/stderr-ring';
 import {type TrustReason, trustDirectory} from '@/main/nanocoder/trust';
+import {createTrustPreflight} from '@/main/nanocoder/trust-preflight';
 
 const cli = process.env.NANOCODER_CLI ?? '';
-const runtime = {nodePath: process.execPath, cliPath: cli};
+let runtime = {
+	nodePath: process.execPath,
+	cliPath: cli,
+	version: '1.31.0',
+	source: 'override' as const,
+};
 const clientInfo = {name: 'nanocoder-desktop', version: '0.0.0-test'};
 const work = realpathSync.native(
 	mkdtempSync(path.join(tmpdir(), 'nd-acp-real-')),
 );
+test.before(async () => {
+	const start = performance.now();
+	const elapsed = () => Math.round(performance.now() - start);
+	const timing = {
+		deadlineFired: false,
+		deadlineFiredMs: null as number | null,
+		launchMs: null as number | null,
+		spawnMs: null as number | null,
+		firstStderrMs: null as number | null,
+		exitMs: null as number | null,
+		closeMs: null as number | null,
+		stdoutBytes: 0,
+		exit: null as {code: number | null; signal: NodeJS.Signals | null} | null,
+	};
+	let stderr: StderrRing | undefined;
+	let expected = '';
+	try {
+		runtime = await createTrustPreflight({
+			clock: {
+				...systemClock,
+				setTimeout: (run, milliseconds) => {
+					return systemClock.setTimeout(() => {
+						timing.deadlineFired = true;
+						timing.deadlineFiredMs = elapsed();
+						run();
+					}, milliseconds);
+				},
+			},
+			launch: (...args) => {
+				timing.launchMs = elapsed();
+				const child = launchNanocoder(...args);
+				stderr = new StderrRing({homeDir: args[3]?.HOME});
+				expected = `[nanocoder] Directory ${args[2]} is not trusted. Pass --trust-directory to bypass the disclaimer for this run only, or set NANOCODER_TRUST_DIRECTORY=1 to trust this directory permanently.`;
+				child.once('spawn', () => {
+					timing.spawnMs = elapsed();
+				});
+				child.stderr.on('data', (chunk: Buffer) => {
+					timing.firstStderrMs ??= elapsed();
+					stderr?.write(chunk.toString());
+				});
+				child.stdout.on('data', (chunk: Buffer) => {
+					timing.stdoutBytes += chunk.length;
+				});
+				child.once('exit', (code, signal) => {
+					timing.exitMs = elapsed();
+					timing.exit = {code, signal};
+				});
+				child.once('close', () => {
+					timing.closeMs = elapsed();
+				});
+				return child;
+			},
+		}).verify(runtime, work);
+	} catch (error) {
+		stderr?.flush();
+		console.info('[trust-preflight failure] %j', {
+			...timing,
+			elapsedMs: elapsed(),
+			stderrLines: stderr?.lines().length ?? 0,
+			exactRefusal:
+				stderr?.lines().length === 1 && stderr.lines()[0] === expected,
+		});
+		throw error;
+	}
+});
 // Nanocoder keeps its config and trust list here, not in the user's home.
 const env = {
 	...process.env,

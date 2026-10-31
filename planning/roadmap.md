@@ -3,7 +3,7 @@
 Where Nanocoder Desktop is in the NC process, and the build broken into small phases with checklists, from scaffold to the first public release. No dates: no source gives one.
 
 - Status: Draft
-- Last updated: 2026-10-28
+- Last updated: 2026-10-30
 - Drafted by: @akramcodez
 
 ## How to use this roadmap
@@ -256,150 +256,157 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Blockers.** Technical gate; `OQ-03`, `OQ-19`. **Risks.** `RISK-04`, `RISK-05`, `RISK-06`, `RISK-11`, `RISK-14`.
 
+Local macOS automation was rerun on `8c01146`, the exit-check merge of
+`d16f9ac`, with Node 22.22.0. The newly checked items below have exact-tip
+[gate and test evidence](milestone-1-exit-checks.md#final-local-run).
+This is not all-platform, native VoiceOver, real-provider or milestone exit
+acceptance. Phase 1.8 and `SUB-05` remain app-composed, not full acceptance.
+
 ### Phase 1.1: desktop store
 
 `node:sqlite`, with `better-sqlite3` as the fallback behind the same interface (`DEC-04`).
 
 **Build**
 
-- [ ] SQLite connection in the main process (`DATA-01`)
-- [ ] Tables from [`data-model.md`](data-model.md) (`DATA-02`)
-- [ ] Numbered migrations with a backup before upgrade (`DATA-03`)
-- [ ] Integrity check and recovery on startup (`DATA-08`)
-- [ ] Settings and UI state storage (`DATA-09`, `DATA-10`)
+- [x] SQLite connection in the main process (`DATA-01`) ([`store.e2e.ts`](../e2e/store.e2e.ts), profile ownership, `userData` and Electron's bundled Node)
+- [x] Tables from [`data-model.md`](data-model.md) (`DATA-02`) ([`store.spec.ts`](../source/main/store/store.spec.ts), schema introspection, metadata round trips and cascades)
+- [x] Numbered migrations with a backup before upgrade (`DATA-03`) ([`store.spec.ts`](../source/main/store/store.spec.ts), [`store.e2e.ts`](../e2e/store.e2e.ts))
+- [x] Integrity check and recovery on startup (`DATA-08`) ([`store.spec.ts`](../source/main/store/store.spec.ts), [`store.e2e.ts`](../e2e/store.e2e.ts))
+- [x] Settings and UI state storage (`DATA-09`, `DATA-10`) ([`store.spec.ts`](../source/main/store/store.spec.ts), [`store.e2e.ts`](../e2e/store.e2e.ts), restart persistence and patch refusals)
 
 **Results we want**
 
-- [ ] Migrations run from an empty database and from the previous version
-- [ ] A corrupt database is moved aside and the app still starts
-- [ ] No table has a column for message text, file contents or tool output (`DATA-04`)
+- [x] Migrations run from an empty database and from the previous version ([`store.spec.ts`](../source/main/store/store.spec.ts), versions 0 and 1 to 2, concurrent upgrade rechecks and newer-but-corrupt refusal)
+- [x] A corrupt database is moved aside and the app still starts ([`store.e2e.ts`](../e2e/store.e2e.ts), preserved corrupt bytes and fresh settings)
+- [x] No table has a column for message text, file contents or tool output (`DATA-04`) ([`store.spec.ts`](../source/main/store/store.spec.ts), introspection over every migrated table; [`connect.e2e.ts`](../e2e/connect.e2e.ts), no conversation or tool text in SQLite)
 
 ### Phase 1.2: projects and trust
 
 **Build**
 
-- [ ] Add a project through a main-process folder picker (`CHAT-01`)
-- [ ] Store the canonical root, session cwd and display name
-- [ ] Trust prompt before anything project-defined runs, listing what Nanocoder will run (`CHAT-02`, `SEC-17`, `DEC-30`)
-- [ ] Recent projects list and "locate" for a moved project
+- [x] Add a project through a main-process folder picker (`CHAT-01`) ([`project-service.spec.ts`](../source/main/projects/project-service.spec.ts), [`projects.e2e.ts`](../e2e/projects.e2e.ts), native selection and cancellation)
+- [x] Store the canonical root, session cwd and display name ([`project-service.spec.ts`](../source/main/projects/project-service.spec.ts), [`projects.e2e.ts`](../e2e/projects.e2e.ts), persistence across restart)
+- [ ] Trust prompt before anything project-defined runs, listing what Nanocoder will run (`CHAT-02`, `SEC-17`, `DEC-30`): native execution-sensitive consent and snapshot checks are implemented ([`project-consent.spec.ts`](../source/main/projects/project-consent.spec.ts), [`trust-summary.spec.ts`](../source/main/projects/trust-summary.spec.ts)); the proposal and upstream pre-trust/atomic-grant gaps remain open ([trust notes](projects-and-trust.md#pre-trust-probe-exception-and-upstream-gaps))
+- [x] Recent projects list and "locate" for a moved project ([`projects.e2e.ts`](../e2e/projects.e2e.ts), ID-based opening, missing-folder explanation and relocation)
 
 **Results we want**
 
-- [ ] Adding a folder through a symlink stores its real path
-- [ ] An untrusted project never starts Nanocoder, Git or watchers
+- [x] Adding a folder through a symlink stores its real path ([`project-service.spec.ts`](../source/main/projects/project-service.spec.ts), [`projects.e2e.ts`](../e2e/projects.e2e.ts))
+- [ ] An untrusted project never starts Nanocoder, Git or watchers: the G.3 ACP probe exception remains; the desktop starts no Git, watcher or session before a ready verdict ([trust notes](projects-and-trust.md#pre-trust-probe-exception-and-upstream-gaps))
 
 ### Phase 1.3: Nanocoder supervisor
 
 **Build**
 
-- [ ] One process per project, started at the canonical root
-- [ ] Exit detection, limited restart with backoff (`ACP-17`)
-- [ ] Idle shutdown that closes sessions first (`ACP-08`, `ACP-23`)
-- [ ] Diagnostics view over the stderr ring, export only after review (`SEC-08`)
+- [x] One process per project, started at the canonical root ([`supervisor.spec.ts`](../source/main/nanocoder/supervisor.spec.ts), concurrent turns and event isolation in [`connect.e2e.ts`](../e2e/connect.e2e.ts))
+- [x] Exit detection, limited restart with backoff (`ACP-17`) ([`supervisor-recovery.spec.ts`](../source/main/nanocoder/supervisor-recovery.spec.ts))
+- [x] Idle shutdown that closes sessions first (`ACP-08`, `ACP-23`) ([`supervisor-recovery.spec.ts`](../source/main/nanocoder/supervisor-recovery.spec.ts))
+- [x] Diagnostics view over the stderr ring, export only after review (`SEC-08`) ([`diagnostics-export.spec.ts`](../source/main/nanocoder/diagnostics-export.spec.ts), [`supervisor-recovery.e2e.ts`](../e2e/supervisor-recovery.e2e.ts))
 
 **Results we want**
 
-- [ ] Killing Nanocoder marks the running thread Failed and offers retry
-- [ ] A crash loop stops after the retry limit and waits for the user
-- [ ] Exported diagnostics contain no keys or tokens (`SEC-07`)
+- [x] Killing Nanocoder marks the running thread Failed and offers retry ([`supervisor-recovery.e2e.ts`](../e2e/supervisor-recovery.e2e.ts))
+- [x] A crash loop stops after the retry limit and waits for the user ([`supervisor-recovery.spec.ts`](../source/main/nanocoder/supervisor-recovery.spec.ts), [`supervisor-recovery.e2e.ts`](../e2e/supervisor-recovery.e2e.ts))
+- [x] Exported diagnostics contain no keys or tokens (`SEC-07`) ([`stderr-ring.spec.ts`](../source/main/nanocoder/stderr-ring.spec.ts), [`stderr-security.spec.ts`](../source/main/nanocoder/stderr-security.spec.ts))
 
 ### Phase 1.4: capability gates and version policy
 
 **Build**
 
-- [ ] Feature gates from `initialize`, version and probes (`ACP-03`)
-- [ ] Supported version range check (`ACP-04`)
-- [ ] Visible reasons for every disabled feature (`CHAT-15`)
+- [x] Feature gates from `initialize`, version and probes (`ACP-03`) ([`capabilities.spec.ts`](../source/main/nanocoder/capabilities.spec.ts), safe extension probes in [`acp-client.spec.ts`](../source/main/nanocoder/acp-client.spec.ts))
+- [x] Supported version range check (`ACP-04`) ([`version-policy.spec.ts`](../source/main/nanocoder/version-policy.spec.ts), provisional minimum and untested-version warning documented in [`acp-integration.md`](acp-integration.md#supported-nanocoder-versions))
+- [x] Visible reasons for every disabled feature (`CHAT-15`) ([`connect.e2e.ts`](../e2e/connect.e2e.ts), nine feature reasons and version warning)
 
 **Results we want**
 
-- [ ] An older Nanocoder shows the right features turned off, each with a reason
-- [ ] A version below the minimum is refused with a clear message
+- [x] An older Nanocoder shows the right features turned off, each with a reason ([`connect.e2e.ts`](../e2e/connect.e2e.ts), fake 1.32.0 with no optional capabilities)
+- [x] A version below the minimum is refused with a clear message ([`version-policy.spec.ts`](../source/main/nanocoder/version-policy.spec.ts), package and negotiated-version refusal in [`supervisor.spec.ts`](../source/main/nanocoder/supervisor.spec.ts), visible upgrade message in [`connect.e2e.ts`](../e2e/connect.e2e.ts))
 
 ### Phase 1.5: threads
 
 **Build**
 
-- [ ] New thread through `session/new`, session ID stored first (`CHAT-04`)
-- [ ] Thread list by last activity, with archive (`CHAT-03`, `CHAT-13`)
-- [ ] Titles from `_nanocoder/sessionTitleChanged` and rename (`CHAT-12`)
-- [ ] Remove from desktop, and delete chat history with confirmation (`CHAT-14`, `DATA-07`)
+- [x] New thread through `session/new`, session ID stored first (`CHAT-04`) ([`threads.e2e.ts`](../e2e/threads.e2e.ts), real first-send identity before mapped content; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Thread list by last activity, with archive (`CHAT-03`, `CHAT-13`) ([`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), scoped list/archive metadata; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Titles from `_nanocoder/sessionTitleChanged` and rename (`CHAT-12`) ([`session-titles.acp.ts`](../source/main/threads/session-titles.acp.ts), [`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Remove from desktop, and delete chat history with confirmation (`CHAT-14`, `DATA-07`) ([`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), separate confirmed history deletion and refusal paths; [final local run](milestone-1-exit-checks.md#final-local-run))
 
 **Results we want**
 
-- [ ] A crash right after `session/new` still leaves a thread that resumes
-- [ ] A rename survives a restart
-- [ ] Removing a thread does not delete the Nanocoder session unless asked
+- [ ] A crash right after `session/new` still leaves a thread that resumes: pinned Nanocoder does not save an empty session before the first prompt ([`empty-session.acp.ts`](../source/main/threads/empty-session.acp.ts)); desktop ID persistence does not fix this upstream limit.
+- [x] A rename survives a restart ([`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), SQLite-backed service restart; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Removing a thread does not delete the Nanocoder session unless asked ([`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), desktop-only removal and separately confirmed history deletion; [final local run](milestone-1-exit-checks.md#final-local-run))
 
 ### Phase 1.6: streaming conversation
 
 **Build**
 
-- [ ] Projection of every `session/update` type into thread events (`CHAT-05`)
-- [ ] Ordered, batched events from main to renderer
-- [ ] Defensive parsing of vendor fields (`ACP-12`)
-- [ ] Usage display and custom slash commands (`CHAT-19`, `CHAT-20`)
+- [x] Projection of every `session/update` type into thread events (`CHAT-05`) ([`turn-events.spec.ts`](../source/main/nanocoder/turn-events.spec.ts), SDK update matrix and truthful unsupported-media fallback; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Ordered, batched events from main to renderer ([`transcript.spec.ts`](../source/renderer/transcript.spec.ts), [`streaming.e2e.ts`](../e2e/streaming.e2e.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Defensive parsing of vendor fields (`ACP-12`) ([`turn-metadata.spec.ts`](../source/main/nanocoder/turn-metadata.spec.ts), bounded allowlist and payload refusals; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Usage display and custom slash commands (`CHAT-19`, `CHAT-20`) ([`streaming.e2e.ts`](../e2e/streaming.e2e.ts), reported usage only and advertised-command draft suggestions; [final local run](milestone-1-exit-checks.md#final-local-run))
 
 **Results we want**
 
-- [ ] A long streaming turn meets `PERF-04`
-- [ ] Unknown `_meta` keys are ignored without errors
-- [ ] Nanocoder's VS Code-specific `/help` text is not shown as desktop help
+- [x] A long streaming turn meets `PERF-04` ([`streaming.e2e.ts`](../e2e/streaming.e2e.ts), 300 ordered updates at 104.986/s and response maxima below 100ms; [final local run](milestone-1-exit-checks.md#final-local-run), local fixture only)
+- [x] Unknown `_meta` keys are ignored without errors ([`turn-metadata.spec.ts`](../source/main/nanocoder/turn-metadata.spec.ts), [`streaming.e2e.ts`](../e2e/streaming.e2e.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Nanocoder's VS Code-specific `/help` text is not shown as desktop help ([`turn-events.spec.ts`](../source/main/nanocoder/turn-events.spec.ts), [`streaming.e2e.ts`](../e2e/streaming.e2e.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
 
 ### Phase 1.7: approvals and cancel
 
 **Build**
 
-- [ ] Permission requests with Nanocoder's own options (`CHAT-06`, `ACP-10`)
-- [ ] Cancel, including during a pending permission (`CHAT-07`, `ACP-09`)
-- [ ] `ask_user` as selectable options (`CHAT-21`)
+- [x] Permission requests with Nanocoder's own options (`CHAT-06`, `ACP-10`) ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), exact offered IDs and labels; [`permissions.spec.ts`](../source/main/nanocoder/permissions.spec.ts), main-process refusals)
+- [x] Cancel, including during a pending permission (`CHAT-07`, `ACP-09`) ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), pending and active-turn cancellation; [`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), strict main-owned scope and awaited settlement; [`workspace.spec.ts`](../source/main/ipc/workspace.spec.ts), renderer session-identity refusal before service invocation)
+- [x] `ask_user` as selectable options (`CHAT-21`) ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), selection-only question and exact selected answer ID)
 
 **Results we want**
 
-- [ ] Allow once, allow always and reject all behave as Nanocoder reports
-- [ ] Cancelling while a permission is pending ends the turn as Interrupted
+- [x] Allow once, allow always and reject all behave as Nanocoder reports when offered ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), all four kinds with the fake; pinned Nanocoder offers only Allow and Deny, as recorded in [approval notes](approvals-and-cancel.md#permission-ownership))
+- [x] Cancelling while a permission is pending ends the turn as Interrupted ([`approvals.e2e.ts`](../e2e/approvals.e2e.ts), every queued permission cancelled, no tool allowed and next turn available)
 
 ### Phase 1.8: durable resume and view-only
 
 **Build**
 
-- [ ] Resume through `session/resume` with full replay (`CHAT-08`, `ACP-06`, `ACP-07`)
-- [ ] View-only threads with a reason and recovery actions (`CHAT-09`, `ACP-19`)
-- [ ] Session discovery and import with client-side path matching (`ACP-18`)
+- [ ] Resume through `session/resume` with full replay (`CHAT-08`, `ACP-06`, `ACP-07`): saved-ID bounded replay and whole-app/fake-child restart are app-composed ([`durable-replay.e2e.ts`](../e2e/durable-replay.e2e.ts), [`replay-gates.e2e.ts`](../e2e/replay-gates.e2e.ts)); upstream tool results/outcomes and single real-provider whole-app context acceptance remain incomplete ([limits](durable-replay.md), [final local run](milestone-1-exit-checks.md#final-local-run)).
+- [x] View-only threads with a reason and recovery actions (`CHAT-09`, `ACP-19`) ([`supervisor-recovery.e2e.ts`](../e2e/supervisor-recovery.e2e.ts), both-theme missing/retry/new/remove keyboard checks, not full phase acceptance; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Session discovery and import with native exact-root matching (`ACP-18`, `DEC-34`) ([`session-import.e2e.ts`](../e2e/session-import.e2e.ts), [`session-discovery.acp.ts`](../source/main/nanocoder/session-discovery.acp.ts), explicit metadata-only import, best-effort alias omission; [final local run](milestone-1-exit-checks.md#final-local-run))
 
 **Results we want**
 
-- [ ] A thread continues with its context after the app and Nanocoder restart
-- [ ] A thread whose session file was deleted opens view-only and says why
-- [ ] Sessions started from a subdirectory with the CLI are found and offered for import
+- [ ] A thread continues with its context after the app and Nanocoder restart: whole-app/fake-child replay and separate pinned real ACP restart/context tests pass; a single whole-Electron-restart real-provider acceptance run is still absent ([final local run](milestone-1-exit-checks.md#final-local-run)).
+- [x] A thread whose session file was deleted opens view-only and says why ([`supervisor-recovery.e2e.ts`](../e2e/supervisor-recovery.e2e.ts), [`resume.acp.ts`](../source/main/nanocoder/resume.acp.ts), exact-ID missing history with no replacement new/load; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Exact-root CLI sessions are offered for explicit import by an already-ready connection; nested folders are intentionally excluded because they may have a separate configuration or trust scope (`DEC-34`). Listing is best-effort and may omit path aliases ([`session-import.e2e.ts`](../e2e/session-import.e2e.ts), [`session-discovery.acp.ts`](../source/main/nanocoder/session-discovery.acp.ts); [final local run](milestone-1-exit-checks.md#final-local-run)).
 
 ### Phase 1.9: controls and the one-root-turn rule
 
 **Build**
 
-- [ ] Model and provider controls labelled as project-wide (`CHAT-10`, `ACP-14`)
-- [ ] Mode control, set between turns only, with an explicit project default and a confirmation for `yolo` (`CHAT-11`, `ACP-13`, `DEC-31`)
-- [ ] One root turn per project process (`CHAT-17`)
+- [x] Model and provider controls labelled as project-wide (`CHAT-10`, `ACP-14`) ([`controls.e2e.ts`](../e2e/controls.e2e.ts), [`controls.acp.ts`](../source/main/nanocoder/controls.acp.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Mode control, set between turns only, with an explicit project default and a confirmation for `yolo` (`CHAT-11`, `ACP-13`, `DEC-31`) ([`controls.e2e.ts`](../e2e/controls.e2e.ts), [`thread-modes.spec.ts`](../source/main/controls/thread-modes.spec.ts); implementation verified, DEC-31 remains Proposed, not policy approval; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] One root turn per project process (`CHAT-17`) ([`project-operations.spec.ts`](../source/main/threads/project-operations.spec.ts), [`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
 
 **Results we want**
 
-- [ ] Prompting a second thread while one runs is refused with `BUSY` and a reason
-- [ ] Model and mode controls are disabled while a turn runs
-- [ ] A model change is visible in every thread of the project
+- [x] Prompting a second thread while one runs is refused with `BUSY` and a reason ([`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts), shared project authority; [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] Model and mode controls are disabled while a turn runs ([`project-controls.spec.ts`](../source/main/controls/project-controls.spec.ts), [`thread-modes.spec.ts`](../source/main/controls/thread-modes.spec.ts), [`controls.e2e.ts`](../e2e/controls.e2e.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
+- [x] A model change is visible in every thread of the project ([`project-controls.spec.ts`](../source/main/controls/project-controls.spec.ts), [`controls.acp.ts`](../source/main/nanocoder/controls.acp.ts), process-current controls across historical resume; [final local run](milestone-1-exit-checks.md#final-local-run))
 
 ### Phase 1.10: subagents
 
 **Build**
 
-- [ ] Subagent run cards from `agent` tool calls with live progress (`SUB-01`, `SUB-02`)
-- [ ] Subagent approvals attributed to the subagent (`SUB-03`)
-- [ ] Stop that cancels the turn and says so (`SUB-04`)
-- [ ] `agent_run` rows and plain tool-card fallback (`SUB-05`, `SUB-06`, `SUB-07`)
+- [x] Supported `agent` source shapes render flat run cards and literal title progress (`SUB-01`, `SUB-02`), with truthful missing depth/elapsed/child detail ([implementation](subagents.md), [`subagents.spec.ts`](../source/renderer/subagents.spec.ts), [`subagents.e2e.ts`](../e2e/subagents.e2e.ts))
+- [x] Subagent approvals carry bounded display attribution in the existing queue (`SUB-03`), without guessing a parent from a shared name; approved is not successful ([`permissions.spec.ts`](../source/main/nanocoder/permissions.spec.ts), [`subagents.acp.ts`](../source/main/nanocoder/subagents.acp.ts))
+- [x] Stop cancels the entire turn and says so (`SUB-04`), including all pending permissions; known interrupted/failed display outcomes remain on their cards ([`subagents.e2e.ts`](../e2e/subagents.e2e.ts))
+- [x] Informational bounds and safe tool-card fallback when child details are missing (`SUB-06`, `SUB-07`), without a fabricated tree or child action ([implementation](subagents.md))
+- [ ] `agent_run` rows per actual run (`SUB-05`): phase 1.8 composes stable main-owned live/replay identities and atomic safe run metadata commits, with a fake whole-app/child restart proof. Independent full phase 1.8/SUB-05 acceptance remains pending ([implementation and limits](subagents.md#sub-05-remains-pending), [replay and renderer gates](durable-replay.md)).
 
 **Results we want**
 
-- [ ] A delegated task shows its subagent, progress and approvals
-- [ ] Stopping a subagent ends the turn as Interrupted
+- [x] A supported delegated task shows its reported role, task/progress and attributed approvals, without guessed parent linkage ([`subagents.e2e.ts`](../e2e/subagents.e2e.ts), pinned real ACP allow/deny/cancel in [`subagents.acp.ts`](../source/main/nanocoder/subagents.acp.ts))
+- [x] Stopping from a card ends the whole turn as Interrupted ([`subagents.e2e.ts`](../e2e/subagents.e2e.ts)); per-child stop, a true tree and `OQ-03` remain open (`SUB-08`)
 
 ### Milestone 1 exit
 
@@ -408,9 +415,9 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 - [ ] `SP-04` passes on macOS, Windows and Linux
 - [ ] `SP-05` passes on macOS, Windows and Linux (whole-turn stop unless `SUB-08` lands)
 - [ ] `SP-06` passes on macOS, Windows and Linux
-- [ ] The conversation meets `A11Y-01` to `A11Y-05` (`CHAT-18`)
-- [ ] `PERF-01` to `PERF-04` measured and within target, or the gap recorded with an issue
-- [ ] Coverage at or above the floor, all required checks green
+- [ ] The conversation meets `A11Y-01` to `A11Y-05` (`CHAT-18`): local automated keyboard/Chromium AX/live-region checks pass; native VoiceOver, full AA and cross-platform acceptance remain open ([evidence and user script](milestone-1-exit-checks.md)).
+- [ ] `PERF-01` to `PERF-04` measured and within target, or the gap recorded with an issue: local measurements pass their bounded checks; exact PERF-02 spawn/initialize/MCP breakdown and reference-hardware/all-platform evidence remain missing. No external issue was filed by this check ([measurements](milestone-1-exit-checks.md#final-local-run)).
+- [ ] Coverage at or above the floor, all required checks green: local configured main/shared lines are 97.40% and the full Node 22 local gates pass; required remote/all-platform checks on this tip are not established ([final local run](milestone-1-exit-checks.md#final-local-run)).
 
 ## Milestone 2: files and review
 

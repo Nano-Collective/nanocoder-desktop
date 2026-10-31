@@ -58,3 +58,25 @@ test('the trust launch stops a Nanocoder that does not exit', async t => {
 	});
 	t.pass();
 });
+
+test('aborting a trust launch waits for its child to exit and rejects the grant', async t => {
+	const abort = new AbortController();
+	const pending = trustDirectory({
+		runtime: fakeRuntime,
+		root: fakeProject('ignore-shutdown'),
+		signal: abort.signal,
+	});
+	abort.abort(new Error('fake quit'));
+	await t.throwsAsync(pending, {message: 'fake quit'});
+});
+
+test('an already-cancelled start never launches or records trust', async t => {
+	const root = fakeProject('untrusted');
+	const abort = new AbortController();
+	abort.abort(new Error('fake quit'));
+	await t.throwsAsync(
+		trustDirectory({runtime: fakeRuntime, root, signal: abort.signal}),
+		{message: 'fake quit'},
+	);
+	t.false(existsSync(path.join(root, '.fake-trusted')));
+});
