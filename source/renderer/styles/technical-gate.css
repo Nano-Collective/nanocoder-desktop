@@ -1,7 +1,7 @@
 .technical-gate {
 	display: grid;
 	gap: var(--spacing-xxl);
-	padding-block: 20px;
+	padding-block: 20px 24px;
 	overflow-wrap: anywhere;
 }
 

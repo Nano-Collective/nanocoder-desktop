@@ -202,8 +202,13 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						document.querySelector('.shell-stream-tools')?.childElementCount ??
 						0;
 					scroll.scrollTop = scroll.scrollHeight;
+					const fixtureBottom =
+						document
+							.getElementById('shell-layout-fixture')
+							?.getBoundingClientRect().bottom ?? 0;
 					return {
 						readingOffset,
+						bottomGap: scroll.getBoundingClientRect().bottom - fixtureBottom,
 						tools,
 						rail: measure('.shell-project-rail'),
 						stream: measure('.shell-stream'),
@@ -239,6 +244,7 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						width <= 840 ? 15 : width <= 1050 ? 17 : 20,
 						0,
 					);
+				expect(geometry.bottomGap).toBeCloseTo(24, 0);
 				const reading = width <= 840 ? '24px' : width <= 1050 ? '30px' : '40px';
 				expect(geometry.scrollPadding).toEqual([reading, reading]);
 				expect(geometry.footerPadding).toEqual([reading, reading]);
