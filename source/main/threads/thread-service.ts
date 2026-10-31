@@ -70,6 +70,9 @@ function assertResumedIdentity(expected: string, session: SessionInfo): void {
 		throw new IpcFailure('DENIED', 'The resumed session changed');
 }
 
+// `open` is an explicit same-thread open or retry; `restore` is automatic recovery.
+export type ThreadPrepareReason = 'open' | 'restore' | 'prompt';
+
 interface ThreadOptions {
 	store: DesktopStore;
 	supervisor: Pick<
@@ -101,6 +104,7 @@ interface ThreadOptions {
 	validateBeforePrepare?(
 		lease: ProjectOperationLease,
 		thread: ThreadInfo,
+		reason: ThreadPrepareReason,
 	): void;
 	confirmDeleteHistory?(snapshot: {
 		project: ProjectInfo;
@@ -965,6 +969,7 @@ export function createThreadService(
 		}
 	};
 	const markResumeFailure = (request: ThreadRequest, error: unknown) => {
+		const current = getThread(request);
 		const missing =
 			error instanceof NanocoderFailure && error.code === 'NOT_FOUND';
 		const reason = missing
@@ -972,8 +977,16 @@ export function createThreadService(
 			: error instanceof IpcFailure || error instanceof NanocoderFailure
 				? error.message
 				: 'Nanocoder could not resume this thread';
+		// Only `failed` accepts prompts, so a view-only thread keeps its reason.
+		if (current.runState === 'view-only') {
+			saveThread({
+				...current,
+				viewOnlyReason: current.viewOnlyReason ?? reason,
+			});
+			return;
+		}
 		saveThread({
-			...getThread(request),
+			...current,
 			runState: missing ? 'view-only' : 'failed',
 			viewOnlyReason: reason,
 		});
@@ -1068,6 +1081,7 @@ export function createThreadService(
 					options.validateBeforePrepare?.(
 						lease,
 						structuredClone(getThread(request)),
+						'restore',
 					);
 					const thread = await check();
 					const requestedMode = thread.mode;
@@ -1260,6 +1274,7 @@ export function createThreadService(
 							options.validateBeforePrepare?.(
 								lease,
 								structuredClone(getThread(request)),
+								'open',
 							);
 							pending.set(project.id, thread.id);
 							preparationAborts.set(project.id, {
@@ -1494,7 +1509,11 @@ export function createThreadService(
 					if (replay?.threadId === thread.id && replay.phase !== 'complete')
 						throw new IpcFailure('UNAVAILABLE', REPLAY_FAILURE_REASON);
 					assertMutable(thread);
-					options.validateBeforePrepare?.(lease, structuredClone(thread));
+					options.validateBeforePrepare?.(
+						lease,
+						structuredClone(thread),
+						'prompt',
+					);
 					if (thread.runState === 'view-only')
 						throw new IpcFailure(
 							'UNAVAILABLE',

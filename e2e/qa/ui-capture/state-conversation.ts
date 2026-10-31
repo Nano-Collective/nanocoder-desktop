@@ -271,7 +271,8 @@ const drivers: CaptureState[] = [
 			);
 			await expect(recovery.getByRole('button')).toHaveText([
 				'retry Nanocoder',
-				'diagnostics',
+				'review diagnostics',
+				'start a new thread',
 			]);
 		},
 	},

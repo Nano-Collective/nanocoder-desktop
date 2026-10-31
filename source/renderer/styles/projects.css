@@ -2,13 +2,20 @@
 	display: grid;
 	justify-items: start;
 	gap: 18px;
-	width: min(100%, 550px);
-	margin: 70px auto 20px;
-	padding-block: 12px;
+	width: min(100%, 610px);
+	/* 48.28px below the header in the reference, less the 20px stream padding */
+	margin: 28.28px auto 20px;
+	padding: 50px 30px;
+	font-size: 12px;
+	line-height: 1.6;
 }
-.workspace-welcome > img {
-	margin-bottom: 10px;
-	border-radius: 14px;
+.welcome-logo {
+	display: block;
+	width: 68px;
+	height: 68px;
+	margin-bottom: 19.8px;
+	border-radius: 0;
+	background: var(--colors-logo-tile);
 }
 .workspace-eyebrow,
 .workspace-setup-warning {
@@ -20,53 +27,131 @@
 	font-size: 10px;
 	letter-spacing: 0.1em;
 }
-.workspace-welcome h2 {
-	font-size: 25px;
-	font-weight: 400;
-	line-height: 1.5;
+.workspace-welcome > .workspace-eyebrow {
+	width: min(100%, 500px);
+	margin-bottom: -8px;
+	font-size: 12px;
+	letter-spacing: 1.5px;
 }
-.workspace-welcome > p:not(.workspace-eyebrow) {
+.workspace-welcome h2 {
+	justify-self: stretch;
+	font-size: 26px;
+	font-weight: 400;
+	letter-spacing: -1px;
+	line-height: 1.35;
+}
+.welcome-lead {
 	color: var(--colors-on-surface-muted);
 	font-size: 12px;
 	line-height: 1.9;
 }
-.workspace-welcome > .ui-button {
-	margin-block: 2px 12px;
-	padding: 10px 15px;
-	border-color: var(--colors-primary);
-	color: var(--colors-primary);
+.welcome-open {
+	min-height: 38px;
+	gap: 0;
+	padding: 5px 11px;
+	border-color: var(--colors-on-surface);
+	background: var(--colors-on-surface);
+	color: var(--colors-surface);
+	font-size: 12px;
+}
+.welcome-open > span {
+	white-space: pre;
+}
+.welcome-open:disabled {
+	border-color: var(--colors-stroke);
+	background: var(--colors-surface-panel);
+	color: var(--colors-on-surface-muted);
 }
 .welcome-recents {
 	width: 100%;
+	/* 35px below the action in the reference, with the 18px grid gap */
+	margin-top: 17px;
 }
 .welcome-recents h3 {
-	margin-bottom: 12px;
+	margin: 0 0 3px;
+	color: var(--colors-on-surface-muted);
+	font-size: 9px;
+	font-weight: 400;
+	letter-spacing: 0.12em;
+	line-height: 1.6;
+}
+.welcome-recent-list {
+	display: grid;
+	gap: 4px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+.welcome-recent {
+	width: 100%;
+	min-height: 60px;
+	flex-shrink: 0;
+	justify-content: flex-start;
+	gap: 12px;
+	padding: 10px 12px;
+	border-color: transparent;
+	background: transparent;
+	color: var(--colors-on-surface);
+	font-size: 12px;
+	line-height: 1.6;
+	text-align: left;
+	white-space: nowrap;
+}
+.welcome-recent-glyph,
+.welcome-recent-end {
 	color: var(--colors-on-surface-muted);
 	font-size: 10px;
-	font-weight: 400;
-	letter-spacing: 0.1em;
 }
-.welcome-recents > div {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 12px;
-	padding: 13px 0;
-	border-bottom: 1px solid var(--colors-stroke);
+.welcome-recent-glyph {
+	flex: none;
 }
-.welcome-recents span {
-	display: block;
+.welcome-recent-text {
+	display: grid;
+	flex: 1;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 2px;
 	min-width: 0;
 }
-.welcome-recents small {
-	display: block;
-	overflow-wrap: anywhere;
+.welcome-recent-name,
+.welcome-recent-text small {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.welcome-recent-name {
+	color: var(--colors-on-surface);
+	font-size: 12px;
+}
+.welcome-recent-text small {
 	color: var(--colors-on-surface-muted);
 	font-size: 10px;
+}
+.welcome-recent-end {
+	display: flex;
+	flex: none;
+	align-items: center;
+	gap: 10px;
+}
+.welcome-runtime {
+	width: 100%;
+	margin-top: 17px;
+}
+.welcome-runtime-toggle {
+	width: 100%;
+	min-height: 32px;
+	justify-content: flex-start;
+	padding: 6px 0;
+	border-color: transparent;
+	background: transparent;
+	color: var(--colors-on-surface-muted);
+	font-size: 12px;
+	text-align: left;
 }
 .workspace-setup-warning {
 	margin-bottom: 8px;
 }
+
 .project-trust-feedback {
 	width: 100%;
 	font-size: 11px;
@@ -75,36 +160,208 @@
 }
 @media (max-width: 840px) {
 	.workspace-welcome {
-		margin-top: 40px;
-	}
-	.workspace-welcome h2 {
-		font-size: 22px;
+		/* 610px centred in the reference: 3px past each side of the 604px content */
+		width: min(calc(100% + 6px), 610px);
+		margin: 45.28px -3px 20px;
+		padding: 35px;
 	}
 }
 
-.session-imports {
-	padding: 12px 8px;
-	border: 1px solid var(--colors-stroke);
-	border-radius: 7px;
-	background: var(--colors-surface);
+/* The mockup's import page is 850px wide, wider than the 740px reading column. */
+.technical-gate:has(> .session-import-page) {
+	max-width: none;
+	padding: 28px 0 20px;
 }
-.session-import {
-	padding: 10px 0 2px;
-	gap: 5px;
+.session-import-page {
+	display: grid;
+	gap: 0;
+	width: min(100%, 850px);
+	min-width: 0;
+	margin-inline: auto;
 }
-.session-import > .ui-button {
-	justify-self: start;
-	min-height: 28px;
-	padding: 4px 8px;
-	font-size: 10px;
+/* The reference pages have no scrollbar gutter, so their centre matches. */
+.shell-stream-scroll:has(.workspace-welcome),
+.shell-stream-scroll:has(.session-import-page),
+.shell-stream-scroll:has(.thread-view-only) {
+	scrollbar-gutter: auto;
 }
-.session-import-title {
+@media (max-width: 1050px) {
+	.session-import-page {
+		width: calc(100% - 12px);
+	}
+}
+@media (max-width: 840px) {
+	.technical-gate:has(> .session-import-page) {
+		padding-top: 24px;
+	}
+	.session-import-page {
+		width: 100%;
+	}
+}
+.session-import-header {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 12px;
+}
+.session-import-heading {
+	margin: 0;
+	font-size: 21px;
+	font-weight: 400;
+	line-height: 1.35;
+	letter-spacing: -0.65px;
+}
+.session-import-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 18px;
+}
+.session-import-back {
+	border-color: transparent;
+	background: transparent;
+	padding-inline: 0;
+	color: var(--colors-on-surface-muted);
+}
+.session-import-back:hover:not(:disabled) {
+	border-color: transparent;
+	color: var(--colors-on-surface);
+}
+.session-import-intro {
+	max-width: 670px;
+	margin: 0 0 26px;
+	color: var(--colors-on-surface-muted);
+	font-size: 12px;
+	line-height: 1.6;
+}
+.session-import-note {
+	margin: 0;
+	color: var(--colors-on-surface-muted);
 	font-size: 11px;
-}
-.session-imports .thread-rail-note {
 	line-height: 1.8;
 }
+.session-import-note:not(:last-child) {
+	margin-bottom: 18px;
+}
+.session-import-footnote {
+	font-size: 10px;
+	line-height: 1.6;
+}
+.session-import-notice {
+	margin-bottom: 18px;
+	padding: 16px 18px;
+	border-radius: var(--rounded-xl);
+	background: var(--colors-surface-panel);
+	color: var(--colors-on-surface-muted);
+	font-size: 11px;
+	line-height: 1.6;
+}
+.session-import-notice p {
+	margin: 0 0 14px;
+}
+.session-import-notice p:first-child {
+	margin-bottom: 8px;
+	color: var(--colors-on-surface);
+	font-size: 13px;
+	line-height: 1.35;
+}
+.session-import-list {
+	display: grid;
+	gap: 10px;
+	margin: 0 0 24px;
+	padding: 0;
+	list-style: none;
+}
+.session-import-card {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 17px 19px;
+	border-radius: var(--rounded-xl);
+	background: var(--colors-surface-panel);
+}
+.session-import-body {
+	display: grid;
+	gap: 5px;
+	min-width: 0;
+}
+.session-import-title {
+	margin: 0;
+	color: var(--colors-on-surface);
+	font-size: 15px;
+	font-weight: 400;
+	line-height: 1.35;
+	overflow-wrap: anywhere;
+}
+.session-import-meta {
+	margin: 0;
+	color: var(--colors-on-surface-muted);
+	font-size: 10px;
+	line-height: 1.6;
+	overflow-wrap: anywhere;
+}
+.session-import-card > .ui-button {
+	flex: none;
+}
 
+/* The mockup's view-only page is 850px centred, wider than the 740px reading column. */
+/* The empty conversation row adds an 18px gap above the notice, so 10px here totals 28px. */
+.technical-gate:has(> .thread-view-only) {
+	max-width: none;
+	padding-top: 10px;
+}
+@media (max-width: 840px) {
+	.technical-gate:has(> .thread-view-only) {
+		padding-top: 6px;
+	}
+}
+.thread-view-only {
+	display: grid;
+	gap: 14px;
+	width: min(100%, 850px);
+	min-width: 0;
+	margin-inline: auto;
+}
+@media (max-width: 1050px) {
+	.thread-view-only {
+		width: calc(100% - 12px);
+	}
+}
+@media (max-width: 840px) {
+	.thread-view-only {
+		width: 100%;
+	}
+}
+.thread-view-only > .workspace-eyebrow {
+	margin: 0;
+	line-height: 1.6;
+	letter-spacing: 1.5px;
+}
+.thread-view-only-title {
+	margin: 0;
+	color: var(--colors-on-surface);
+	font-size: 21px;
+	font-weight: 400;
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+.thread-view-only .thread-view-only-notice {
+	display: grid;
+	gap: 8px;
+	padding: 16px 18px;
+	border: 1px dashed var(--colors-stroke);
+	border-radius: var(--rounded-lg);
+	color: var(--colors-on-surface-muted);
+}
+.thread-view-only-notice p {
+	margin: 0;
+}
+.thread-view-only-status {
+	color: var(--colors-on-surface);
+}
 .thread-recovery-notice {
 	width: 100%;
 	padding: 20px 22px;
@@ -117,8 +374,15 @@
 }
 .thread-recovery-metadata {
 	display: grid;
-	grid-template-columns: max-content minmax(0, 1fr);
-	gap: 8px 20px;
+	gap: 10px;
+	margin: 0;
+	font-size: 11px;
+	line-height: 1.8;
+}
+.thread-recovery-metadata > div {
+	display: grid;
+	grid-template-columns: 153px minmax(0, 1fr);
+	gap: 0 20px;
 }
 .thread-recovery-metadata dd {
 	margin: 0;
@@ -129,21 +393,31 @@
 	flex-wrap: wrap;
 	gap: 8px;
 }
+.thread-recovery-primary {
+	border-color: var(--colors-on-surface);
+	background: var(--colors-on-surface);
+	color: var(--colors-surface);
+}
+.thread-recovery-primary:disabled {
+	border-color: var(--colors-stroke);
+	background: var(--colors-surface-panel);
+	color: var(--colors-on-surface-muted);
+}
 .thread-recovery-note {
+	margin: 0;
 	color: var(--colors-on-surface-muted);
 	font-size: 10px;
 	line-height: 1.8;
 }
+.view-only-footer {
+	margin: 0;
+	padding-top: 12px;
+	color: var(--colors-on-surface-muted);
+	font-size: 11px;
+	line-height: 1.6;
+	text-align: center;
+}
 
-.welcome-recents > div > span {
-	flex: 1;
-	min-width: 0;
-}
-.welcome-recents small {
-	overflow-wrap: anywhere;
-	white-space: normal;
-}
-.welcome-recents .ui-button {
-	flex: none;
-	white-space: nowrap;
+.welcome-recent-list .ui-button:disabled {
+	color: var(--colors-on-surface-muted);
 }

@@ -14,12 +14,17 @@ test('main-owned yolo confirmation defaults and Escape both cancel and explain t
 	});
 	t.true(accepted);
 	t.is(shown?.type, 'warning');
-	t.deepEqual(shown?.buttons, ['cancel', 'use yolo']);
+	t.deepEqual(shown?.buttons, ['cancel', 'use yolo this session']);
 	t.is(shown?.defaultId, 0);
 	t.is(shown?.cancelId, 0);
 	t.true(shown?.noLink);
 	t.true(
 		shown?.detail?.includes('no session is created until the first message'),
+	);
+	t.true(
+		shown?.detail?.includes(
+			'Nanocoder runs tools without asking in this live session only.',
+		),
 	);
 	t.true(shown?.detail?.includes('not restored after resume or restart'));
 	t.true(shown?.detail?.includes('project default'));

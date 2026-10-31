@@ -217,11 +217,6 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 		rail.getByRole('button', {name: 'new thread', exact: true}),
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
-		page.getByRole('button', {name: 'refresh saved sessions', exact: true}),
-		page.getByRole('button', {
-			name: 'import saved session: existing saved session',
-			exact: true,
-		}),
 		page.getByRole('button', {name: 'runtime details', exact: true}),
 		page.getByRole('button', {name: 'thread actions', exact: true}),
 		palette,

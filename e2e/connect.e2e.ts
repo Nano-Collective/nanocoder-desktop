@@ -20,7 +20,6 @@ import {
 } from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {ProjectEvent} from '@/shared/ipc';
-import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {createDraftThread} from './qa/new-thread';
@@ -275,7 +274,7 @@ test("asks with Nanocoder's reason, and shows its message when the user says no"
 	const root = project('refused', 'untrusted');
 	await openFolder(root, 1, 'refused');
 	const [prompt] = await trustPrompts();
-	expect(prompt.title).toBe('Trust this folder?');
+	expect(prompt.title).toBe('trust this project folder?');
 	// The home folder is redacted to ~, and on Windows the temp folder sits inside it.
 	expect(prompt.message).toMatch(/^Directory /);
 	expect(prompt.message).toContain(
@@ -644,7 +643,9 @@ test('a missing cached session stays view-only until the user explicitly starts 
 	await page.locator('.thread-open[aria-current="true"]').click();
 	await expect(
 		page.getByRole('region', {name: 'view-only thread'}),
-	).toContainText(REPLAY_MISSING_REASON);
+	).toContainText(
+		'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.',
+	);
 	await expect(page.getByLabel('Message')).toHaveCount(0);
 	const stoppedMissing = await page.evaluate(
 		projectId =>
@@ -658,7 +659,7 @@ test('a missing cached session stays view-only until the user explicitly starts 
 	await openFolder(root);
 	await createDraftThread(
 		page,
-		page.getByRole('button', {name: 'start a new thread in this project'}),
+		page.getByRole('button', {name: '＋ new thread in resume-clean-retry'}),
 	);
 	await sendMessage();
 	await expect(cards()).toBeVisible();

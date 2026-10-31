@@ -23,13 +23,14 @@ let page: Page;
 const imports = () =>
 	page.getByRole('region', {name: 'import saved sessions', exact: true});
 const refresh = () =>
-	imports().getByRole('button', {name: 'refresh saved sessions', exact: true});
+	imports().getByRole('button', {name: 'refresh offers', exact: true});
 const add = () =>
 	imports().getByRole('button', {
 		name: 'import saved session: saved project-a',
 		exact: true,
 	});
-const input = () => page.getByRole('textbox', {name: 'message', exact: true});
+const thread = () =>
+	page.getByRole('button', {name: 'project-a thread · ready', exact: true});
 
 test.beforeAll(async () => {
 	const result = await build({
@@ -101,17 +102,15 @@ async function mount(theme: 'dark' | 'light') {
 }
 
 for (const theme of ['dark', 'light'] as const) {
-	test(`ACP-18 ${theme} pending import does not steal focus from an edited composer`, async () => {
+	test(`ACP-18 ${theme} pending import does not steal focus from a control outside the list`, async () => {
 		await mount(theme);
 		await add().click();
 		await expect(add()).toBeDisabled();
 		await expect(imports().getByRole('status')).toHaveText(
 			'waiting for the metadata import',
 		);
-		await input().focus();
-		await page.keyboard.type('fixture draft while importing');
-		await expect(input()).toBeFocused();
-		await expect(input()).toHaveValue('fixture draft while importing');
+		await thread().focus();
+		await expect(thread()).toBeFocused();
 		await page.evaluate(() =>
 			(
 				window as unknown as HarnessWindow
@@ -119,11 +118,8 @@ for (const theme of ['dark', 'light'] as const) {
 		);
 		await expect(add()).toHaveCount(0);
 		await expect(refresh()).toBeEnabled();
-		await expect(input()).toBeFocused();
-		await page.keyboard.type(' continues here');
-		await expect(input()).toHaveValue(
-			'fixture draft while importing continues here',
-		);
+		await expect(thread()).toBeFocused();
+		await expect(refresh()).not.toBeFocused();
 	});
 
 	test(`ACP-18 ${theme} pending plain-props import cannot return focus into a different project`, async () => {
@@ -159,7 +155,7 @@ for (const theme of ['dark', 'light'] as const) {
 	test(`ACP-18 ${theme} keyboard-only import still returns focus inside its originating region`, async () => {
 		await mount(theme);
 		await refresh().focus();
-		await page.keyboard.press('Tab');
+		await page.keyboard.press('Shift+Tab');
 		await expect(add()).toBeFocused();
 		await expect(add()).toHaveCSS('outline-width', '2px');
 		await page.keyboard.press('Enter');

@@ -5124,6 +5124,39 @@ test('an unable-to-resume thread refuses prompts without showing new content (CH
 	t.deepEqual(calls, []);
 });
 
+test('a view-only thread stays view-only with its reason when an explicit open fails generically (CHAT-09)', async t => {
+	const {project, service, store, supervisor} = await fixture(t, true);
+	const thread = seed(project, {
+		nanocoderSessionId: 'fake-session',
+		runState: 'view-only',
+		viewOnlyReason: REPLAY_MISSING_REASON,
+	});
+	store.threads.save(thread);
+	writeFileSync(
+		path.join(project.canonicalRoot, '.fake-nanocoder'),
+		'resume-fails',
+	);
+	const request = {projectId: project.id, threadId: thread.id};
+	const opened = await service.openThread(request);
+	t.is(opened.thread.runState, 'view-only');
+	t.is(opened.thread.viewOnlyReason, REPLAY_MISSING_REASON);
+	t.is(opened.thread.nanocoderSessionId, thread.nanocoderSessionId);
+	t.is(store.threads.get(project.id, thread.id)?.runState, 'view-only');
+	t.is(
+		store.threads.get(project.id, thread.id)?.viewOnlyReason,
+		REPLAY_MISSING_REASON,
+	);
+	const error = await t.throwsAsync(
+		service.promptThread({...request, text: 'refused'}),
+		{instanceOf: IpcFailure},
+	);
+	t.is((error as IpcFailure).code, 'UNAVAILABLE');
+	const methods = fakeEvents(
+		supervisor.getConnection(project.id).stderr.lines(),
+	).map(event => event.method);
+	t.false(methods.includes('session/prompt'));
+});
+
 test('generated titles map only saved IDs in their live owning project (CHAT-12)', async t => {
 	const {project, service, store, supervisor, notifyTitle, root} =
 		await fixture(t, true);

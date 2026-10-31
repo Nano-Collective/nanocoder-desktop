@@ -609,6 +609,16 @@ test('welcome keeps runtime details quiet and keyboard inspectable before any pr
 			await page.keyboard.press('Escape');
 			await expect(dialog).toBeHidden();
 			await expect(trigger).toBeFocused();
+			const row = page.getByRole('button', {
+				name: 'runtime and setup details',
+				exact: true,
+			});
+			await row.focus();
+			await page.keyboard.press('Enter');
+			await expect(dialog).toBeVisible();
+			await page.keyboard.press('Escape');
+			await expect(dialog).toBeHidden();
+			await expect(row).toBeFocused();
 			expect(await visibleTextContrast(page, theme)).toEqual([]);
 		}
 	}

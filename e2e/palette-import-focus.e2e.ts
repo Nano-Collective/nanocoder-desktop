@@ -68,11 +68,9 @@ test('palette import saved sessions focuses the first offered row, then refresh 
 			exact: true,
 		});
 		const refresh = imports.getByRole('button', {
-			name: 'refresh saved sessions',
+			name: 'refresh offers',
 			exact: true,
 		});
-		await expect(importButton).toBeEnabled();
-
 		const palette = page.getByRole('dialog', {
 			name: 'command palette',
 			exact: true,
@@ -94,6 +92,7 @@ test('palette import saved sessions focuses the first offered row, then refresh 
 		await runImportCommand();
 		await expect(importButton).toBeFocused();
 		await expect(importButton).toBeVisible();
+		await expect(importButton).toBeEnabled();
 
 		await page.keyboard.press('Enter');
 		await expect(importButton).toHaveCount(0);
