@@ -188,9 +188,6 @@ export function App() {
 			: processState?.status === 'failed'
 				? {status: 'acp-exited'}
 				: null);
-	const [archivesProjectId, setArchivesProjectId] = useState<string | null>(
-		null,
-	);
 	const composerInput = useRef<HTMLTextAreaElement>(null);
 	const retryFocus = useRef(false);
 	const retrying = useRef(false);
@@ -213,8 +210,8 @@ export function App() {
 		if (!review.snapshot) overlays.current?.closeIf('diagnostics');
 	}, [review.snapshot]);
 
-	const openOverlay = (request: OverlayRequest) =>
-		overlays.current?.open(request);
+	const openOverlay = (request: OverlayRequest, opener?: HTMLElement | null) =>
+		overlays.current?.open(request, opener);
 
 	useEffect(() => {
 		if (
@@ -317,6 +314,7 @@ export function App() {
 				row.nanocoderSessionId === processState?.activeThreadId,
 		)?.id ??
 		null;
+	const newShortcut = `${commandModifier(navigator.platform)}N`;
 	const onNew = () => {
 		setImportFor(null);
 		openOverlay({kind: 'new-thread'});
@@ -513,7 +511,7 @@ export function App() {
 				...threadPalette({
 					projectId,
 					projectName: currentProject?.displayName,
-					newShortcut: `${commandModifier(navigator.platform)}N`,
+					newShortcut,
 					thread,
 					pending,
 					projectBusy: rootBusy,
@@ -585,7 +583,8 @@ export function App() {
 							runtime && !runtime.ok ? runtime.error.message : undefined
 						}
 						onCheckRuntime={checkRuntime}
-						onOpenRuntime={() => openDialog('runtime')}
+						onOpenRuntime={opener => openDialog('runtime', opener)}
+						onOpenShortcuts={opener => openOverlay('shortcuts', opener)}
 					/>
 				}
 				palette={<PaletteButton />}
@@ -604,10 +603,10 @@ export function App() {
 							activeThreadId={workspace.activeThreadId}
 							pending={pending}
 							now={new Date()}
-							archivesOpen={archivesProjectId === projectId}
 							importCount={
 								sessionImports.ready ? sessionImports.sessions.length : null
 							}
+							newThreadShortcut={newShortcut}
 							renameDisabledReason={renameDisabledReason}
 							deleteHistoryDisabledReason={deleteHistoryDisabledReason}
 							onNew={onNew}
@@ -624,11 +623,7 @@ export function App() {
 								setImportFor(null);
 								void controls.open(id);
 							}}
-							onOpenArchives={() =>
-								setArchivesProjectId(current =>
-									current === projectId ? null : projectId,
-								)
-							}
+							onOpenArchives={opener => openDialog('archives', opener)}
 							onOpenImport={openImportPage}
 							onRename={onRename}
 							onArchive={onArchive}

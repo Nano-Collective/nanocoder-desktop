@@ -14,14 +14,13 @@ interface ThreadRailProps {
 	activeThreadId: string | null;
 	pending: boolean;
 	now: Date;
-	archivesOpen: boolean;
 	importCount: number | null;
 	newThreadShortcut?: string;
 	renameDisabledReason?: string;
 	deleteHistoryDisabledReason?: string;
 	onNew(projectId: string): void;
 	onOpen(threadId: string): void;
-	onOpenArchives(): void;
+	onOpenArchives(opener: HTMLElement): void;
 	onOpenImport(): void;
 	onRename(threadId: string): void;
 	onArchive(threadId: string, archived: boolean): void;
@@ -56,12 +55,8 @@ function RailAction({
 }
 
 export function ThreadRail(props: ThreadRailProps): React.ReactElement {
-	const archivedListId = React.useId();
 	const groups = threadGroups(props.projectId, props.threads, props.now);
 	const archived = groups.find(group => group.id === 'archived')?.threads ?? [];
-	const archivedOpen =
-		props.archivesOpen ||
-		archived.some(thread => thread.id === props.activeThreadId);
 	const active = groups.filter(
 		group => group.id !== 'archived' && group.threads.length > 0,
 	);
@@ -194,25 +189,13 @@ export function ThreadRail(props: ThreadRailProps): React.ReactElement {
 				<button
 					type="button"
 					className="sidebar-link"
-					aria-expanded={archivedOpen}
-					aria-controls={archivedOpen ? archivedListId : undefined}
-					onClick={props.onOpenArchives}
+					aria-haspopup="dialog"
+					onClick={event => props.onOpenArchives(event.currentTarget)}
 				>
 					<span aria-hidden="true">░</span>
 					<span className="sidebar-link-label">archived</span>
 					<span className="sidebar-link-count">{archived.length}</span>
 				</button>
-			)}
-			{props.projectId && archivedOpen && (
-				<div id={archivedListId} className="thread-archived">
-					{archived.length > 0 ? (
-						<ol className="thread-list" aria-label="archived threads">
-							{archived.map(row)}
-						</ol>
-					) : (
-						<p className="thread-rail-note">no archived threads</p>
-					)}
-				</div>
 			)}
 			{props.projectId && props.importCount !== null && (
 				<button

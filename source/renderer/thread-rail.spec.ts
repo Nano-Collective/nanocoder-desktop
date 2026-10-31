@@ -23,7 +23,6 @@ const props: Parameters<typeof ThreadRail>[0] = {
 	activeThreadId: thread.id,
 	pending: false,
 	now: new Date(2026, 9, 29, 13),
-	archivesOpen: false,
 	importCount: null,
 	onNew: () => {},
 	onOpen: () => {},
@@ -75,26 +74,22 @@ test('plain-prop rail renders scoped groups selected semantics and literal title
 	t.false(html.includes('fixture archived'));
 });
 
-test('archived rows stay behind the archived link until opened (CHAT-13, A-03)', t => {
+test('archived rows stay out of the rail; the archived link opens their dialog (CHAT-13, A-03)', t => {
 	const archived = {
 		...thread,
 		id: 'archived',
 		title: 'fixture archived',
 		archiveState: 'archived' as const,
 	};
-	const closed = render({threads: [thread, archived]});
+	const html = render({threads: [thread, archived]});
 	t.regex(
-		closed,
-		/<button type="button" class="sidebar-link" aria-expanded="false"[^>]*>/,
+		html,
+		/<button type="button" class="sidebar-link" aria-haspopup="dialog"[^>]*>[\s\S]*?archived[\s\S]*?sidebar-link-count">1</,
 	);
-	t.false(closed.includes('fixture archived'));
-	t.false(closed.includes('aria-label="archived threads"'));
-	const open = render({threads: [thread, archived], archivesOpen: true});
-	t.regex(open, /aria-expanded="true" aria-controls="[^"]+"/);
-	t.true(open.includes('aria-label="archived threads"'));
-	t.true(open.includes('aria-label="fixture archived · archived"'));
-	const empty = render({archivesOpen: true});
-	t.true(empty.includes('no archived threads'));
+	t.false(html.includes('fixture archived'));
+	t.false(html.includes('aria-label="archived threads"'));
+	t.false(html.includes('thread-archived'));
+	t.false(html.includes('aria-expanded'));
 });
 
 test('import link shows its count only when import is ready for the project (A-03, B-12)', t => {
@@ -108,17 +103,6 @@ test('import link shows its count only when import is ready for the project (A-0
 	t.false(
 		render({projectId: null, importCount: 2}).includes('import sessions'),
 	);
-});
-
-test('a selected archived thread keeps its archived list open so it stays visible (CHAT-13)', t => {
-	const archived = {
-		...thread,
-		title: 'fixture archived',
-		archiveState: 'archived' as const,
-	};
-	const html = render({threads: [archived], activeThreadId: archived.id});
-	t.regex(html, /class="sidebar-link" aria-expanded="true"/);
-	t.true(html.includes('aria-label="fixture archived · archived"'));
 });
 
 test('new thread shows its shortcut only when the shell passes one (A-21)', t => {

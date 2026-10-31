@@ -11,8 +11,8 @@ interface SidebarFooterProps {
 	desktopVersion: string;
 	runtimeError?: string;
 	onCheckRuntime?(): void;
-	onOpenRuntime?(): void;
-	onOpenShortcuts?(): void;
+	onOpenRuntime?(opener: HTMLElement): void;
+	onOpenShortcuts?(opener: HTMLElement): void;
 }
 
 function acpLine(acp: FooterAcpState): {
@@ -58,8 +58,9 @@ export function SidebarFooter({
 					<Button
 						className="footer-icon-button"
 						aria-label="runtime details"
+						aria-haspopup="dialog"
 						title="runtime details"
-						onClick={onOpenRuntime}
+						onClick={event => onOpenRuntime?.(event.currentTarget)}
 					>
 						ⓘ
 					</Button>
@@ -87,8 +88,9 @@ export function SidebarFooter({
 					<Button
 						className="footer-icon-button"
 						aria-label="keyboard shortcuts"
+						aria-haspopup="dialog"
 						title="keyboard shortcuts"
-						onClick={onOpenShortcuts}
+						onClick={event => onOpenShortcuts?.(event.currentTarget)}
 					>
 						?
 					</Button>
