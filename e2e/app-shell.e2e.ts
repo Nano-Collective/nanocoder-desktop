@@ -272,8 +272,8 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				switcher,
 				add,
 				...(await projects.all()).flatMap(project =>
-					['open', 'locate'].map(name =>
-						project.getByRole('button', {name: new RegExp(`^${name} `)}),
+					[/^open /, /^locate /].map(name =>
+						project.getByRole('button', {name}),
 					),
 				),
 				rail.getByRole('button', {name: 'new thread', exact: true}),

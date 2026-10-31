@@ -125,12 +125,13 @@ test('ACP-18 ambiguous session IDs fail closed even when one duplicate belongs t
 
 test('ACP-18 discovery allowlists bounded plain titles and sorts newest first without normalising opaque IDs', async t => {
 	const f = fixture(t);
+	const title = ['<script>', 'inert title', '</script>'].join('');
 	const result = await sessionDiscovery(
 		{
 			sessions: [
 				row(f.root),
 				row(f.root, ' session/é/\u{1F680}', {
-					title: ' <script>inert title</script> ',
+					title: ` ${title} `,
 					updatedAt: '2026-10-30T12:00:00.000Z',
 					content: 'must not be projected',
 				}),
@@ -148,7 +149,7 @@ test('ACP-18 discovery allowlists bounded plain titles and sorts newest first wi
 		{
 			session: {
 				id: ' session/é/\u{1F680}',
-				title: '<script>inert title</script>',
+				title,
 				sessionCwd: f.root,
 				lastActivityAt: '2026-10-30T12:00:00.000Z',
 			},

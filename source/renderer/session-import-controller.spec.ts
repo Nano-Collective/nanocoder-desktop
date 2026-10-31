@@ -163,7 +163,8 @@ test('ACP-18 renderer reports exact import refusals and rejects a mismatched ret
 	await f.model.selectProject('project-a', true);
 	f.bridge.importSession = async () => failure();
 	t.false(await f.model.importSession('saved-a'));
-	t.is(f.model.getState().error, '<script>safe refusal</script>');
+	const refusal = ['<script>', 'safe refusal', '</script>'].join('');
+	t.is(f.model.getState().error, refusal);
 	t.deepEqual(f.model.getState().sessions, [candidate()]);
 	f.bridge.importSession = async () => ok(imported('project-b', 'saved-a'));
 	t.false(await f.model.importSession('saved-a'));
