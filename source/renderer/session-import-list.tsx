@@ -131,7 +131,7 @@ export function SessionImportList(
 					</Button>
 				)}
 			</div>
-			<p className="session-import-note">
+			<p className="session-import-note session-import-footnote">
 				import is unavailable while a project turn runs.
 			</p>
 			{reason && (

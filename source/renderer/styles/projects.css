@@ -240,6 +240,7 @@
 	font-size: 21px;
 	font-weight: 400;
 	line-height: 1.35;
+	letter-spacing: -0.65px;
 }
 .session-import-actions {
 	display: flex;
@@ -262,6 +263,10 @@
 }
 .session-import-note:not(:last-child) {
 	margin-bottom: 18px;
+}
+.session-import-footnote {
+	font-size: 10px;
+	line-height: 1.6;
 }
 .session-import-notice {
 	margin-bottom: 18px;
@@ -293,21 +298,21 @@
 	align-items: center;
 	justify-content: space-between;
 	gap: 16px;
-	padding: 16px 18px;
-	border: 1px solid var(--colors-stroke);
-	border-radius: var(--rounded-lg);
+	padding: 17px 19px;
+	border-radius: var(--rounded-xl);
 	background: var(--colors-surface-panel);
 }
 .session-import-body {
 	display: grid;
-	gap: 4px;
+	gap: 5px;
 	min-width: 0;
 }
 .session-import-title {
 	margin: 0;
 	color: var(--colors-on-surface);
-	font-size: 12px;
+	font-size: 15px;
 	font-weight: 400;
+	line-height: 1.35;
 	overflow-wrap: anywhere;
 }
 .session-import-meta {
