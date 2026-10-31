@@ -424,7 +424,7 @@ Only reported context use can produce the context pill/gauge. No token estimate 
 
 ### First launch and recovery
 
-The welcome screen shows the official logo as a flat square tile on its own white ground, with no frame, shadow or caption on the tile. The first action is choose a project, not runtime paths. Recents show exact project identity and missing-folder locate. Trust stays native and cancel-default, with the bounded launch summary. Saved-session import remains explicit metadata only, with no selection, resume or draft side effect.
+The welcome screen shows the official logo as a square tile with 3px corners on its own white ground, with no frame, shadow or caption on the tile. The first action is choose a project, not runtime paths. Recents show exact project identity and missing-folder locate. Trust stays native and cancel-default, with the bounded launch summary. Saved-session import remains explicit metadata only, with no selection, resume or draft side effect.
 
 Failure keeps draft and thread identity, with retry and reviewed diagnostics. View-only shows metadata and why history is missing, with new-thread/remove actions and no composer or invented transcript. Diagnostics uses the exact main-captured redacted snapshot, a native destination and no upload.
 
