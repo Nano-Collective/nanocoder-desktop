@@ -630,6 +630,7 @@ test('composing Escape cancels neither the palette nor its search focus', async 
 
 test('Ctrl+K opens the palette on non-Mac platforms', async () => {
 	const page = await app.firstWindow();
+	const platform = await page.evaluate(() => navigator.platform);
 	await page.addInitScript(() => {
 		Object.defineProperty(navigator, 'platform', {
 			value: 'Linux x86_64',
@@ -637,12 +638,23 @@ test('Ctrl+K opens the palette on non-Mac platforms', async () => {
 		});
 	});
 	await page.reload();
-	await page.getByRole('button', {name: 'command palette'}).focus();
-	await page.keyboard.press('Control+k');
-	await expect(
-		page.getByRole('dialog', {name: 'command palette', exact: true}),
-	).toBeVisible();
-	await page.keyboard.press('Escape');
+	try {
+		await page.getByRole('button', {name: 'command palette'}).focus();
+		await page.keyboard.press('Control+k');
+		await expect(
+			page.getByRole('dialog', {name: 'command palette', exact: true}),
+		).toBeVisible();
+		await page.keyboard.press('Escape');
+	} finally {
+		// Init scripts persist across reloads, so restore the real platform for later tests.
+		await page.addInitScript((value: string) => {
+			Object.defineProperty(navigator, 'platform', {
+				value,
+				configurable: true,
+			});
+		}, platform);
+		await page.reload();
+	}
 });
 
 test('pointer and keyboard keep exactly one palette result active without taking search focus', async () => {
