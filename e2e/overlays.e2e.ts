@@ -202,7 +202,7 @@ test('the capped palette list scrolls to its last row with no project open', asy
 	}
 });
 
-test('add project folder calls the existing picker and cancellation preserves focus', async () => {
+test('open-folder command calls the existing picker and cancellation preserves focus', async () => {
 	const page = await app.firstWindow();
 	await app.evaluate(({dialog}) => {
 		dialog.showOpenDialog = (async () => ({
@@ -212,19 +212,9 @@ test('add project folder calls the existing picker and cancellation preserves fo
 	});
 	const trigger = page.getByRole('button', {name: 'command palette'});
 	await trigger.click();
-	const palette = page.getByRole('dialog', {
-		name: 'command palette',
-		exact: true,
-	});
-	const search = palette.getByRole('combobox');
-	await search.fill('add project folder');
-	await expect(
-		palette.getByRole('option', {name: 'add project folder', exact: true}),
-	).toHaveCount(1);
-	await expect(search).toHaveAttribute(
-		'aria-activedescendant',
-		'palette-option-project-add',
-	);
+	await page
+		.getByRole('combobox', {name: 'find a command', exact: true})
+		.fill('open a project folder');
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('dialog')).toBeHidden();
 	await expect(
@@ -435,7 +425,7 @@ test('settled toast contrast passes in both themes and active hosts without focu
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
 
-test('palette adds opens and locates projects through the existing project controls', async () => {
+test('projects dialog adds and the palette opens and locates projects through the existing project controls', async () => {
 	const page = await app.firstWindow();
 	const folder = path.join(work, 'palette-project');
 	const moved = path.join(work, 'palette-project-moved');
@@ -475,8 +465,10 @@ test('palette adds opens and locates projects through the existing project contr
 		await expect(projects()).toBeHidden();
 	};
 	await picker(folder);
-	await command('add project folder');
 	await showProjects();
+	await projects()
+		.getByRole('button', {name: /add project folder/})
+		.click();
 	await expect(
 		projects().getByRole('region', {name: 'recent projects'}),
 	).toContainText(folder);

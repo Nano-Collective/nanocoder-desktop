@@ -20,9 +20,6 @@ function fixture(projects = [project], pending = false) {
 	const actions = projectPalette({
 		projects,
 		pending,
-		onAdd: () => {
-			calls.push('add');
-		},
 		onOpen: id => {
 			calls.push(`open:${id}`);
 		},
@@ -33,31 +30,31 @@ function fixture(projects = [project], pending = false) {
 	return {actions, calls};
 }
 
-test('project palette exposes only existing add open and locate callbacks with project IDs', t => {
+test('project palette exposes only existing open and locate callbacks with project IDs', t => {
 	const {actions, calls} = fixture();
 	t.deepEqual(
 		actions.map(action => action.label),
-		['add project folder', 'open project fixture', 'locate project fixture'],
+		['open project fixture', 'locate project fixture'],
 	);
 	actions.forEach(runAction);
-	t.deepEqual(calls, ['add', `open:${project.id}`, `locate:${project.id}`]);
-	t.true(actions[1]?.keywords?.includes(project.canonicalRoot));
-	t.is(fixture([]).actions.length, 1);
+	t.deepEqual(calls, [`open:${project.id}`, `locate:${project.id}`]);
+	t.true(actions[0]?.keywords?.includes(project.canonicalRoot));
+	t.is(fixture([]).actions.length, 0);
 });
 
 test('missing and replaced projects remain listed with a refusal reason while locate stays enabled', t => {
 	for (const availability of ['missing', 'changed'] as const) {
 		const {actions, calls} = fixture([{...project, availability}]);
-		t.is(actions[1]?.disabledReason, `folder ${availability}`);
-		t.false(runAction(actions[1]));
-		t.true(runAction(actions[2]));
+		t.is(actions[0]?.disabledReason, `folder ${availability}`);
+		t.false(runAction(actions[0]));
+		t.true(runAction(actions[1]));
 		t.deepEqual(calls, [`locate:${project.id}`]);
 	}
 });
 
 test('a pending project request disables every palette project action with its reason', t => {
 	const {actions, calls} = fixture([project], true);
-	t.is(actions.length, 3);
+	t.is(actions.length, 2);
 	for (const action of actions) {
 		t.is(
 			action.disabledReason,
