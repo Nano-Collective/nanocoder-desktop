@@ -23,19 +23,29 @@ dock. No terminal capability is advertised to Nanocoder (`TERM-08`).
   with a truncation flag. Clear and stop discard it. Output uses
   acknowledgement-gated 16 ms utility-process batches, capped at 64 KiB
   of code units. Neither output nor input enters desktop storage or logs.
-- POSIX stop includes descendants and every process attached to the
-  main-owned PTY, across their process groups. Groups receive HUP, followed
-  by forced termination after a 200 ms grace deadline. Main refreshes
-  membership before delivering output and every 250 ms, retaining the
-  last live membership so utility crashes cannot erase ownership.
-  Forced termination always attempts all owned groups and PIDs, even when
-  macOS reports EPERM for an already exited zombie group. A bounded,
-  monotonic 2-second stop deadline verifies no live, non-zombie owned
-  member remains. A live survivor or an unreadable/partial process table
-  fails closed, and any successfully stopped survivor receives CONT.
-  An exited shell cannot adopt unrelated jobs through a reused tty.
-  Main then awaits utility exit and the shell PID's actual disappearance,
-  each bounded to one second, before claiming stop completed.
+- POSIX ownership records PID, start time and PTY before publishing ready.
+  Main refreshes captured identities before output and every 250 ms.
+  Newly discovered jobs need an identity-verified owned parent chain and
+  the original PTY. A tty name or numeric PID alone grants no authority.
+  Captured matching identities survive reparenting or hangup clearing
+  their tty, but cannot widen ownership to another real tty.
+  Stop freezes owned parents, then repeats indexed discovery and freezing
+  until membership is stable and frozen. Only then does it force termination.
+  Every STOP, KILL and failure CONT receives a fresh PID/start-time/tty
+  probe. KILL also requires a still-frozen target. No group broadcasts or
+  preliminary HUP can erase parent ancestry before late jobs are captured.
+  Indexing and traversal are linear, yield every 64 entries and enforce
+  a monotonic two-second deadline within the work. Live survivors and
+  unreadable/partial snapshots fail closed. Failure only attempts fresh
+  identity-checked CONT for processes this stop froze, with a separate
+  two-second cleanup bound. It never kills an unfrozen parent on failure.
+  Zombie identities are non-live, not signal targets.
+  The native worker reaps the matching shell before main kills the worker.
+  Shell reaping and utility exit each have a one-second bound.
+  Jobs detaching or reparenting before any ownership snapshot remain a
+  limitation and are not adopted through reused tty names. Portable `ps`
+  start times are not atomic kernel process handles. Timestamp granularity
+  and the final probe/signal race remain platform limitations.
   Windows uses the absolute system `taskkill.exe` with `/T /F`. System
   utilities never use a shell or project executable. The native module and
   spawn helper are unpacked from asar and rebuilt from source for Electron's ABI.
@@ -52,8 +62,11 @@ using its terminal again.
 
 The renderer holds bounded, project-scoped display data and uses only the
 typed bridge. Late responses and out-of-order events cannot restore old
-project output or undo a clear. xterm writes are serialised across reset
-so queued old output cannot reappear after clear. Links, including OSC 8
+project output or undo a clear. Data after stopped or exited is refused.
+xterm writes are serialised across reset so queued old output cannot
+reappear after clear or stop. Reset cycles the supported screen-reader
+option to dispose stale announcement queues and live-region text while
+restoring the mounted preference. Links, including OSC 8
 links, remain inert until phase 3.6. No remote resources or CSP changes
 are needed.
 
@@ -133,7 +146,7 @@ inside the clipped conversation canvas. The test checks the start button's
 centre hit target and footer/dock bounds before clicking. Approval shelf
 edge-containment checks also remain required.
 
-Part B local macOS arm64 checks on 2026-10-31:
+Initial Part B macOS arm64 checks, before supplemental remediation:
 
 - `pnpm test:all`: format, types, lint, 1,394 AVA tests, Knip and audit pass.
 - `pnpm test:ava:coverage`: 96.85% aggregate configured line coverage.
@@ -149,31 +162,44 @@ Part B local macOS arm64 checks on 2026-10-31:
   the user's shell startup files. Native-focus and assistive-technology
   acceptance are not claimed.
 
-### Open: loaded UI stop failure (`TERM-07`)
+### Supplemental teardown and output remediation
 
-Running the combined hidden suites concurrently with `pnpm test:all`
-can leave the mounted lifecycle test at `failed`, with the safe reason
-“The terminal process tree could not be stopped”, instead of `stopped`.
-Restart and its real-keystroke output check complete before this failure.
-The original stop assertion remains unchanged, with no skip, retry or
-timeout increase.
+The supplemental security review found retained-PID reuse, a late-job
+discovery race and superlinear main-process work. The identity-checked
+freeze/discovery implementation above replaces that teardown. Deterministic
+regressions cover all three without signalling unrelated real processes.
+Large synthetic 500/4000 and 1200/6000 process tables finish within the
+two-second bound and yield cooperatively. No guardian or new IPC was added.
 
-The first content-free diagnostic showed all three `ps` calls exiting
-successfully, followed by EPERM from a group SIGSTOP. Deterministic tests
-now distinguish zombie-only groups from live survivors, verify the latter
-still fails, resume successfully stopped survivors on failure, and refuse
-empty/partial process snapshots or a reused tty. These checks do not
-establish the remaining loaded-run cause.
+The separate stale renderer finding is covered by queued-write,
+announcement-queue and higher-sequence post-stop data regressions.
+The original mounted lifecycle assertions remain unchanged, with no
+skip, fixed sleep, retry or timeout increase.
 
-The last loaded diagnostic still passed 45 of 46. It captured none of the
-explicit live-survivor, invalid-snapshot or shell-not-reaped exception
-messages, so the remaining utility-exit/discovery failure is unclassified.
-Temporary diagnostic hooks were removed. Evidence is in
-`.qa/terminal-ui/loaded-e2e.log`, `final-loaded-e2e.log` and `stage-e2e.log`;
-the successful standalone run is `focus-stop-fixed.log`.
-Investigation stopped at the agreed overnight limit. The loaded-stop
-issue, focused teardown security review and independent UI verification
-remain open; this is not full phase acceptance.
+Current validation logs are under `.qa/terminal-ui/`:
+
+- `identity-final-gate.log`: full gate passes, including 1,403 AVA tests.
+- `identity-final-coverage.log`: 96.47% aggregate configured line coverage,
+  11,669 of 12,095 lines. Renderer and native-worker coverage are not claimed.
+- `identity-standalone-2.log`: eight hidden terminal tests pass, including
+  the complete mounted lifecycle and six screenshot cases. The first
+  rewritten run passed five of eight; replacement-PTY attachment timing
+  required retaining the first probed start identity while waiting for
+  its expected tty within the existing finite readiness bound.
+- `identity-loaded.log`: the single combined run, concurrent with the full
+  gate and coverage, passes 45 of 46. The complete mounted terminal
+  lifecycle, including stopped status and absence of stale restarted
+  output, and all native stop/switch/quit/crash/restart cases pass.
+  The failure is `TERM-12` at its first “open project” button lookup,
+  before any PTY action. Its captured page has no recent projects despite
+  a new thread. The initial project/recents ordering cause is not established.
+
+The earlier backend stop failure remains historically unclassified.
+The review's separate successful-backend/stale-view observation is not
+evidence that the earlier backend failure was renderer-only. Those old
+logs remain in `loaded-e2e.log`, `final-loaded-e2e.log` and `stage-e2e.log`.
+Focused independent security re-review, the loaded initial-project
+failure and manual accessibility gaps still block full phase acceptance.
 
 All-platform acceptance is not established by local macOS checks. A
 process that deliberately leaves its terminal session, for example through

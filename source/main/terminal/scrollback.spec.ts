@@ -2,8 +2,6 @@ import path from 'node:path';
 import test from 'ava';
 import {
 	captureTerminalProcesses,
-	descendantPids,
-	terminalProcesses,
 	terminateTree,
 } from '@/main/terminal/process-tree';
 import {Scrollback} from '@/main/terminal/scrollback';
@@ -21,30 +19,6 @@ test('TERM-09 scrollback bounds long lines, line counts and Unicode without disk
 	t.true(buffer.snapshot().output.length <= 20);
 	buffer.clear();
 	t.deepEqual(buffer.snapshot(), {output: '', truncated: false});
-});
-
-test('TERM-07 terminal membership includes reparented session jobs and all their groups', t => {
-	const found = terminalProcesses(
-		10,
-		'/dev/ttys123',
-		'10 1 10 ttys123\n11 10 11 ttys123\n12 1 12 ttys123\n13 1 13 ttys124\n14 11 14 ??',
-	);
-	t.deepEqual(
-		found.pids.sort((a, b) => a - b),
-		[10, 11, 12, 14],
-	);
-	t.deepEqual(
-		found.groups.sort((a, b) => a - b),
-		[10, 11, 12, 14],
-	);
-	t.deepEqual(terminalProcesses(10, '?', '10 1 10 ?\n11 1 11 ?').pids, [10]);
-});
-
-test('TERM-07 process descendants include nested and detached groups, leaves first', t => {
-	t.deepEqual(
-		descendantPids(10, '10 1\n11 10\n12 11\n13 1\n14 10\nbad\n15 15'),
-		[14, 12, 11, 10],
-	);
 });
 
 test('SEC-05 teardown refuses invalid or main-process IDs and project-owned system utilities', async t => {
@@ -65,13 +39,14 @@ test('SEC-05 teardown refuses invalid or main-process IDs and project-owned syst
 	}
 });
 
-test('TERM-07 malformed terminal identity cannot select unrelated terminal sessions', t => {
-	const rows = `10 1 10 ttys123\n${process.pid} 1 ${process.pid} ttys123\n12 1 12 ??`;
-	t.deepEqual(terminalProcesses(10, undefined, rows), {
-		pids: [10],
-		groups: [10],
-	});
-	t.false(
-		terminalProcesses(10, '/dev/ttys123', rows).pids.includes(process.pid),
-	);
+test('SEC-05 POSIX ownership refuses a missing or malformed terminal identity', async t => {
+	if (process.platform === 'win32') {
+		t.pass();
+		return;
+	}
+	for (const terminal of [undefined, '?', '/dev/../ttys123', 'not-a-tty']) {
+		await t.throwsAsync(captureTerminalProcesses(10, [], terminal), {
+			message: 'Invalid terminal identity',
+		});
+	}
 });

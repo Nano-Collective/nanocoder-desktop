@@ -5,7 +5,6 @@ import {
 	captureTerminalProcesses,
 	type TerminalProcesses,
 	terminateTree,
-	waitForProcessExit,
 } from '@/main/terminal/process-tree';
 import type {
 	PtyHostFactory,
@@ -34,7 +33,7 @@ export const createUtilityPtyHost: PtyHostFactory = async (launch, events) => {
 		resolveWorkerExit = resolve;
 	});
 	let epoch = 0;
-	let known: TerminalProcesses = {pids: [], groups: []};
+	let known: TerminalProcesses = {root: null, members: []};
 	let capture: Promise<void> = Promise.resolve();
 	let monitor: ReturnType<typeof setInterval> | undefined;
 	let stopping: Promise<void> | undefined;
@@ -54,8 +53,12 @@ export const createUtilityPtyHost: PtyHostFactory = async (launch, events) => {
 				pid,
 				launch.roots,
 				terminal,
+				known,
+				root => {
+					known = {root, members: [root]};
+				},
 			);
-			if (current.groups.length) known = current;
+			known = current;
 		});
 		return capture;
 	};
@@ -80,8 +83,9 @@ export const createUtilityPtyHost: PtyHostFactory = async (launch, events) => {
 			} finally {
 				clearTimeout(timer);
 			}
-			if (pid !== undefined) await waitForProcessExit(pid);
 		})().catch(error => {
+			if (process.platform !== 'win32' && !known.root && !workerEnded)
+				worker.kill();
 			stopping = undefined;
 			throw error;
 		});

@@ -33,6 +33,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/terminal/agent-command.ts` | Passive bounded last-command and accepted-option display projection (`TERM-12`), never a terminal or permission capability |
 | `source/renderer/terminal-panel.tsx`, `source/renderer/terminal-view.tsx`, `source/renderer/styles/terminal.css` | Token-based xterm bottom dock, explicit lifecycle controls, separate agent display and keyboard/screen-reader access |
 | `source/renderer/terminal-controller.ts`, `source/renderer/use-terminal.ts` | Project-scoped sequenced terminal data, bounded memory, pending actions and stale-result refusal |
+| `source/renderer/terminal-output.ts` | Serialised xterm writes and supported screen-reader queue reset on clear and stop |
 | `e2e/terminal.e2e.ts`, `planning/terminal.md` | Hidden native teardown, terminal UI, focus, contrast and theme/width screenshots, plus local implementation limits |
 | `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |
 | `source/main/ipc/workspace-services.ts` | Main-only project and thread service contracts |
