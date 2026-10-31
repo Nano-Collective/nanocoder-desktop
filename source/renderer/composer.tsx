@@ -53,7 +53,8 @@ export function Composer(props: ComposerProps) {
 		element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
 	}, [input, props.draft]);
 	const id = React.useId();
-	const hintId = `${id}-send`;
+	const stateId = `${id}-state`;
+	const helpId = `${id}-help`;
 	const noteId = `${id}-note`;
 	const defaultHintId = `${id}-default`;
 	const missingOffers =
@@ -88,6 +89,8 @@ export function Composer(props: ComposerProps) {
 		(props.running
 			? 'turn in progress · draft is not queued'
 			: 'ready for your next message');
+	const idleEmpty = !props.running && !sendReason && emptyDraft;
+	const state = idleEmpty ? `${hint}; enter a message to send` : hint;
 	const lead = modelReason ?? modeReason;
 	const note = [
 		lead && `${lead.replace(/\.$/, '')}.`,
@@ -109,12 +112,10 @@ export function Composer(props: ComposerProps) {
 	return (
 		<>
 			<div className="composer-hint-row">
-				<p id={hintId} className="gate-hint">
-					{hint}
-					{!props.running && !sendReason && emptyDraft && (
-						<span className="sr-only">; enter a message to send</span>
-					)}
-				</p>
+				<p className="gate-hint">{hint}</p>
+				<span id={stateId} hidden>
+					{state}
+				</span>
 				{props.running && (
 					<Button
 						variant="reject"
@@ -162,7 +163,7 @@ export function Composer(props: ComposerProps) {
 						placeholder={
 							props.running ? 'write a draft for later…' : 'ask anything…'
 						}
-						aria-describedby={hintId}
+						aria-describedby={`${stateId} ${helpId}`}
 						rows={2}
 					/>
 				</label>
@@ -249,12 +250,12 @@ export function Composer(props: ComposerProps) {
 									: 'unavailable'
 						}
 						disabled={!!sendReason || emptyDraft}
-						aria-describedby={hintId}
+						aria-describedby={stateId}
 					>
 						<span aria-hidden="true">↑ </span>send
 					</Button>
 				</div>
-				<p className="gate-hint composer-help">
+				<p id={helpId} className="gate-hint composer-help">
 					<span>↵ send · ⇧↵ newline</span>
 					{props.commands.length > 0 && <span>/ advertised commands</span>}
 				</p>

@@ -235,11 +235,11 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 		await expect(control).toHaveCSS('outline-width', '2px');
 		if (control === input) {
 			await expect(input).toHaveAccessibleDescription(
-				'ready for your next message ; enter a message to send',
+				'ready for your next message; enter a message to send ↵ send · ⇧↵ newline',
 			);
 			await input.fill('synthetic UI check');
 			await expect(input).toHaveAccessibleDescription(
-				'ready for your next message',
+				'ready for your next message ↵ send · ⇧↵ newline',
 			);
 			await expect(send).toBeEnabled();
 		}
@@ -285,7 +285,9 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	).toBeDisabled();
 	await expect(
 		page.getByRole('textbox', {name: 'message'}),
-	).toHaveAccessibleDescription('turn in progress · draft is not queued');
+	).toHaveAccessibleDescription(
+		'turn in progress · draft is not queued ↵ send · ⇧↵ newline',
+	);
 	await expect(
 		page.getByRole('status').filter({hasText: 'approval'}),
 	).toBeVisible();

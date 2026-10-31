@@ -469,7 +469,7 @@ test.describe('approval and overlay focus', () => {
 			page.getByRole('button', {name: 'send', exact: true}),
 		).toBeDisabled();
 		await expect(input()).toHaveAccessibleDescription(
-			'turn in progress · draft is not queued',
+			'turn in progress · draft is not queued ↵ send · ⇧↵ newline',
 		);
 		await page.keyboard.press('3');
 		await expect(cards()).toHaveCount(0);

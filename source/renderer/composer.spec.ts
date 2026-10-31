@@ -154,3 +154,17 @@ test('composer shows one draft hint, help row and control note without a prompt 
 	);
 	t.false(running.includes('stop the project turn'));
 });
+
+test('the draft textarea describes its state and keyboard hint together', t => {
+	const html = render({draft: ''});
+	const described = /<textarea[^>]*aria-describedby="([^"]+)"/.exec(html)?.[1];
+	const [stateId, helpId] = (described ?? '').split(' ');
+	t.is(described?.split(' ').length, 2);
+	t.true(
+		html.includes(
+			`<span id="${stateId}" hidden="">ready for your next message; enter a message to send</span>`,
+		),
+	);
+	t.true(html.includes(`<p id="${helpId}" class="gate-hint composer-help">`));
+	t.true(html.includes('↵ send · ⇧↵ newline'));
+});
