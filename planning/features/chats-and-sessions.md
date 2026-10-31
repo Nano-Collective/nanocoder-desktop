@@ -34,7 +34,7 @@ Let the user add a project, start or resume durable Nanocoder chats, follow each
 | CHAT-18 | The conversation is fully keyboard operable; new content is announced to assistive technology at a polite rate; permission requests move focus to the request and are announced assertively. | Decided as a v1 goal ([whitepaper, Milestone 4][wp-next]); specifics are Suggestion (not discussed) |
 | CHAT-19 | Show per-turn usage and cost when Nanocoder provides it in `_meta`. Show a context-window gauge only when Nanocoder reports context use; at `8a5f4d4` it sends per-turn token counts but no context-window figure, so the gauge stays hidden. | Suggestion (not discussed) |
 | CHAT-20 | Offer Nanocoder's custom slash commands from `available_commands_update`. Do not present Nanocoder's built-in `/help` reply as desktop help, since it is written for the VS Code sidebar. | Suggestion (not discussed), based on [source][nc-slash] |
-| CHAT-21 | `ask_user` questions render as selectable options only, since ACP permission options have no text input. Main marks them with a display-only hint, and the desktop shows them in the question dialog. Closing the dialog does not answer. | Decided by Nanocoder's behaviour ([docs][nc-acp-limits]); hint per `DEC-41` |
+| CHAT-21 | `ask_user` questions render as selectable options only, since ACP permission options have no text input. Main recognises them by shape and adds a display-only hint, and the desktop shows them in the question dialog. Closing the dialog does not answer. | Decided by Nanocoder's behaviour ([docs][nc-acp-limits]); hint per `DEC-41` |
 
 ## Behaviour
 
@@ -52,7 +52,7 @@ Let the user add a project, start or resume durable Nanocoder chats, follow each
 
 ### Permission requests
 
-Nanocoder sends the options; the desktop shows them as given. ACP defines four option kinds: `allow_once`, `allow_always`, `reject_once` and `reject_always` (SDK 1.4.0 schema). Each request shows the tool call it belongs to, its kind and the files or command it names. "Always" options change Nanocoder's policy, not the desktop's, so the request says so. A request that Nanocoder marks as an `ask_user` question opens the question dialog with the same offered options instead; see [approvals and cancel](../approvals-and-cancel.md#question-dialog).
+Nanocoder sends the options; the desktop shows them as given. ACP defines four option kinds: `allow_once`, `allow_always`, `reject_once` and `reject_always` (SDK 1.4.0 schema). Each request shows the tool call it belongs to, its kind and the files or command it names. "Always" options change Nanocoder's policy, not the desktop's, so the request says so. A request that matches the `ask_user` shape opens the question dialog with the same offered options instead; see [approvals and cancel](../approvals-and-cancel.md#question-dialog).
 
 ### Stop reasons
 

@@ -13,7 +13,7 @@ Nanocoder supplies the title, option IDs, kinds and labels. `PermissionBroker` r
 
 The renderer forwards only the request ID and option ID. It never records a remembered allow/reject policy, fabricates options or interprets an option's name as permission. `ask_user` uses the same selection-only flow, with Nanocoder's own question and option labels; there is no free-text answer.
 
-Main adds one display-only question hint (`DEC-41`). It marks a permission request as a question only when the tool call Nanocoder reports for that request is `ask_user`. With no hint, the request is an ordinary approval. The hint never adds, renames or reorders an option, never changes an option ID, and never lets the renderer answer. Its security review is required before merge.
+Main adds one display-only question hint (`DEC-41`). It marks a permission request as a question only when the request matches the exact shape Nanocoder uses for `ask_user`: the same tool call announced this turn, matching question and option names, and `answer-N` option ids. Nanocoder reports no tool name, so this is recognition from shape, not a reported fact. A request that does not match stays an ordinary approval. The hint never adds, renames or reorders an option, never changes an option ID, and never lets the renderer answer. Its security review is required before merge.
 
 The pinned Nanocoder `fc01e239` offers Allow/allow_once and Deny/reject_once for protected tools. All four ACP option kinds are covered with the fake fixture. The desktop does not invent allow-always or reject-all controls when Nanocoder does not offer them.
 

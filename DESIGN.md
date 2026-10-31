@@ -414,7 +414,7 @@ Subagents use flat panel cards with reported task/state and truthful unknown val
 
 A warning-bordered panel immediately above the composer. Its title, "approval required", uses on-surface ink beside the warning marker. Show the full offered action, source and effect, with only Nanocoder's own choices and request-scoped shortcuts. Allow and reject buttons use on-surface labels, with success and error borders. Keep request focus, assertive announcement and fallback focus return. Failures remain visible.
 
-A question offers only provided choices, no invented free-text reply. Nanocoder marks a question when its tool call is `ask_user`; the desktop shows it in the question dialog, titled "Nanocoder needs a choice", with each offered option as a numbered button. Closing that dialog does not answer it. The question collapses to the approval shelf above the composer and stays pending until the user chooses an offered option there or the turn is cancelled. A permission request without that mark keeps the approval shelf.
+A question offers only provided choices, no invented free-text reply. The desktop recognises a question from the exact shape Nanocoder uses for `ask_user`: the same tool call announced this turn, matching question and option names, and `answer-N` option ids. It shows that question in the question dialog, titled "Nanocoder needs a choice", with each offered option as a numbered button. Closing that dialog does not answer it. The question collapses to the approval shelf above the composer and stays pending until the user chooses an offered option there or the turn is cancelled. A request that does not match that shape keeps the approval shelf.
 
 ### Composer
 
