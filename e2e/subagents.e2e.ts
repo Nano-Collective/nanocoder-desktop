@@ -19,7 +19,7 @@ import {build} from 'vite';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import type {subagentHarness} from './qa/subagent-harness';
-import {turnEnded} from './qa/turn-state';
+import {turnCancelled, turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -106,6 +106,7 @@ test.describe('fc01-shaped delegation cards', () => {
 		await expect(
 			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
+		await expect(turnCancelled(page)).toHaveCount(1);
 		await expect(page.getByRole('alertdialog')).toHaveCount(0);
 		await expect(cards().last()).toContainText('interrupted');
 	});
@@ -141,6 +142,7 @@ test.describe('fc01-shaped delegation cards', () => {
 		await expect(
 			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
+		await expect(turnCancelled(page)).toHaveCount(1);
 		await expect(input()).toHaveValue('unsent fixture draft');
 		await expect(input()).toBeFocused();
 		await expect(cards().last()).toContainText('interrupted');
@@ -181,6 +183,7 @@ test.describe('fc01-shaped delegation cards', () => {
 		await expect(
 			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
+		await expect(turnCancelled(page)).toHaveCount(1);
 	});
 
 	test('thin delegation safely falls back and shows no bounds settings (SUB-06/07)', async () => {
@@ -203,6 +206,7 @@ test.describe('fc01-shaped delegation cards', () => {
 		await expect(
 			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
+		await expect(turnCancelled(page)).toHaveCount(1);
 		for (const [index, text] of retained.entries())
 			await expect(cards().nth(index)).toHaveText(text);
 	});
@@ -240,6 +244,7 @@ test.describe('fc01-shaped delegation cards', () => {
 			await expect(
 				page.getByText('turn interrupted', {exact: true}),
 			).toBeVisible();
+			await expect(turnCancelled(page)).toHaveCount(1);
 			await page.emulateMedia({reducedMotion: 'no-preference'});
 			await page.setViewportSize({width: 1240, height: 900});
 		});

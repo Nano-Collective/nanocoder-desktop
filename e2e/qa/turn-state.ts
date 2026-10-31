@@ -6,3 +6,10 @@ export function turnEnded(page: Page): Locator {
 		'section.conversation-stream[data-stop-reason="end_turn"]',
 	);
 }
+
+// A cancel shows "turn interrupted" and also records the stop reason here.
+export function turnCancelled(page: Page): Locator {
+	return page.locator(
+		'section.conversation-stream[data-stop-reason="cancelled"]',
+	);
+}

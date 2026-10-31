@@ -1,5 +1,5 @@
 import {expect, type Page} from '@playwright/test';
-import {turnEnded} from '../turn-state';
+import {turnCancelled, turnEnded} from '../turn-state';
 import type {Capture, CaptureState} from './harness';
 
 const PALETTE_KEY = process.platform === 'darwin' ? 'Meta+k' : 'Control+k';
@@ -192,6 +192,7 @@ export const states: CaptureState[] = [
 				.getByRole('button', {name: 'cancel turn', exact: true})
 				.click();
 			await expect(page.getByText('turn interrupted')).toBeVisible(SLOW);
+			await expect(turnCancelled(page)).toHaveCount(1);
 			await newThread(page);
 			await runningTurn(page, 'keyboard navigation');
 			await row(page, MAIN).locator('.thread-open').click();

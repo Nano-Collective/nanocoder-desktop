@@ -21,7 +21,7 @@ import type {approvalHarness} from './qa/approval-harness';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
 import {openFolderFromPalette} from './qa/open-folder';
-import {turnEnded} from './qa/turn-state';
+import {turnCancelled, turnEnded} from './qa/turn-state';
 
 const work = realpathSync.native(
 	mkdtempSync(path.join(tmpdir(), 'nd-approvals-')),
@@ -115,6 +115,7 @@ test('cancel closes every pending permission as Interrupted, never allowed, and 
 	await page.getByRole('button', {name: 'cancel turn', exact: true}).click();
 	await expect(cards()).toHaveCount(0);
 	await expect(page.getByText('turn interrupted')).toBeVisible();
+	await expect(turnCancelled(page)).toHaveCount(1);
 	await expect(page.locator('.ui-badge--interrupted')).toBeVisible();
 	await expect(input()).toBeEnabled();
 	await expect(input()).toBeFocused();
@@ -126,6 +127,7 @@ test('cancel closes every pending permission as Interrupted, never allowed, and 
 	await expect(cards()).toHaveCount(2);
 	await page.getByRole('button', {name: 'cancel turn', exact: true}).click();
 	await expect(page.getByText('turn interrupted')).toBeVisible();
+	await expect(turnCancelled(page)).toHaveCount(1);
 });
 
 test('cancel also interrupts an active turn with no permission request', async () => {
@@ -138,6 +140,7 @@ test('cancel also interrupts an active turn with no permission request', async (
 	).toBeVisible();
 	await page.getByRole('button', {name: 'cancel turn', exact: true}).click();
 	await expect(page.getByText('turn interrupted')).toBeVisible();
+	await expect(turnCancelled(page)).toHaveCount(1);
 	await expect(input()).toBeFocused();
 });
 
@@ -552,6 +555,7 @@ test.describe('approval and overlay focus', () => {
 			await expect(page.locator('dialog[open]')).toHaveCount(0);
 			await expect(input()).toBeFocused();
 			await expect(page.getByText('turn interrupted')).toBeVisible();
+			await expect(turnCancelled(page)).toHaveCount(1);
 		});
 	}
 });
