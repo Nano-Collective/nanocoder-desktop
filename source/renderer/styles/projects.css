@@ -133,50 +133,20 @@
 	align-items: center;
 	gap: 10px;
 }
-.workspace-setup {
-	width: min(100%, 740px);
-	margin: 0 auto;
-}
-.workspace-setup-actions {
-	display: flex;
-	align-items: flex-start;
-	justify-content: space-between;
-	gap: 12px;
-}
-.runtime-details {
-	flex: 1;
-	min-width: 0;
-}
-.workspace-welcome > .runtime-details {
+.welcome-runtime {
 	width: 100%;
+	margin-top: 17px;
 }
-.runtime-details > summary {
+.welcome-runtime-toggle {
+	width: 100%;
 	min-height: 32px;
-	padding-block: 6px;
-	cursor: pointer;
-	list-style: none;
-}
-.runtime-details > summary::-webkit-details-marker {
-	display: none;
-}
-.runtime-details > summary::before {
-	content: "▶ ";
+	justify-content: flex-start;
+	padding: 6px 0;
+	border-color: transparent;
+	background: transparent;
 	color: var(--colors-on-surface-muted);
-}
-.runtime-details[open] > summary::before {
-	content: "▼ ";
-}
-.runtime-details[open] > summary {
-	margin-bottom: 12px;
-}
-.runtime-details > .ui-card,
-.runtime-details > section {
-	margin-bottom: 12px;
-}
-.workspace-setup-actions > .ui-button {
-	flex: none;
-	font-size: 10px;
-	min-height: 30px;
+	font-size: 12px;
+	text-align: left;
 }
 .workspace-setup-warning {
 	margin-bottom: 8px;
@@ -325,6 +295,7 @@
 .session-import-card > .ui-button {
 	flex: none;
 }
+
 .thread-view-only {
 	display: grid;
 	gap: 14px;

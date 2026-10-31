@@ -619,6 +619,7 @@ export function App() {
 								}}
 								onOpen={projectControls.onOpen}
 								onLocate={projectControls.onLocate}
+								onRuntime={() => openDialog('runtime')}
 							/>
 						)}
 						{workspace.error && <p role="alert">{workspace.error}</p>}

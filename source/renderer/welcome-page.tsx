@@ -1,6 +1,6 @@
 import * as React from 'react';
 import {dayAge, shortRoot} from '@/renderer/recency';
-import {Button} from '@/renderer/ui';
+import {Button, Divider} from '@/renderer/ui';
 import type {IpcResult, NanocoderRuntime, ProjectInfo} from '@/shared/ipc';
 
 export interface WelcomePageProps {
@@ -12,6 +12,7 @@ export interface WelcomePageProps {
 	onConnect(): void;
 	onOpen(projectId: string): void;
 	onLocate(projectId: string): void;
+	onRuntime(): void;
 }
 
 export function WelcomePage({
@@ -23,6 +24,7 @@ export function WelcomePage({
 	onConnect,
 	onOpen,
 	onLocate,
+	onRuntime,
 }: WelcomePageProps): React.ReactElement {
 	const now = new Date();
 	return (
@@ -96,6 +98,12 @@ export function WelcomePage({
 					</ul>
 				</section>
 			)}
+			<div className="welcome-runtime">
+				<Divider />
+				<Button className="welcome-runtime-toggle" onClick={onRuntime}>
+					<span aria-hidden="true">▸ </span>runtime and setup details
+				</Button>
+			</div>
 		</section>
 	);
 }
