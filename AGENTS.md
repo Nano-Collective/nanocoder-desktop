@@ -94,7 +94,8 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
 | `source/renderer/approval-requests.tsx` | U.6 plain-prop composer-shelf approval cards, request-scoped shortcuts and queued focus return |
 | `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |
-| `source/renderer/recent-projects.tsx`, `source/renderer/trust-feedback.tsx` | Standalone, plain-prop project controls and trust feedback; `use-projects.ts` owns bridge calls |
+| `source/renderer/recent-projects.tsx`, `source/renderer/trust-feedback.tsx`, `source/renderer/project-refresh.ts` | Plain-prop project controls, trust feedback and sequenced recents refresh; `use-projects.ts` owns bridge calls and read-generation guards |
+| `source/shared/project-events.ts` | Strict ID/sequence-only recents invalidation schema and preload event-variant filter; no new IPC method or channel |
 | `scripts/generate-design-tokens.mjs` | Generates committed CSS custom properties from `DESIGN.md`; the adjacent spec rejects drift |
 | `planning/ui-foundations.md` | Theme switching, keyboard-focus QA and the proposed Markdown renderer |
 | `planning/projects-and-trust.md` | Project opening, safe summary limits, the pre-trust probe exception and remaining Nanocoder trust gaps |

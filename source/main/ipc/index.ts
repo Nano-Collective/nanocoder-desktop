@@ -432,6 +432,8 @@ export function registerIpcHandlers(
 							agentCommands.reset(project.id);
 							await terminal?.activate(project.id);
 						},
+						projectsChanged: projectId =>
+							ownedSupervisor.publishProjectsChanged(projectId),
 						announceProject: project => {
 							activeProjectId = project.id;
 							threads?.attachProject(project.id);

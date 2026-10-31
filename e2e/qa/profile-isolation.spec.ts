@@ -29,9 +29,11 @@ function unisolatedLaunches(source: string, filename: string): string[] {
 		const root = profile && (profile[1] ?? profile[2]);
 		const temporary =
 			root &&
-			new RegExp(
-				`\\b${root}\\s*=\\s*(?:realpathSync(?:\\.native)?\\s*\\(\\s*)?mkdtempSync\\s*\\(`,
-			).test(code);
+			[
+				...code.matchAll(
+					/\b(\w+)\s*=\s*(?:realpathSync(?:\.native)?\s*\(\s*)?mkdtempSync\s*\(/g,
+				),
+			].some(assignment => assignment[1] === root);
 		if (temporary && args && args.split('--user-data-dir').length === 2)
 			return [];
 		const line = source.slice(0, call.index).split('\n').length;
@@ -65,7 +67,11 @@ test('the guard refuses shared profiles and paths escaping a temporary folder', 
 		"path.join(work, '..', 'profile')",
 		"path.join(work, '/shared')",
 	]) {
-		const source = `const work = mkdtempSync('fixture-'); const profile = '/shared'; electron.launch({args: ['.', \`--user-data-dir=\${${profile}}\`]});`;
+		const source = [
+			"const work = mkdtempSync('fixture-'); const profile = '/shared'; electron.launch({args: ['.', `--user-data-dir=${",
+			profile,
+			'}`]});',
+		].join('');
 		t.is(unisolatedLaunches(source, 'fixture.ts').length, 1);
 	}
 });

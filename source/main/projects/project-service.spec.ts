@@ -30,6 +30,10 @@ async function fixture(t: ExecutionContext) {
 	});
 	const calls: string[] = [];
 	const announcements: ProjectInfo[] = [];
+	const changes: Array<{
+		project: ProjectInfo | undefined;
+		activeProjectId: string | null;
+	}> = [];
 	let chosen: string | undefined;
 	let picker: (() => Promise<string | undefined>) | undefined;
 	let status: SupervisorState['status'] = 'untrusted';
@@ -41,6 +45,11 @@ async function fixture(t: ExecutionContext) {
 		chooseRoot: () => picker?.() ?? Promise.resolve(chosen),
 		signal: () => abort.signal,
 		announceProject: project => announcements.push(project),
+		projectsChanged: projectId =>
+			changes.push({
+				project: store.projects.get(projectId),
+				activeProjectId: store.getUiState().activeProjectId,
+			}),
 		supervisor: {
 			probeProject: async project => {
 				calls.push('probe');
@@ -69,6 +78,7 @@ async function fixture(t: ExecutionContext) {
 		store,
 		calls,
 		announcements,
+		changes,
 		service,
 		abort,
 		picker: (callback: () => Promise<string | undefined>) => {
@@ -95,6 +105,95 @@ function deferred<T>() {
 		resolve = done;
 	});
 	return {promise, resolve};
+}
+
+test('recents invalidations follow committed add, open and locate without selecting additions', async t => {
+	const {root, choose, service, store, outcome, changes, announcements} =
+		await fixture(t);
+	const folder = path.join(root, 'project');
+	mkdirSync(folder);
+	choose(folder);
+	const added = await service.addProject({});
+	if (added.status !== 'selected') return t.fail();
+	t.deepEqual(changes, [{project: added.project, activeProjectId: null}]);
+	t.deepEqual(announcements, []);
+	outcome('ready');
+	await service.openProject({projectId: added.project.id});
+	t.deepEqual(changes[1], {
+		project: store.projects.get(added.project.id),
+		activeProjectId: added.project.id,
+	});
+	t.true(changes[1]?.project?.trusted);
+	const moved = path.join(root, 'moved');
+	renameSync(folder, moved);
+	choose(moved);
+	await service.locateProject({projectId: added.project.id});
+	t.deepEqual(changes[2], {
+		project: store.projects.get(added.project.id),
+		activeProjectId: added.project.id,
+	});
+	t.is(changes[2]?.project?.canonicalRoot, moved);
+	t.false(changes[2]?.project?.trusted);
+	t.is(changes.length, 3);
+});
+
+test('cancelled, failed and refused operations publish no recents invalidation', async t => {
+	const {root, choose, service, changes} = await fixture(t);
+	await service.addProject({});
+	choose(path.join(root, 'missing'));
+	await t.throwsAsync(service.addProject({}));
+	t.deepEqual(changes, []);
+	choose(root);
+	const added = await service.addProject({});
+	if (added.status !== 'selected') return t.fail();
+	changes.length = 0;
+	await service.addProject({});
+	await service.openProject({projectId: added.project.id});
+	choose(undefined);
+	await service.locateProject({projectId: added.project.id});
+	choose(path.join(root, 'missing'));
+	await t.throwsAsync(service.locateProject({projectId: added.project.id}));
+	await t.throwsAsync(
+		service.openProject({projectId: '11111111-1111-4111-8111-111111111111'}),
+	);
+	t.deepEqual(changes, []);
+});
+
+test('a failed active-project commit never publishes successful-open invalidation', async t => {
+	const {root, choose, service, store, outcome, changes} = await fixture(t);
+	choose(root);
+	const added = await service.addProject({});
+	if (added.status !== 'selected') return t.fail();
+	changes.length = 0;
+	outcome('ready');
+	store.updateUiState = () => {
+		throw new Error('fixture commit refusal');
+	};
+	await t.throwsAsync(service.openProject({projectId: added.project.id}));
+	t.deepEqual(changes, []);
+});
+
+for (const operation of ['add', 'locate'] as const) {
+	test(`a failed ${operation} metadata commit publishes no recents invalidation`, async t => {
+		const {root, choose, service, store, changes} = await fixture(t);
+		choose(root);
+		const added = await service.addProject({});
+		if (added.status !== 'selected') return t.fail();
+		const target = path.join(root, 'other');
+		mkdirSync(target);
+		choose(target);
+		changes.length = 0;
+		store.projects.save = () => {
+			throw new Error('fixture metadata refusal');
+		};
+		await t.throwsAsync(
+			operation === 'add'
+				? service.addProject({})
+				: service.locateProject({projectId: added.project.id}),
+		);
+		t.deepEqual(changes, []);
+		t.deepEqual(store.projects.get(added.project.id), added.project);
+	});
 }
 
 test('picker cancellation does not save or start a project (CHAT-01)', async t => {

@@ -95,7 +95,7 @@ test('reasoning has its own label and tool details expand through native disclos
 	t.true(html.includes('spinner'));
 	t.true(html.includes('in progress'));
 	t.true(html.includes('&lt;script&gt;fixture&lt;/script&gt;'));
-	t.false(html.includes('<script>'));
+	t.notRegex(html, /<script>/);
 });
 
 test('tool status always has a word and a result glyph (CHAT-05)', t => {

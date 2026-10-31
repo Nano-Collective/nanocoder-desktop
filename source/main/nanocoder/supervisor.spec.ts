@@ -79,6 +79,24 @@ function nextEvent(
 
 test.after.always(removeFakeProjects);
 
+test('recents invalidations contain only identity and share per-project metadata sequences', async t => {
+	const supervisor = make();
+	t.teardown(() => supervisor.close());
+	const chosen = project();
+	const other = project();
+	const events: ProjectEvent[] = [];
+	supervisor.subscribe(event => events.push(event));
+	supervisor.announceProject(chosen);
+	supervisor.publishProjectsChanged(chosen.id);
+	supervisor.publishProjectsChanged(other.id);
+	t.deepEqual(events.slice(1), [
+		{type: 'projects-changed', projectId: chosen.id, sequence: 2},
+		{type: 'projects-changed', projectId: other.id, sequence: 1},
+	]);
+	t.is(supervisor.getState(chosen.id).status, 'stopped');
+	t.is(supervisor.getState(other.id).status, 'stopped');
+});
+
 test('controls publications share project metadata sequencing and clone their payload (CHAT-10)', async t => {
 	const supervisor = make();
 	t.teardown(() => supervisor.close());

@@ -19,11 +19,13 @@ import {
 } from '@playwright/test';
 import {build} from 'vite';
 import type {DesktopApi} from '@/shared/desktop-api';
-import type {
-	IpcResult,
-	WorkspaceMethod,
-	WorkspaceRequests,
-	WorkspaceValues,
+import {
+	CHANNELS,
+	type IpcResult,
+	type ProjectEvent,
+	type WorkspaceMethod,
+	type WorkspaceRequests,
+	type WorkspaceValues,
 } from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
@@ -170,6 +172,117 @@ async function add(root: string) {
 		throw new Error('Expected a selected project');
 	return result.value.project;
 }
+
+test('direct bridge additions refresh empty recents without reload or project activation (CHAT-01)', async () => {
+	await expect(page.locator('.runtime-details')).toContainText(
+		`Nanocoder 9.9.9 at ${path.join(work, 'nanocoder/dist/cli.js')}`,
+	);
+	await showProjects();
+	const recent = page.getByRole('region', {name: 'recent projects'});
+	await expect(recent).toContainText('no recent projects');
+	expect(await call('listProjects', {})).toEqual({ok: true, value: []});
+	const root = path.join(work, 'project');
+	mkdirSync(root);
+	const project = await add(root);
+	await expect(
+		recent.getByRole('button', {name: 'open project', exact: true}),
+	).toBeEnabled();
+	await expect(recent.locator('.recent-project-path')).toHaveText(root);
+	await expect(recent).not.toContainText('no recent projects');
+	await expect(page.locator('.project-switch-root')).toHaveText(
+		'open a local folder',
+	);
+	expect(await call('getUiState', {})).toMatchObject({
+		ok: true,
+		value: {activeProjectId: null},
+	});
+	expect(
+		await call('getSupervisorState', {projectId: project.id}),
+	).toMatchObject({ok: true, value: {status: 'stopped', agent: null}});
+	expect(
+		await call('listThreads', {projectId: project.id, archiveState: 'active'}),
+	).toEqual({
+		ok: true,
+		value: [],
+	});
+	expect(await call('openProject', {projectId: project.id})).toMatchObject({
+		ok: true,
+		value: {status: 'opened'},
+	});
+	await expect(page.locator('.project-switch-root')).toHaveText(root);
+	await showProjects();
+	const otherRoot = path.join(work, 'other');
+	mkdirSync(otherRoot);
+	const other = await add(otherRoot);
+	await expect(
+		recent.getByRole('button', {name: 'open other', exact: true}),
+	).toBeEnabled();
+	await expect(recent.locator('.recent-project-path')).toHaveText([
+		otherRoot,
+		root,
+	]);
+	await expect(page.locator('.project-switch-root')).toHaveText(root);
+	expect(await call('getUiState', {})).toMatchObject({
+		ok: true,
+		value: {activeProjectId: project.id},
+	});
+	expect(await call('getSupervisorState', {projectId: other.id})).toMatchObject(
+		{ok: true, value: {status: 'stopped', agent: null}},
+	);
+	expect(
+		await call('listThreads', {projectId: other.id, archiveState: 'active'}),
+	).toEqual({
+		ok: true,
+		value: [],
+	});
+});
+
+test('preload refuses malformed and unknown project-list notifications without exposing Electron events', async () => {
+	await page.evaluate(() => {
+		const state = window as unknown as {
+			desktop: DesktopApi;
+			recentsEvents: unknown[][];
+			stopRecentsEvents: () => void;
+		};
+		state.recentsEvents = [];
+		state.stopRecentsEvents = state.desktop.onProjectEvent((...args) => {
+			state.recentsEvents.push(args);
+		});
+	});
+	const valid: ProjectEvent = {
+		type: 'projects-changed',
+		projectId: '11111111-1111-4111-8111-111111111111',
+		sequence: 1,
+	};
+	await app.evaluate(
+		({BrowserWindow}, {channel, events}) => {
+			for (const event of events)
+				BrowserWindow.getAllWindows()[0].webContents.send(channel, event);
+		},
+		{
+			channel: CHANNELS.projectEvent,
+			events: [
+				{...valid, canonicalRoot: '/not-exposed'},
+				{...valid, sequence: 0},
+				{...valid, projectId: 'not-an-id'},
+				{...valid, type: 'unknown'},
+				valid,
+			],
+		},
+	);
+	await call('getUiState', {});
+	expect(
+		await page.evaluate(
+			() => (window as unknown as {recentsEvents: unknown[][]}).recentsEvents,
+		),
+	).toEqual([[valid]]);
+	await expect(page.locator('.project-switch-root')).toHaveText(
+		'open a local folder',
+	);
+	await page.evaluate(() =>
+		(window as unknown as {stopRecentsEvents: () => void}).stopRecentsEvents(),
+	);
+});
 
 test('a canonical non-Git project selected in main remains in recents after restart (CHAT-01)', async () => {
 	const root = path.join(work, 'project');

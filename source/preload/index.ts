@@ -1,6 +1,7 @@
 import {contextBridge, ipcRenderer} from 'electron';
 import type {DesktopApi} from '@/shared/desktop-api';
-import {CHANNELS, type ProjectEvent} from '@/shared/ipc';
+import {CHANNELS} from '@/shared/ipc';
+import {projectEventForListener} from '@/shared/project-events';
 import {TERMINAL_CHANNELS, type TerminalEvent} from '@/shared/terminal';
 
 const api: DesktopApi = {
@@ -70,7 +71,10 @@ const api: DesktopApi = {
 		ipcRenderer.invoke(CHANNELS.getNanocoderRuntime, {}),
 	connectNanocoder: () => ipcRenderer.invoke(CHANNELS.connectNanocoder, {}),
 	onProjectEvent: listener => {
-		const handler = (_event: unknown, event: ProjectEvent) => listener(event);
+		const handler = (_event: unknown, event: unknown) => {
+			const parsed = projectEventForListener(event);
+			if (parsed) listener(parsed);
+		};
 		ipcRenderer.on(CHANNELS.projectEvent, handler);
 		return () => ipcRenderer.removeListener(CHANNELS.projectEvent, handler);
 	},
