@@ -237,6 +237,21 @@ for (const theme of ['dark', 'light'] as const) {
 				await expect(button).toBeFocused();
 				await expect(button).toHaveCSS('outline-width', '2px');
 				await button.press('Enter');
+				const confirmation = page.getByRole('dialog', {
+					name: action === 'new' ? 'new thread' : 'remove from desktop',
+					exact: true,
+				});
+				await expect(confirmation).toBeVisible();
+				await confirmation
+					.getByRole('button', {
+						name:
+							action === 'new'
+								? 'keep as new thread draft'
+								: 'remove from desktop',
+						exact: true,
+					})
+					.click();
+				await expect(confirmation).toBeHidden();
 				await expect(notice).toHaveCount(0);
 				const after = await page.evaluate(async scope => {
 					const {desktop} = window as unknown as {desktop: DesktopApi};

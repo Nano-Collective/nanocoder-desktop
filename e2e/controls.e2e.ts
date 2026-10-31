@@ -17,6 +17,7 @@ import {
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {createDraftThread} from './qa/new-thread';
 import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
@@ -186,7 +187,10 @@ test('model controls use the confirmed provider response and remain available on
 	await provider.selectOption('b');
 	await expect(provider).toHaveValue('b');
 	await expect(model).toHaveValue('confirmed');
-	await page.getByRole('button', {name: 'new thread', exact: true}).click();
+	await createDraftThread(
+		page,
+		page.getByRole('button', {name: 'new thread', exact: true}),
+	);
 	await expect(model).toBeEnabled();
 	await expect(model).toHaveValue('confirmed');
 	const threads = await page.evaluate(async () => {

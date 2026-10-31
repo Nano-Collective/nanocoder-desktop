@@ -111,7 +111,9 @@ test('no results remain keyboard safe', async () => {
 	});
 	const input = palette.getByRole('combobox');
 	await input.fill('no-matching-action');
-	await expect(palette.getByText('no matching commands')).toBeVisible();
+	await expect(
+		palette.getByText('no commands found. try a different action name.'),
+	).toBeVisible();
 	await expect(input).toHaveAttribute('aria-expanded', 'false');
 	await expect(palette.getByRole('listbox')).toHaveCount(0);
 	await page.keyboard.press('ArrowDown');
@@ -121,7 +123,7 @@ test('no results remain keyboard safe', async () => {
 	await expect(palette).toBeHidden();
 });
 
-test('open-folder command calls the existing picker and cancellation preserves focus', async () => {
+test('add project folder calls the existing picker and cancellation preserves focus', async () => {
 	const page = await app.firstWindow();
 	await app.evaluate(({dialog}) => {
 		dialog.showOpenDialog = (async () => ({
@@ -131,9 +133,12 @@ test('open-folder command calls the existing picker and cancellation preserves f
 	});
 	const trigger = page.getByRole('button', {name: 'command palette'});
 	await trigger.click();
-	await page
-		.getByRole('combobox', {name: 'find a command', exact: true})
-		.fill('open a project folder');
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	await palette.getByRole('combobox').fill('add project folder');
+	await expect(palette.getByRole('option')).toHaveCount(1);
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('dialog')).toBeHidden();
 	await expect(
@@ -158,12 +163,10 @@ test('disabled actions keep a visible reason and cannot run with Enter or pointe
 		await page.getByRole('button', {name: 'command palette'}).click();
 		await page
 			.getByRole('combobox', {name: 'find a command', exact: true})
-			.fill('open');
-		const option = page.getByRole('option', {name: /open a project folder/});
+			.fill('new thread');
+		const option = page.getByRole('option', {name: /new thread/});
 		await expect(option).toHaveAttribute('aria-disabled', 'true');
-		await expect(option).toContainText(
-			'unavailable: Nanocoder runtime is not available',
-		);
+		await expect(option).toContainText('unavailable: select a project first');
 		await page.keyboard.press('Enter');
 		await expect(page.getByRole('dialog')).toBeVisible();
 		await option.click({force: true});
@@ -198,9 +201,9 @@ test('overlays match both themes at every width and retain visible keyboard focu
 			expect(
 				Math.abs((bounds?.y ?? 0) + (bounds?.height ?? 0) / 2 - 450),
 			).toBeLessThan(1);
-			await expect(palette).toHaveCSS(
+			await expect(palette.locator('.dialog-shell')).toHaveCSS(
 				'box-shadow',
-				'rgba(0, 0, 0, 0.35) 0px 18px 48px 0px',
+				'rgba(0, 0, 0, 0.08) 0px 2px 6px 0px',
 			);
 			await expect(
 				page.getByRole('combobox', {name: 'find a command', exact: true}),
@@ -218,7 +221,9 @@ test('overlays match both themes at every width and retain visible keyboard focu
 				exact: true,
 			});
 			await expect(sheet).toHaveCSS('width', '520px');
-			await expect(sheet.getByRole('button')).toBeFocused();
+			await expect(
+				sheet.getByRole('button', {name: 'close keyboard shortcuts'}),
+			).toBeFocused();
 			expect(await visibleTextContrast(page, theme)).toEqual([]);
 			await page.keyboard.press('Escape');
 		}
