@@ -253,6 +253,7 @@ test('ask_user presents only Nanocoder question options and sends the selected a
 	await expect(cards()).toHaveCount(1);
 	await expect(dialogs()).toBeFocused();
 	await expect(page.getByText('turn ended: end_turn')).toHaveCount(0);
+	await expect(page.getByText('selected answer-')).toHaveCount(0);
 	await expect(cards()).toContainText('Which fixture option?');
 	await expect(cards().getByRole('textbox')).toHaveCount(0);
 	await expect(cards().getByRole('button').nth(0)).toHaveAccessibleName(
@@ -268,6 +269,30 @@ test('ask_user presents only Nanocoder question options and sends the selected a
 		'selected answer-1',
 	);
 	await expect(input()).toBeFocused();
+});
+
+test('closing an ask_user question with its close control sends no answer and the shelf still answers', async () => {
+	await open('ask-user');
+	await prompt();
+	const question = page.getByRole('alertdialog', {
+		name: 'Nanocoder needs a choice',
+	});
+	await expect(question).toBeVisible();
+	await question
+		.getByRole('button', {name: 'close choice', exact: true})
+		.click();
+	await expect(question).toHaveCount(0);
+	await expect(cards()).toHaveCount(1);
+	await expect(page.getByText('turn ended: end_turn')).toHaveCount(0);
+	await expect(page.getByText('selected answer-')).toHaveCount(0);
+	await cards()
+		.getByRole('button', {name: 'Second choice', exact: true})
+		.click();
+	await expect(cards()).toHaveCount(0);
+	await expect(page.locator('.gate-message-tool code')).toHaveText(
+		'selected answer-1',
+	);
+	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
 });
 
 test('queued requests keep focus on the oldest remaining request and restore the original control', async () => {
