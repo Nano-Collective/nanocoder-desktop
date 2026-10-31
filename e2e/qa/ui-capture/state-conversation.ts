@@ -67,6 +67,25 @@ async function scrollToEnd(capture: Capture): Promise<void> {
 		.toBe(true);
 }
 
+async function scrollToTop(capture: Capture): Promise<void> {
+	const list = capture.page.getByRole('list', {name: 'conversation'});
+	if ((await list.count()) === 0) return;
+	await list.hover();
+	const atTop = () =>
+		list.evaluate(element => {
+			let node: Element | null = element;
+			while (node && node.scrollHeight <= node.clientHeight + 1)
+				node = node.parentElement;
+			return !node || node.scrollTop <= 1;
+		});
+	await expect
+		.poll(async () => {
+			await capture.page.mouse.wheel(0, -4000);
+			return atTop();
+		})
+		.toBe(true);
+}
+
 const update = (body: string) =>
 	`notify('session/update', {sessionId, update: ${body}});`;
 const thought = (text: string) =>
@@ -146,16 +165,18 @@ const drivers: CaptureState[] = [
 		stem: 'conversation-ready',
 		manifestId: 'conversation-ready',
 		fixture: READY_FIXTURE,
-		how: 'open project folder "tide", rename the new thread to "export the audit log" from the thread menu, type the CSV export prompt and press Enter, wait for the turn to end',
+		how: 'open project folder "tide", rename the new thread to "export the audit log" from the thread menu, type the CSV export prompt and press Enter, wait for the turn to end, transcript scrolled to the top',
 		fixtureEdits: READY_EDITS,
 		reach: readyConversation,
+		beforeShot: scrollToTop,
 	},
 	{
 		stem: 'conversation-running',
 		manifestId: 'conversation-running',
 		fixture:
 			'wait-for-cancel; edits: "Working on it." swapped for a reasoning chunk, the reference heading and paragraph, completed read/edit tools, an in-progress tool "execute_bash: pnpm test:unit -- export" and the text "checking the result"; model edits as in conversation-ready',
-		how: 'open "tide", rename the thread to "export the audit log", send the CSV export prompt; the turn stays running until cancelled, shown with the "cancel turn" control',
+		how: 'open "tide", rename the thread to "export the audit log", send the CSV export prompt; the turn stays running until cancelled, shown with the "cancel turn" control, transcript scrolled to the top',
+		beforeShot: scrollToTop,
 		fixtureEdits: [
 			...MODEL_EDITS,
 			{
