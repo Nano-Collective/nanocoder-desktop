@@ -30,9 +30,10 @@ export function ProjectsDialogBody({
 					<p>no recent projects</p>
 				) : (
 					<ol className="projects-dialog-list">
-						{projects.map(project => {
+						{projects.map((project, index) => {
 							const selected = project.id === activeProjectId;
 							const available = project.availability === 'available';
+							const metaId = `projects-dialog-meta-${index}`;
 							const body = (
 								<>
 									<span className="projects-dialog-glyph" aria-hidden="true">
@@ -42,14 +43,23 @@ export function ProjectsDialogBody({
 										<span className="projects-dialog-name">
 											{project.displayName}
 										</span>
-										<span className="projects-dialog-meta">
-											{[
-												project.canonicalRoot,
-												selected ? 'selected' : null,
-												available ? null : `folder ${project.availability}`,
-											]
-												.filter(Boolean)
-												.join(' · ')}
+										<span className="projects-dialog-meta" id={metaId}>
+											<span
+												className="projects-dialog-root"
+												title={project.canonicalRoot}
+											>
+												{project.canonicalRoot}
+											</span>
+											{selected && (
+												<span className="projects-dialog-status">
+													{' · selected'}
+												</span>
+											)}
+											{!available && (
+												<span className="projects-dialog-status">
+													{` · folder ${project.availability}`}
+												</span>
+											)}
 										</span>
 									</span>
 								</>
@@ -62,6 +72,7 @@ export function ProjectsDialogBody({
 											className="projects-dialog-row"
 											aria-label={`open ${project.displayName}`}
 											aria-current={selected ? 'true' : undefined}
+											aria-describedby={metaId}
 											disabled={pending}
 											onClick={() => onOpen(project.id)}
 										>
@@ -83,6 +94,7 @@ export function ProjectsDialogBody({
 											{body}
 											<Button
 												aria-label={`locate ${project.displayName}`}
+												aria-describedby={metaId}
 												disabled={pending}
 												onClick={() => onLocate(project.id)}
 											>

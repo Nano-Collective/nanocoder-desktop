@@ -104,6 +104,7 @@ button.projects-dialog-row {
 	flex: 1;
 	min-width: 0;
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	gap: var(--spacing-xs);
 }
 
@@ -113,10 +114,24 @@ button.projects-dialog-row {
 }
 
 .projects-dialog-meta {
+	display: flex;
+	min-width: 0;
 	color: var(--colors-on-surface-muted);
 	font-size: var(--typography-caption-font-size);
 	line-height: 1.5;
-	overflow-wrap: anywhere;
+	white-space: nowrap;
+}
+
+.projects-dialog-root {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.projects-dialog-status {
+	flex: none;
+	white-space: pre;
 }
 
 .projects-dialog-check {
