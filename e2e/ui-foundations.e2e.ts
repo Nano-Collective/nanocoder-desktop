@@ -423,7 +423,7 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
 		}, theme);
-		await openFolderFromPalette(page);
+		await openFolderFromPalette(page, folder);
 		await expect(
 			page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 		).toContainText(folder);

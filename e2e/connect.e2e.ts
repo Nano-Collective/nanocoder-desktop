@@ -43,7 +43,11 @@ interface Prompt {
 }
 
 // Stubs both native dialogs: the folder picker, and the trust prompt with the given button.
-async function openFolder(folder: string, trustButton = 1): Promise<void> {
+async function openFolder(
+	folder: string,
+	trustButton = 1,
+	result: 'opened' | 'refused' = 'opened',
+): Promise<void> {
 	await app.evaluate(
 		({dialog}, [picked, button]) => {
 			const state = globalThis as {trustPrompts?: unknown[]};
@@ -59,7 +63,7 @@ async function openFolder(folder: string, trustButton = 1): Promise<void> {
 		},
 		[folder, trustButton] as const,
 	);
-	await openFolderFromPalette(page);
+	await openFolderFromPalette(page, folder, result);
 }
 
 const trustPrompts = () =>
@@ -183,7 +187,7 @@ test('initialises a trusted folder without eagerly creating a session or asking'
 
 test("asks with Nanocoder's reason, and shows its message when the user says no", async () => {
 	const root = project('refused', 'untrusted');
-	await openFolder(root);
+	await openFolder(root, 1, 'refused');
 	const [prompt] = await trustPrompts();
 	expect(prompt.title).toBe('Trust this folder?');
 	// The home folder is redacted to ~, and on Windows the temp folder sits inside it.
@@ -211,7 +215,7 @@ test('trusts the folder through Nanocoder when the user agrees, then opens it', 
 });
 
 test('reports a second refusal without asking again', async () => {
-	await openFolder(project('stubborn', 'refuse'), 0);
+	await openFolder(project('stubborn', 'refuse'), 0, 'refused');
 	expect(await trustPrompts()).toHaveLength(1);
 	const alert = page.getByRole('alert');
 	await expect(alert).toContainText('is not trusted');
@@ -692,7 +696,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 				filePaths: [root],
 			})) as typeof dialog.showOpenDialog;
 		}, root);
-		await openFolderFromPalette(page);
+		await openFolderFromPalette(page, root);
 		await expect(page.getByLabel('Message')).toBeEnabled();
 		const projectId = await recoveryProjectId(root);
 		await sendMessage();

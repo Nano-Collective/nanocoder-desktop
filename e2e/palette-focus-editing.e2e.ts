@@ -58,7 +58,7 @@ test.beforeAll(async () => {
 			filePaths: [folder],
 		})) as typeof dialog.showOpenDialog;
 	}, project);
-	await openFolderFromPalette(page);
+	await openFolderFromPalette(page, project);
 	await expect(input()).toBeEnabled();
 	await input().evaluate(element => {
 		element.dataset.inputEvents = '0';
@@ -146,7 +146,7 @@ test.describe('existing composer state', () => {
 				filePaths: [folder],
 			})) as typeof dialog.showOpenDialog;
 		}, project);
-		await openFolderFromPalette(page);
+		await openFolderFromPalette(page, project);
 		await expect(input()).toBeEnabled();
 		await input().fill('synthetic command fixture');
 		await input().press('Enter');

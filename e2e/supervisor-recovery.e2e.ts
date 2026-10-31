@@ -72,7 +72,7 @@ test.afterEach(async () => {
 
 async function open(mode = 'ok'): Promise<string> {
 	writeFileSync(path.join(root, '.fake-nanocoder'), mode);
-	await openFolderFromPalette(page);
+	await openFolderFromPalette(page, root);
 	await expect(
 		page.getByRole('textbox', {name: 'message', exact: true}),
 	).toBeEnabled();
@@ -449,7 +449,7 @@ test('recovery remains bound to the failed attempted project when another projec
 			checkboxChecked: false,
 		})) as typeof dialog.showMessageBox;
 	}, other);
-	await openFolderFromPalette(page);
+	await openFolderFromPalette(page, other, 'refused');
 	await expect(page.getByRole('alert')).toContainText('not opened');
 	await page.evaluate(async firstId => {
 		const api = (window as unknown as {desktop: DesktopApi}).desktop;

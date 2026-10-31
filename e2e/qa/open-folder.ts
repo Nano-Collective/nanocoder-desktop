@@ -1,3 +1,5 @@
+import {realpathSync} from 'node:fs';
+import path from 'node:path';
 import {expect, type Page} from '@playwright/test';
 
 // Starts the open-folder command from the header palette and waits for the palette to close.
@@ -23,9 +25,33 @@ export async function startFolderFromPalette(page: Page): Promise<void> {
 	await expect(palette).toBeHidden();
 }
 
-// Waits for a visible outcome (ACP ready, a failure alert or retry), then for the command to be enabled.
-export async function openFolderFromPalette(page: Page): Promise<void> {
+// Opens a folder and waits for its own outcome: the folder is the selected project and shows ACP ready or its own retry.
+// A refused folder shows the refusal that names it. Other alerts and badges on the page never count.
+export async function openFolderFromPalette(
+	page: Page,
+	folder: string,
+	result: 'opened' | 'refused' = 'opened',
+): Promise<void> {
 	await startFolderFromPalette(page);
+	if (result === 'refused') {
+		await expect(
+			page
+				.getByRole('alert')
+				.filter({hasText: 'not opened'})
+				.filter({hasText: path.basename(folder)})
+				.first(),
+		).toBeVisible();
+	} else {
+		await expect(page.locator('.project-switch-root').first()).toHaveText(
+			realpathSync.native(folder),
+		);
+		await expect(
+			page
+				.locator('.ui-badge--acp-ready')
+				.or(page.getByRole('button', {name: 'retry Nanocoder', exact: true}))
+				.first(),
+		).toBeVisible();
+	}
 	const palette = page.getByRole('dialog', {
 		name: 'command palette',
 		exact: true,
@@ -39,18 +65,6 @@ export async function openFolderFromPalette(page: Page): Promise<void> {
 		name: 'find a command',
 		exact: true,
 	});
-	await expect
-		.poll(
-			async () =>
-				(await page.locator('.ui-badge--acp-ready').first().isVisible()) ||
-				(await page.getByRole('alert').first().isVisible()) ||
-				(await page
-					.getByRole('button', {name: 'retry Nanocoder', exact: true})
-					.first()
-					.isVisible()),
-			{timeout: 15_000},
-		)
-		.toBe(true);
 	await trigger.click();
 	await search.fill('open a project folder');
 	await expect(command).not.toHaveAttribute('aria-disabled', 'true');

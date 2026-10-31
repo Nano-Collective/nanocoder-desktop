@@ -64,7 +64,7 @@ for (const theme of ['dark', 'light'] as const) {
 						filePaths: [folder],
 					})) as typeof dialog.showOpenDialog;
 				}, folder);
-				await openFolderFromPalette(page);
+				await openFolderFromPalette(page, folder);
 				await expect(
 					page.getByRole('textbox', {name: 'message', exact: true}),
 				).toBeEnabled();

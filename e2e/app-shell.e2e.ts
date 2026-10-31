@@ -18,7 +18,7 @@ import {build} from 'vite';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
-import {openFolderFromPalette} from './qa/open-folder';
+import {openFolderFromPalette, startFolderFromPalette} from './qa/open-folder';
 import type {mountShellFixture} from './qa/shell-harness';
 import {visibleTextContrast} from './qa/ui-contrast';
 
@@ -65,11 +65,11 @@ async function open(folder: string | null) {
 			filePaths: folder ? [folder] : [],
 		})) as typeof dialog.showOpenDialog;
 	}, folder);
-	await openFolderFromPalette(page);
-	if (folder)
-		await expect(
-			page.getByRole('region', {name: 'connected agent', includeHidden: true}),
-		).toContainText(folder);
+	if (!folder) return startFolderFromPalette(page);
+	await openFolderFromPalette(page, folder);
+	await expect(
+		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
+	).toContainText(folder);
 }
 
 test('ACP badge follows child exit, not unrelated provider failure, in both themes', async () => {

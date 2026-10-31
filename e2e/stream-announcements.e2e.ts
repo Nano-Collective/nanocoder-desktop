@@ -99,7 +99,7 @@ async function open(mode: string) {
 			filePaths: [folder],
 		})) as typeof dialog.showOpenDialog;
 	}, project);
-	await openFolderFromPalette(page);
+	await openFolderFromPalette(page, project);
 	await expect(input()).toBeEnabled();
 	await expect(announcement()).toHaveCount(1);
 }

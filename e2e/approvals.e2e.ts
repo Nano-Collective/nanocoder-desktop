@@ -68,7 +68,7 @@ async function open(mode = 'ok') {
 			filePaths: [folder],
 		})) as typeof dialog.showOpenDialog;
 	}, folder);
-	await openFolderFromPalette(page);
+	await openFolderFromPalette(page, folder);
 	await expect(
 		page.getByRole('region', {name: 'connected agent', includeHidden: true}),
 	).toContainText(folder);
