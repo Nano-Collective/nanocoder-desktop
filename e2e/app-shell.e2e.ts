@@ -368,6 +368,9 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				name: 'conversation',
 				exact: true,
 			});
+			await expect(
+				rail.locator('.sidebar-link', {hasText: 'import sessions'}),
+			).toBeVisible();
 			const focusOrder = [
 				switcher,
 				rail.getByRole('button', {name: 'new thread', exact: true}),
@@ -375,6 +378,8 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 					thread.locator('.thread-open'),
 					thread.locator('.thread-actions > summary'),
 				]),
+				rail.locator('.sidebar-link', {hasText: 'archived'}),
+				rail.locator('.sidebar-link', {hasText: 'import sessions'}),
 				page.getByRole('button', {name: 'runtime details', exact: true}),
 				page.getByRole('button', {name: 'thread actions', exact: true}),
 				palette,

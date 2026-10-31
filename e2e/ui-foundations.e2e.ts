@@ -212,11 +212,17 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	const rail = page.getByRole('region', {name: 'project threads'});
 	const input = page.getByRole('textbox', {name: 'message'});
 	const send = page.getByRole('button', {name: 'send', exact: true});
+	const importLink = rail.locator('.sidebar-link', {
+		hasText: 'import sessions',
+	});
+	await expect(importLink).toBeVisible();
 	const focusOrder = [
 		switcher,
 		rail.getByRole('button', {name: 'new thread', exact: true}),
 		rail.locator('.thread-open'),
 		rail.locator('.thread-actions > summary'),
+		rail.locator('.sidebar-link', {hasText: 'archived'}),
+		importLink,
 		page.getByRole('button', {name: 'runtime details', exact: true}),
 		page.getByRole('button', {name: 'thread actions', exact: true}),
 		palette,
@@ -510,6 +516,12 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		await expect(glyph).toBeVisible();
 		await expect(glyph).toHaveCSS(
 			'color',
+			theme === 'dark' ? 'rgb(230, 230, 230)' : 'rgb(36, 40, 59)',
+		);
+		const dash = await glyph.evaluate(element =>
+			getComputedStyle(element, '::after').getPropertyValue('background-color'),
+		);
+		expect(dash).toBe(
 			theme === 'dark' ? 'rgb(247, 118, 142)' : 'rgb(161, 40, 76)',
 		);
 		await expect(selected).toHaveCSS(
