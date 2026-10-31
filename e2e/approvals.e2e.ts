@@ -222,9 +222,7 @@ test('all offered permission kinds keep their labels and their reported outcomes
 test('ask_user presents only Nanocoder question options and sends the selected answer', async () => {
 	await open('ask-user');
 	await prompt();
-	const question = page.getByRole('alertdialog', {
-		name: 'Nanocoder needs a choice',
-	});
+	const question = page.locator('dialog.question-dialog');
 	await expect(question).toBeVisible();
 	await expect(question).toHaveJSProperty('open', true);
 	await expect(
@@ -274,9 +272,7 @@ test('ask_user presents only Nanocoder question options and sends the selected a
 test('closing an ask_user question with its close control sends no answer and the shelf still answers', async () => {
 	await open('ask-user');
 	await prompt();
-	const question = page.getByRole('alertdialog', {
-		name: 'Nanocoder needs a choice',
-	});
+	const question = page.locator('dialog.question-dialog');
 	await expect(question).toBeVisible();
 	await question
 		.getByRole('button', {name: 'close choice', exact: true})
@@ -614,8 +610,7 @@ test.describe('approval focus recovery', () => {
 				window as unknown as HarnessWindow
 			).approvalFixture.approvalHarness.answers(),
 		);
-	const choice = () =>
-		page.getByRole('alertdialog', {name: 'Nanocoder needs a choice'});
+	const choice = () => page.locator('dialog.question-dialog');
 
 	for (const dismiss of ['Escape', 'close'] as const) {
 		test(`question ${dismiss} collapses to the shelf without answering and keeps the request pending`, async () => {
@@ -653,6 +648,8 @@ test.describe('approval focus recovery', () => {
 	}
 
 	test('question digits answer only offered choices once, keep failures in the dialog and return focus on resolution', async () => {
+		// Mount the shelf first so it records the focus origin, as the app does.
+		await render([]);
 		await render([question('R')]);
 		await expect(choice()).toBeVisible();
 		for (const key of ['9', '3', '0']) await page.keyboard.press(key);
