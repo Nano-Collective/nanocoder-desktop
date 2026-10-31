@@ -27,7 +27,7 @@ async function openReady(capture: Capture, folder: string, name: string) {
 		name,
 	);
 	await expect(message(capture)).toBeEnabled();
-	await expect(capture.page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await expect(capture.page.locator('.footer-acp--success')).toBeVisible();
 }
 
 // One finished turn so the dialog backdrop is a ready conversation, not an empty draft.

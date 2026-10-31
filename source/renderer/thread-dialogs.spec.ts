@@ -84,6 +84,31 @@ test('thread menu busy state shows the refusal once and disables every action (E
 	t.false(html.includes('deleting history always needs its own confirmation.'));
 });
 
+test('thread menu explains history and rename refusals beside its actions (CHAT-12, CHAT-14)', t => {
+	const local = render(
+		{kind: 'thread-menu', threadId: thread.id},
+		{renameDisabledReason: 'rename unavailable'},
+	);
+	t.true(local.includes('this thread has no Nanocoder history'));
+	t.is(count(local, 'disabled=""'), 1);
+	const stored = {
+		...thread,
+		id: 'stored',
+		nanocoderSessionId: 'fixture-session',
+	};
+	const html = render(
+		{kind: 'thread-menu', threadId: stored.id},
+		{
+			renameDisabledReason: 'rename unavailable',
+			deleteHistoryDisabledReason: 'history deletion unavailable',
+		},
+		[stored],
+	);
+	t.true(html.includes('rename unavailable'));
+	t.false(html.includes('this thread has no Nanocoder history'));
+	t.is(count(html, 'disabled=""'), 2);
+});
+
 test('rename shows the manual title precedence note and disables save for a busy project (E-22)', t => {
 	const idle = render({kind: 'rename', threadId: thread.id});
 	t.true(

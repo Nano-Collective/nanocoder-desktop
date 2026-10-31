@@ -164,7 +164,7 @@ test('five fresh processes expose a usable project list within the startup media
 				const add = projects.getByRole('button', {name: 'add project folder'});
 				await add.press('Enter');
 				await expect(projects).toBeHidden();
-				await expect(page.locator('.ui-badge--acp-ready')).toHaveCount(0);
+				await expect(page.locator('.footer-acp--success')).toHaveCount(0);
 			}),
 		);
 	}
@@ -200,7 +200,7 @@ test('records open-action to rendered ACP ready without claiming spawn breakdown
 		}));
 		const start = performance.now();
 		await open.press('Enter');
-		await expect(page.locator('.ui-badge--acp-ready')).toHaveText(
+		await expect(page.locator('.footer-acp--success')).toContainText(
 			'✓ acp · ready',
 		);
 		const openToReadyMs = performance.now() - start;
@@ -240,7 +240,7 @@ test('empty and whitespace exit-check overrides select only the fake runtime', a
 			await page
 				.getByRole('button', {name: 'open a project folder', exact: true})
 				.click();
-			await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+			await expect(page.locator('.footer-acp--success')).toBeVisible();
 		}, realCli);
 	}
 });

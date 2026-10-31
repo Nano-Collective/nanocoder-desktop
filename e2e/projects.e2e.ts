@@ -544,7 +544,7 @@ test('opening a recent project exposes only its own thread and restores each pro
 		.click();
 	await expect(input).toHaveValue('second project private draft');
 	await expect(selected).not.toHaveAttribute('data-thread-id', firstThreadId);
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
 	await showProjects();
 	await expect(recent.locator('[aria-current="true"]')).toContainText(
 		'second-project',

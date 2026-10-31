@@ -92,15 +92,15 @@ test('ACP badge follows child exit, not unrelated provider failure, in both them
 		}, theme);
 		const folder = project(`exit-${theme}`, 'die-in-turn');
 		await open(folder);
-		await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+		await expect(page.locator('.footer-acp--success')).toBeVisible();
 		await page.getByRole('textbox', {name: 'message'}).fill('fixture exit');
 		await page.getByRole('button', {name: 'send', exact: true}).click();
 		await expect(page.getByRole('alert')).toContainText(
 			'Nanocoder stopped during the turn',
 		);
 		await expect(page.locator('.ui-badge--failed')).toBeVisible();
-		await expect(page.locator('.ui-badge--acp-exited')).toHaveText(
-			'○ acp · exited (3)',
+		await expect(page.locator('.footer-acp--error')).toContainText(
+			'× acp · exited (3)',
 		);
 		await expect(page.locator('.ui-badge--success')).toHaveCount(0);
 		await open(project(`provider-${theme}`, 'prompt-error'));
@@ -112,11 +112,11 @@ test('ACP badge follows child exit, not unrelated provider failure, in both them
 			'could not finish the turn',
 		);
 		await expect(page.locator('.ui-badge--failed')).toBeVisible();
-		await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
-		await expect(page.locator('.ui-badge--acp-exited')).toHaveCount(0);
+		await expect(page.locator('.footer-acp--success')).toBeVisible();
+		await expect(page.locator('.footer-acp--error')).toHaveCount(0);
 		writeFileSync(path.join(folder, '.fake-nanocoder'), 'ok');
 		await open(folder);
-		await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+		await expect(page.locator('.footer-acp--success')).toBeVisible();
 	}
 });
 
@@ -133,10 +133,10 @@ test('ACP badge stays scoped when a picker is cancelled or another project stops
 	});
 	const first = project('scoped-a');
 	await open(first);
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
 	await open(null);
 	await expectConnectedAgent(first);
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
 	const second = project('scoped-b');
 	await open(second);
 	const result = await page.evaluate(async root => {
@@ -149,18 +149,18 @@ test('ACP badge stays scoped when a picker is cancelled or another project stops
 		});
 	}, first);
 	expect(result.ok).toBe(true);
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
-	await expect(page.locator('.ui-badge--acp-exited')).toHaveCount(0);
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
+	await expect(page.locator('.footer-acp--error')).toHaveCount(0);
 });
 
 test('ACP readiness is replayed on reopening after a renderer reload', async () => {
 	const folder = project('replay');
 	await open(folder);
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
 	await page.reload();
-	await expect(page.locator('.ui-badge--acp-ready')).toHaveCount(0);
+	await expect(page.locator('.footer-acp--success')).toHaveCount(0);
 	await open(folder);
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
 });
 
 test('shell geometry and pinned composer follow all three widths without an empty inspector', async () => {
@@ -368,14 +368,17 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				name: 'conversation',
 				exact: true,
 			});
+			await expect(
+				rail.locator('.sidebar-link', {hasText: 'import sessions'}),
+			).toBeVisible();
 			const focusOrder = [
 				switcher,
 				rail.getByRole('button', {name: 'new thread', exact: true}),
-				...(await rail.locator('.thread-row').all()).flatMap(thread => [
-					thread.locator('.thread-open'),
-					thread.locator('.thread-actions > summary'),
-				]),
+				...(await rail.locator('.thread-open').all()),
+				rail.locator('.sidebar-link', {hasText: 'archived'}),
+				rail.locator('.sidebar-link', {hasText: 'import sessions'}),
 				page.getByRole('button', {name: 'runtime details', exact: true}),
+				page.getByRole('button', {name: 'keyboard shortcuts', exact: true}),
 				page.getByRole('button', {name: 'thread actions', exact: true}),
 				palette,
 				stream,
@@ -412,7 +415,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 			await page.keyboard.press('Enter');
 			await expect(permission).toHaveCount(0);
 			await expect(turnEnded(page)).toBeVisible();
-			await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+			await expect(page.locator('.footer-acp--success')).toBeVisible();
 		}
 	}
 });

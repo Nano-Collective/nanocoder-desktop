@@ -23,6 +23,8 @@ import {
 	TurnFailureNotice,
 } from '@/renderer/recovery-tools';
 import {SessionImportList} from '@/renderer/session-import-list';
+import {type FooterAcpState, SidebarFooter} from '@/renderer/sidebar-footer';
+import {SidebarRecents} from '@/renderer/sidebar-recents';
 import {
 	acpBadge,
 	observeSupervisor,
@@ -37,7 +39,7 @@ import {
 	ViewOnlyFooter,
 } from '@/renderer/thread-recovery-notice';
 import {TrustFeedback} from '@/renderer/trust-feedback';
-import {Button, Card, StatusBadge} from '@/renderer/ui';
+import {Card, StatusBadge} from '@/renderer/ui';
 import {useDiagnosticReview} from '@/renderer/use-diagnostic-review';
 import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
@@ -179,6 +181,13 @@ export function App() {
 					: thread?.runState === 'view-only'
 						? 'view-only'
 						: 'ready';
+	const footerAcp: FooterAcpState =
+		processBadge ??
+		(processState?.status === 'starting'
+			? {status: 'acp-starting'}
+			: processState?.status === 'failed'
+				? {status: 'acp-exited'}
+				: null);
 	const composerInput = useRef<HTMLTextAreaElement>(null);
 	const retryFocus = useRef(false);
 	const retrying = useRef(false);
@@ -201,8 +210,8 @@ export function App() {
 		if (!review.snapshot) overlays.current?.closeIf('diagnostics');
 	}, [review.snapshot]);
 
-	const openOverlay = (request: OverlayRequest) =>
-		overlays.current?.open(request);
+	const openOverlay = (request: OverlayRequest, opener?: HTMLElement | null) =>
+		overlays.current?.open(request, opener);
 
 	useEffect(() => {
 		if (
@@ -305,6 +314,7 @@ export function App() {
 				row.nanocoderSessionId === processState?.activeThreadId,
 		)?.id ??
 		null;
+	const newShortcut = `${commandModifier(navigator.platform)}N`;
 	const onNew = () => {
 		setImportFor(null);
 		openOverlay({kind: 'new-thread'});
@@ -501,7 +511,7 @@ export function App() {
 				...threadPalette({
 					projectId,
 					projectName: currentProject?.displayName,
-					newShortcut: `${commandModifier(navigator.platform)}N`,
+					newShortcut,
 					thread,
 					pending,
 					projectBusy: rootBusy,
@@ -539,7 +549,11 @@ export function App() {
 		>
 			<AppShell
 				logoSrc={logoUrl}
-				title={info?.name ?? 'Nanocoder'}
+				title={
+					<>
+						Nanocoder <span className="brand-desktop">Desktop</span>
+					</>
+				}
 				threadTitle={importOpen ? 'saved sessions' : thread?.title}
 				onOpenThreadMenu={
 					thread
@@ -552,29 +566,26 @@ export function App() {
 						: currentProject?.displayName
 				}
 				sidebarFooter={
-					<>
-						{processBadge && <StatusBadge {...processBadge} />}
-						{gates[projectId ?? '']?.versionPolicy.reason && (
-							<p className="workspace-setup-warning" role="status">
-								{gates[projectId ?? '']?.versionPolicy.reason}
-							</p>
-						)}
-						{runtime && !runtime.ok && (
-							<>
-								<p role="alert">{runtime.error.message}</p>
-								<Button onClick={checkRuntime}>check again</Button>
-							</>
-						)}
-						<Button onClick={() => openDialog('runtime')}>
-							runtime details
-						</Button>
-						<span>
-							Nanocoder{' '}
-							{agent?.version ??
-								(runtime?.ok ? runtime.value.version : 'not connected')}
-						</span>
-						<span>desktop {info?.version ?? 'pre-v0.1'}</span>
-					</>
+					<SidebarFooter
+						acp={footerAcp}
+						nanocoderVersion={
+							agent?.version ?? (runtime?.ok ? runtime.value.version : null)
+						}
+						notice={
+							gates[projectId ?? '']?.versionPolicy.status === 'untested'
+								? 'untested'
+								: gates[projectId ?? '']?.versionPolicy.status === 'refused'
+									? 'not supported'
+									: undefined
+						}
+						desktopVersion={info?.version ?? 'pre-v0.1'}
+						runtimeError={
+							runtime && !runtime.ok ? runtime.error.message : undefined
+						}
+						onCheckRuntime={checkRuntime}
+						onOpenRuntime={opener => openDialog('runtime', opener)}
+						onOpenShortcuts={opener => openOverlay('shortcuts', opener)}
+					/>
 				}
 				palette={<PaletteButton />}
 				projectRail={
@@ -592,8 +603,10 @@ export function App() {
 							activeThreadId={workspace.activeThreadId}
 							pending={pending}
 							now={new Date()}
-							renameDisabledReason={renameDisabledReason}
-							deleteHistoryDisabledReason={deleteHistoryDisabledReason}
+							importCount={
+								sessionImports.ready ? sessionImports.sessions.length : null
+							}
+							newThreadShortcut={newShortcut}
 							onNew={onNew}
 							onOpen={id => {
 								if (
@@ -608,13 +621,18 @@ export function App() {
 								setImportFor(null);
 								void controls.open(id);
 							}}
-							onRename={onRename}
-							onArchive={onArchive}
-							onRemove={onRemove}
-							onDeleteHistory={id => {
-								void controls.deleteHistory(id);
-							}}
+							onOpenArchives={opener => openDialog('archives', opener)}
+							onOpenImport={openImportPage}
 						/>
+						{!projectId && (
+							<SidebarRecents
+								projects={projectControls.projects}
+								pending={connecting || projectControls.pending}
+								now={new Date()}
+								onOpen={projectControls.onOpen}
+								onLocate={projectControls.onLocate}
+							/>
+						)}
 					</>
 				}
 				statusBadges={thread && <StatusBadge status={turnStatus} />}

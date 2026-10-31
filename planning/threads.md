@@ -107,14 +107,14 @@ absent terminal and zero emitted events.
 
 ## Selected status glyph accessibility
 
-Design deviation, approved for accessibility and left for the designer:
-selected error `✕` and warning `◐`/`▲` glyphs use the neutral `surface` token
-behind only the glyph. Their error/warning ink, selected `primary-soft` row and
-2px `primary` rule are unchanged. No design token or `DESIGN.md` is edited.
-Rendered checks require at least 4.5:1 in both themes. The remaining selected
-`●`, `○`, `░`, `◌` and `◍` glyphs pass unchanged and get no backing rule.
-Tests reduce motion when sampling stable theme colours rather than sampling
-the permitted 200ms colour transition.
+On the selected row, every status glyph uses neutral `on-surface` ink in both
+themes. The state colour moves to a 1px dash under the glyph: `primary` for
+running, `warning` for waiting and interrupted, `error` for failed, and
+`on-surface-muted` for ready, new, view-only and archived. The selected row keeps
+its `primary-soft` fill and 2px `primary` rule. No design token is edited.
+Rendered checks require the glyph ink to meet 4.5:1 in both themes. Tests reduce
+motion when sampling stable theme colours rather than sampling the permitted
+200ms colour transition.
 
 The rail uses a zero-minimum grid track so long titles truncate inside its
 available width instead of widening the rail and scrolling its state glyphs

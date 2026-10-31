@@ -56,7 +56,7 @@ export async function openFolderFromPalette(
 		);
 		await expect(
 			page
-				.locator('.ui-badge--acp-ready')
+				.locator('.footer-acp--success')
 				.or(page.getByRole('button', {name: 'retry Nanocoder', exact: true}))
 				.first(),
 		).toBeVisible();

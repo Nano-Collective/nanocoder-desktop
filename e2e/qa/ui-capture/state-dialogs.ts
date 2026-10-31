@@ -90,12 +90,13 @@ async function shortcutsFromPalette(page: Page): Promise<void> {
 	).toBeVisible();
 }
 
+// Thread actions open from the header for the selected thread, so select the row first.
 async function threadMenu(page: Page, title: string) {
-	const target = row(page, title);
-	await target.locator('summary').click();
-	const list = target.locator('.thread-action-list');
-	await expect(list).toBeVisible();
-	return target;
+	await row(page, title).locator('.thread-open').click();
+	await expect(
+		page.locator('.thread-row[data-selected="true"] .thread-title'),
+	).toHaveText(title);
+	return headerThreadActions(page);
 }
 
 async function headerThreadActions(page: Page) {
@@ -268,12 +269,12 @@ export const states: CaptureState[] = [
 		stem: 'archive',
 		manifestId: 'archive',
 		fixture: 'extensions, no edits',
-		how: `ready thread "${MAIN}", its ⋯ actions, archive; the confirmation holds focus on cancel`,
+		how: `ready thread "${MAIN}", header thread actions, archive thread; the confirmation holds focus on cancel`,
 		async reach(capture) {
 			const page = await readyThread(capture);
-			const target = await threadMenu(page, MAIN);
-			await target
-				.getByRole('button', {name: `archive: ${MAIN}`, exact: true})
+			const menu = await threadMenu(page, MAIN);
+			await menu
+				.getByRole('button', {name: 'archive thread…', exact: true})
 				.click();
 			const dialog = page.getByRole('dialog', {
 				name: 'archive thread',
@@ -289,7 +290,7 @@ export const states: CaptureState[] = [
 		stem: 'archives',
 		manifestId: 'archives',
 		fixture: 'extensions, no edits',
-		how: `send "earlier export research", new thread "keyboard navigation", new thread "${MAIN}" (each permission allowed), archive the first two from their ⋯ menus and confirm each archive dialog, open the rail's "archived 2" link to show the archived threads dialog with unarchive`,
+		how: `send "earlier export research", new thread "keyboard navigation", new thread "${MAIN}" (each permission allowed), archive the first two from the header thread actions and confirm each archive dialog, open the rail's "archived 2" link to show the archived threads dialog with unarchive`,
 		async reach(capture) {
 			const page = await openProject(capture, 'extensions');
 			await finishedTurn(page, 'earlier export research');
@@ -298,9 +299,9 @@ export const states: CaptureState[] = [
 			await newThread(page);
 			await finishedTurn(page, MAIN);
 			for (const title of ['earlier export research', 'keyboard navigation']) {
-				const target = await threadMenu(page, title);
-				await target
-					.getByRole('button', {name: `archive: ${title}`, exact: true})
+				const menu = await threadMenu(page, title);
+				await menu
+					.getByRole('button', {name: 'archive thread…', exact: true})
 					.click();
 				const confirmation = page.getByRole('dialog', {
 					name: 'archive thread',
@@ -310,7 +311,7 @@ export const states: CaptureState[] = [
 					.getByRole('button', {name: 'archive thread', exact: true})
 					.click();
 				await expect(confirmation).toBeHidden();
-				// Archived rows stay in the rail's collapsed archived group, so check the active groups only.
+				// Archived rows leave the rail for the archived link, so check the active groups only.
 				await expect(
 					page
 						.locator('section.thread-group .thread-row')
@@ -349,13 +350,13 @@ export const states: CaptureState[] = [
 		stem: 'remove-thread',
 		manifestId: 'remove-thread',
 		fixture: 'extensions, no edits',
-		how: `ready thread "${MAIN}", its ⋯ actions, remove from desktop; the confirmation holds focus on cancel`,
+		how: `ready thread "${MAIN}", header thread actions, remove from desktop; the confirmation holds focus on cancel`,
 		async reach(capture) {
 			const page = await readyThread(capture);
-			const target = await threadMenu(page, MAIN);
-			await target
+			const menu = await threadMenu(page, MAIN);
+			await menu
 				.getByRole('button', {
-					name: `remove from desktop: ${MAIN}`,
+					name: 'remove from desktop…',
 					exact: true,
 				})
 				.click();
@@ -373,13 +374,11 @@ export const states: CaptureState[] = [
 		stem: 'rename',
 		manifestId: 'rename',
 		fixture: 'extensions, no edits',
-		how: `ready thread "${MAIN}", ⋯ actions, rename, type "${MAIN}" in the thread title field (not submitted)`,
+		how: `ready thread "${MAIN}", header thread actions, rename, type "${MAIN}" in the thread title field (not submitted)`,
 		async reach(capture) {
 			const page = await readyThread(capture);
-			const target = await threadMenu(page, MAIN);
-			await target
-				.getByRole('button', {name: `rename: ${MAIN}`, exact: true})
-				.click();
+			const menu = await threadMenu(page, MAIN);
+			await menu.getByRole('button', {name: 'rename…', exact: true}).click();
 			const title = page
 				.getByRole('dialog', {name: 'rename thread', exact: true})
 				.getByRole('textbox', {name: 'thread title', exact: true});
