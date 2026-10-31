@@ -216,8 +216,15 @@ test('add project folder calls the existing picker and cancellation preserves fo
 		name: 'command palette',
 		exact: true,
 	});
-	await palette.getByRole('combobox').fill('add project folder');
-	await expect(palette.getByRole('option')).toHaveCount(1);
+	const search = palette.getByRole('combobox');
+	await search.fill('add project folder');
+	await expect(
+		palette.getByRole('option', {name: 'add project folder', exact: true}),
+	).toHaveCount(1);
+	await expect(search).toHaveAttribute(
+		'aria-activedescendant',
+		'palette-option-project-add',
+	);
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('dialog')).toBeHidden();
 	await expect(
