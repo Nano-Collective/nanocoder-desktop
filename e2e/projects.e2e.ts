@@ -136,7 +136,7 @@ test('direct bridge additions refresh empty recents without reload or project ac
 	await expect(
 		recent.getByRole('button', {name: 'open project', exact: true}),
 	).toBeEnabled();
-	await expect(recent.locator('.projects-dialog-meta')).toContainText(root);
+	await expect(recent.locator('.projects-dialog-meta')).toHaveText(root);
 	await expect(recent).not.toContainText('no recent projects');
 	await expect(page.locator('.project-switch-root')).toHaveText(
 		'open a local folder',
@@ -166,9 +166,9 @@ test('direct bridge additions refresh empty recents without reload or project ac
 	await expect(
 		recent.getByRole('button', {name: 'open other', exact: true}),
 	).toBeEnabled();
-	await expect(recent.locator('.projects-dialog-meta')).toContainText([
+	await expect(recent.locator('.projects-dialog-meta')).toHaveText([
 		otherRoot,
-		root,
+		`${root} · selected`,
 	]);
 	await expect(page.locator('.project-switch-root')).toHaveText(root);
 	expect(await call('getUiState', {})).toMatchObject({
@@ -438,8 +438,8 @@ test('missing recent folders explain why they cannot open and offer locate (CHAT
 	await expect(
 		recent.getByRole('button', {name: 'open project', exact: true}),
 	).toHaveCount(0);
-	await expect(recent).toContainText(
-		'folder missing; locate it before opening',
+	await expect(recent.locator('.projects-dialog-meta')).toHaveText(
+		`${root} · folder missing`,
 	);
 	await showProjects();
 	await recent

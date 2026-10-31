@@ -146,9 +146,7 @@ export const states: CaptureState[] = [
 			});
 			await expect(dialog).toBeVisible();
 			const list = dialog.getByRole('region', {name: 'recent projects'});
-			await expect(list).toContainText(
-				'folder missing; locate it before opening',
-			);
+			await expect(list).toContainText('folder missing');
 		},
 	},
 	{

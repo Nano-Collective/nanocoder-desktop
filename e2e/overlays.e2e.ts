@@ -433,7 +433,7 @@ test('palette adds opens and locates projects through the existing project contr
 	await showProjects();
 	await expect(
 		projects().getByRole('region', {name: 'recent projects'}),
-	).toContainText('folder missing; locate it before opening');
+	).toContainText('folder missing');
 	await hideProjects();
 	await page.getByRole('button', {name: 'command palette'}).click();
 	await page
