@@ -175,7 +175,13 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						const element = document.querySelector(selector);
 						if (!element) throw new Error('Missing shell region');
 						const rect = element.getBoundingClientRect();
-						return {x: rect.x, width: rect.width, bottom: rect.bottom};
+						return {
+							x: rect.x,
+							y: rect.y,
+							width: rect.width,
+							height: rect.height,
+							bottom: rect.bottom,
+						};
 					};
 					const padding = (selector: string) => {
 						const element = document.querySelector(selector);
@@ -190,6 +196,9 @@ test('shell geometry and pinned composer follow all three widths without an empt
 						rail: measure('.shell-project-rail'),
 						stream: measure('.shell-stream'),
 						composer: measure('.gate-composer'),
+						header: measure('.shell-title-bar'),
+						breadcrumb: measure('.shell-breadcrumb'),
+						title: measure('.shell-identity h2'),
 						scrollPadding: padding('.shell-stream-scroll'),
 						footerPadding: padding('.shell-conversation-footer'),
 						scrolls: scroll.scrollHeight > scroll.clientHeight,
@@ -203,6 +212,11 @@ test('shell geometry and pinned composer follow all three widths without an empt
 				expect(geometry.composer.bottom).toBe(
 					width <= 840 ? 883 : width <= 1050 ? 882 : 880,
 				);
+				// Reference header 66px (62px at 840), breadcrumb 3.11 (1.11), thread title 19px lower.
+				const crumbTop = width <= 840 ? 1.11 : 3.11;
+				expect(geometry.header.height).toBe(width <= 840 ? 62 : 66);
+				expect(geometry.breadcrumb.y).toBeCloseTo(crumbTop, 1);
+				expect(geometry.title.y).toBeCloseTo(crumbTop + 19, 1);
 				const reading = width <= 840 ? '24px' : width <= 1050 ? '30px' : '40px';
 				expect(geometry.scrollPadding).toEqual([reading, reading]);
 				expect(geometry.footerPadding).toEqual([reading, reading]);

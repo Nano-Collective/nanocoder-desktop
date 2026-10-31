@@ -60,7 +60,7 @@
 	align-items: center;
 	gap: 12px;
 	min-height: 66px;
-	padding: 13px 26px;
+	padding: 0 26px;
 	color: var(--colors-on-surface-muted);
 	font-size: var(--typography-tab-font-size);
 }
@@ -87,6 +87,7 @@
 .shell-identity h2 {
 	min-width: 0;
 	margin: 0;
+	padding-block: 10px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -235,7 +236,6 @@
 	}
 	.shell-title-bar {
 		padding-inline: 18px;
-		padding-block: 11px;
 		min-height: 62px;
 		gap: 8px;
 	}
