@@ -14,7 +14,7 @@ test('main-owned yolo confirmation defaults and Escape both cancel and explain t
 	});
 	t.true(accepted);
 	t.is(shown?.type, 'warning');
-	t.deepEqual(shown?.buttons, ['cancel', 'use yolo']);
+	t.deepEqual(shown?.buttons, ['cancel', 'use yolo this session']);
 	t.is(shown?.defaultId, 0);
 	t.is(shown?.cancelId, 0);
 	t.true(shown?.noLink);

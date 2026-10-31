@@ -27,12 +27,12 @@ test('main consent names its canonical folder and execution surfaces with cancel
 	const result = await confirmProjectTrust({
 		...options,
 		ask: async dialog => {
-			t.is(dialog.title, 'Trust this folder?');
+			t.is(dialog.title, 'trust this project folder?');
 			t.is(dialog.message, options.refusal.summary);
 			t.true(dialog.detail?.includes(options.root));
 			t.true(dialog.detail?.includes('plugins: 0'));
 			t.true(dialog.detail?.includes('MCP servers: 0'));
-			t.deepEqual(dialog.buttons, ['Trust folder', 'Cancel']);
+			t.deepEqual(dialog.buttons, ['trust folder and open', 'cancel']);
 			t.is(dialog.defaultId, 1);
 			t.is(dialog.cancelId, 1);
 			return 1;

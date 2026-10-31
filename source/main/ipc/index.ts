@@ -422,10 +422,10 @@ export function registerIpcHandlers(
 					confirmDeleteHistory: async ({project, thread}) => {
 						const options = {
 							type: 'warning' as const,
-							title: 'Delete chat history?',
-							message: 'Delete this chat history from Nanocoder?',
-							detail: `${thread.title}\n${project.canonicalRoot}\nThis deletes Nanocoder's saved history. Removing a thread from the desktop does not do this.`,
-							buttons: ['Delete chat history', 'Cancel'],
+							title: 'delete Nanocoder chat history?',
+							message: 'delete this chat history from Nanocoder?',
+							detail: `${thread.title} · ${project.displayName}\n${project.canonicalRoot}\n\ndeletes the saved session through Nanocoder after separate native consent. this cannot be undone here. available only when the project is idle and Nanocoder offers session/delete. removing a thread from the desktop does not do this.`,
+							buttons: ['delete chat history', 'cancel'],
 							defaultId: 1,
 							cancelId: 1,
 							noLink: true,
