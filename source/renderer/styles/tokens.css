@@ -34,6 +34,8 @@
 	--colors-heading-light: #0000ee;
 	--colors-diff-add-light: #dfede3;
 	--colors-diff-del-light: #f4e0e7;
+	--colors-logo-tile: #ffffff;
+	--colors-logo-tile-light: #ffffff;
 	--typography-body-md-font-family: "Fira Code", Consolas, Menlo, monospace;
 	--typography-body-md-font-size: 13px;
 	--typography-body-md-font-weight: 400;
@@ -400,4 +402,5 @@
 	--colors-heading: #0000ee;
 	--colors-diff-add: #dfede3;
 	--colors-diff-del: #f4e0e7;
+	--colors-logo-tile: #ffffff;
 }

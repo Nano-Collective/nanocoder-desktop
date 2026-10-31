@@ -37,6 +37,8 @@ colors:
   heading-light: "#0000ee"
   diff-add-light: "#dfede3"
   diff-del-light: "#f4e0e7"
+  logo-tile: "#ffffff"
+  logo-tile-light: "#ffffff"
 typography:
   body-md:
     fontFamily: Fira Code
