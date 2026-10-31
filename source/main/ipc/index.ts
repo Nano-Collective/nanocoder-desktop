@@ -25,6 +25,7 @@ import type {TrustRefusal} from '@/main/nanocoder/trust';
 import {confirmProjectTrust} from '@/main/projects/project-consent';
 import {createProjectService} from '@/main/projects/project-service';
 import {isAllowedOrigin} from '@/main/security';
+import {deleteHistoryDialog} from '@/main/threads/delete-history-consent';
 import {createThreadService} from '@/main/threads/thread-service';
 import {APP_NAME} from '@/shared/app-info';
 import {
@@ -420,16 +421,7 @@ export function registerIpcHandlers(
 					resolveLiveMode: (...args) =>
 						availableControls().hooks.resolveLiveMode(...args),
 					confirmDeleteHistory: async ({project, thread}) => {
-						const options = {
-							type: 'warning' as const,
-							title: 'delete Nanocoder chat history?',
-							message: 'delete this chat history from Nanocoder?',
-							detail: `${thread.title} · ${project.displayName}\n${project.canonicalRoot}\n\ndeletes the saved session through Nanocoder after separate native consent. this cannot be undone here. available only when the project is idle and Nanocoder offers session/delete. removing a thread from the desktop does not do this.`,
-							buttons: ['delete chat history', 'cancel'],
-							defaultId: 1,
-							cancelId: 1,
-							noLink: true,
-						};
+						const options = deleteHistoryDialog({project, thread});
 						const window = BrowserWindow.getFocusedWindow();
 						const {response} = window
 							? await dialog.showMessageBox(window, options)

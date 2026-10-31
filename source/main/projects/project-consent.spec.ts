@@ -30,6 +30,8 @@ test('main consent names its canonical folder and execution surfaces with cancel
 			t.is(dialog.title, 'trust this project folder?');
 			t.is(dialog.message, options.refusal.summary);
 			t.true(dialog.detail?.includes(options.root));
+			t.true(dialog.detail?.includes('canonical root · resolved folder'));
+			t.false(dialog.detail?.includes('exact folder selected'));
 			t.true(dialog.detail?.includes('plugins: 0'));
 			t.true(dialog.detail?.includes('MCP servers: 0'));
 			t.deepEqual(dialog.buttons, ['trust folder and open', 'cancel']);

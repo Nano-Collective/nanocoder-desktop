@@ -28,7 +28,7 @@ export async function confirmProjectTrust(
 			}[refusal.reason],
 			message: refusal.summary,
 			detail: [
-				`canonical root · exact folder selected\n${root}`,
+				`canonical root · resolved folder\n${root}`,
 				summary.details,
 				'trusting this folder allows project-defined code to run on this computer.',
 			].join('\n\n'),

@@ -21,6 +21,11 @@ test('main-owned yolo confirmation defaults and Escape both cancel and explain t
 	t.true(
 		shown?.detail?.includes('no session is created until the first message'),
 	);
+	t.true(
+		shown?.detail?.includes(
+			'Nanocoder runs tools without asking in this live session only.',
+		),
+	);
 	t.true(shown?.detail?.includes('not restored after resume or restart'));
 	t.true(shown?.detail?.includes('project default'));
 	t.true(shown?.detail?.includes('alwaysAllow'));
