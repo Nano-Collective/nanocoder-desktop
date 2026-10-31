@@ -32,13 +32,30 @@ test('shows the app shell, loaded over IPC', async () => {
 });
 
 test('the preload bridge exposes typed methods only', async () => {
-	const keys = await page.evaluate(() =>
-		Object.keys((window as {desktop?: object}).desktop ?? {}),
-	);
+	const {keys, terminalKeys} = await page.evaluate(() => {
+		const desktop = (window as unknown as {desktop: DesktopApi}).desktop;
+		return {
+			keys: Object.keys(desktop),
+			terminalKeys: Object.keys(desktop.terminal),
+		};
+	});
 	expect(keys.sort()).toEqual(
 		[
 			...Object.keys(CHANNELS).filter(key => key !== 'projectEvent'),
 			'onProjectEvent',
+			'terminal',
+		].sort(),
+	);
+	expect(terminalKeys.sort()).toEqual(
+		[
+			'get',
+			'start',
+			'stop',
+			'restart',
+			'resize',
+			'write',
+			'clear',
+			'onEvent',
 		].sort(),
 	);
 	expect(keys).not.toContain('ipcRenderer');
