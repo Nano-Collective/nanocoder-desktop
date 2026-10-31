@@ -5,9 +5,11 @@
 	gap: 12px;
 	min-height: 16px;
 	margin-bottom: 8px;
+	padding: 0 4px;
 }
 
 .composer-hint-row .gate-hint {
+	flex: 1 1 auto;
 	margin: 0;
 	font-size: 10px;
 	line-height: 16px;
@@ -89,10 +91,12 @@
 
 .composer .composer-model {
 	width: 176px;
+	padding: 0;
 }
 
 .composer .composer-mode {
 	width: 116px;
+	padding: 0;
 }
 
 .composer-pill > span {
