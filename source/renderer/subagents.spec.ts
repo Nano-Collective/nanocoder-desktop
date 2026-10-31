@@ -212,10 +212,11 @@ test('SUB-07 replay and SDK child rows are fallback cards without live controls'
 		},
 		{history: true},
 	);
+	const title = ['<script>', 'fixture', '</script>'].join('');
 	const transcript = applyEvent(applyEvent(emptyTranscript, historical), {
 		type: 'subagent',
 		id: 'unlinked-child',
-		title: '<script>fixture</script>',
+		title,
 		state: null,
 	});
 	const html = renderToStaticMarkup(
@@ -231,7 +232,7 @@ test('SUB-07 replay and SDK child rows are fallback cards without live controls'
 	t.true(html.includes('historical outcome not reported'));
 	t.true(html.includes('child details not available'));
 	t.false(html.includes('<button'));
-	t.false(html.includes('<script>'));
+	t.notRegex(html, /<script>/);
 });
 
 test('SUB-04 known interrupted cards keep their outcome when another turn starts', t => {

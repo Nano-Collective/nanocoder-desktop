@@ -35,7 +35,7 @@ test('ACP-18 import list uses labelled native actions and escaped plain metadata
 	t.true(html.includes('dateTime="2026-10-29T12:00:00.000Z"'));
 	t.true(html.includes('import adds a desktop thread only'));
 	t.is((html.match(/<button/g) ?? []).length, 2);
-	t.false(html.includes('<script>'));
+	t.notRegex(html, /<script>/);
 	t.false(html.includes('session/resume'));
 	t.false(html.includes('<input'));
 });
@@ -68,7 +68,7 @@ test('ACP-18 import list retains truthful empty, unknown-activity and escaped fa
 	);
 	const html = render({...props, error: '<script>safe refusal</script>'});
 	t.true(html.includes('&lt;script&gt;safe refusal&lt;/script&gt;'));
-	t.false(html.includes('<script>'));
+	t.notRegex(html, /<script>/);
 });
 
 test('ACP-18 inactive project has no import UI or old session metadata', t => {

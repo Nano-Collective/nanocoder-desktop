@@ -143,9 +143,10 @@ for (const theme of ['dark', 'light'] as const) {
 			const imported = after.rows.find(
 				row => row.nanocoderSessionId === 'discovered-session',
 			);
+			const title = ['<script>', 'saved fixture', '</script>'].join('');
 			expect(imported).toMatchObject({
 				projectId: before.ui.activeProjectId,
-				title: '<script>saved fixture</script>',
+				title,
 				archiveState: 'active',
 				runState: 'ready',
 				mode: 'normal',
