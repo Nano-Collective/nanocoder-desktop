@@ -651,7 +651,7 @@ export function App() {
 					)
 				}
 				composer={
-					thread?.runState === 'view-only' ? (
+					importOpen ? null : thread?.runState === 'view-only' ? (
 						<ViewOnlyFooter />
 					) : (
 						outcome?.status === 'connected' &&

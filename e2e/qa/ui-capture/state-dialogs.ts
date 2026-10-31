@@ -343,7 +343,7 @@ export const states: CaptureState[] = [
 		manifestId: 'delete-history',
 		fixture: 'none',
 		how: 'thread menu, delete chat history',
-		notReachable: `the delete chat history confirmation is a ${NATIVE} (source/main/ipc/index.ts:422 confirmDeleteHistory, copy at lines 425-428, native box at lines 434-436)`,
+		notReachable: `the delete chat history confirmation is a ${NATIVE} (source/main/ipc/index.ts confirmDeleteHistory, copy in source/main/threads/delete-history-consent.ts)`,
 	},
 	{
 		stem: 'remove-thread',
@@ -400,7 +400,7 @@ export const states: CaptureState[] = [
 			const recovery = page.getByRole('region', {name: 'Nanocoder recovery'});
 			await expect(recovery).toContainText('exit code 3', SLOW);
 			await recovery
-				.getByRole('button', {name: 'diagnostics', exact: true})
+				.getByRole('button', {name: 'review diagnostics', exact: true})
 				.click();
 			const review = page.getByRole('dialog', {
 				name: 'review captured diagnostics',

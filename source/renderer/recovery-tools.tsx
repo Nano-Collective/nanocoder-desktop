@@ -14,11 +14,12 @@ interface RecoveryProps {
 
 const FAILED_STATUSES = ['failed', 'untrusted', 'unsupported'];
 
-function TurnStopped({reason}: {reason: string}) {
+function TurnStopped({title, reason}: {title: string; reason: string}) {
 	return (
 		<>
 			<p className="nc-failure-title">
-				<span aria-hidden="true">✕ </span>Nanocoder stopped unexpectedly
+				<span aria-hidden="true">✕ </span>
+				{title}
 			</p>
 			<p>your thread and unsent draft are still here.</p>
 			<p>{reason}</p>
@@ -29,7 +30,7 @@ function TurnStopped({reason}: {reason: string}) {
 export function TurnFailureNotice({reason}: {reason: string}) {
 	return (
 		<Card role="alert" className="nc-recovery nc-failure-notice">
-			<TurnStopped reason={reason} />
+			<TurnStopped title="this turn failed" reason={reason} />
 		</Card>
 	);
 }
@@ -56,7 +57,10 @@ function ProcessRecovery({
 		>
 			{failed && turnFailure ? (
 				<div role="alert" className="nc-turn-stopped">
-					<TurnStopped reason={turnFailure} />
+					<TurnStopped
+						title="Nanocoder stopped unexpectedly"
+						reason={turnFailure}
+					/>
 				</div>
 			) : (
 				<p role="status" className={failed ? 'nc-failure-title' : undefined}>
@@ -97,7 +101,7 @@ function ProcessRecovery({
 					</Button>
 				)}
 				<Button onClick={onDiagnostics} disabled={busy}>
-					diagnostics
+					review diagnostics
 				</Button>
 			</div>
 		</Card>

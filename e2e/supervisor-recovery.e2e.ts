@@ -310,9 +310,10 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 		.getByRole('textbox', {name: 'message', exact: true})
 		.fill('synthetic failed request');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
-	const recovery = page
-		.getByRole('main', {name: 'conversation workspace'})
-		.getByRole('region', {name: 'Nanocoder recovery'});
+	const recovery = page.getByRole('region', {
+		name: 'Nanocoder recovery',
+		exact: true,
+	});
 	await expect(recovery).toContainText('exit code 3');
 	await expect(
 		page.getByRole('textbox', {name: 'message', exact: true}),
@@ -356,6 +357,32 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 	expect(
 		snapshot.lines.filter(line => line === '{"method":"session/prompt"}'),
 	).toHaveLength(1);
+});
+
+test('a failed turn keeps the unsent draft typed while it ran', async () => {
+	await open('die-in-held-turn');
+	const input = page.getByRole('textbox', {name: 'message', exact: true});
+	await input.fill('synthetic failed request');
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	await expect(
+		page
+			.locator('.gate-message-user .stream-plain')
+			.getByText('synthetic failed request', {exact: true}),
+	).toBeVisible();
+	await expect(input).toBeEditable();
+	await input.fill('unsent draft kept through failure');
+	writeFileSync(path.join(root, '.fake-turn-release'), 'go');
+	const recovery = page.getByRole('region', {
+		name: 'Nanocoder recovery',
+		exact: true,
+	});
+	await expect(recovery).toContainText('exit code 3');
+	await expect(recovery).toContainText('Nanocoder stopped unexpectedly');
+	await expect(recovery).toContainText(
+		'your thread and unsent draft are still here.',
+	);
+	await expect(input).toBeDisabled();
+	await expect(input).toHaveValue('unsent draft kept through failure');
 });
 
 test('ordinary reopen preserves the existing conversation when no replay is produced', async () => {

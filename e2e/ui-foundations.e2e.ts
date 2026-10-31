@@ -268,6 +268,7 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		page.getByRole('button', {name: 'runtime details', exact: true}),
 		page.getByRole('button', {name: 'thread actions', exact: true}),
 		page.getByRole('button', {name: 'command palette', exact: true}),
+		page.getByRole('button', {name: 'import saved sessions', exact: true}),
 		page.getByRole('region', {name: 'conversation', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),
 		card.getByRole('button', {name: 'Deny', exact: true}),
