@@ -297,6 +297,7 @@ details[open] > summary .stream-disclosure::before {
 	align-items: center;
 	flex-wrap: wrap;
 	gap: 4px;
+	color: var(--colors-on-surface);
 }
 .gate-message-tool .stream-tool-details {
 	padding-top: 0;
