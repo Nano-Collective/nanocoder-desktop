@@ -3,7 +3,8 @@
 	justify-items: start;
 	gap: 18px;
 	width: min(100%, 610px);
-	margin: 70px auto 20px;
+	/* 48.28px below the header in the reference, less the 20px stream padding */
+	margin: 28.28px auto 20px;
 	padding: 50px 30px;
 	font-size: 12px;
 	line-height: 1.6;
@@ -189,7 +190,7 @@
 }
 @media (max-width: 840px) {
 	.workspace-welcome {
-		margin-top: 40px;
+		margin-top: 45.28px;
 		padding: 35px;
 	}
 }
