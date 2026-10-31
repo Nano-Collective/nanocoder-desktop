@@ -969,6 +969,7 @@ export function createThreadService(
 		}
 	};
 	const markResumeFailure = (request: ThreadRequest, error: unknown) => {
+		const current = getThread(request);
 		const missing =
 			error instanceof NanocoderFailure && error.code === 'NOT_FOUND';
 		const reason = missing
@@ -976,8 +977,16 @@ export function createThreadService(
 			: error instanceof IpcFailure || error instanceof NanocoderFailure
 				? error.message
 				: 'Nanocoder could not resume this thread';
+		// Only `failed` accepts prompts, so a view-only thread keeps its reason.
+		if (current.runState === 'view-only') {
+			saveThread({
+				...current,
+				viewOnlyReason: current.viewOnlyReason ?? reason,
+			});
+			return;
+		}
 		saveThread({
-			...getThread(request),
+			...current,
 			runState: missing ? 'view-only' : 'failed',
 			viewOnlyReason: reason,
 		});
