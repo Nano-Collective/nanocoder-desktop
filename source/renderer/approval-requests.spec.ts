@@ -49,7 +49,9 @@ test('approval markup preserves every offered label and kind with scoped key hin
 	);
 	t.true(markup.includes('Nanocoder · normal mode'));
 	t.true(
-		markup.includes('approval is not a guarantee that the command succeeds.'),
+		markup.includes(
+			'your choice is sent to Nanocoder; nothing is selected by default. approval does not guarantee success.',
+		),
 	);
 	t.true(
 		markup.includes(

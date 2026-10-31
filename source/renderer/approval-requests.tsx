@@ -11,7 +11,7 @@ const QUESTION_TITLE = 'Nanocoder needs a choice';
 const QUESTION_META =
 	'ask_user · ACP supports selectable options only. no free-text answer is invented.';
 const APPROVAL_EFFECT =
-	'your choice is sent to Nanocoder; nothing is selected by default. approval is not a guarantee that the command succeeds.';
+	'your choice is sent to Nanocoder; nothing is selected by default. approval does not guarantee success.';
 const POLICY_NOTE =
 	'"allow always" changes Nanocoder\'s policy, not desktop trust.';
 const NO_OPTIONS = 'Nanocoder offered no options; cancel the turn to continue.';
