@@ -1,7 +1,6 @@
 import {writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {expect, type Page} from '@playwright/test';
-import {createDraftThread} from '../new-thread';
 import {turnEnded} from '../turn-state';
 import type {Capture, CaptureState, FixtureEdit} from './harness';
 
@@ -388,20 +387,28 @@ const drivers: CaptureState[] = [
 		stem: 'new',
 		manifestId: 'new',
 		fixture: READY_FIXTURE,
-		how: 'reach conversation-ready, click "new thread" in the sidebar and keep the draft in the new thread dialog; the new draft thread is selected and its session is created on the first send',
+		how: 'reach conversation-ready, click "new thread" in the sidebar; the new thread dialog stays open with its draft field, "cancel" and "keep as new thread draft" (the session is created on the first send)',
 		fixtureEdits: READY_EDITS,
 		async reach(capture) {
 			await readyConversation(capture);
-			await createDraftThread(
-				capture.page,
-				capture.page
-					.getByRole('region', {name: 'project threads'})
-					.getByRole('button', {name: 'new thread', exact: true}),
-			);
+			await capture.page
+				.getByRole('region', {name: 'project threads'})
+				.getByRole('button', {name: 'new thread', exact: true})
+				.click();
+			const dialog = capture.page.getByRole('dialog', {
+				name: 'new thread',
+				exact: true,
+			});
+			await expect(dialog).toBeVisible();
 			await expect(
-				selectedRow(capture.page).locator('.thread-title'),
-			).toHaveText('new thread');
-			await expect(input(capture.page)).toBeEnabled();
+				dialog.getByRole('heading', {name: 'new thread in tide', exact: true}),
+			).toBeVisible();
+			await expect(
+				dialog.getByRole('button', {
+					name: 'keep as new thread draft',
+					exact: true,
+				}),
+			).toBeVisible();
 		},
 	},
 	{
