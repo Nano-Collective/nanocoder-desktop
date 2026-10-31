@@ -354,6 +354,12 @@ export function App() {
 								: null);
 
 	const turnFailure = turn && !turn.ok && failed ? turn.error.message : null;
+	// The failed turn's row carries the recovery card, below the user message.
+	const recoveryInFailure =
+		!importOpen &&
+		processState?.status !== 'ready' &&
+		turnFailure !== null &&
+		transcript.items.some(item => item.kind === 'failure');
 	const recoveryTools = (
 		<RecoveryTools
 			state={processState}
@@ -606,7 +612,9 @@ export function App() {
 				streamTools={
 					<>
 						<TrustFeedback feedback={projectControls.feedback} />
-						{processState?.status !== 'ready' && recoveryTools}
+						{processState?.status !== 'ready' &&
+							!recoveryInFailure &&
+							recoveryTools}
 						{!thread && !importOpen && (
 							<WelcomePage
 								logoSrc={logoUrl}
@@ -724,7 +732,9 @@ export function App() {
 						key={`${projectId}:${thread.id}`}
 						transcript={transcript}
 						failureNotice={
-							processState?.status === 'ready' && turnFailure ? (
+							recoveryInFailure ? (
+								recoveryTools
+							) : processState?.status === 'ready' && turnFailure ? (
 								<TurnFailureNotice reason={turnFailure} />
 							) : undefined
 						}
