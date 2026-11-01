@@ -167,6 +167,9 @@ These hold in every change:
 
 ## Testing
 
+- Logic and security code (store, supervisor, trust, IPC, permissions, events, transcript) is test first: write one small failing test for the next behaviour from its requirement ID, see it fail for the right reason, write just enough code to pass, then refactor with the tests green.
+- A bug fix starts with a test that shows the bug and fails.
+- Pure layout and styling may be tested after, with e2e tests, screenshots and accessibility checks.
 - Unit tests are AVA `.spec.ts` files beside the code, run in plain Node. Keep logic in modules that do not import Electron, so it can be tested.
 - A security rule needs a test that proves the refusal, not only the happy path.
 - Tests never sleep for a fixed time; they wait for an event.
