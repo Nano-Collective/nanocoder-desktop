@@ -22,6 +22,7 @@ import {
 	RecoveryTools,
 	TurnFailureNotice,
 } from '@/renderer/recovery-tools';
+import {stepRetryFocus} from '@/renderer/retry-focus';
 import {SessionImportList} from '@/renderer/session-import-list';
 import {type FooterAcpState, SidebarFooter} from '@/renderer/sidebar-footer';
 import {SidebarRecents} from '@/renderer/sidebar-recents';
@@ -190,6 +191,7 @@ export function App() {
 				: null);
 	const composerInput = useRef<HTMLTextAreaElement>(null);
 	const retryFocus = useRef(false);
+	const retryScope = useRef<string | null>(null);
 	const retrying = useRef(false);
 	const [overlayOpen, setOverlayOpen] = useState(false);
 	const overlays = useRef<OverlayHandle>(null);
@@ -223,21 +225,40 @@ export function App() {
 			composerInput.current?.focus();
 	}, [sending, cancellation]);
 
+	const scopeKey = `${projectId ?? ''}\n${workspace.activeThreadId ?? ''}`;
 	useEffect(() => {
 		if (!retryFocus.current) return;
 		const composer = composerInput.current;
-		if (
-			!composer ||
-			(!retrying.current && document.activeElement !== document.body)
-		) {
-			retryFocus.current = false;
-			return;
-		}
-		if (document.activeElement === document.body && !composer.disabled) {
-			retryFocus.current = false;
-			composer.focus();
-		}
+		const active = document.activeElement;
+		const step = stepRetryFocus({
+			intent: retryFocus.current,
+			retrying: retrying.current,
+			sameScope: retryScope.current === scopeKey,
+			dialogOpen: document.querySelector('dialog[open]') !== null,
+			composer: !composer
+				? 'missing'
+				: composer.disabled
+					? 'disabled'
+					: 'enabled',
+			active:
+				active === null || active === document.body
+					? 'body'
+					: active === composer
+						? 'composer'
+						: 'other',
+		});
+		retryFocus.current = step.intent;
+		if (step.focus) composer?.focus();
 	});
+
+	useEffect(() => {
+		const endRetryFocus = () => {
+			retryFocus.current = false;
+		};
+		document.addEventListener('pointerdown', endRetryFocus, true);
+		return () =>
+			document.removeEventListener('pointerdown', endRetryFocus, true);
+	}, []);
 
 	useEffect(() => {
 		return window.desktop.onProjectEvent(event => {
@@ -385,6 +406,7 @@ export function App() {
 			turnFailure={processState?.status === 'ready' ? null : turnFailure}
 			onRetry={async id => {
 				retryFocus.current = true;
+				retryScope.current = scopeKey;
 				retrying.current = true;
 				const result = await window.desktop
 					.restartProject({projectId: id})
