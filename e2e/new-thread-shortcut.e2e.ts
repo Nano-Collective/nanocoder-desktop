@@ -66,24 +66,43 @@ test('the new thread shortcut refuses without a project and opens the draft dial
 			page.getByRole('textbox', {name: 'message', exact: true}),
 		).toBeEnabled();
 
+		const rowIds = () =>
+			page
+				.locator('.thread-row[data-thread-id]')
+				.evaluateAll(rows =>
+					rows.map(row => row.getAttribute('data-thread-id') ?? ''),
+				);
+		const addedRow = async (before: string[]) => {
+			await expect.poll(rowIds).toHaveLength(before.length + 1);
+			const added = (await rowIds()).filter(id => !before.includes(id));
+			expect(added).toHaveLength(1);
+			return added[0] ?? '';
+		};
+		const selectedRow = (id: string) =>
+			page.locator(`.thread-row[data-thread-id="${id}"]`);
+		const message = page.getByRole('textbox', {name: 'message', exact: true});
+		const newThreadButton = page
+			.getByRole('region', {name: 'project threads'})
+			.getByRole('button', {name: 'new thread', exact: true});
+		const draft = 'draft for the second new thread';
+
+		await expect.poll(rowIds).toHaveLength(1);
+		await expect(newThreadButton).toBeEnabled();
+		const beforeFirst = await rowIds();
 		await page.keyboard.press(newThreadKey);
 		await expect(dialog).toBeVisible();
 		await dialog
 			.getByRole('button', {name: 'keep as new thread draft', exact: true})
 			.click();
 		await expect(dialog).toBeHidden();
+		const first = await addedRow(beforeFirst);
+		await expect(selectedRow(first)).toHaveAttribute('data-selected', 'true');
 		await expect(
 			page.locator('.thread-row[data-selected="true"] .thread-title'),
 		).toHaveText('new thread');
 
-		const selected = page.locator('.thread-row[data-selected="true"]');
-		const first = await selected.getAttribute('data-thread-id');
-		const draft = 'draft for the second new thread';
-		await expect(
-			page
-				.getByRole('region', {name: 'project threads'})
-				.getByRole('button', {name: 'new thread', exact: true}),
-		).toBeEnabled();
+		await expect(newThreadButton).toBeEnabled();
+		const beforeSecond = await rowIds();
 		await page.keyboard.press(newThreadKey);
 		await expect(dialog).toBeVisible();
 		await dialog.getByRole('textbox').fill(draft);
@@ -91,25 +110,18 @@ test('the new thread shortcut refuses without a project and opens the draft dial
 			.getByRole('button', {name: 'keep as new thread draft', exact: true})
 			.click();
 		await expect(dialog).toBeHidden();
-		await expect
-			.poll(() => selected.getAttribute('data-thread-id'))
-			.not.toBe(first);
-		const second = await selected.getAttribute('data-thread-id');
-		const message = page.getByRole('textbox', {name: 'message', exact: true});
+		const second = await addedRow(beforeSecond);
+		await expect(selectedRow(second)).toHaveAttribute('data-selected', 'true');
 		await expect(message).toHaveValue(draft);
 		await page
 			.locator(`.thread-row[data-thread-id="${first}"] .thread-open`)
 			.click();
-		await expect(
-			page.locator(`.thread-row[data-thread-id="${first}"]`),
-		).toHaveAttribute('data-selected', 'true');
+		await expect(selectedRow(first)).toHaveAttribute('data-selected', 'true');
 		await expect(message).toHaveValue('');
 		await page
 			.locator(`.thread-row[data-thread-id="${second}"] .thread-open`)
 			.click();
-		await expect(
-			page.locator(`.thread-row[data-thread-id="${second}"]`),
-		).toHaveAttribute('data-selected', 'true');
+		await expect(selectedRow(second)).toHaveAttribute('data-selected', 'true');
 		await expect(message).toHaveValue(draft);
 	} finally {
 		await test.step('close the hidden app', () => app.close(), {
