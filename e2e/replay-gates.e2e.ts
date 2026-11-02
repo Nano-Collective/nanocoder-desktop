@@ -13,12 +13,15 @@ import type {DesktopApi} from '@/shared/desktop-api';
 import type {IpcResult, SupervisorState, ThreadReplay} from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {turnEnded} from './qa/turn-state';
 
 const restoring =
 	'restoring saved history; sending and controls will be available when it finishes';
 const failed = 'Nanocoder could not resume the session';
 const missing =
 	"nanocoder can't find this session · it may have been deleted, expired or never saved";
+const missingNotice =
+	'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.';
 interface GateWindow {
 	desktop: DesktopApi;
 	replayRestart?: Promise<IpcResult<SupervisorState>>;
@@ -79,9 +82,7 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 			await expect(input).toBeEnabled();
 			await input.fill('initial replay gate fixture');
 			await input.press('Enter');
-			await expect(
-				page.getByText('turn ended: end_turn', {exact: true}),
-			).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
 			const model = page.getByRole('combobox', {
 				name: /model for every thread in project/,
 			});
@@ -180,7 +181,7 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 					),
 				)
 				.toContain('begin');
-			await expect(page.locator('.gate-composer')).toContainText(restoring);
+			await expect(page.locator('.composer-hint-row')).toContainText(restoring);
 			await expect(input).toBeEnabled();
 			await input.fill('editable memory-only draft');
 			await input.press('Enter');
@@ -242,13 +243,13 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 			if (outcome !== 'complete') {
 				if (outcome === 'missing') {
 					const notice = page.getByRole('region', {name: 'view-only thread'});
-					await expect(notice).toContainText(missing);
+					await expect(notice).toContainText(missingNotice);
 					await expect(input).toHaveCount(0);
 					await expect(send).toHaveCount(0);
 					await expect(mode).toHaveCount(0);
 					await expect(
 						notice.getByRole('button', {
-							name: 'start a new thread in this project',
+							name: '＋ new thread in project',
 							exact: true,
 						}),
 					).toBeEnabled();
@@ -259,7 +260,9 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 						}),
 					).toBeEnabled();
 				} else {
-					await expect(page.locator('.gate-composer')).toContainText(failed);
+					await expect(page.locator('.composer-hint-row')).toContainText(
+						failed,
+					);
 					await expect(input).toBeEnabled();
 					await input.fill('draft after replay failure');
 					await input.press('Enter');
@@ -410,9 +413,7 @@ for (const outcome of ['complete', 'fail', 'missing'] as const) {
 			await test.step('send the retained draft only after explicit click', async () => {
 				await send.click();
 				await expect(input).toHaveValue('');
-				await expect(
-					page.getByText('turn ended: end_turn', {exact: true}),
-				).toBeVisible();
+				await expect(turnEnded(page)).toBeVisible();
 			});
 		} finally {
 			await test.step('settle and close the owned Electron process', () =>

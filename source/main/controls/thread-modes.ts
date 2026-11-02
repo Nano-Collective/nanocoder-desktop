@@ -7,6 +7,7 @@ import type {
 	createProjectOperations,
 	ProjectOperationLease,
 } from '@/main/threads/project-operations';
+import type {ThreadPrepareReason} from '@/main/threads/thread-service';
 import type {
 	NanocoderMode,
 	ProjectInfo,
@@ -65,6 +66,7 @@ export function createThreadModes(options: ThreadModeOptions) {
 	const live = new Map<string, LiveMode>();
 	const dropped = new Map<string, string>();
 	let disposed = false;
+	const explicitOpens = new WeakSet<ProjectOperationLease>();
 	const project = (projectId: string) => {
 		if (disposed)
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'Mode controls stopped');
@@ -79,8 +81,11 @@ export function createThreadModes(options: ThreadModeOptions) {
 			throw new IpcFailure('NOT_FOUND', 'Thread not found');
 		return row;
 	};
-	const mutable = (row: ThreadInfo) => {
-		if (row.archiveState !== 'active' || row.runState === 'view-only')
+	const mutable = (row: ThreadInfo, resuming = false) => {
+		if (
+			row.archiveState !== 'active' ||
+			(row.runState === 'view-only' && !resuming)
+		)
 			throw new IpcFailure('DENIED', 'This thread cannot change mode');
 	};
 	const forgetPending = (key: string) => {
@@ -190,7 +195,7 @@ export function createThreadModes(options: ThreadModeOptions) {
 		operations.bindConnection(lease, connection);
 		operations.bindSession(lease, session.id);
 		const row = thread(lease.projectId, context.thread.id);
-		mutable(row);
+		mutable(row, explicitOpens.has(lease));
 		if (
 			!scoped(project(lease.projectId), lease.canonicalRoot) ||
 			row.nanocoderSessionId !== session.id ||
@@ -226,13 +231,16 @@ export function createThreadModes(options: ThreadModeOptions) {
 	const validateBeforePrepare = (
 		lease: ProjectOperationLease,
 		input: ThreadInfo,
+		reason: ThreadPrepareReason = 'prompt',
 	) => {
 		operations.assertCurrent(lease);
 		if (lease.projectId !== input.projectId)
 			throw new IpcFailure('DENIED', staleChoice);
 		operations.bindThread(lease, input.id);
 		const row = thread(input.projectId, input.id);
-		mutable(row);
+		// CHAT-09: only an explicit open may resume a view-only thread.
+		if (reason === 'open') explicitOpens.add(lease);
+		mutable(row, reason === 'open');
 		const key = keyFor(input.projectId, input.id);
 		if (live.get(key)?.epoch !== lease.epoch) live.delete(key);
 		const choice = pending.get(key);

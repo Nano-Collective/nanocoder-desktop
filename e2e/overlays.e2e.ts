@@ -13,7 +13,7 @@ import {expect, test} from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
-import {visibleTextContrast} from './qa/ui-contrast';
+import {contrast, visibleTextContrast} from './qa/ui-contrast';
 
 const work = realpathSync.native(
 	mkdtempSync(path.join(tmpdir(), 'nd-overlays-')),
@@ -111,12 +111,30 @@ test('no results remain keyboard safe', async () => {
 	});
 	const input = palette.getByRole('combobox');
 	await input.fill('no-matching-action');
-	await expect(palette.getByText('no matching commands')).toBeVisible();
+	await expect(
+		palette.getByText('no commands found. try a different action name.'),
+	).toBeVisible();
 	await expect(input).toHaveAttribute('aria-expanded', 'false');
 	await expect(palette.getByRole('listbox')).toHaveCount(0);
 	await page.keyboard.press('ArrowDown');
 	await page.keyboard.press('Enter');
 	await expect(palette).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(palette).toBeHidden();
+});
+
+test('the command palette shell keeps the reference height cap at the default window size', async () => {
+	const page = await app.firstWindow();
+	await page.keyboard.press(paletteKey);
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	await expect(palette.getByRole('combobox')).toBeFocused();
+	await expect(palette.locator('.dialog-shell')).toHaveCSS(
+		'max-height',
+		'517px',
+	);
 	await page.keyboard.press('Escape');
 	await expect(palette).toBeHidden();
 });
@@ -179,6 +197,7 @@ test('disabled actions keep a visible reason and cannot run with Enter or pointe
 test('overlays match both themes at every width and retain visible keyboard focus', async () => {
 	const page = await app.firstWindow();
 	await page.emulateMedia({reducedMotion: 'reduce'});
+	await expect(page.locator('.overlay-toast')).toHaveCount(0);
 	for (const theme of ['dark', 'light']) {
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
@@ -197,9 +216,9 @@ test('overlays match both themes at every width and retain visible keyboard focu
 			expect(
 				Math.abs((bounds?.y ?? 0) + (bounds?.height ?? 0) / 2 - 450),
 			).toBeLessThan(1);
-			await expect(palette).toHaveCSS(
+			await expect(palette.locator('.dialog-shell')).toHaveCSS(
 				'box-shadow',
-				'rgba(0, 0, 0, 0.35) 0px 18px 48px 0px',
+				'none',
 			);
 			await expect(
 				page.getByRole('combobox', {name: 'find a command', exact: true}),
@@ -217,32 +236,124 @@ test('overlays match both themes at every width and retain visible keyboard focu
 				exact: true,
 			});
 			await expect(sheet).toHaveCSS('width', '520px');
-			await expect(sheet.getByRole('button')).toBeFocused();
+			await expect(
+				sheet.getByRole('button', {name: 'close keyboard shortcuts'}),
+			).toBeFocused();
 			expect(await visibleTextContrast(page, theme)).toEqual([]);
 			await page.keyboard.press('Escape');
 		}
 	}
 });
 
-test('toast is polite, never focuses, honours reduced motion and automatically disappears', async () => {
+test('contrast sampler excludes zero-opacity text but still catches visible bad colours', async () => {
+	const page = await app.firstWindow();
+	await expect(page.locator('.overlay-toast')).toHaveCount(0);
+	await page.evaluate(() => {
+		document.documentElement.dataset.theme = 'light';
+		const fixture = document.createElement('div');
+		fixture.id = 'contrast-visibility-fixture';
+		fixture.style.backgroundColor = 'white';
+		fixture.style.color = 'white';
+		for (const [text, opacity] of [
+			['zero-opacity text', '0'],
+			['opaque low-contrast control', '1'],
+			['partly transparent low-contrast control', '0.55'],
+		]) {
+			const element = document.createElement('span');
+			element.textContent = text;
+			element.style.opacity = opacity;
+			fixture.append(element);
+		}
+		const ancestor = document.createElement('div');
+		ancestor.style.opacity = '0';
+		const child = document.createElement('span');
+		child.textContent = 'text inside a zero-opacity ancestor';
+		ancestor.append(child);
+		fixture.append(ancestor);
+		const readable = document.createElement('span');
+		readable.textContent = 'readable control';
+		readable.style.color = 'black';
+		fixture.append(readable);
+		document.body.append(fixture);
+	});
+	try {
+		await expect(page.locator('#contrast-visibility-fixture span')).toHaveCount(
+			5,
+		);
+		expect(
+			(await visibleTextContrast(page, 'light')).map(sample => sample.text),
+		).toEqual([
+			'opaque low-contrast control',
+			'partly transparent low-contrast control',
+		]);
+	} finally {
+		await page.evaluate(() =>
+			document.getElementById('contrast-visibility-fixture')?.remove(),
+		);
+	}
+});
+
+test('settled toast contrast passes in both themes and active hosts without focusing or overstaying', async () => {
 	const page = await app.firstWindow();
 	const trigger = page.getByRole('button', {name: 'command palette'});
 	await page.emulateMedia({reducedMotion: 'reduce'});
-	await trigger.click();
-	await page
-		.getByRole('combobox', {name: 'find a command', exact: true})
-		.fill('switch to dark');
-	await page.keyboard.press('Enter');
 	const region = page.getByRole('status', {name: 'notification'});
 	const toast = page.locator('.overlay-toast');
-	await expect(region).toHaveAttribute('aria-live', 'polite');
-	await expect(region).toHaveAttribute('aria-atomic', 'true');
-	await expect(toast).toBeVisible();
-	await expect(toast).toHaveCSS('transition-duration', '0s');
-	await expect(toast).toHaveCSS('border-left-width', '1px');
-	await expect(trigger).toBeFocused();
 	await expect(toast).toHaveCount(0);
-	await expect(trigger).toBeFocused();
+	for (const theme of ['light', 'dark']) {
+		await trigger.click();
+		await page
+			.getByRole('combobox', {name: 'find a command', exact: true})
+			.fill(`switch to ${theme}`);
+		await page.keyboard.press('Enter');
+		await expect(toast).toContainText(`switched to ${theme} theme`);
+		await expect(trigger).toBeFocused();
+		for (const host of ['closed', 'palette']) {
+			if (host === 'palette') await trigger.click();
+			const focused =
+				host === 'closed'
+					? trigger
+					: page.getByRole('combobox', {name: 'find a command', exact: true});
+			await expect(region).toHaveAttribute('aria-live', 'polite');
+			await expect(region).toHaveAttribute('aria-atomic', 'true');
+			await expect(toast).toHaveAttribute('data-exiting', 'false');
+			await expect(toast).toHaveCSS('opacity', '1');
+			await expect(toast).toHaveCSS('transition-duration', '0s');
+			await expect(toast).toHaveCSS('border-left-width', '1px');
+			expect(
+				await toast.evaluate(element =>
+					element.closest('dialog:modal')?.getAttribute('aria-label'),
+				),
+			).toBe(host === 'palette' ? 'command palette' : undefined);
+			const rendered = await toast.evaluate(element => {
+				const style = getComputedStyle(element);
+				const rgb = (color: string) =>
+					color
+						.match(/[\d.]+/g)
+						?.slice(0, 3)
+						.map(Number) as [number, number, number];
+				return {
+					foreground: rgb(style.color),
+					background: rgb(style.backgroundColor),
+					opacity: style.opacity,
+					exiting: element.getAttribute('data-exiting'),
+				};
+			});
+			expect(rendered.opacity).toBe('1');
+			expect(rendered.exiting).toBe('false');
+			expect(
+				contrast(rendered.foreground, rendered.background),
+			).toBeGreaterThanOrEqual(4.5);
+			expect(await visibleTextContrast(page, theme)).toEqual([]);
+			await expect(focused).toBeFocused();
+		}
+		await expect(toast).toHaveCount(0);
+		await expect(
+			page.getByRole('combobox', {name: 'find a command', exact: true}),
+		).toBeFocused();
+		await page.keyboard.press('Escape');
+		await expect(trigger).toBeFocused();
+	}
 	const setting = await page.evaluate(() =>
 		(window as unknown as {desktop: DesktopApi}).desktop.getSettings({}),
 	);
@@ -251,7 +362,7 @@ test('toast is polite, never focuses, honours reduced motion and automatically d
 	await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
 
-test('palette adds opens and locates projects through the existing project controls', async () => {
+test('projects dialog adds and the palette opens and locates projects through the existing project controls', async () => {
 	const page = await app.firstWindow();
 	const folder = path.join(work, 'palette-project');
 	const moved = path.join(work, 'palette-project-moved');
@@ -278,38 +389,45 @@ test('palette adds opens and locates projects through the existing project contr
 		).toContainText(label);
 		await page.keyboard.press('Enter');
 	};
+	const projects = () => page.getByRole('dialog', {name: 'your projects'});
 	const showProjects = async () => {
-		const switcher = page.locator('.project-switcher');
-		await expect(
-			switcher.locator('.recent-projects-heading button'),
-		).toBeEnabled();
-		if (
-			!(await switcher.evaluate(
-				element => (element as HTMLDetailsElement).open,
-			))
-		)
-			await switcher.locator('summary').click();
+		if (!(await projects().isVisible()))
+			await page
+				.getByRole('button', {name: 'switch project', exact: true})
+				.click();
+		await expect(projects()).toBeVisible();
+	};
+	const hideProjects = async () => {
+		await page.keyboard.press('Escape');
+		await expect(projects()).toBeHidden();
 	};
 	await picker(folder);
-	await command('add project folder');
+	await showProjects();
+	await projects()
+		.getByRole('button', {name: /add project folder/})
+		.click();
+	// Adding closes the projects dialog first, so it is reopened to read the list.
+	await expect(projects()).toBeHidden();
 	await showProjects();
 	await expect(
-		page.getByRole('region', {name: 'recent projects'}),
+		projects().getByRole('region', {name: 'recent projects'}),
 	).toContainText(folder);
+	await expect(
+		projects().getByRole('button', {name: /add project folder/}),
+	).toBeEnabled();
+	await hideProjects();
 	await expect(
 		page.getByRole('status', {name: 'project trust feedback'}),
 	).toContainText('project ready: palette-project');
-	await expect(
-		page.getByRole('button', {name: 'add project folder', exact: true}),
-	).toBeEnabled();
 	await command('open project palette-project');
 	await showProjects();
 	await expect(
+		projects().getByRole('button', {name: /add project folder/}),
+	).toBeEnabled();
+	await hideProjects();
+	await expect(
 		page.getByRole('status', {name: 'project trust feedback'}),
 	).toContainText('project ready: palette-project');
-	await expect(
-		page.getByRole('button', {name: 'add project folder', exact: true}),
-	).toBeEnabled();
 	await expect(page.getByRole('dialog')).toBeHidden();
 	if (process.platform === 'win32') {
 		const projectId = await page.evaluate(async root => {
@@ -337,13 +455,11 @@ test('palette adds opens and locates projects through the existing project contr
 	}
 	renameSync(folder, moved);
 	await page.reload();
-	await expect(
-		page.locator('.project-switcher .recent-project-description'),
-	).toContainText('folder missing');
 	await showProjects();
 	await expect(
-		page.getByRole('region', {name: 'recent projects'}),
+		projects().getByRole('region', {name: 'recent projects'}),
 	).toContainText('folder missing');
+	await hideProjects();
 	await page.getByRole('button', {name: 'command palette'}).click();
 	await page
 		.getByRole('combobox', {name: 'find a command', exact: true})
@@ -359,19 +475,20 @@ test('palette adds opens and locates projects through the existing project contr
 			.getByRole('dialog', {name: 'command palette', exact: true})
 			.getByRole('option')
 			.first(),
-	).toContainText('folder missing; locate it before opening');
+	).toContainText('folder missing');
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('dialog')).toBeVisible();
 	await page.keyboard.press('Escape');
 	await picker(moved);
 	await command('locate project palette-project');
-	await showProjects();
 	await expect(
 		page.getByRole('status', {name: 'project trust feedback'}),
 	).toContainText('project ready: palette-project-moved');
+	await showProjects();
 	await expect(
-		page.getByRole('region', {name: 'recent projects'}),
+		projects().getByRole('region', {name: 'recent projects'}),
 	).toContainText(moved);
+	await hideProjects();
 });
 
 test('keyboard selection stays visible when recent projects overflow the palette', async () => {
@@ -413,6 +530,29 @@ test('keyboard selection stays visible when recent projects overflow the palette
 	await expect(
 		page.getByRole('combobox', {name: 'find a command', exact: true}),
 	).toBeInViewport({ratio: 1});
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	const listbox = palette.getByRole('listbox');
+	expect(
+		await listbox.evaluate(
+			element => element.scrollHeight > element.clientHeight,
+		),
+	).toBe(true);
+	const list = await listbox.boundingBox();
+	const row = await page
+		.getByRole('option', {name: /keyboard shortcuts/})
+		.boundingBox();
+	expect(list).not.toBeNull();
+	expect(row).not.toBeNull();
+	expect(row?.y ?? 0).toBeGreaterThanOrEqual(list?.y ?? 0);
+	// One pixel allows for subpixel scroll alignment at the list's bottom edge.
+	expect((row?.y ?? 0) + (row?.height ?? 0)).toBeLessThanOrEqual(
+		(list?.y ?? 0) + (list?.height ?? 0) + 1,
+	);
+	const shell = await palette.locator('.dialog-shell').boundingBox();
+	expect(shell?.height ?? 0).toBeLessThanOrEqual(517);
 	await page.keyboard.press('Escape');
 });
 
@@ -445,6 +585,7 @@ test('composing Escape cancels neither the palette nor its search focus', async 
 
 test('Ctrl+K opens the palette on non-Mac platforms', async () => {
 	const page = await app.firstWindow();
+	const platform = await page.evaluate(() => navigator.platform);
 	await page.addInitScript(() => {
 		Object.defineProperty(navigator, 'platform', {
 			value: 'Linux x86_64',
@@ -452,12 +593,23 @@ test('Ctrl+K opens the palette on non-Mac platforms', async () => {
 		});
 	});
 	await page.reload();
-	await page.getByRole('button', {name: 'command palette'}).focus();
-	await page.keyboard.press('Control+k');
-	await expect(
-		page.getByRole('dialog', {name: 'command palette', exact: true}),
-	).toBeVisible();
-	await page.keyboard.press('Escape');
+	try {
+		await page.getByRole('button', {name: 'command palette'}).focus();
+		await page.keyboard.press('Control+k');
+		await expect(
+			page.getByRole('dialog', {name: 'command palette', exact: true}),
+		).toBeVisible();
+		await page.keyboard.press('Escape');
+	} finally {
+		// Init scripts persist across reloads, so restore the real platform for later tests.
+		await page.addInitScript((value: string) => {
+			Object.defineProperty(navigator, 'platform', {
+				value,
+				configurable: true,
+			});
+		}, platform);
+		await page.reload();
+	}
 });
 
 test('pointer and keyboard keep exactly one palette result active without taking search focus', async () => {

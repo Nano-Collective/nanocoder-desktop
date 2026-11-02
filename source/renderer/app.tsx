@@ -4,12 +4,28 @@ import {ApprovalRequests} from '@/renderer/approval-requests';
 import logoUrl from '@/renderer/assets/nano-collective-avatar.png';
 import {Composer} from '@/renderer/composer';
 import {ConversationStream} from '@/renderer/conversation-stream';
-import type {FocusTarget} from '@/renderer/overlay-model';
-import {OverlayProvider, PaletteButton} from '@/renderer/overlays';
+import {
+	commandModifier,
+	notifyImported,
+	type OverlayRequest,
+	type WorkspaceDialog,
+} from '@/renderer/overlay-model';
+import {
+	type OverlayHandle,
+	OverlayProvider,
+	PaletteButton,
+} from '@/renderer/overlays';
 import {projectPalette} from '@/renderer/project-palette';
-import {RecentProjects} from '@/renderer/recent-projects';
-import {RecoveryTools} from '@/renderer/recovery-tools';
+import {ProjectSwitch} from '@/renderer/recent-projects';
+import {
+	FAILED_STATUSES,
+	RecoveryTools,
+	TurnFailureNotice,
+} from '@/renderer/recovery-tools';
+import {stepRetryFocus} from '@/renderer/retry-focus';
 import {SessionImportList} from '@/renderer/session-import-list';
+import {type FooterAcpState, SidebarFooter} from '@/renderer/sidebar-footer';
+import {SidebarRecents} from '@/renderer/sidebar-recents';
 import {
 	acpBadge,
 	observeSupervisor,
@@ -17,16 +33,26 @@ import {
 } from '@/renderer/supervisor-state';
 import {TerminalPanel} from '@/renderer/terminal-panel';
 import {threadComposerState} from '@/renderer/thread-composer-state';
-import {threadPalette} from '@/renderer/thread-palette';
+import {type ThreadDialogData, ThreadDialogs} from '@/renderer/thread-dialogs';
+import {importPalette, threadPalette} from '@/renderer/thread-palette';
 import {ThreadRail} from '@/renderer/thread-rail';
-import {ThreadRecoveryNotice} from '@/renderer/thread-recovery-notice';
+import {
+	ThreadRecoveryNotice,
+	ViewOnlyFooter,
+} from '@/renderer/thread-recovery-notice';
 import {TrustFeedback} from '@/renderer/trust-feedback';
-import {Button, Card, Divider, StatusBadge} from '@/renderer/ui';
+import {Button, Card, StatusBadge} from '@/renderer/ui';
+import {useDiagnosticReview} from '@/renderer/use-diagnostic-review';
 import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
 import {useSessionImports} from '@/renderer/use-session-imports';
 import {useTerminal} from '@/renderer/use-terminal';
 import {useThreads} from '@/renderer/use-threads';
+import {WelcomePage} from '@/renderer/welcome-page';
+import {
+	WorkspaceDialogs,
+	type WorkspaceDialogsProps,
+} from '@/renderer/workspace-dialogs';
 import {CONFIG_UNCERTAINTY_REASON} from '@/shared/control-reasons';
 import type {
 	AppInfo,
@@ -35,66 +61,15 @@ import type {
 	ConnectResult,
 	IpcResult,
 	NanocoderRuntime,
-	ThreadInfo,
 } from '@/shared/ipc';
 import {REPLAY_FAILURE_REASON, REPLAY_REASON} from '@/shared/thread-replay';
 
-function FeatureDetails({gates}: {gates: CapabilityGates}) {
-	return (
-		<section aria-label="Nanocoder features">
-			{gates.versionPolicy.reason && (
-				<p role="status">{gates.versionPolicy.reason}</p>
-			)}
-			<dl>
-				{Object.entries(gates.features).map(([name, gate]) => (
-					<div key={name}>
-						<dt>{name}</dt>
-						<dd>
-							{gate.enabled ? 'available' : `unavailable: ${gate.reason}`}
-						</dd>
-					</div>
-				))}
-			</dl>
-		</section>
-	);
-}
-
-function AgentDetails({
-	agent,
-	thread,
-}: {
-	agent: ConnectedAgent;
-	thread: ThreadInfo | null;
-}) {
-	return (
-		<Card aria-label="connected agent">
-			<p>
-				connected to {agent.name ?? 'an unnamed agent'}{' '}
-				{agent.version ?? '(no version)'} over ACP protocol version{' '}
-				{agent.protocolVersion} in {agent.root}
-			</p>
-			{thread?.nanocoderSessionId && (
-				<p>
-					session {thread.nanocoderSessionId} in {thread.mode} mode
-				</p>
-			)}
-			<Divider soft />
-			<dl className="gate-capabilities">
-				{Object.entries({
-					'resume sessions': agent.capabilities.sessions.resume,
-					'close sessions': agent.capabilities.sessions.close,
-					'list sessions': agent.capabilities.sessions.list,
-					'delete sessions': agent.capabilities.sessions.delete,
-					'load sessions': agent.capabilities.loadSession,
-				}).map(([name, enabled]) => (
-					<div key={name}>
-						<dt>{name}</dt>
-						<dd>{enabled ? 'yes' : 'no'}</dd>
-					</div>
-				))}
-			</dl>
-		</Card>
-	);
+// A dialog only needs the current element; the opener is kept across replacements.
+function focusedElement(): HTMLElement | null {
+	const active = document.activeElement;
+	return active instanceof HTMLElement && active !== document.body
+		? active
+		: null;
 }
 
 export function App() {
@@ -127,6 +102,10 @@ export function App() {
 			processState.gates?.features.list.enabled === true,
 		workspace.threads,
 	);
+	const [importFor, setImportFor] = useState<string | null>(null);
+	const importOpen =
+		sessionImports.ready && importFor !== null && importFor === projectId;
+	const [importFocus, setImportFocus] = useState(0);
 	const thread =
 		workspace.threads.find(row => row.id === workspace.activeThreadId) ?? null;
 	const {transcript, draft, turn, cancellation} = conversation;
@@ -169,10 +148,15 @@ export function App() {
 		pending: workspace.loading || workspace.pending,
 	});
 	const editable = composerState.editable;
+	const centredComposer =
+		composerState.visible &&
+		activeReplay === undefined &&
+		transcript.items.length === 0 &&
+		!sending;
 	const rootControlReason =
 		replayReason ??
 		(rootBusy
-			? 'stop the project turn before changing controls'
+			? 'model + mode locked until the project turn stops'
 			: !accepting
 				? 'Nanocoder is not ready'
 				: workspace.loading || workspace.pending
@@ -192,42 +176,49 @@ export function App() {
 		thread?.runState === 'failed' ||
 		(turn !== null && !turn.ok && thread?.runState !== 'ready');
 	const processBadge = acpBadge(supervisors, selected?.root ?? '');
+	const turnStatus = transcript.permissions.length
+		? 'approval'
+		: sending
+			? 'running'
+			: failed || (opened && !opened.ok)
+				? 'failed'
+				: thread?.runState === 'interrupted'
+					? 'interrupted'
+					: thread?.runState === 'view-only'
+						? 'view-only'
+						: 'ready';
+	const footerAcp: FooterAcpState =
+		processBadge ??
+		(processState?.status === 'starting'
+			? {status: 'acp-starting'}
+			: processState?.status === 'failed'
+				? {status: 'acp-exited'}
+				: null);
 	const composerInput = useRef<HTMLTextAreaElement>(null);
-	const [renaming, setRenaming] = useState<{
-		projectId: string;
-		threadId: string;
-		title: string;
-	} | null>(null);
-	const renameDialog = useRef<HTMLDialogElement>(null);
-	const renameInput = useRef<HTMLInputElement>(null);
-	const renameReturn = useRef<HTMLElement | null>(null);
-	const renameId = renaming?.threadId;
-
+	const retryFocus = useRef(false);
+	const retryScope = useRef<string | null>(null);
+	const retrying = useRef(false);
+	const [overlayOpen, setOverlayOpen] = useState(false);
+	const overlays = useRef<OverlayHandle>(null);
+	const review = useDiagnosticReview(projectId, {
+		capture: id => window.desktop.getDiagnostics({projectId: id}),
+		exportSnapshot: request => window.desktop.exportDiagnostics(request),
+	});
+	// The shared overlay keeps the first opener as the return target across replacements.
+	const openDialog = (kind: WorkspaceDialog, opener = focusedElement()) =>
+		overlays.current?.open(kind, opener);
+	const captureDiagnostics = () => {
+		const opener = focusedElement();
+		void review.capture().then(captured => {
+			if (captured) openDialog('diagnostics', opener);
+		});
+	};
 	useEffect(() => {
-		if (!renameId) return;
-		const dialog = renameDialog.current;
-		dialog?.showModal();
-		renameInput.current?.focus();
-		return () => {
-			const restore =
-				document.activeElement === document.body ||
-				!!dialog?.contains(document.activeElement);
-			dialog?.close();
-			if (!restore || document.querySelector('dialog[open]')) return;
-			const target = renameReturn.current;
-			renameReturn.current = null;
-			if (
-				target?.isConnected &&
-				!target.matches(':disabled') &&
-				target.checkVisibility()
-			)
-				target.focus();
-			else
-				document
-					.querySelector<HTMLButtonElement>('[aria-label="command palette"]')
-					?.focus();
-		};
-	}, [renameId]);
+		if (!review.snapshot) overlays.current?.closeIf('diagnostics');
+	}, [review.snapshot]);
+
+	const openOverlay = (request: OverlayRequest, opener?: HTMLElement | null) =>
+		overlays.current?.open(request, opener);
 
 	useEffect(() => {
 		if (
@@ -239,6 +230,41 @@ export function App() {
 			composerInput.current?.focus();
 	}, [sending, cancellation]);
 
+	const scopeKey = `${projectId ?? ''}\n${workspace.activeThreadId ?? ''}`;
+	useEffect(() => {
+		if (!retryFocus.current) return;
+		const composer = composerInput.current;
+		const active = document.activeElement;
+		const step = stepRetryFocus({
+			intent: retryFocus.current,
+			retrying: retrying.current,
+			sameScope: retryScope.current === scopeKey,
+			dialogOpen: document.querySelector('dialog[open]') !== null,
+			composer: !composer
+				? 'missing'
+				: composer.disabled
+					? 'disabled'
+					: 'enabled',
+			active:
+				active === null || active === document.body
+					? 'body'
+					: active === composer
+						? 'composer'
+						: 'other',
+		});
+		retryFocus.current = step.intent;
+		if (step.focus) composer?.focus();
+	});
+
+	useEffect(() => {
+		const endRetryFocus = () => {
+			retryFocus.current = false;
+		};
+		document.addEventListener('pointerdown', endRetryFocus, true);
+		return () =>
+			document.removeEventListener('pointerdown', endRetryFocus, true);
+	}, []);
+
 	useEffect(() => {
 		return window.desktop.onProjectEvent(event => {
 			const previous = supervisorIndex.current;
@@ -247,10 +273,6 @@ export function App() {
 			supervisorIndex.current = next;
 			setSupervisors(next);
 			if (event.type === 'project') {
-				if (selectedProject.current !== event.projectId) {
-					setOpened(null);
-					setRenaming(null);
-				}
 				selectedProject.current = event.projectId;
 				setAttemptedProjectId(event.projectId);
 			} else if (event.type === 'project-removed') {
@@ -258,7 +280,6 @@ export function App() {
 					selectedProject.current = null;
 					setAttemptedProjectId(null);
 					setOpened(null);
-					setRenaming(null);
 				}
 				void projectControls.refresh();
 			} else if (event.type === 'supervisor') {
@@ -287,6 +308,7 @@ export function App() {
 	}, [checkRuntime]);
 	const connect = async () => {
 		setConnecting(true);
+		setOpened(null);
 		try {
 			const result = await window.desktop.connectNanocoder();
 			if (!result.ok || result.value.status !== 'cancelled') setOpened(result);
@@ -309,26 +331,34 @@ export function App() {
 	const cancel = async () => {
 		if (thread) await controls.cancel(thread.id);
 	};
-	const rename = (threadId: string, originalFocus?: FocusTarget) => {
-		const row = workspace.threads.find(row => row.id === threadId);
-		if (row && projectId) {
-			const active = document.activeElement;
-			renameReturn.current =
-				originalFocus instanceof HTMLElement
-					? originalFocus
-					: active instanceof HTMLElement &&
-							active !== document.body &&
-							!active.closest('dialog')
-						? active
-						: null;
-			setRenaming({projectId, threadId, title: row.title});
-		}
-	};
+	const runningThreadId =
+		workspace.promptingThreadId ??
+		workspace.cancellingThreadIds[0] ??
+		workspace.threads.find(
+			row =>
+				row.nanocoderSessionId !== null &&
+				row.nanocoderSessionId === processState?.activeThreadId,
+		)?.id ??
+		null;
+	const newShortcut = `${commandModifier(navigator.platform)}N`;
 	const onNew = () => {
-		void controls.create();
+		setImportFor(null);
+		openOverlay({kind: 'new-thread'});
 	};
-	const onArchive = (id: string, archived: boolean) => {
-		void controls.archive(id, archived);
+	const onRename = (threadId: string) =>
+		openOverlay({kind: 'rename', threadId});
+	const onArchive = (threadId: string, archived: boolean) => {
+		if (archived) openOverlay({kind: 'archive', threadId});
+		else void controls.archive(threadId, false);
+	};
+	const onRemove = (threadId: string) =>
+		openOverlay({kind: 'remove', threadId});
+	const importSession = notifyImported(sessionImports.importSession, message =>
+		overlays.current?.notify(message),
+	);
+	const openImportPage = () => {
+		setImportFocus(request => request + 1);
+		setImportFor(projectId);
 	};
 	const renameGate = gates[projectId ?? '']?.features.rename;
 	const deleteGate = gates[projectId ?? '']?.features.delete;
@@ -344,42 +374,188 @@ export function App() {
 		connecting ||
 		projectControls.pending ||
 		modelControls.pending;
+	const waitingForDecision = transcript.permissions.length > 0;
+	const processFailed =
+		processState !== null && FAILED_STATUSES.includes(processState.status);
+	const notReadyReason = processFailed
+		? 'retry this thread before sending'
+		: 'Nanocoder is not ready. retry before sending.';
 	const sendReason =
 		replayReason ??
 		(!accepting
-			? 'Nanocoder is not ready. retry before sending.'
+			? notReadyReason
 			: thread?.archiveState === 'archived'
 				? 'this thread is archived; unarchive it before sending'
 				: sending
-					? 'waiting for Nanocoder to finish the turn'
+					? waitingForDecision
+						? 'waiting for your decision · draft is not queued'
+						: 'turn in progress · draft is not queued'
 					: rootBusy
 						? 'another thread is running'
 						: modelControls.pending
 							? 'a project control change is pending'
 							: configUncertain
 								? CONFIG_UNCERTAINTY_REASON
-								: draft.trim() === ''
-									? 'enter a message to send'
-									: null);
+								: null);
+
+	const turnFailure = turn && !turn.ok && failed ? turn.error.message : null;
+	// The failed turn's row carries the recovery card, below the user message.
+	const recoveryInFailure =
+		!importOpen &&
+		processState?.status !== 'ready' &&
+		turnFailure !== null &&
+		transcript.items.some(item => item.kind === 'failure');
+	const recoveryTools = (
+		<RecoveryTools
+			state={processState}
+			turnFailure={processState?.status === 'ready' ? null : turnFailure}
+			onRetry={async id => {
+				retryFocus.current = true;
+				retryScope.current = scopeKey;
+				retrying.current = true;
+				const result = await window.desktop
+					.restartProject({projectId: id})
+					.finally(() => {
+						retrying.current = false;
+					});
+				if (!result.ok || result.value.status !== 'ready')
+					retryFocus.current = false;
+				if (
+					selectedProject.current === id &&
+					result.ok &&
+					result.value.status === 'ready' &&
+					result.value.agent
+				) {
+					setOpened(null);
+					projectControls.clearFeedback();
+					void projectControls.refresh();
+					await controls.reload(id);
+				}
+				return result;
+			}}
+			onDiagnostics={captureDiagnostics}
+			diagnosticsBusy={review.busy}
+			diagnosticsMessage={overlayOpen ? '' : review.message}
+			onNew={onNew}
+			newPending={workspace.pending}
+		/>
+	);
+
+	const threadDialogData: ThreadDialogData = {
+		threads: workspace.threads,
+		projectId,
+		projectName: currentProject?.displayName ?? 'selected project',
+		defaultMode: currentProject?.defaultMode,
+		pending,
+		projectBusy: rootBusy,
+		renameDisabledReason,
+		deleteHistoryDisabledReason,
+		actions: {
+			create: controls.create,
+			setDraft: controls.setDraft,
+			open: controls.open,
+			rename: controls.rename,
+			archive: controls.archive,
+			remove: controls.remove,
+			deleteHistory: controls.deleteHistory,
+		},
+	};
+	const workspaceDialogData: Omit<WorkspaceDialogsProps, 'kind' | 'onClose'> = {
+		projects: {
+			projects: projectControls.projects,
+			activeProjectId: projectId,
+			pending: connecting || projectControls.pending,
+			onAdd: () => {
+				overlays.current?.closeIf('projects');
+				projectControls.onAdd();
+			},
+			onOpen: id => {
+				overlays.current?.closeIf('projects');
+				projectControls.onOpen(id);
+			},
+			onLocate: id => {
+				overlays.current?.closeIf('projects');
+				projectControls.onLocate(id);
+			},
+		},
+		runtime: {
+			runtime,
+			processState,
+			projectRoot: currentProject?.canonicalRoot ?? null,
+			gates: gates[projectId ?? ''] ?? null,
+			diagnosticsBusy: review.busy,
+			diagnosticsMessage: review.message,
+			onCheckAgain: checkRuntime,
+			onCapabilities: () => openDialog('capabilities'),
+			onDiagnostics: captureDiagnostics,
+		},
+		capabilities: {
+			gates: gates[projectId ?? ''] ?? null,
+			modelGate: modelControls.controls?.modelGate ?? null,
+			agent: agent ?? null,
+			thread,
+		},
+		archives: {
+			threads: workspace.threads.filter(row => row.archiveState === 'archived'),
+			projectName: currentProject?.displayName,
+			now: new Date(),
+			pending,
+			onUnarchive: id => {
+				void controls.archive(id, false);
+			},
+		},
+		diagnostics: review.snapshot
+			? {
+					snapshot: review.snapshot,
+					busy: review.busy,
+					message: review.message,
+					onExport: review.exportSnapshot,
+				}
+			: null,
+	};
 
 	return (
 		<OverlayProvider
+			ref={overlays}
 			pendingApprovalCount={transcript.permissions.length}
+			canClose={request => request !== 'diagnostics' || !review.busy}
+			onClosed={request => {
+				if (request === 'diagnostics') review.close();
+			}}
+			onOpenChange={setOverlayOpen}
+			renderDialog={(request, api) =>
+				typeof request === 'string' ? (
+					<WorkspaceDialogs
+						kind={request}
+						onClose={api.close}
+						{...workspaceDialogData}
+					/>
+				) : (
+					<ThreadDialogs request={request} data={threadDialogData} api={api} />
+				)
+			}
 			actions={[
-				...projectPalette({
-					...projectControls,
-					pending: connecting || projectControls.pending,
-				}),
 				...threadPalette({
 					projectId,
+					projectName: currentProject?.displayName,
+					newShortcut,
 					thread,
 					pending,
+					projectBusy: rootBusy,
 					renameDisabledReason: thread?.nanocoderSessionId
 						? renameDisabledReason
 						: undefined,
 					onNew,
-					onRename: rename,
+					onRename,
 					onArchive,
+				}),
+				...importPalette({
+					ready: sessionImports.ready,
+					onImport: openImportPage,
+				}),
+				...projectPalette({
+					...projectControls,
+					pending: connecting || projectControls.pending,
 				}),
 				{
 					id: 'open-terminal',
@@ -408,18 +584,43 @@ export function App() {
 		>
 			<AppShell
 				logoSrc={logoUrl}
-				title={info?.name ?? 'Nanocoder'}
-				threadTitle={thread?.title}
-				projectName={currentProject?.displayName}
-				sidebarFooter={
+				title={
 					<>
-						<span>
-							Nanocoder{' '}
-							{agent?.version ??
-								(runtime?.ok ? runtime.value.version : 'not connected')}
-						</span>
-						<span>desktop {info?.version ?? 'pre-v0.1'}</span>
+						Nanocoder <span className="brand-desktop">Desktop</span>
 					</>
+				}
+				threadTitle={importOpen ? 'saved sessions' : thread?.title}
+				onOpenThreadMenu={
+					thread
+						? () => openOverlay({kind: 'thread-menu', threadId: thread.id})
+						: undefined
+				}
+				projectName={
+					importOpen && currentProject
+						? `${currentProject.displayName} / saved sessions`
+						: currentProject?.displayName
+				}
+				sidebarFooter={
+					<SidebarFooter
+						acp={footerAcp}
+						nanocoderVersion={
+							agent?.version ?? (runtime?.ok ? runtime.value.version : null)
+						}
+						notice={
+							gates[projectId ?? '']?.versionPolicy.status === 'untested'
+								? 'untested'
+								: gates[projectId ?? '']?.versionPolicy.status === 'refused'
+									? 'not supported'
+									: undefined
+						}
+						desktopVersion={info?.version ?? 'pre-v0.1'}
+						runtimeError={
+							runtime && !runtime.ok ? runtime.error.message : undefined
+						}
+						onCheckRuntime={checkRuntime}
+						onOpenRuntime={opener => openDialog('runtime', opener)}
+						onOpenShortcuts={opener => openOverlay('shortcuts', opener)}
+					/>
 				}
 				palette={
 					<>
@@ -460,10 +661,9 @@ export function App() {
 					)
 				}
 				projectRail={
-					<RecentProjects
-						compact
-						{...projectControls}
-						pending={connecting || projectControls.pending}
+					<ProjectSwitch
+						selected={currentProject}
+						onOpen={() => openDialog('projects')}
 					/>
 				}
 				threadRail={
@@ -475,187 +675,65 @@ export function App() {
 							activeThreadId={workspace.activeThreadId}
 							pending={pending}
 							now={new Date()}
-							renameDisabledReason={renameDisabledReason}
-							deleteHistoryDisabledReason={deleteHistoryDisabledReason}
+							importCount={
+								sessionImports.ready ? sessionImports.sessions.length : null
+							}
+							newThreadShortcut={newShortcut}
 							onNew={onNew}
 							onOpen={id => {
-								setRenaming(null);
+								if (
+									runningThreadId &&
+									id !== runningThreadId &&
+									id !== workspace.activeThreadId
+								)
+									openOverlay({
+										kind: 'other-thread',
+										threadId: runningThreadId,
+									});
+								setImportFor(null);
 								void controls.open(id);
 							}}
-							onRename={rename}
-							onArchive={onArchive}
-							onRemove={id => {
-								void controls.remove(id);
-							}}
-							onDeleteHistory={id => {
-								void controls.deleteHistory(id);
-							}}
+							onOpenArchives={opener => openDialog('archives', opener)}
+							onOpenImport={openImportPage}
 						/>
-						<SessionImportList
-							key={projectId}
-							{...sessionImports}
-							active={sessionImports.ready}
-							disabledReason={
-								rootBusy
-									? 'stop the project turn before importing'
-									: (replayReason ??
-										(!accepting
-											? 'Nanocoder is not ready'
-											: pending
-												? 'another thread request is pending'
-												: undefined))
-							}
-							onRefresh={sessionImports.refresh}
-							onImport={sessionImports.importSession}
-						/>
+						{!projectId && (
+							<SidebarRecents
+								projects={projectControls.projects}
+								pending={connecting || projectControls.pending}
+								now={new Date()}
+								onOpen={projectControls.onOpen}
+								onLocate={projectControls.onLocate}
+							/>
+						)}
 					</>
 				}
-				statusBadges={
-					<div className="gate-actions">
-						<StatusBadge
-							status={
-								transcript.permissions.length
-									? 'approval'
-									: sending
-										? 'running'
-										: failed || (opened && !opened.ok)
-											? 'failed'
-											: thread?.runState === 'interrupted'
-												? 'interrupted'
-												: 'idle'
-							}
-						/>
-						{processBadge && <StatusBadge {...processBadge} />}
-					</div>
-				}
+				statusBadges={thread && <StatusBadge status={turnStatus} />}
 				streamTools={
 					<>
 						<TrustFeedback feedback={projectControls.feedback} />
-						{!thread && (
-							<section className="workspace-welcome" aria-label="get started">
-								<img src={logoUrl} alt="" width="56" height="56" />
-								<p className="workspace-eyebrow">
-									local-first workspace / pre-v0.1
-								</p>
-								<h2>what are you working on?</h2>
-								<p>
-									open a project folder to start a Nanocoder thread. you’ll
-									review what can run before you trust the folder.
-								</p>
-								{runtime?.ok && (
-									<Button
-										onClick={connect}
-										disabled={connecting || projectControls.pending}
-									>
-										{connecting
-											? 'starting Nanocoder'
-											: 'open a project folder'}
-									</Button>
-								)}
-								{projectControls.projects.length > 0 && (
-									<section
-										className="welcome-recents"
-										aria-label="recent folders on welcome"
-									>
-										<h3>recent projects</h3>
-										{projectControls.projects.map(project => (
-											<div key={project.id}>
-												<span>
-													<span>{project.displayName}</span>
-													<small>{project.canonicalRoot}</small>
-												</span>
-												<Button
-													aria-label={`${project.availability === 'available' ? 'open' : 'locate'} recent project ${project.displayName}`}
-													disabled={connecting || projectControls.pending}
-													onClick={() =>
-														project.availability === 'available'
-															? projectControls.onOpen(project.id)
-															: projectControls.onLocate(project.id)
-													}
-												>
-													{project.availability === 'available'
-														? 'open'
-														: 'locate'}
-												</Button>
-											</div>
-										))}
-									</section>
-								)}
-							</section>
+						{processState?.status !== 'ready' &&
+							!recoveryInFailure &&
+							recoveryTools}
+						{!thread && !importOpen && (
+							<WelcomePage
+								logoSrc={logoUrl}
+								projects={projectControls.projects}
+								busy={connecting || projectControls.pending}
+								connecting={connecting}
+								runtime={runtime}
+								onConnect={() => {
+									void connect();
+								}}
+								onOpen={projectControls.onOpen}
+								onLocate={projectControls.onLocate}
+								onRuntime={() => openDialog('runtime')}
+							/>
 						)}
-						<div className="workspace-setup">
-							{gates[projectId ?? '']?.versionPolicy.reason && (
-								<p className="workspace-setup-warning" role="status">
-									{gates[projectId ?? '']?.versionPolicy.reason}
-								</p>
-							)}
-							<div className="workspace-setup-actions">
-								<details
-									className="runtime-details"
-									open={runtime && !runtime.ok ? true : undefined}
-								>
-									<summary>runtime and setup details</summary>{' '}
-									<section
-										className="gate-runtime"
-										aria-label="Nanocoder runtime"
-									>
-										{runtime?.ok && (
-											<p>
-												Nanocoder {runtime.value.version} at{' '}
-												{runtime.value.cliPath}, on Node.js{' '}
-												{runtime.value.nodeVersion} at {runtime.value.nodePath}
-											</p>
-										)}
-										{runtime && !runtime.ok && (
-											<>
-												<p role="alert">{runtime.error.message}</p>
-												<Button onClick={checkRuntime}>check again</Button>
-											</>
-										)}
-									</section>
-									{outcome?.status === 'connected' && (
-										<AgentDetails agent={outcome.agent} thread={thread} />
-									)}
-									{gates[projectId ?? ''] && (
-										<FeatureDetails gates={gates[projectId ?? '']} />
-									)}
-								</details>
-								{thread && runtime?.ok && (
-									<Button
-										onClick={connect}
-										disabled={connecting || projectControls.pending}
-									>
-										open a project folder
-									</Button>
-								)}
-							</div>
-						</div>
-						<RecoveryTools
-							state={processState}
-							onRetry={async id => {
-								const result = await window.desktop.restartProject({
-									projectId: id,
-								});
-								if (
-									selectedProject.current === id &&
-									result.ok &&
-									result.value.status === 'ready' &&
-									result.value.agent
-								) {
-									setOpened(null);
-									projectControls.clearFeedback();
-									void projectControls.refresh();
-									await controls.reload(id);
-								}
-								return result;
-							}}
-							onCapture={projectId =>
-								window.desktop.getDiagnostics({projectId})
-							}
-							onExport={request => window.desktop.exportDiagnostics(request)}
-						/>
 						{workspace.error && <p role="alert">{workspace.error}</p>}
 					</>
+				}
+				composerPlacement={
+					centredComposer && !importOpen ? 'centred' : 'bottom'
 				}
 				approvalShelf={
 					thread && (
@@ -672,62 +750,97 @@ export function App() {
 					)
 				}
 				composer={
-					outcome?.status === 'connected' &&
-					thread &&
-					composerState.visible && (
-						<Composer
-							draft={draft}
-							editable={editable}
-							sendReason={sendReason}
-							controlReason={
-								rootControlReason ??
-								(modelControls.pending
-									? 'a project control change is pending'
-									: null)
-							}
-							projectName={currentProject?.displayName ?? 'selected project'}
-							projectControls={modelControls.controls}
-							mode={thread.mode}
-							defaultMode={currentProject?.defaultMode ?? 'normal'}
-							modePending={thread.nanocoderSessionId === null}
-							running={sending}
-							stopping={connecting || stopping}
-							error={
-								modelControls.error ??
-								(cancellation && !cancellation.ok
-									? cancellation.error.message
-									: null)
-							}
-							commands={transcript.commands ?? []}
-							context={transcript.context}
-							inputRef={composerInput}
-							onDraft={controls.setDraft}
-							onSend={send}
-							onCancel={() => {
-								void cancel();
-							}}
-							onMode={mode => {
-								void controls.setMode(thread.id, mode);
-							}}
-							onDefault={mode => {
-								void modelControls.setDefault(mode).then(result => {
-									if (result) void projectControls.refresh();
-								});
-							}}
-							onConfig={(id, value) => {
-								void modelControls.setConfig(id, value);
-							}}
-						/>
+					importOpen ? null : thread?.runState === 'view-only' ? (
+						<ViewOnlyFooter />
+					) : (
+						outcome?.status === 'connected' &&
+						thread &&
+						composerState.visible && (
+							<Composer
+								draft={draft}
+								editable={editable}
+								sendReason={sendReason}
+								controlReason={
+									rootControlReason ??
+									(modelControls.pending
+										? 'a project control change is pending'
+										: null)
+								}
+								projectName={currentProject?.displayName ?? 'selected project'}
+								projectControls={modelControls.controls}
+								mode={thread.mode}
+								defaultMode={currentProject?.defaultMode ?? 'normal'}
+								modePending={thread.nanocoderSessionId === null}
+								running={sending}
+								stopping={connecting || stopping}
+								error={
+									modelControls.error ??
+									(cancellation && !cancellation.ok
+										? cancellation.error.message
+										: null)
+								}
+								commands={transcript.commands ?? []}
+								context={transcript.context}
+								inputRef={composerInput}
+								onDraft={controls.setDraft}
+								onSend={send}
+								onCancel={() => {
+									void cancel();
+								}}
+								onMode={mode => {
+									void controls.setMode(thread.id, mode);
+								}}
+								onDefault={mode => {
+									void modelControls.setDefault(mode).then(result => {
+										if (result) void projectControls.refresh();
+									});
+								}}
+								onConfig={(id, value) => {
+									void modelControls.setConfig(id, value);
+								}}
+							/>
+						)
 					)
 				}
 			>
-				{thread && (
+				{importOpen && (
+					<SessionImportList
+						key={projectId}
+						{...sessionImports}
+						active
+						focusRequest={importFocus}
+						projectName={currentProject?.displayName}
+						disabledReason={
+							rootBusy
+								? 'stop the project turn before importing'
+								: (replayReason ??
+									(!accepting
+										? 'Nanocoder is not ready'
+										: pending
+											? 'another thread request is pending'
+											: undefined))
+						}
+						backLabel={thread ? 'back to selected thread' : 'back to start'}
+						onBack={() => setImportFor(null)}
+						onRefresh={sessionImports.refresh}
+						onImport={importSession}
+					/>
+				)}
+				{!importOpen && thread && (
 					<ConversationStream
 						key={`${projectId}:${thread.id}`}
 						transcript={transcript}
+						failureNotice={
+							recoveryInFailure ? (
+								recoveryTools
+							) : processState?.status === 'ready' && turnFailure ? (
+								<TurnFailureNotice reason={turnFailure} />
+							) : undefined
+						}
 						running={sending}
 						onStopTurn={cancel}
 						stopping={stopping}
+						stopReason={turn?.ok ? turn.value.stopReason : undefined}
 						outcome={
 							turn?.ok
 								? turn.value.stopReason === 'cancelled'
@@ -739,30 +852,15 @@ export function App() {
 						}
 					/>
 				)}
-				{thread && (
+				{!importOpen && thread && (
 					<ThreadRecoveryNotice
 						thread={thread}
+						projectName={currentProject?.displayName}
 						pending={workspace.pending}
 						onRetry={() => void controls.open(thread.id)}
 						onNew={onNew}
-						onRemove={() => void controls.remove(thread.id)}
+						onRemove={() => onRemove(thread.id)}
 					/>
-				)}
-				{turn?.ok && (
-					<p role="status">
-						{turn.value.stopReason === 'cancelled'
-							? 'turn interrupted'
-							: 'turn ended'}
-						: {turn.value.stopReason}
-					</p>
-				)}
-				{turn && !turn.ok && failed && (
-					<Card variant="failure" role="alert">
-						<span>
-							<span aria-hidden="true">✕ </span>
-							{turn.error.message}
-						</span>
-					</Card>
 				)}
 				{outcome?.status === 'untrusted' && (
 					<Card variant="failure" role="alert">
@@ -780,53 +878,6 @@ export function App() {
 					</Card>
 				)}
 			</AppShell>
-			{renaming && (
-				<dialog
-					ref={renameDialog}
-					className="overlay-dialog rename-dialog"
-					aria-label="rename thread"
-					onCancel={() => setRenaming(null)}
-				>
-					<form
-						className="overlay-content"
-						onSubmit={event => {
-							event.preventDefault();
-							if (renaming.projectId !== projectId) return;
-							void controls
-								.rename(renaming.threadId, renaming.title)
-								.then(saved => {
-									if (saved) setRenaming(null);
-								});
-						}}
-					>
-						<h2>rename thread</h2>
-						<p>
-							change this thread’s title. its conversation and project stay
-							unchanged.
-						</p>
-						<label>
-							thread title
-							<input
-								ref={renameInput}
-								value={renaming.title}
-								maxLength={200}
-								onChange={event =>
-									setRenaming({...renaming, title: event.target.value})
-								}
-							/>
-						</label>
-						<div className="rename-dialog-actions">
-							<Button
-								type="submit"
-								disabled={pending || !renaming.title.trim()}
-							>
-								save title
-							</Button>
-							<Button onClick={() => setRenaming(null)}>cancel</Button>
-						</div>
-					</form>
-				</dialog>
-			)}
 		</OverlayProvider>
 	);
 }

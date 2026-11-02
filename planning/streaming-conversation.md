@@ -20,6 +20,12 @@ Usage stays within its turn's user-message boundary. It attaches to the latest a
 
 The temporary technical gate publishes prompt metadata through its existing event channel, after checking the captured project and session still match. Its renderer listener accepts metadata only, preventing duplicate text/tool events. ThreadService must replace both pieces with its mapped per-thread event path when the technical gate retires.
 
+## Message times
+
+Nanocoder reports no time for any message, so the desktop shows only times it saw live. The renderer records when the user sends a prompt and when the first reply chunk of an agent message arrives. Both values stay in memory for the open session. Nothing is written to disk or logs, and no time is estimated.
+
+Replayed history and restarted sessions show no time. The day label takes its time from the first timed item. Untimed history shows no time, with the title "times are not saved in Nanocoder history" (`DEC-41`).
+
 ## Ordered rendering
 
 `createStreamBatcher` accepts a thread ID and ordered event arrays, schedules a cancellable 16ms delivery and exposes `flush`, `remove` and `dispose`. Contiguous events are batched without reordering interleaved thread queues. The owner flushes before terminal state, replay replacement, approval display/answer and thread changes. Cleanup cancels pending callbacks.
@@ -38,7 +44,7 @@ One persistent node moves between the normal stream host and the open native dia
 
 ## Markdown and commands
 
-Only `AgentMarkdown` imports exactly pinned `react-markdown` 10.1.0. There are no added remark/rehype plugins. CommonMark headings, lists, blockquotes and code render; raw HTML is skipped, all images are text placeholders and all links are inert spans with their targets removed. There is no external-link IPC or automatic navigation. This small module can be replaced without changing the stream contract.
+Only `AgentMarkdown` imports exactly pinned `react-markdown` 10.1.0 and `remark-gfm` 4.0.1, the only plugin; there are no rehype plugins. CommonMark headings, lists, blockquotes and code render, with GFM tables, strikethrough and task checkboxes. Task checkboxes are disabled, unsupported footnote text is kept as plain text, raw HTML is skipped, all images are text placeholders and all links, including autolinks, are inert spans with their targets removed. There is no external-link IPC or automatic navigation. This small module can be replaced without changing the stream contract.
 
 The resolved dependency graph contains 83 package versions, 78 newly locked. All have lockfile integrity; licences are MIT except `@ungap/structured-clone` (ISC). None has an install lifecycle script. Full upstream copyright/licence texts are in `THIRD-PARTY-NOTICES.txt`. This does not complete the later whole-application release-notices work.
 

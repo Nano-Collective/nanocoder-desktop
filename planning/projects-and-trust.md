@@ -1,5 +1,7 @@
 # Projects and directory trust
 
+- Last updated: 2026-10-31
+
 Phase 1.2 implements `CHAT-01`, `CHAT-02` and the current `DEC-30` proposal.
 `DEC-30` is still awaiting the founder. This does not approve or replace it.
 
@@ -82,10 +84,39 @@ It returns a main-only runtime binding, and the shared launcher synchronously
 checks both Node and CLI realpaths, device, inode, size and modification time
 immediately before every spawn, with no `await` between that check and spawn.
 This covers normal and trust launches, recovery and idle restarts. A changed or
-missing identity refuses before entering the selected project. A tiny operating
-system race remains between stat and spawn; exploiting it requires same-user
-write access to the chosen build. This check is not a sandbox for a malicious
-executable or a replacement for file permissions.
+missing identity refuses before entering the selected project.
+
+Admission and retention are separate. Only the complete existing proof returns
+an identity-bound runtime: no stdout, no truncated or failed observation, the one
+exact refusal for the isolated root, natural exit 1 with no signal before the
+unchanged 5000 ms deadline, successful cleanup and unchanged executable identity.
+An exact refusal followed by a stall never qualifies. The 32-entry, memory-only
+cache retains verified results and narrow definitive rejections, such as observed
+stdout or a complete known refusal with the wrong root or natural exit code.
+Timeout, abort, cleanup or identity failure takes precedence over retention.
+Unknown startup errors, silent exits, unexplained termination and incomplete
+observations refuse the current request without poisoning later explicit Retry.
+
+One explicit request without a reusable verdict makes one fresh isolated probe.
+There is no automatic retry, warm-up, expiry timer or background loop. A cached
+definitive rejection still refuses without another execution. Per-runtime-key
+ownership prevents an older completion, including one for another project, from
+returning a runtime or replacing a newer verdict. Existing project busy,
+removal, root-change and disposal barriers remain in main. A successful probe
+still grants no project trust.
+
+The probe is self-reporting, not executable authentication. A malicious override
+can print the exact refusal and exit 1, then behave differently in the selected
+project. It runs with the user's OS privileges, not in a sandbox, and can
+independently read accessible files or use the network. Minimal environment and
+isolated state do not prevent that. Retry explicitly executes that already
+selected code again.
+
+The fingerprint is filesystem metadata, not a content hash. Synchronous checks
+cannot atomically pin the bytes opened by the OS. Stat/open races, swaps that
+restore the old identity, same-metadata changes and imported dependency changes
+remain outside that guarantee. Fresh probes preserve these limits, not solve
+them, and do not replace file permissions.
 
 ## Renderer integration
 

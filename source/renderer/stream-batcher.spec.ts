@@ -11,7 +11,11 @@ function fixture() {
 		delayMs: number;
 		cancelled: boolean;
 	}[] = [];
-	const delivered: {threadId: string; events: readonly TurnEvent[]}[] = [];
+	const delivered: {
+		threadId: string;
+		events: readonly TurnEvent[];
+		tag?: string;
+	}[] = [];
 	const clock: StreamBatchClock = {
 		schedule(callback, delayMs) {
 			const task = {callback, delayMs, cancelled: false};
@@ -22,7 +26,10 @@ function fixture() {
 		},
 	};
 	const batcher = createStreamBatcher(
-		(threadId, events) => delivered.push({threadId, events}),
+		(threadId, events, tag) =>
+			delivered.push(
+				tag === undefined ? {threadId, events} : {threadId, events, tag},
+			),
 		clock,
 	);
 	return {batcher, scheduled, delivered};
@@ -90,4 +97,28 @@ test('remove and dispose cancel stale callbacks and discard only the owned queue
 		task.callback();
 	}
 	t.is(delivered.length, 1);
+});
+
+test('tagged batches never merge across tags and deliver their tag in receive order', t => {
+	const {batcher, scheduled, delivered} = fixture();
+	batcher.enqueue('thread', [{type: 'text', text: 'one'}], 'replay');
+	batcher.enqueue('thread', [{type: 'text', text: 'two'}], 'replay');
+	batcher.enqueue('thread', [{type: 'text', text: 'three'}], 'live');
+	batcher.enqueue('thread', [{type: 'text', text: 'four'}]);
+	batcher.enqueue('thread', [{type: 'text', text: 'five'}], 'live');
+	t.is(scheduled.length, 1);
+	scheduled[0].callback();
+	t.deepEqual(delivered, [
+		{
+			threadId: 'thread',
+			tag: 'replay',
+			events: [
+				{type: 'text', text: 'one'},
+				{type: 'text', text: 'two'},
+			],
+		},
+		{threadId: 'thread', tag: 'live', events: [{type: 'text', text: 'three'}]},
+		{threadId: 'thread', events: [{type: 'text', text: 'four'}]},
+		{threadId: 'thread', tag: 'live', events: [{type: 'text', text: 'five'}]},
+	]);
 });

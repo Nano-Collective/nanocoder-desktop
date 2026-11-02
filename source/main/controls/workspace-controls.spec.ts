@@ -70,8 +70,8 @@ async function fixture(t: ExecutionContext, scenario?: string) {
 		supervisor,
 		onSessionPrepared: context => controls.hooks.onSessionPrepared(context),
 		beforeFirstPrompt: context => controls.hooks.beforeFirstPrompt(context),
-		validateBeforePrepare: (lease, thread) =>
-			controls.hooks.validateBeforePrepare(lease, thread),
+		validateBeforePrepare: (lease, thread, reason) =>
+			controls.hooks.validateBeforePrepare(lease, thread, reason),
 		resolveLiveMode: (...args) => controls.hooks.resolveLiveMode(...args),
 	});
 	const published: ProjectControls[] = [];
@@ -401,6 +401,36 @@ test('unprompted current config notification publishes a new revision without cl
 	t.is((await f.threads.getThreadSnapshot(request)).thread.mode, 'yolo');
 	t.is(f.confirmations(), 1);
 	t.true(f.writes.every(thread => thread.mode !== 'yolo'));
+});
+
+test('CHAT-09 view-only retry resumes the saved session only through an explicit open (DEC-42)', async t => {
+	const f = await fixture(t, 'resume-missing');
+	await f.threads.promptThread({...f.request, text: 'fixture request'});
+	const saved =
+		f.store.threads.get(f.project.id, f.thread.id)?.nanocoderSessionId ?? null;
+	t.truthy(saved);
+	await f.supervisor.stop(f.project.id);
+	const count = (method: string) =>
+		f.rpc().filter(event => event.method === method).length;
+	const missing = await f.threads.openThread(f.request);
+	t.is(missing.thread.runState, 'view-only');
+	t.is(count('session/resume'), 1);
+	const retried = await f.threads.openThread(f.request);
+	t.is(retried.thread.runState, 'view-only');
+	t.is(count('session/resume'), 2);
+	await t.throwsAsync(f.threads.promptThread({...f.request, text: 'refused'}), {
+		instanceOf: IpcFailure,
+	});
+	await t.throwsAsync(f.controls.setThreadMode({...f.request, mode: 'plan'}), {
+		instanceOf: IpcFailure,
+	});
+	t.is(count('session/prompt'), 0);
+	writeFileSync(path.join(f.project.canonicalRoot, '.fake-resume-ok'), 'ok');
+	const restored = await f.threads.openThread(f.request);
+	t.is(restored.thread.runState, 'ready');
+	t.is(restored.thread.nanocoderSessionId, saved);
+	t.is(count('session/resume'), 3);
+	t.is(count('session/new'), 0);
 });
 
 test('disposed project controls ignore a later current-session config notification (ACP-14)', async t => {

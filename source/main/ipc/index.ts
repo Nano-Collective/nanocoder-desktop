@@ -29,6 +29,7 @@ import {isAllowedOrigin} from '@/main/security';
 import {AgentCommandObserver} from '@/main/terminal/agent-command';
 import {TerminalService} from '@/main/terminal/terminal-service';
 import {createUtilityPtyHost} from '@/main/terminal/utility-host';
+import {deleteHistoryDialog} from '@/main/threads/delete-history-consent';
 import {createThreadService} from '@/main/threads/thread-service';
 import {APP_NAME} from '@/shared/app-info';
 import {
@@ -452,21 +453,16 @@ export function registerIpcHandlers(
 						availableControls().hooks.onSessionPrepared(context),
 					beforeFirstPrompt: context =>
 						availableControls().hooks.beforeFirstPrompt(context),
-					validateBeforePrepare: (lease, thread) =>
-						availableControls().hooks.validateBeforePrepare(lease, thread),
+					validateBeforePrepare: (lease, thread, reason) =>
+						availableControls().hooks.validateBeforePrepare(
+							lease,
+							thread,
+							reason,
+						),
 					resolveLiveMode: (...args) =>
 						availableControls().hooks.resolveLiveMode(...args),
 					confirmDeleteHistory: async ({project, thread}) => {
-						const options = {
-							type: 'warning' as const,
-							title: 'Delete chat history?',
-							message: 'Delete this chat history from Nanocoder?',
-							detail: `${thread.title}\n${project.canonicalRoot}\nThis deletes Nanocoder's saved history. Removing a thread from the desktop does not do this.`,
-							buttons: ['Delete chat history', 'Cancel'],
-							defaultId: 1,
-							cancelId: 1,
-							noLink: true,
-						};
+						const options = deleteHistoryDialog({project, thread});
 						const window = BrowserWindow.getFocusedWindow();
 						const {response} = window
 							? await dialog.showMessageBox(window, options)

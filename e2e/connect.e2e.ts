@@ -14,14 +14,17 @@ import path from 'node:path';
 import {
 	type ElectronApplication,
 	expect,
+	type Locator,
 	type Page,
 	test,
 } from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {ProjectEvent} from '@/shared/ipc';
-import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {createDraftThread} from './qa/new-thread';
+import {openFolderFromPalette, startFolderFromPalette} from './qa/open-folder';
+import {turnEnded} from './qa/turn-state';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-e2e-')));
 const fakeCli = path.join(work, 'nanocoder', 'dist', 'cli.js');
@@ -42,7 +45,11 @@ interface Prompt {
 }
 
 // Stubs both native dialogs: the folder picker, and the trust prompt with the given button.
-async function openFolder(folder: string, trustButton = 1): Promise<void> {
+async function openFolder(
+	folder: string,
+	trustButton = 1,
+	result: 'opened' | 'refused' | {alert: string} = 'opened',
+): Promise<void> {
 	await app.evaluate(
 		({dialog}, [picked, button]) => {
 			const state = globalThis as {trustPrompts?: unknown[]};
@@ -58,10 +65,7 @@ async function openFolder(folder: string, trustButton = 1): Promise<void> {
 		},
 		[folder, trustButton] as const,
 	);
-	await page.getByRole('button', {name: 'Open a project folder'}).click();
-	await expect(
-		page.getByRole('button', {name: 'Open a project folder'}),
-	).toBeEnabled();
+	await openFolderFromPalette(page, folder, result);
 }
 
 const trustPrompts = () =>
@@ -110,18 +114,97 @@ test.afterAll(async () => {
 	rmSync(work, {recursive: true, force: true});
 });
 
+function setupDialog() {
+	return page.getByRole('dialog', {name: 'runtime details'});
+}
+
+function capabilitiesDialog() {
+	return page.getByRole('dialog', {name: 'capabilities, with reasons'});
+}
+
 async function showSetup() {
-	const details = page.locator('.runtime-details');
-	if (
-		!(await details.evaluate(element => (element as HTMLDetailsElement).open))
-	)
-		await details.locator('summary').click();
-	await expect(details).toHaveAttribute('open');
+	if (!(await setupDialog().isVisible()))
+		await page
+			.getByRole('button', {name: 'runtime details', exact: true})
+			.click();
+	await expect(setupDialog()).toBeVisible();
+}
+
+async function closeSetup() {
+	await page.keyboard.press('Escape');
+	await expect(setupDialog()).toBeHidden();
+}
+
+async function showCapabilities() {
+	await showSetup();
+	await setupDialog()
+		.getByRole('button', {name: 'capabilities', exact: true})
+		.click();
+	await expect(capabilitiesDialog()).toBeVisible();
+}
+
+const minimumReasons: Record<string, string> = {
+	'session resume': 'Nanocoder did not advertise session/resume.',
+	'session close': 'Nanocoder did not advertise session/close.',
+	'session delete': 'Nanocoder did not advertise session/delete.',
+	'session list': 'Nanocoder did not advertise session/list.',
+	'session rename':
+		'Nanocoder did not confirm the renameSession extension with a safe probe.',
+	'tool timeline':
+		'Nanocoder did not confirm the timeline/list extension with a safe probe; tool locations remain available.',
+	'exact agent changes':
+		'Nanocoder does not yet offer a verified snapshot-read method.',
+	'child run tree':
+		'Nanocoder does not yet offer a verified child-event projection; subagents remain tool cards.',
+};
+
+// The model row copy depends on session state; these are main's exact copies.
+const modelReasonBeforeReconnect =
+	'available after the first message: Nanocoder supplies model options after a session exists';
+const modelReasonAfterReconnect =
+	'model options changed; wait for a prepared session';
+
+// Every row is disabled for the minimum build; the model row copy is dynamic.
+async function expectMinimumReasons(features: Locator) {
+	const rows = features.locator('.capability-row');
+	await expect(rows).toHaveCount(9);
+	for (const row of await rows.all()) {
+		await expect(row.locator('span').first()).toHaveText('○');
+		const label =
+			(await row.locator('.capability-label').textContent())?.trim() ?? '';
+		const reason =
+			(await row.locator('.capability-reason').textContent())?.trim() ?? '';
+		expect(reason).not.toBe('available');
+		if (label === 'model + mode offers') expect(reason).not.toBe('');
+		else expect(reason).toBe(minimumReasons[label]);
+	}
+}
+
+async function reasonsByLabel(
+	features: Locator,
+): Promise<Record<string, string>> {
+	const entries = await Promise.all(
+		(await features.locator('.capability-row').all()).map(async row => [
+			(await row.locator('.capability-label').textContent())?.trim() ?? '',
+			(await row.locator('.capability-reason').textContent())?.trim() ?? '',
+		]),
+	);
+	return Object.fromEntries(entries);
+}
+
+async function expectConnectedAgent(root: string) {
+	await showSetup();
+	const rows = setupDialog().locator('.runtime-rows');
+	await expect(rows).toContainText(root);
+	await expect(rows).toContainText('✓ ACP connected');
+	await closeSetup();
 }
 
 test('shows the Nanocoder it will launch', async () => {
 	await showSetup();
-	await expect(page.getByText(`Nanocoder 9.9.9 at ${fakeCli}`)).toBeVisible();
+	await expect(setupDialog().locator('.runtime-rows')).toContainText('9.9.9');
+	await expect(setupDialog().locator('.runtime-rows')).toContainText(fakeCli);
+	await closeSetup();
 });
 
 interface Bridge {
@@ -168,26 +251,30 @@ test('refuses a prompt before any project is open', async () => {
 test('initialises a trusted folder without eagerly creating a session or asking', async () => {
 	const root = project('trusted');
 	await openFolder(root);
-	await showSetup();
-	const agent = page.getByRole('region', {
-		name: 'Connected agent',
-		includeHidden: true,
+	await expectConnectedAgent(root);
+	await showCapabilities();
+	const agent = capabilitiesDialog().getByRole('region', {
+		name: 'connected agent',
 	});
 	await expect(agent).toContainText(
-		`connected to nanocoder 9.9.9 over ACP protocol version 1 in ${root}`,
+		'connected to nanocoder 9.9.9 over ACP protocol version 1',
 	);
 	await expect(agent).not.toContainText('session fake-session');
-	await expect(agent.locator('dt:has-text("resume sessions") + dd')).toHaveText(
-		'yes',
-	);
+	await expect(
+		capabilitiesDialog().locator('.capability-row', {
+			hasText: 'session resume',
+		}),
+	).toContainText('available');
+	await page.keyboard.press('Escape');
+	await expect(capabilitiesDialog()).toBeHidden();
 	expect(await trustPrompts()).toEqual([]);
 });
 
 test("asks with Nanocoder's reason, and shows its message when the user says no", async () => {
 	const root = project('refused', 'untrusted');
-	await openFolder(root);
+	await openFolder(root, 1, 'refused');
 	const [prompt] = await trustPrompts();
-	expect(prompt.title).toBe('Trust this folder?');
+	expect(prompt.title).toBe('trust this project folder?');
 	// The home folder is redacted to ~, and on Windows the temp folder sits inside it.
 	expect(prompt.message).toMatch(/^Directory /);
 	expect(prompt.message).toContain(
@@ -206,14 +293,12 @@ test('trusts the folder through Nanocoder when the user agrees, then opens it', 
 	await openFolder(root, 0);
 	expect(await trustPrompts()).toHaveLength(1);
 	expect(existsSync(path.join(root, '.fake-trusted'))).toBe(true);
-	await expect(
-		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-	).toContainText(`in ${root}`);
+	await expectConnectedAgent(root);
 	await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
 test('reports a second refusal without asking again', async () => {
-	await openFolder(project('stubborn', 'refuse'), 0);
+	await openFolder(project('stubborn', 'refuse'), 0, 'refused');
 	expect(await trustPrompts()).toHaveLength(1);
 	const alert = page.getByRole('alert');
 	await expect(alert).toContainText('is not trusted');
@@ -245,10 +330,10 @@ test("shows the permission request with Nanocoder's options and waits for the us
 	await expect(card.getByRole('button').first()).toHaveAccessibleName('Allow');
 	await expect(card.getByRole('button').last()).toHaveAccessibleName('Deny');
 	// Nothing answers for the user: the turn is still open.
-	await expect(page.getByText('turn ended')).toHaveCount(0);
+	await expect(page.locator('[data-stop-reason]')).toHaveCount(0);
 	await expect(page.getByRole('button', {name: 'Send'})).toBeDisabled();
 	await card.getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('allow once: the tool runs and the turn ends', async () => {
@@ -266,13 +351,11 @@ test('allow once: the tool runs and the turn ends', async () => {
 		conversation.locator('.gate-message-agent').first(),
 	).toContainText('Working on it.');
 	await expect(conversation.locator('.stream-author').first()).toHaveText(
-		'you',
+		/^you( \d{2}:\d{2})?$/,
 	);
-	await expect(conversation).toContainText(
-		'tool execute_bash: echo hi: completed',
-	);
+	await expect(conversation).toContainText('completed execute_bash: echo hi');
 	await expect(conversation).toContainText('Tool ran.');
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(
 		page.getByRole('region', {name: 'Permission request'}),
 	).toHaveCount(0);
@@ -286,11 +369,9 @@ test('reject once: the tool is marked failed and the turn goes on', async () => 
 		.click();
 
 	const conversation = page.getByRole('list', {name: 'Conversation'});
-	await expect(conversation).toContainText(
-		'tool execute_bash: echo hi: failed',
-	);
+	await expect(conversation).toContainText('failed execute_bash: echo hi');
 	await expect(conversation).toContainText('Tool denied.');
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('only an option Nanocoder offered can answer a waiting request', async () => {
@@ -315,7 +396,7 @@ test('only an option Nanocoder offered can answer a waiting request', async () =
 	// The same live request still accepts an option it offered.
 	const offered = await bridge('answer', live, 'allow');
 	expect(offered.ok).toBe(true);
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('shows every waiting request, so none is left unanswerable', async () => {
@@ -327,10 +408,10 @@ test('shows every waiting request, so none is left unanswerable', async () => {
 	await cards().last().getByRole('button', {name: 'Deny'}).click();
 	await expect(cards()).toHaveCount(1);
 	await expect(cards().first()).toContainText('echo call_1');
-	await expect(page.getByText('turn ended')).toHaveCount(0);
+	await expect(page.locator('[data-stop-reason]')).toHaveCount(0);
 
 	await cards().first().getByRole('button', {name: 'Allow'}).click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
 		'Both answered.',
 	);
@@ -348,7 +429,7 @@ test('opening another project is not blocked by a turn left open', async () => {
 	await expect(cards()).toBeVisible();
 	await expect(page.getByText('already working')).toHaveCount(0);
 	await cards().getByRole('button', {name: 'Allow'}).click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('validates a prompt', async () => {
@@ -366,7 +447,7 @@ test('conversation and tool text never enters the desktop database', async () =>
 		.fill(`synthetic bounded title ${'x'.repeat(80)} ${marker}`);
 	await page.getByRole('button', {name: 'Send'}).click();
 	await cards().getByRole('button', {name: 'Allow'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
 		marker,
 	);
@@ -440,7 +521,7 @@ test('two project processes keep simultaneous turns, events and approvals separa
 		new Set(states.map(state => state.ok && state.value.activeThreadId)).size,
 	).toBe(2);
 	await cards().getByRole('button', {name: 'Allow'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await openFolder(first);
 	await expect(cards()).toBeVisible();
 	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
@@ -450,7 +531,7 @@ test('two project processes keep simultaneous turns, events and approvals separa
 		page.getByRole('list', {name: 'Conversation'}),
 	).not.toContainText('Second project only');
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.getByRole('list', {name: 'Conversation'})).toContainText(
 		'Tool denied.',
 	);
@@ -478,10 +559,9 @@ test('two project processes keep simultaneous turns, events and approvals separa
 });
 
 test('a version below the minimum is refused with a clear upgrade message', async () => {
-	await openFolder(project('old-agent', 'old-version'));
-	await expect(page.getByRole('alert')).toContainText(
-		'Nanocoder 1.30.0 is below the minimum 1.31.0',
-	);
+	await openFolder(project('old-agent', 'old-version'), 1, {
+		alert: 'Nanocoder 1.30.0 is below the minimum 1.31.0',
+	});
 	await expect(page.getByRole('alert')).toContainText('Upgrade Nanocoder');
 	await expect(page.getByLabel('Message')).toHaveCount(0);
 });
@@ -489,26 +569,34 @@ test('a version below the minimum is refused with a clear upgrade message', asyn
 test('an older accepted version shows a reason for every disabled feature', async () => {
 	await openFolder(project('minimum-agent', 'minimum-no-gates'));
 	await showSetup();
-	const features = page.getByRole('region', {name: 'Nanocoder features'});
-	await expect(features.locator('dd')).toHaveCount(9);
-	for (const entry of await features.locator('dd').allTextContents()) {
-		expect(entry).toMatch(/^unavailable: .+/);
-	}
-	await expect(features).toContainText(
-		'Nanocoder did not advertise session/resume',
-	);
+	await expect(
+		setupDialog()
+			.getByRole('status')
+			.filter({hasText: 'Compatibility is unverified'}),
+	).toBeVisible();
+	await showCapabilities();
+	const features = capabilitiesDialog();
+	await expectMinimumReasons(features);
 	await expect(features).toContainText('safe probe');
-	await expect(features.getByRole('status')).toContainText(
-		'Compatibility is unverified',
-	);
+	await page.keyboard.press('Escape');
+	await expect(capabilitiesDialog()).toBeHidden();
 });
 
 test('the native-picked root is used to refuse a project-local runtime override', async () => {
-	await openFolder(work);
-	await expect(page.getByRole('alert')).toContainText(
-		'Refusing a Nanocoder inside the project folder',
-	);
+	await openFolder(work, 1, {
+		alert: 'Refusing a Nanocoder inside the project folder',
+	});
 	await expect(page.getByLabel('Message')).toHaveCount(0);
+});
+
+test('a refusal for a known folder stays visible after connecting it again', async () => {
+	const refusal = {alert: 'Refusing a Nanocoder inside the project folder'};
+	await openFolder(work, 1, refusal);
+	await openFolder(work, 1, refusal);
+	await expect(page.getByLabel('Message')).toHaveCount(0);
+	await expect(
+		page.getByRole('alert').filter({hasText: refusal.alert}).first(),
+	).toBeVisible();
 });
 
 async function recordRecoveryProjects(): Promise<void> {
@@ -540,7 +628,7 @@ test('a missing cached session stays view-only until the user explicitly starts 
 	await openFolder(root);
 	await sendMessage();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	const projectId = await recoveryProjectId(root);
 	const stopped = await page.evaluate(
 		projectId =>
@@ -555,7 +643,9 @@ test('a missing cached session stays view-only until the user explicitly starts 
 	await page.locator('.thread-open[aria-current="true"]').click();
 	await expect(
 		page.getByRole('region', {name: 'view-only thread'}),
-	).toContainText(REPLAY_MISSING_REASON);
+	).toContainText(
+		'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.',
+	);
 	await expect(page.getByLabel('Message')).toHaveCount(0);
 	const stoppedMissing = await page.evaluate(
 		projectId =>
@@ -567,13 +657,14 @@ test('a missing cached session stays view-only until the user explicitly starts 
 	expect(stoppedMissing.ok).toBe(true);
 	writeFileSync(path.join(root, '.fake-nanocoder'), 'multiple-sessions');
 	await openFolder(root);
-	await page
-		.getByRole('button', {name: 'start a new thread in this project'})
-		.click();
+	await createDraftThread(
+		page,
+		page.getByRole('button', {name: '＋ new thread in resume-clean-retry'}),
+	);
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('reloading during approval cancels hidden requests and leaves a usable session on reopen', async () => {
@@ -604,7 +695,7 @@ test('reloading during approval cancels hidden requests and leaves a usable sess
 	await expect(cards()).toHaveCount(2);
 	await cards().first().getByRole('button', {name: 'Deny'}).click();
 	await cards().first().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
@@ -659,7 +750,7 @@ test('closing and reopening the macOS window cancels hidden approval state', asy
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('reload during new or resumed mode preparation frees the latch before another folder opens', async () => {
@@ -673,7 +764,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 			await openFolder(root);
 			await sendMessage();
 			await cards().getByRole('button', {name: 'Deny'}).click();
-			await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
 			const projectId = await recoveryProjectId(root);
 			expect(
 				(
@@ -694,7 +785,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 				filePaths: [root],
 			})) as typeof dialog.showOpenDialog;
 		}, root);
-		await page.getByRole('button', {name: 'Open a project folder'}).click();
+		await openFolderFromPalette(page, root);
 		await expect(page.getByLabel('Message')).toBeEnabled();
 		const projectId = await recoveryProjectId(root);
 		await sendMessage();
@@ -722,9 +813,7 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 		await page.reload();
 		const other = project(`reload-mode-other-${resume}`);
 		await openFolder(other);
-		await expect(
-			page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-		).toContainText(other);
+		await expectConnectedAgent(other);
 		const state = await page.evaluate(
 			projectId =>
 				(window as unknown as {desktop: DesktopApi}).desktop.getSupervisorState(
@@ -735,13 +824,11 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 		expect(state.ok && state.value.status).toBe('stopped');
 		writeFileSync(path.join(root, '.fake-nanocoder'), 'ok');
 		await openFolder(root);
-		await expect(
-			page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-		).toContainText(root);
+		await expectConnectedAgent(root);
 		await sendMessage();
 		await expect(cards()).toBeVisible();
 		await cards().getByRole('button', {name: 'Deny'}).click();
-		await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+		await expect(turnEnded(page)).toBeVisible();
 		await expect(page.getByRole('alert')).toHaveCount(0);
 	}
 });
@@ -749,19 +836,35 @@ test('reload during new or resumed mode preparation frees the latch before anoth
 test('idle reconnect replays all feature reasons and the version warning before a prompt', async () => {
 	const root = project('reload-idle-gates', 'minimum-no-gates');
 	await openFolder(root);
-	await showSetup();
-	const features = () => page.getByRole('region', {name: 'Nanocoder features'});
-	await expect(features().locator('dd')).toHaveCount(9);
-	const reasons = await features().locator('dd').allTextContents();
+	await showCapabilities();
+	const features = () => capabilitiesDialog();
+	await expectMinimumReasons(features());
+	expect(await reasonsByLabel(features())).toEqual({
+		...minimumReasons,
+		'model + mode offers': modelReasonBeforeReconnect,
+	});
+	await page.keyboard.press('Escape');
+	await expect(capabilitiesDialog()).toBeHidden();
 	await page.reload();
 	await recordRecoveryProjects();
 	await openFolder(root);
+	await showCapabilities();
+	await expect
+		.poll(async () => reasonsByLabel(features()))
+		.toEqual({
+			...minimumReasons,
+			'model + mode offers': modelReasonAfterReconnect,
+		});
+	await expectMinimumReasons(features());
+	await page.keyboard.press('Escape');
+	await expect(capabilitiesDialog()).toBeHidden();
 	await showSetup();
-	await expect(features().locator('dd')).toHaveText(reasons);
-	for (const reason of reasons) expect(reason).toMatch(/^unavailable: .+/);
-	await expect(features().getByRole('status')).toContainText(
-		'Compatibility is unverified',
-	);
+	await expect(
+		setupDialog()
+			.getByRole('status')
+			.filter({hasText: 'Compatibility is unverified'}),
+	).toBeVisible();
+	await closeSetup();
 	await expect(page.getByLabel('Message')).toBeEmpty();
 	const states = await page.evaluate(() =>
 		(window as unknown as {recoveryEvents: ProjectEvent[]}).recoveryEvents
@@ -769,7 +872,7 @@ test('idle reconnect replays all feature reasons and the version warning before 
 			.map(event => event.state.status),
 	);
 	expect(states).toEqual(['ready']);
-	await expect(page.getByText('Turn ended: end_turn')).toHaveCount(0);
+	await expect(turnEnded(page)).toHaveCount(0);
 });
 
 test('a detached folder picker cannot hold the latch or reopen its late selection', async () => {
@@ -787,7 +890,7 @@ test('a detached folder picker cannot hold the latch or reopen its late selectio
 			});
 		}) as typeof dialog.showOpenDialog;
 	});
-	await page.getByRole('button', {name: 'Open a project folder'}).click();
+	await startFolderFromPalette(page);
 	await expect
 		.poll(() =>
 			app.evaluate(
@@ -808,13 +911,11 @@ test('a detached folder picker cannot hold the latch or reopen its late selectio
 			}
 		).releasePicker?.({canceled: false, filePaths: [root]});
 	}, late);
-	await expect(
-		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-	).toContainText(replacement);
+	await expectConnectedAgent(replacement);
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('a detached trust dialog cannot hold the latch or grant its late confirmation', async () => {
@@ -839,7 +940,7 @@ test('a detached trust dialog cannot hold the latch or grant its late confirmati
 			});
 		}) as typeof dialog.showMessageBox;
 	}, late);
-	await page.getByRole('button', {name: 'Open a project folder'}).click();
+	await startFolderFromPalette(page);
 	await expect
 		.poll(() =>
 			app.evaluate(() => (globalThis as {trustEntered?: boolean}).trustEntered),
@@ -858,13 +959,11 @@ test('a detached trust dialog cannot hold the latch or grant its late confirmati
 			}
 		).releaseTrust?.({response: 0, checkboxChecked: false});
 	});
-	await expect(
-		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-	).toContainText(replacement);
+	await expectConnectedAgent(replacement);
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	expect(existsSync(path.join(late, '.fake-trusted'))).toBe(false);
 });
 
@@ -914,11 +1013,9 @@ test('a second reload cancels an open still queued behind bounded process cleanu
 	).toBe(0);
 	const replacement = project('reload-queued-replacement');
 	await openFolder(replacement);
-	await expect(
-		page.getByRole('region', {name: 'Connected agent', includeHidden: true}),
-	).toContainText(replacement);
+	await expectConnectedAgent(replacement);
 	await sendMessage();
 	await expect(cards()).toBeVisible();
 	await cards().getByRole('button', {name: 'Deny'}).click();
-	await expect(page.getByText('Turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });

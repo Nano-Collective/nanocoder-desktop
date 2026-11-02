@@ -18,7 +18,9 @@ import {
 import {build} from 'vite';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {createDraftThread} from './qa/new-thread';
 import type {subagentHarness} from './qa/subagent-harness';
+import {turnCancelled, turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -61,7 +63,7 @@ test.describe('fc01-shaped delegation cards', () => {
 	const input = () => page.getByRole('textbox', {name: 'message', exact: true});
 	const stop = () =>
 		page.getByRole('button', {
-			name: /stop turn:.*entire turn and all subagents/,
+			name: /stop whole turn:.*entire turn and all subagents/,
 		});
 	async function prompt(text: string) {
 		await input().fill(text);
@@ -89,7 +91,9 @@ test.describe('fc01-shaped delegation cards', () => {
 		await expect(cards().last()).toContainText('inspect fixture');
 		await expect(cards().last()).toContainText('1.2k tokens');
 		await expect(cards().last()).toContainText('3 tools (read_file)');
-		await expect(cards().last()).toContainText('depth not reported');
+		await expect(cards().last()).toContainText(
+			'depth, elapsed time and child tool details were not reported.',
+		);
 		await expect(page.getByRole('alertdialog')).toHaveCount(1);
 		await expect(page.getByRole('alertdialog')).toContainText(
 			'execute_bash fixture (explore)',
@@ -101,8 +105,9 @@ test.describe('fc01-shaped delegation cards', () => {
 		await expect(cards().last()).not.toContainText('private fixture task');
 		await stop().click();
 		await expect(
-			page.getByText('turn interrupted: cancelled', {exact: true}),
+			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
+		await expect(turnCancelled(page)).toHaveCount(1);
 		await expect(page.getByRole('alertdialog')).toHaveCount(0);
 		await expect(cards().last()).toContainText('interrupted');
 	});
@@ -115,9 +120,7 @@ test.describe('fc01-shaped delegation cards', () => {
 			.getByRole('alertdialog')
 			.getByRole('button', {name: 'Allow'})
 			.click();
-		await expect(
-			page.getByText('turn ended: end_turn', {exact: true}),
-		).toBeVisible();
+		await expect(turnEnded(page)).toBeVisible();
 		await expect(cards().last()).toContainText('failed');
 		await expect(
 			page
@@ -138,8 +141,9 @@ test.describe('fc01-shaped delegation cards', () => {
 		await stop().focus();
 		await stop().press('Enter');
 		await expect(
-			page.getByText('turn interrupted: cancelled', {exact: true}),
+			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
+		await expect(turnCancelled(page)).toHaveCount(1);
 		await expect(input()).toHaveValue('unsent fixture draft');
 		await expect(input()).toBeFocused();
 		await expect(cards().last()).toContainText('interrupted');
@@ -178,29 +182,32 @@ test.describe('fc01-shaped delegation cards', () => {
 		await expect(page.getByRole('alertdialog')).toHaveCount(0);
 		await expect(stop()).toHaveCount(0);
 		await expect(
-			page.getByText('turn interrupted: cancelled', {exact: true}),
+			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
+		await expect(turnCancelled(page)).toHaveCount(1);
 	});
 
-	test('thin delegation safely falls back and source bounds are not settings (SUB-06/07)', async () => {
+	test('thin delegation safely falls back and shows no bounds settings (SUB-06/07)', async () => {
 		const retained = await cards().allTextContents();
 		await prompt('fixture fallback');
 		await expect(cards()).toHaveCount(retained.length + 1);
-		await expect(cards().last()).toContainText('child details not available');
 		await expect(cards().last()).toContainText(
-			'source bounds: depth 2, batch 5',
+			'child tool details were not reported',
 		);
-		await expect(cards().last()).toContainText('elapsed not reported');
+		await expect(cards().last()).not.toContainText('source bounds');
+		await expect(cards().last()).toContainText('elapsed time');
+		await expect(cards().last()).toContainText('display-only progress');
 		await expect(cards().last().getByRole('combobox')).toHaveCount(0);
 		await cards()
 			.last()
 			.getByRole('button', {
-				name: /stop turn:.*entire turn and all subagents/,
+				name: /stop whole turn:.*entire turn and all subagents/,
 			})
 			.click();
 		await expect(
-			page.getByText('turn interrupted: cancelled', {exact: true}),
+			page.getByText('turn interrupted', {exact: true}),
 		).toBeVisible();
+		await expect(turnCancelled(page)).toHaveCount(1);
 		for (const [index, text] of retained.entries())
 			await expect(cards().nth(index)).toHaveText(text);
 	});
@@ -216,7 +223,7 @@ test.describe('fc01-shaped delegation cards', () => {
 			const runningCard = cards().nth(previousCards);
 			await expect(runningCard).toContainText('3 tools (read_file)');
 			const runningStop = runningCard.getByRole('button', {
-				name: /stop turn:.*entire turn and all subagents/,
+				name: /stop whole turn:.*entire turn and all subagents/,
 			});
 			await expect(runningStop).toBeEnabled();
 			await page.emulateMedia({reducedMotion: 'reduce'});
@@ -236,8 +243,9 @@ test.describe('fc01-shaped delegation cards', () => {
 			}
 			await runningStop.press('Enter');
 			await expect(
-				page.getByText('turn interrupted: cancelled', {exact: true}),
+				page.getByText('turn interrupted', {exact: true}),
 			).toBeVisible();
+			await expect(turnCancelled(page)).toHaveCount(1);
 			await page.emulateMedia({reducedMotion: 'no-preference'});
 			await page.setViewportSize({width: 1240, height: 900});
 		});
@@ -245,7 +253,10 @@ test.describe('fc01-shaped delegation cards', () => {
 
 	test('SUB-05 production delegations commit exact scoped execution-linked metadata without task content', async () => {
 		const {readFileSync, existsSync} = await import('node:fs');
-		await page.getByRole('button', {name: 'new thread', exact: true}).click();
+		await createDraftThread(
+			page,
+			page.getByRole('button', {name: 'new thread', exact: true}),
+		);
 		await expect(
 			page.locator('.thread-row[data-selected="true"] .thread-title'),
 		).toHaveText('new thread');
@@ -299,9 +310,7 @@ test.describe('fc01-shaped delegation cards', () => {
 				.getByRole('alertdialog')
 				.getByRole('button', {name: 'Allow'})
 				.click();
-			await expect(
-				page.getByText('turn ended: end_turn', {exact: true}),
-			).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
 			await expect(cards()).toHaveCount(1);
 			await expect(cards().last()).toContainText('failed');
 			const toolCallId = await page.evaluate(

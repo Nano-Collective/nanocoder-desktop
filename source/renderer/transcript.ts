@@ -9,7 +9,14 @@ import type {
 } from '@/shared/ipc';
 
 export type TranscriptItem = (
-	| {kind: 'user' | 'agent' | 'thought'; text: string; messageId?: string}
+	| {
+			kind: 'user' | 'agent';
+			text: string;
+			messageId?: string;
+			// Epoch ms seen live by this renderer; never persisted or estimated.
+			at?: number;
+	  }
+	| {kind: 'thought'; text: string; messageId?: string}
 	| {kind: 'turn-metadata'}
 	| {kind: 'failure'; text: string}
 	| {
@@ -112,7 +119,11 @@ function upsert(
 	return {...transcript, items};
 }
 
-function applyContent(transcript: Transcript, event: TurnEvent): Transcript {
+function applyContent(
+	transcript: Transcript,
+	event: TurnEvent,
+	at: number | undefined,
+): Transcript {
 	const {items} = transcript;
 	switch (event.type) {
 		case 'metadata':
@@ -147,6 +158,7 @@ function applyContent(transcript: Transcript, event: TurnEvent): Transcript {
 						kind,
 						text: event.text,
 						...(event.messageId ? {messageId: event.messageId} : {}),
+						...(at !== undefined && kind !== 'thought' ? {at} : {}),
 					};
 			return {
 				...transcript,
@@ -333,8 +345,9 @@ function mergeMetadata(
 export function applyEvent(
 	transcript: Transcript,
 	event: TurnEvent,
+	at?: number,
 ): Transcript {
-	const next = applyContent(transcript, event);
+	const next = applyContent(transcript, event, at);
 	if (!event.metadata) return next;
 	let index = -1;
 	for (let cursor = next.items.length - 1; cursor >= 0; cursor--) {
@@ -363,6 +376,51 @@ export function applyEvent(
 export function applyEvents(
 	transcript: Transcript,
 	events: readonly TurnEvent[],
+	at?: number,
 ): Transcript {
-	return events.reduce(applyEvent, transcript);
+	return events.reduce(
+		(current, event) => applyEvent(current, event, at),
+		transcript,
+	);
+}
+
+type Message = Extract<TranscriptItem, {kind: 'user' | 'agent'}>;
+
+// A shared message id is the only proof of identity. Exact text counts only
+// when neither side has an id, and empty agent text never counts.
+function sameMessage(earlier: Message, item: Message): boolean {
+	if (earlier.kind !== item.kind) return false;
+	if (earlier.kind === 'agent' && (earlier.text === '' || item.text === ''))
+		return false;
+	if (earlier.messageId !== undefined || item.messageId !== undefined)
+		return earlier.messageId === item.messageId;
+	return earlier.text === item.text;
+}
+
+export function carryMessageTimes(
+	previous: Transcript,
+	next: Transcript,
+): Transcript {
+	const earlier = previous.items.filter(
+		(item): item is Message => item.kind === 'user' || item.kind === 'agent',
+	);
+	const used = new Set<Message>();
+	let changed = false;
+	const items = next.items.map(item => {
+		if (
+			(item.kind !== 'user' && item.kind !== 'agent') ||
+			item.at !== undefined
+		)
+			return item;
+		const matches = earlier.filter(
+			candidate => !used.has(candidate) && sameMessage(candidate, item),
+		);
+		if (matches.length !== 1) return item;
+		const [match] = matches;
+		used.add(match);
+		if (match.at === undefined) return item;
+		changed = true;
+		return {...item, at: match.at};
+	});
+	return changed ? {...next, items} : next;
 }

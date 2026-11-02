@@ -17,7 +17,9 @@ import {
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
-import {contrast, visibleTextContrast} from './qa/ui-contrast';
+import {openFolderFromPalette} from './qa/open-folder';
+import {turnEnded} from './qa/turn-state';
+import {contrast, themedColor, visibleTextContrast} from './qa/ui-contrast';
 
 const work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-ui-')));
 const cli = path.join(work, 'nanocoder/dist/cli.js');
@@ -180,17 +182,29 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	await expect(open).toHaveCSS('outline-style', 'solid');
 	await expect(open).toHaveCSS('outline-width', '2px');
 	await page.keyboard.press('Enter');
-	await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
-	const switcher = page.getByLabel('switch project', {exact: true});
-	if (!(await page.locator('.project-switcher').getAttribute('open'))) {
-		await page.locator('.project-switcher').evaluate(element => {
-			(element as HTMLDetailsElement).open = true;
-		});
+	await expect(page.locator('.footer-acp--success')).toBeVisible();
+	const switcher = page.getByRole('button', {
+		name: 'switch project',
+		exact: true,
+	});
+	const projects = page.getByRole('dialog', {name: 'your projects'});
+	await switcher.focus();
+	await page.keyboard.press('Enter');
+	await expect(projects).toBeVisible();
+	const projectFocus = [
+		projects.getByRole('button', {name: 'dismiss dialog', exact: true}),
+		projects.getByRole('button', {name: 'open project', exact: true}),
+		projects.getByRole('button', {name: /add project folder/}),
+	];
+	await projectFocus[0].focus();
+	for (const [index, control] of projectFocus.entries()) {
+		if (index > 0) await page.keyboard.press('Tab');
+		await expect(control).toBeFocused();
+		await expect(control).toHaveCSS('outline-width', '2px');
 	}
-	const recent = page.getByRole('region', {name: 'recent projects'});
-	await expect(
-		recent.getByRole('button', {name: 'open project', exact: true}),
-	).toBeEnabled();
+	await page.keyboard.press('Escape');
+	await expect(projects).toBeHidden();
+	await expect(switcher).toBeFocused();
 	const palette = page.getByRole('button', {
 		name: 'command palette',
 		exact: true,
@@ -202,30 +216,24 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 	await expect(terminal).toHaveAttribute('aria-expanded', 'false');
 	await expect(page.locator('.shell-bottom-panel')).toHaveCount(0);
 	const rail = page.getByRole('region', {name: 'project threads'});
-	const diagnostics = page.getByRole('button', {
-		name: 'diagnostics',
-		exact: true,
-	});
 	const input = page.getByRole('textbox', {name: 'message'});
 	const send = page.getByRole('button', {name: 'send', exact: true});
+	const importLink = rail.locator('.sidebar-link', {
+		hasText: 'import sessions',
+	});
+	await expect(importLink).toBeVisible();
 	const focusOrder = [
 		switcher,
-		...['add project folder', 'open project', 'locate project'].map(name =>
-			recent.getByRole('button', {name, exact: true}),
-		),
 		rail.getByRole('button', {name: 'new thread', exact: true}),
 		rail.locator('.thread-open'),
-		rail.locator('.thread-actions > summary'),
-		page.getByRole('button', {name: 'refresh saved sessions', exact: true}),
-		page.getByRole('button', {
-			name: 'import saved session: existing saved session',
-			exact: true,
-		}),
+		rail.locator('.sidebar-link', {hasText: 'archived'}),
+		importLink,
+		page.getByRole('button', {name: 'runtime details', exact: true}),
+		page.getByRole('button', {name: 'keyboard shortcuts', exact: true}),
+		page.getByRole('button', {name: 'thread actions', exact: true}),
 		terminal,
 		palette,
-		page.getByText('runtime and setup details', {exact: true}),
-		open,
-		diagnostics,
+		page.getByRole('region', {name: 'conversation', exact: true}),
 		input,
 		page.getByRole('combobox', {name: 'mode for this thread', exact: true}),
 		send,
@@ -240,11 +248,11 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 		await expect(control).toHaveCSS('outline-width', '2px');
 		if (control === input) {
 			await expect(input).toHaveAccessibleDescription(
-				'enter a message to send',
+				'ready for your next message; enter a message to send ↵ send · ⇧↵ newline',
 			);
 			await input.fill('synthetic UI check');
 			await expect(input).toHaveAccessibleDescription(
-				'⏎ send · ⇧⏎ newline · / commands',
+				'ready for your next message ↵ send · ⇧↵ newline',
 			);
 			await expect(send).toBeEnabled();
 		}
@@ -257,9 +265,12 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	await expect(card).toBeVisible();
 	const dialog = card.getByRole('alertdialog');
 	await expect(dialog).toBeFocused();
-	await expect(dialog).toHaveCSS('outline-width', '2px');
-	const switcher = page.getByLabel('switch project', {exact: true});
-	const recent = page.getByRole('region', {name: 'recent projects'});
+	await expect(card).toHaveCSS('outline-width', '2px');
+	await expect(card).toHaveCSS('outline-style', 'solid');
+	const switcher = page.getByRole('button', {
+		name: 'switch project',
+		exact: true,
+	});
 	const rail = page.getByRole('region', {name: 'project threads'});
 	const terminal = page.getByRole('button', {
 		name: 'open terminal',
@@ -269,21 +280,20 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	await expect(page.locator('.shell-bottom-panel')).toHaveCount(0);
 	const focusOrder = [
 		switcher,
-		recent.getByRole('button', {name: 'add project folder', exact: true}),
-		recent.getByRole('button', {name: 'open project', exact: true}),
-		recent.getByRole('button', {name: 'locate project', exact: true}),
 		rail.getByRole('button', {name: 'new thread', exact: true}),
 		rail.locator('.thread-open'),
-		rail.locator('.thread-actions > summary'),
+		rail.locator('.sidebar-link', {hasText: 'archived'}),
+		rail.locator('.sidebar-link', {hasText: 'import sessions'}),
+		page.getByRole('button', {name: 'runtime details', exact: true}),
+		page.getByRole('button', {name: 'keyboard shortcuts', exact: true}),
+		page.getByRole('button', {name: 'thread actions', exact: true}),
 		terminal,
 		page.getByRole('button', {name: 'command palette', exact: true}),
-		page.getByText('runtime and setup details', {exact: true}),
-		page.getByRole('button', {name: 'open a project folder', exact: true}),
-		page.getByRole('button', {name: 'diagnostics', exact: true}),
+		page.getByRole('region', {name: 'conversation', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),
 		card.getByRole('button', {name: 'Deny', exact: true}),
-		page.getByRole('textbox', {name: 'message'}),
 		page.getByRole('button', {name: 'cancel turn', exact: true}),
+		page.getByRole('textbox', {name: 'message'}),
 	];
 	await focusOrder[0].focus();
 	for (const [index, control] of focusOrder.entries()) {
@@ -296,7 +306,9 @@ test('approval parts have named actions and no new contrast gaps in either theme
 	).toBeDisabled();
 	await expect(
 		page.getByRole('textbox', {name: 'message'}),
-	).toHaveAccessibleDescription('waiting for Nanocoder to finish the turn');
+	).toHaveAccessibleDescription(
+		'waiting for your decision · draft is not queued ↵ send · ⇧↵ newline',
+	);
 	await expect(
 		page.getByRole('status').filter({hasText: 'approval'}),
 	).toBeVisible();
@@ -314,7 +326,7 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		expect(await visibleTextContrast(page, theme)).toEqual([]);
 	}
 	await card.getByRole('button', {name: 'Deny', exact: true}).click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 });
 
 test('reduce motion stops spinner, cursor, approval pulse and colour transitions', async () => {
@@ -436,13 +448,14 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
 		}, theme);
-		await page.getByRole('button', {name: 'open a project folder'}).click();
-		await expect(
-			page.getByRole('button', {name: 'open a project folder'}),
-		).toBeEnabled();
-		await expect(
-			page.getByRole('region', {name: 'connected agent', includeHidden: true}),
-		).toContainText(folder);
+		await openFolderFromPalette(page, folder);
+		await page
+			.getByRole('button', {name: 'runtime details', exact: true})
+			.click();
+		const setup = page.getByRole('dialog', {name: 'runtime details'});
+		await expect(setup.locator('.runtime-rows')).toContainText(folder);
+		await page.keyboard.press('Escape');
+		await expect(setup).toBeHidden();
 		await page
 			.getByRole('textbox', {name: 'message'})
 			.fill('synthetic exit check');
@@ -478,9 +491,33 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 				.filter({hasText: /ready|running|idle/}),
 		).toHaveCount(0);
 		await expect(page.locator('.ui-badge--success')).toHaveCount(0);
-		await expect(page.locator('.ui-badge--failed')).toHaveCSS(
-			'background-color',
-			theme === 'light' ? 'rgb(235, 237, 245)' : 'rgb(22, 22, 22)',
+		// Plain turn badges have no fill, so the error ink is checked against the surface behind it.
+		const failedInk = await page
+			.locator('.ui-badge--failed .ui-badge-glyph--failed')
+			.evaluate(element => {
+				const rgb = (value: string) =>
+					value
+						.match(/[\d.]+/g)
+						?.slice(0, 3)
+						.map(Number) as [number, number, number];
+				let surface: Element | null = element;
+				while (
+					surface &&
+					getComputedStyle(surface).backgroundColor === 'rgba(0, 0, 0, 0)'
+				)
+					surface = surface.parentElement;
+				return {
+					ink: rgb(getComputedStyle(element).color),
+					surface: rgb(
+						surface
+							? getComputedStyle(surface).backgroundColor
+							: 'rgb(0, 0, 0)',
+					),
+				};
+			});
+		expect(failedInk.ink).toEqual(themedColor('error', theme));
+		expect(contrast(failedInk.ink, failedInk.surface)).toBeGreaterThanOrEqual(
+			4.5,
 		);
 		await expect(page.getByRole('textbox', {name: 'message'})).toBeDisabled();
 		await expect(
@@ -495,6 +532,12 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		await expect(glyph).toBeVisible();
 		await expect(glyph).toHaveCSS(
 			'color',
+			theme === 'dark' ? 'rgb(230, 230, 230)' : 'rgb(36, 40, 59)',
+		);
+		const dash = await glyph.evaluate(element =>
+			getComputedStyle(element, '::after').getPropertyValue('background-color'),
+		);
+		expect(dash).toBe(
 			theme === 'dark' ? 'rgb(247, 118, 142)' : 'rgb(161, 40, 76)',
 		);
 		await expect(selected).toHaveCSS(

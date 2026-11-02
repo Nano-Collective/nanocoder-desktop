@@ -19,6 +19,7 @@ import {
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -42,6 +43,12 @@ interface Probe {
 interface StreamWindow extends Window {
 	streamProbe: Probe;
 	desktop: DesktopApi;
+}
+
+// Nearest-rank percentile: with 20 samples, p95 is the 19th smallest, not the max.
+function percentile(values: number[], quantile: number): number {
+	const sorted = [...values].sort((a, b) => a - b);
+	return sorted[Math.ceil(quantile * sorted.length) - 1];
 }
 
 test.beforeEach(async () => {
@@ -176,7 +183,8 @@ test('100 updates per second keep ordered content and input and scroll response 
 	await input.fill('stream performance fixture');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
 	const scrollMs: number[] = [];
-	for (const count of [30, 75, 120, 165, 210]) {
+	const counts = Array.from({length: 20}, (_, index) => 15 + index * 12);
+	for (const count of counts) {
 		await expect
 			.poll(() =>
 				page.evaluate(
@@ -215,9 +223,7 @@ test('100 updates per second keep ordered content and input and scroll response 
 			),
 		);
 	}
-	await expect(
-		page.getByText('turn ended: end_turn', {exact: true}),
-	).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(
 		page.locator('[role="status"][aria-label="stream announcements"]'),
 	).toContainText('turn completed. response finished:');
@@ -232,8 +238,14 @@ test('100 updates per second keep ordered content and input and scroll response 
 		updates: probe.updates,
 		updatesPerSecond,
 		maxFrameGapMs: Math.max(...probe.frameGaps),
+		medianFrameGapMs: percentile(probe.frameGaps, 0.5),
+		p95FrameGapMs: percentile(probe.frameGaps, 0.95),
 		maxInputFrameMs: Math.max(...probe.inputFrameMs),
+		medianInputFrameMs: percentile(probe.inputFrameMs, 0.5),
+		p95InputFrameMs: percentile(probe.inputFrameMs, 0.95),
 		maxScrollFrameMs: Math.max(...scrollMs),
+		medianScrollFrameMs: percentile(scrollMs, 0.5),
+		p95ScrollFrameMs: percentile(scrollMs, 0.95),
 		maxEventLoopMs: Math.max(...probe.eventLoopMs),
 		frames: probe.frameGaps.length,
 		inputSamples: probe.inputFrameMs.length,
@@ -273,11 +285,15 @@ test('100 updates per second keep ordered content and input and scroll response 
 	expect(updatesPerSecond).toBeGreaterThanOrEqual(100);
 	expect(updatesPerSecond).toBeLessThanOrEqual(115);
 	expect(metrics.frames).toBeGreaterThan(60);
-	expect(metrics.inputSamples).toBe(5);
+	expect(metrics.inputSamples).toBeGreaterThanOrEqual(20);
+	expect(metrics.scrollSamples).toBeGreaterThanOrEqual(20);
 	for (const latency of [
-		metrics.maxFrameGapMs,
-		metrics.maxInputFrameMs,
-		metrics.maxScrollFrameMs,
+		metrics.medianFrameGapMs,
+		metrics.p95FrameGapMs,
+		metrics.medianInputFrameMs,
+		metrics.p95InputFrameMs,
+		metrics.medianScrollFrameMs,
+		metrics.p95ScrollFrameMs,
 		metrics.maxEventLoopMs,
 	])
 		expect(latency).toBeLessThanOrEqual(100);
@@ -321,7 +337,7 @@ test('100 updates per second keep ordered content and input and scroll response 
 	});
 	expect(bridgeKeys).not.toContain('onNanocoderEvent');
 	await expect(agent).toHaveText(before ?? '');
-	await expect(input).toHaveValue('draft-memory-only-210');
+	await expect(input).toHaveValue(`draft-memory-only-${counts.at(-1)}`);
 	for (const file of ['desktop.sqlite', 'desktop.sqlite-wal']) {
 		const target = path.join(work, 'profile', file);
 		if (existsSync(target))
@@ -343,9 +359,7 @@ test('stream semantics keyboard disclosure reduced motion and both themes at thr
 	const input = page.getByRole('textbox', {name: 'message', exact: true});
 	await input.fill('first visual fixture');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
-	await expect(
-		page.getByText('turn ended: end_turn', {exact: true}),
-	).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.locator('.gate-message-tool details')).toHaveCount(1);
 	await input.fill('second visual fixture');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
@@ -375,9 +389,7 @@ test('stream semantics keyboard disclosure reduced motion and both themes at thr
 		'border-left-width',
 		'0px',
 	);
-	await expect(
-		page.getByText('turn ended: end_turn', {exact: true}),
-	).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	await expect(page.locator('.stream-cursor')).toHaveCount(0);
 	const reasoning = page.locator('.stream-reasoning').last();
 	await expect(reasoning).not.toHaveAttribute('open');

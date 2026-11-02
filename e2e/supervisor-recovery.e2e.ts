@@ -19,6 +19,8 @@ import type {DesktopApi} from '@/shared/desktop-api';
 import type {ProjectEvent} from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette} from './qa/open-folder';
+import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
@@ -71,9 +73,7 @@ test.afterEach(async () => {
 
 async function open(mode = 'ok'): Promise<string> {
 	writeFileSync(path.join(root, '.fake-nanocoder'), mode);
-	await page
-		.getByRole('button', {name: 'open a project folder', exact: true})
-		.click();
+	await openFolderFromPalette(page, root);
 	await expect(
 		page.getByRole('textbox', {name: 'message', exact: true}),
 	).toBeEnabled();
@@ -89,7 +89,7 @@ async function open(mode = 'ok'): Promise<string> {
 }
 
 for (const theme of ['dark', 'light'] as const) {
-	for (const action of ['retry', 'new', 'remove'] as const) {
+	for (const action of ['retry', 'new', 'remove', 'view-retry'] as const) {
 		test(`CHAT-09 ${theme} keyboard ${action} keeps recovery native, scoped and unqueued`, async () => {
 			const projectId = await open('replay-gates');
 			await page.emulateMedia({reducedMotion: 'reduce'});
@@ -99,9 +99,7 @@ for (const theme of ['dark', 'light'] as const) {
 			const input = page.getByRole('textbox', {name: 'message', exact: true});
 			await input.fill('saved recovery fixture');
 			await input.press('Enter');
-			await expect(
-				page.getByText('turn ended: end_turn', {exact: true}),
-			).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
 			const before = await page.evaluate(async projectId => {
 				const {desktop} = window as unknown as {desktop: DesktopApi};
 				const ui = await desktop.getUiState({});
@@ -220,65 +218,114 @@ for (const theme of ['dark', 'light'] as const) {
 					expect(count(after.lines, method)).toBe(count(diagnostics, method));
 			} else {
 				await expect(input).toHaveCount(0);
-				await expect(notice).toHaveCSS('border-top-style', 'dashed');
-				await expect(notice).toHaveCSS(
+				const dashed = notice.locator('.thread-view-only-notice');
+				await expect(dashed).toHaveCSS('border-top-style', 'dashed');
+				await expect(dashed).toHaveCSS(
 					'color',
 					theme === 'dark' ? 'rgb(168, 168, 168)' : 'rgb(79, 86, 120)',
 				);
-				await expect(notice).toContainText(
-					"nanocoder can't find this session · it may have been deleted, expired or never saved",
+				await expect(dashed).toContainText(
+					'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.',
 				);
 				const button = notice.getByRole('button', {
 					name:
 						action === 'new'
-							? 'start a new thread in this project'
-							: 'remove from desktop',
+							? '＋ new thread in project'
+							: action === 'view-retry'
+								? 'retry this same thread'
+								: 'remove from desktop',
 					exact: true,
 				});
 				await button.focus();
 				await expect(button).toBeFocused();
 				await expect(button).toHaveCSS('outline-width', '2px');
 				await button.press('Enter');
-				await expect(notice).toHaveCount(0);
-				const after = await page.evaluate(async scope => {
-					const {desktop} = window as unknown as {desktop: DesktopApi};
-					const rows = await desktop.listThreads({
-						projectId: scope.projectId,
-						archiveState: 'active',
-					});
-					const diagnostics = await desktop.getDiagnostics({
-						projectId: scope.projectId,
-					});
-					if (!rows.ok || !diagnostics.ok)
-						throw new Error('Missing fixture state');
-					return {threads: rows.value, lines: diagnostics.value.lines};
-				}, scope);
-				expect(after.lines).toEqual(diagnostics);
-				if (action === 'new') {
-					expect(after.threads.find(row => row.id === scope.threadId)).toEqual(
-						failed.value.thread,
+				if (action === 'view-retry') {
+					const resumes = (lines: readonly string[]) =>
+						lines.filter(line => line === '{"method":"session/resume"}').length;
+					await expect
+						.poll(async () => {
+							const lines = await page.evaluate(async projectId => {
+								const result = await (
+									window as unknown as {desktop: DesktopApi}
+								).desktop.getDiagnostics({projectId});
+								if (!result.ok) throw new Error(result.error.code);
+								return result.value.lines;
+							}, scope.projectId);
+							return resumes(lines);
+						})
+						.toBe(resumes(diagnostics) + 1);
+					await expect(button).toBeEnabled();
+					await expect(notice).toBeVisible();
+					await expect(input).toHaveCount(0);
+					const retried = await page.evaluate(async scope => {
+						const {desktop} = window as unknown as {desktop: DesktopApi};
+						const result = await desktop.getThreadSnapshot(scope);
+						if (!result.ok) throw new Error(result.error.code);
+						return result.value.thread;
+					}, scope);
+					expect(retried.id).toBe(scope.threadId);
+					expect(retried.runState).toBe('view-only');
+					expect(retried.nanocoderSessionId).toBe(
+						failed.value.thread.nanocoderSessionId,
 					);
-					const created = after.threads.filter(
-						row => row.id !== scope.threadId,
-					);
-					expect(created).toHaveLength(1);
-					expect(created[0].nanocoderSessionId).toBeNull();
-					expect(created[0].runState).toBe('new');
 				} else {
-					expect(after.threads.some(row => row.id === scope.threadId)).toBe(
-						false,
-					);
-					const removed = await page.evaluate(
-						scope =>
-							(
-								window as unknown as {desktop: DesktopApi}
-							).desktop.getThreadSnapshot(scope),
-						scope,
-					);
-					expect(removed).toMatchObject({
-						ok: false,
-						error: {code: 'NOT_FOUND'},
+					const confirmation = page.getByRole('dialog', {
+						name: action === 'new' ? 'new thread' : 'remove from desktop',
+						exact: true,
 					});
+					await expect(confirmation).toBeVisible();
+					await confirmation
+						.getByRole('button', {
+							name:
+								action === 'new'
+									? 'keep as new thread draft'
+									: 'remove from desktop',
+							exact: true,
+						})
+						.click();
+					await expect(confirmation).toBeHidden();
+					await expect(notice).toHaveCount(0);
+					const after = await page.evaluate(async scope => {
+						const {desktop} = window as unknown as {desktop: DesktopApi};
+						const rows = await desktop.listThreads({
+							projectId: scope.projectId,
+							archiveState: 'active',
+						});
+						const diagnostics = await desktop.getDiagnostics({
+							projectId: scope.projectId,
+						});
+						if (!rows.ok || !diagnostics.ok)
+							throw new Error('Missing fixture state');
+						return {threads: rows.value, lines: diagnostics.value.lines};
+					}, scope);
+					expect(after.lines).toEqual(diagnostics);
+					if (action === 'new') {
+						expect(
+							after.threads.find(row => row.id === scope.threadId),
+						).toEqual(failed.value.thread);
+						const created = after.threads.filter(
+							row => row.id !== scope.threadId,
+						);
+						expect(created).toHaveLength(1);
+						expect(created[0].nanocoderSessionId).toBeNull();
+						expect(created[0].runState).toBe('new');
+					} else {
+						expect(after.threads.some(row => row.id === scope.threadId)).toBe(
+							false,
+						);
+						const removed = await page.evaluate(
+							scope =>
+								(
+									window as unknown as {desktop: DesktopApi}
+								).desktop.getThreadSnapshot(scope),
+							scope,
+						);
+						expect(removed).toMatchObject({
+							ok: false,
+							error: {code: 'NOT_FOUND'},
+						});
+					}
 				}
 			}
 			expect(
@@ -297,8 +344,8 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 		.fill('synthetic failed request');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
 	const recovery = page
-		.locator('[data-shell-slot="stream-tools"]')
-		.getByRole('region', {name: 'Nanocoder recovery'});
+		.getByRole('main', {name: 'conversation workspace'})
+		.getByRole('region', {name: 'Nanocoder recovery', exact: true});
 	await expect(recovery).toContainText('exit code 3');
 	await expect(
 		page.getByRole('textbox', {name: 'message', exact: true}),
@@ -316,9 +363,9 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 	await retry.focus();
 	await expect(retry).toBeFocused();
 	await retry.press('Enter');
-	await expect(
-		page.getByRole('textbox', {name: 'message', exact: true}),
-	).toBeEnabled();
+	const composer = page.getByRole('textbox', {name: 'message', exact: true});
+	await expect(composer).toBeEnabled();
+	await expect(composer).toBeFocused();
 	await expect(page.getByRole('list', {name: 'conversation'})).toContainText(
 		'Earlier answer',
 	);
@@ -344,6 +391,31 @@ test('a crashed turn disables the composer and keyboard retry resumes without re
 	).toHaveLength(1);
 });
 
+test('a failed turn keeps the unsent draft typed while it ran', async () => {
+	await open('die-in-held-turn');
+	const input = page.getByRole('textbox', {name: 'message', exact: true});
+	await input.fill('synthetic failed request');
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	await expect(
+		page
+			.locator('.gate-message-user .stream-plain')
+			.getByText('synthetic failed request', {exact: true}),
+	).toBeVisible();
+	await expect(input).toBeEditable();
+	await input.fill('unsent draft kept through failure');
+	writeFileSync(path.join(root, '.fake-turn-release'), 'go');
+	const recovery = page
+		.getByRole('main', {name: 'conversation workspace'})
+		.getByRole('region', {name: 'Nanocoder recovery', exact: true});
+	await expect(recovery).toContainText('exit code 3');
+	await expect(recovery).toContainText('Nanocoder stopped unexpectedly');
+	await expect(recovery).toContainText(
+		'your thread and unsent draft are still here.',
+	);
+	await expect(input).toBeDisabled();
+	await expect(input).toHaveValue('unsent draft kept through failure');
+});
+
 test('ordinary reopen preserves the existing conversation when no replay is produced', async () => {
 	const projectId = await open();
 	await page
@@ -354,17 +426,25 @@ test('ordinary reopen preserves the existing conversation when no replay is prod
 		.getByRole('region', {name: 'permission request'})
 		.getByRole('button', {name: 'Deny', exact: true})
 		.click();
-	await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+	await expect(turnEnded(page)).toBeVisible();
 	const conversation = page.getByRole('list', {name: 'conversation'});
+	// The author label is a row of its own, so compare messages, not rows.
+	const messages = conversation.locator(':scope > li:not(.gate-message-label)');
+	const expected = [
+		/fixture conversation$/,
+		/^Working on it\.$/,
+		/execute_bash: echo hi$/,
+		/^Tool denied\.$/,
+	];
 	const before = await conversation.innerText();
-	await expect(conversation.locator('li')).toHaveCount(4);
+	await expect(messages).toHaveText(expected, {useInnerText: true});
 	await page.evaluate(async projectId => {
 		await (window as unknown as {desktop: DesktopApi}).desktop.stopProject({
 			projectId,
 		});
 	}, projectId);
 	await open();
-	await expect(conversation.locator('li')).toHaveCount(4);
+	await expect(messages).toHaveText(expected, {useInnerText: true});
 	await expect(conversation).toHaveText(before, {useInnerText: true});
 });
 
@@ -388,9 +468,21 @@ for (const {failure, action} of [
 				checkboxChecked: false,
 			})) as typeof dialog.showMessageBox;
 		}, root);
-		await page.getByRole('button', {name: action, exact: true}).click();
+		if (action === 'add project folder') {
+			await page
+				.getByRole('button', {name: 'switch project', exact: true})
+				.click();
+			await page
+				.getByRole('dialog', {name: 'your projects'})
+				.getByRole('button', {name: /add project folder/})
+				.click();
+		} else {
+			await page.getByRole('button', {name: action, exact: true}).click();
+		}
 		await expect(
-			page.getByRole('region', {name: 'Nanocoder recovery'}),
+			page
+				.getByRole('main', {name: 'conversation workspace'})
+				.getByRole('region', {name: 'Nanocoder recovery'}),
 		).toContainText('Nanocoder is not ready');
 		writeFileSync(
 			path.join(root, '.fake-nanocoder'),
@@ -417,7 +509,7 @@ for (const {failure, action} of [
 			.getByRole('region', {name: 'permission request'})
 			.getByRole('button', {name: 'Deny', exact: true})
 			.click();
-		await expect(page.getByText('turn ended: end_turn')).toBeVisible();
+		await expect(turnEnded(page)).toBeVisible();
 		await expect(page.getByRole('alert')).toHaveCount(0);
 		expect(
 			await app.evaluate(
@@ -450,9 +542,7 @@ test('recovery remains bound to the failed attempted project when another projec
 			checkboxChecked: false,
 		})) as typeof dialog.showMessageBox;
 	}, other);
-	await page
-		.getByRole('button', {name: 'open a project folder', exact: true})
-		.click();
+	await openFolderFromPalette(page, other, 'refused');
 	await expect(page.getByRole('alert')).toContainText('not opened');
 	await page.evaluate(async firstId => {
 		const api = (window as unknown as {desktop: DesktopApi}).desktop;
@@ -464,12 +554,17 @@ test('recovery remains bound to the failed attempted project when another projec
 	await expect(
 		page.getByRole('button', {name: 'retry Nanocoder', exact: true}),
 	).toBeVisible();
-	await page.getByRole('button', {name: 'diagnostics', exact: true}).click();
+	await page
+		.getByRole('button', {name: 'review diagnostics', exact: true})
+		.click();
+	const review = page.getByRole('dialog', {
+		name: 'review captured diagnostics',
+	});
 	await expect(
-		page.getByRole('region', {name: 'captured diagnostics'}),
+		review.getByRole('region', {name: 'captured diagnostics'}),
 	).toContainText(JSON.stringify(other).slice(1, -1));
 	await expect(
-		page.getByRole('region', {name: 'captured diagnostics'}),
+		review.getByRole('region', {name: 'captured diagnostics'}),
 	).not.toContainText(JSON.stringify(root).slice(1, -1));
 });
 
@@ -493,21 +588,30 @@ test('diagnostics export reviews the exact snapshot and cancellation never write
 			return {canceled: false, filePath: target};
 		}) as typeof dialog.showSaveDialog;
 	}, target);
-	await page.getByRole('button', {name: 'diagnostics', exact: true}).click();
-	const diagnostics = page
-		.locator('[data-shell-slot="stream-tools"]')
-		.getByRole('region', {name: 'redacted diagnostics'});
+	await page
+		.getByRole('button', {name: 'runtime details', exact: true})
+		.click();
+	await page
+		.getByRole('dialog', {name: 'runtime details'})
+		.getByRole('button', {name: 'review diagnostics', exact: true})
+		.click();
+	const diagnostics = page.getByRole('dialog', {
+		name: 'review captured diagnostics',
+	});
 	await expect(diagnostics).toBeVisible();
+	await expect(
+		diagnostics.getByRole('region', {name: 'redacted diagnostics'}),
+	).toBeVisible();
 	const captured = await diagnostics.locator('pre').innerText();
 	await diagnostics
-		.getByRole('button', {name: 'review and export', exact: true})
+		.getByRole('button', {name: 'choose export destination…', exact: true})
 		.click();
 	await expect(diagnostics).toContainText('export cancelled');
 	expect(
 		await app.evaluate(() => (globalThis as {exports?: number}).exports),
 	).toBe(0);
 	await diagnostics
-		.getByRole('button', {name: 'review and export', exact: true})
+		.getByRole('button', {name: 'choose export destination…', exact: true})
 		.click();
 	await expect(diagnostics).toContainText('diagnostics exported');
 	expect(readFileSync(target, 'utf8')).toBe(captured);
@@ -522,8 +626,13 @@ test('failed resume preserves the visible failed turn and cannot accept another 
 		.getByRole('textbox', {name: 'message', exact: true})
 		.fill('synthetic failed request');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
-	const recovery = page.getByRole('region', {name: 'Nanocoder recovery'});
+	const recovery = page
+		.getByRole('main', {name: 'conversation workspace'})
+		.getByRole('region', {name: 'Nanocoder recovery'});
 	await expect(recovery).toContainText('exit code 3');
+	await expect(page.locator('.composer-hint-row')).toContainText(
+		'retry this thread before sending',
+	);
 	await page.evaluate(async projectId => {
 		await (window as unknown as {desktop: DesktopApi}).desktop.stopProject({
 			projectId,
@@ -539,11 +648,11 @@ test('failed resume preserves the visible failed turn and cannot accept another 
 	).toHaveCount(0);
 	const notice = page.getByRole('region', {name: 'view-only thread'});
 	await expect(notice).toContainText(
-		"nanocoder can't find this session · it may have been deleted, expired or never saved",
+		'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.',
 	);
 	await expect(
 		notice.getByRole('button', {
-			name: 'start a new thread in this project',
+			name: '＋ new thread in project',
 			exact: true,
 		}),
 	).toBeEnabled();
@@ -604,7 +713,9 @@ test('repeated fake-child signal exits exhaust automatic recovery until explicit
 				.poll(async () => (await getState()).status, {timeout: 10_000})
 				.toBe('ready');
 	}
-	const recovery = page.getByRole('region', {name: 'Nanocoder recovery'});
+	const recovery = page
+		.getByRole('main', {name: 'conversation workspace'})
+		.getByRole('region', {name: 'Nanocoder recovery'});
 	await expect(recovery).toContainText(
 		'automatic recovery stopped after 3 attempts',
 	);
@@ -645,31 +756,46 @@ test('built main refuses unknown recovery handles and renderer-supplied paths or
 	).toEqual(['NOT_FOUND', 'VALIDATION', 'VALIDATION']);
 });
 
-test('compact ready row and reviewed diagnostics keep their computed presentation in both themes and widths', async () => {
+test('runtime details reviews diagnostics with computed presentation in both themes and widths', async () => {
 	await open();
-	const ready = page.getByRole('region', {name: 'Nanocoder recovery'});
+	const runtime = page.getByRole('button', {
+		name: 'runtime details',
+		exact: true,
+	});
 	for (const theme of ['dark', 'light']) {
 		await page.evaluate(theme => {
 			document.documentElement.dataset.theme = theme;
 		}, theme);
 		for (const width of [1240, 1020, 840]) {
 			await page.setViewportSize({width, height: 900});
-			await expect(ready).toHaveCSS('display', 'flex');
-			await expect(ready).toHaveCSS('padding', '0px');
-			await expect(ready).toHaveCSS('border-top-width', '0px');
-			await expect(ready).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-			await expect(ready).toHaveCSS(
-				'color',
-				theme === 'dark' ? 'rgb(168, 168, 168)' : 'rgb(79, 86, 120)',
+			await runtime.click();
+			const details = page.getByRole('dialog', {name: 'runtime details'});
+			await expect(details.locator('.dialog-shell')).toHaveCSS(
+				'border-radius',
+				'15px',
 			);
+			await expect(
+				details.getByRole('button', {name: 'review diagnostics', exact: true}),
+			).toBeVisible();
+			await page.keyboard.press('Escape');
+			await expect(details).toBeHidden();
+			await expect(runtime).toBeFocused();
 		}
 	}
-	await ready.getByRole('button', {name: 'diagnostics', exact: true}).click();
-	const diagnostics = page.getByRole('region', {
-		name: 'redacted diagnostics',
+	await runtime.click();
+	await page
+		.getByRole('dialog', {name: 'runtime details'})
+		.getByRole('button', {name: 'review diagnostics', exact: true})
+		.click();
+	const diagnostics = page.getByRole('dialog', {
+		name: 'review captured diagnostics',
 		exact: true,
 	});
-	await expect(diagnostics).toHaveCSS('padding', '18px 20px');
-	await expect(diagnostics).toHaveCSS('gap', '14px');
-	await expect(diagnostics).toHaveCSS('font-size', '11px');
+	await expect(diagnostics.locator('.dialog-shell')).toHaveCSS(
+		'border-radius',
+		'15px',
+	);
+	await expect(
+		diagnostics.getByRole('region', {name: 'captured diagnostics'}),
+	).toHaveCSS('font-size', '11px');
 });

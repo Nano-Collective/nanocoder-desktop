@@ -6,6 +6,7 @@ import type {ProjectOperationLease} from '@/main/threads/project-operations';
 import type {
 	createThreadService,
 	OwnedSessionContext,
+	ThreadPrepareReason,
 } from '@/main/threads/thread-service';
 import type {ProjectControls, ProjectInfo, ThreadInfo} from '@/shared/ipc';
 
@@ -57,10 +58,14 @@ export function createWorkspaceControls(options: {
 				controls.assertPromptAllowed(context);
 				await modes.beforeFirstPrompt(context);
 			},
-			validateBeforePrepare(lease: ProjectOperationLease, thread: ThreadInfo) {
+			validateBeforePrepare(
+				lease: ProjectOperationLease,
+				thread: ThreadInfo,
+				reason: ThreadPrepareReason,
+			) {
 				const connection = options.getConnection(thread.projectId);
 				if (connection) controls.assertPromptAllowed({lease, connection});
-				modes.validateBeforePrepare(lease, thread);
+				modes.validateBeforePrepare(lease, thread, reason);
 			},
 			resolveLiveMode: modes.resolveLiveMode,
 		},

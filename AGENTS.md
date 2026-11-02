@@ -82,7 +82,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `planning/subagents.md` | Phase 1.10 source limits, SUB-05 composition contract and subagent verification gaps |
 | `source/renderer/recovery-tools.tsx` | Compact process recovery and captured diagnostics review/export controls |
 | `source/renderer/app-shell.tsx`, `source/renderer/styles/app-shell.css` | Compact chronological navigation, constrained chat and optional workbench/bottom slots; open workbench owns the canvas at 840px and below |
-| `source/renderer/thread-rail.tsx`, `source/renderer/thread-rail-model.ts` | Plain-prop U.3 chronological groups, state glyphs and metadata actions; presentation uses `styles/threads.css` |
+| `source/renderer/thread-rail.tsx`, `source/renderer/thread-rail-model.ts` | Plain-prop U.3 chronological groups, state glyphs and thread selection; metadata actions open from the header thread actions dialog; presentation uses `styles/threads.css` |
 | `source/renderer/thread-recovery-notice.tsx` | Plain-prop CHAT-09 missing-history metadata/actions and explicit same-thread retry; view-only keeps the composer hidden |
 | `source/renderer/thread-composer-state.ts` | App-only draft visibility/editability projection; runState, not reason presence, distinguishes retryable and view-only |
 | `source/renderer/session-import-controller.ts`, `source/renderer/use-session-imports.ts`, `source/renderer/session-import-list.tsx` | Separately scoped metadata-only import offers, stale-result guards and plain-props native actions; no automatic selection or prompt |
@@ -90,7 +90,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/thread-controller.ts` | Scoped thread metadata, snapshot/open bridge calls, isolated project/chat sequences and stale async/disposal guards |
 | `source/renderer/thread-stream.ts` | Per-thread transient sequence guards, snapshot-prefix replacement and buffered live delivery; separate from project metadata sequencing |
 | `source/renderer/thread-workspace.ts`, `source/renderer/use-threads.ts`, `source/renderer/thread-conversations.ts` | Live scoped workspace composition, memory-only drafts and authoritative transient terminal prefixes |
-| `planning/threads.md` | Phase 1.5 ownership, legacy protection twins, selected-glyph accessibility deviation and deferred resume work |
+| `planning/threads.md` | Phase 1.5 ownership, legacy protection twins, selected-glyph ink rule and deferred resume work |
 | `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
 | `source/renderer/approval-requests.tsx` | U.6 plain-prop composer-shelf approval cards, request-scoped shortcuts and queued focus return |
 | `source/renderer/ui.tsx`, `source/renderer/styles/` | Shared UI parts, local Fira Code, generated tokens and technical-gate styles |
@@ -116,7 +116,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `e2e/streaming.e2e.ts` | Fake stream cadence, ordered rendering, input/scroll/frame response, safe resources and multi-width stream QA |
 | `e2e/replay-gates.e2e.ts` | Mounted replay success/failure refusals, editable unqueued drafts and 200-message post-replay usability timing (`PERF-03`) |
 | `e2e/session-import.e2e.ts` | Both-theme keyboard saved-session import, no ACP/selection/draft side effects, explicit same-session resume and project ownership |
-| `e2e/session-import-focus.e2e.ts`, `e2e/qa/session-import-focus-harness.ts` | Mounted pending-import composer/scope focus guards and preserved keyboard-only return in both themes |
+| `e2e/session-import-focus.e2e.ts`, `e2e/qa/session-import-focus-harness.ts` | Mounted pending-import focus guards (a control outside the import list, and scope) and preserved keyboard-only return in both themes |
 | `e2e/stream-announcements.e2e.ts`, `e2e/qa/stream-announcement-harness.ts` | Isolated fake-clock speech, accessibility-tree/modal-host checks and lifecycle/approval focus checks |
 | `e2e/subagents.e2e.ts`, `e2e/qa/subagent-harness.ts` | Fake delegation/approval/cancel, card focus and stop-owner/refusal tests; `subagents.acp.ts` checks real pinned ACP |
 | `e2e/qa/launch.ts` | Test-only launcher for browser-driven QA with fake Nanocoder and a separate profile in `.qa/` |
@@ -173,6 +173,9 @@ These hold in every change:
 
 ## Testing
 
+- Logic and security code (store, supervisor, trust, IPC, permissions, events, transcript) is test first: write one small failing test for the next behaviour from its requirement ID, see it fail for the right reason, write just enough code to pass, then refactor with the tests green.
+- A bug fix starts with a test that shows the bug and fails.
+- Pure layout and styling may be tested after, with e2e tests, screenshots and accessibility checks.
 - Unit tests are AVA `.spec.ts` files beside the code, run in plain Node. Keep logic in modules that do not import Electron, so it can be tested.
 - A security rule needs a test that proves the refusal, not only the happy path.
 - Tests never sleep for a fixed time; they wait for an event.

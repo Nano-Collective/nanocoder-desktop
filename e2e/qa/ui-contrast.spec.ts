@@ -1,3 +1,4 @@
+import type {Page} from '@playwright/test';
 import test from 'ava';
 import {
 	composite,
@@ -8,6 +9,7 @@ import {
 	rgb,
 	themedColor,
 	usedPairs,
+	visibleTextContrast,
 } from './ui-contrast';
 
 test('DESIGN colour front matter accepts LF and CRLF without losing either theme', t => {
@@ -30,6 +32,26 @@ test('DESIGN colour front matter accepts LF and CRLF without losing either theme
 test('contrast maths matches WCAG reference black and white', t => {
 	t.is(contrast(rgb('#000000'), rgb('#ffffff')), 21);
 	t.is(contrast(rgb('#ffffff'), rgb('#ffffff')), 1);
+});
+
+test('rendered contrast still rejects opaque and translucent bad colours at the AA threshold', async t => {
+	const page = {
+		evaluate: async () => [
+			{text: 'opaque bad colour', fg: rgb('#ffffff'), bg: rgb('#ffffff')},
+			{
+				text: 'translucent bad colour',
+				fg: composite(rgb('#000000'), rgb('#ffffff'), 0.45),
+				bg: rgb('#ffffff'),
+			},
+			{text: 'readable colour', fg: rgb('#000000'), bg: rgb('#ffffff')},
+		],
+	} as unknown as Page;
+	const failures = await visibleTextContrast(page, 'light');
+	t.deepEqual(
+		failures.map(sample => sample.text),
+		['opaque bad colour', 'translucent bad colour'],
+	);
+	t.true(failures.every(sample => sample.ratio < 4.5));
 });
 
 for (const theme of ['dark', 'light']) {
@@ -72,10 +94,10 @@ test('55% key hints need a design decision before they can be used', t => {
 });
 
 test('the approved light running badge pairing passes without an exception', t => {
-	const foreground = themedColor('success', 'light');
+	const foreground = themedColor('primary', 'light');
 	const background = themedColor('surface-panel', 'light');
 	t.true(
-		usedPairs.some(([fg, bg]) => fg === 'success' && bg === 'surface-panel'),
+		usedPairs.some(([fg, bg]) => fg === 'primary' && bg === 'surface-panel'),
 	);
 	t.true(contrast(foreground, background) >= 4.5);
 	t.false(isKnownGap(foreground, background, 'light'));

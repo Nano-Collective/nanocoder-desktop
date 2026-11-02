@@ -17,6 +17,7 @@ import {
 import {setupProject} from '@/main/nanocoder/fixtures/real-nanocoder';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {turnEnded} from './qa/turn-state';
 
 const root = path.resolve(import.meta.dirname, '..');
 const paletteKey = process.platform === 'darwin' ? 'Meta+k' : 'Control+k';
@@ -73,13 +74,20 @@ async function fixture(
 		});
 		const page = await app.firstWindow();
 		expect(page.url()).toMatch(/^app:\/\/renderer\//);
-		const recents = page.getByRole('region', {name: 'recent projects'});
+		await page
+			.getByRole('button', {name: 'switch project', exact: true})
+			.click();
+		const projects = page.getByRole('dialog', {name: 'your projects'});
+		await expect(projects).toBeVisible();
+		const recents = projects.getByRole('region', {name: 'recent projects'});
 		await expect(recents.getByText('no recent projects')).toBeVisible();
-		const add = recents.getByRole('button', {name: 'add project folder'});
+		const add = projects.getByRole('button', {name: 'add project folder'});
 		await expect(add).toBeEnabled();
 		await add.focus();
 		await expect(add).toBeFocused();
 		const readyMs = performance.now() - start;
+		await page.keyboard.press('Escape');
+		await expect(projects).toBeHidden();
 		await run(app, page, real?.root ?? project);
 		return readyMs;
 	} finally {
@@ -146,11 +154,17 @@ test('five fresh processes expose a usable project list within the startup media
 						filePaths: [],
 					})) as typeof dialog.showOpenDialog;
 				});
-				const add = page.getByRole('button', {name: 'add project folder'});
+				await page
+					.getByRole('button', {name: 'switch project', exact: true})
+					.click();
+				const projects = page.getByRole('dialog', {name: 'your projects'});
+				await expect(
+					projects.getByRole('region', {name: 'recent projects'}),
+				).toContainText('no recent projects');
+				const add = projects.getByRole('button', {name: 'add project folder'});
 				await add.press('Enter');
-				await expect(add).toBeEnabled();
-				await expect(page.getByText('no recent projects')).toBeVisible();
-				await expect(page.locator('.ui-badge--acp-ready')).toHaveCount(0);
+				await expect(projects).toBeHidden();
+				await expect(page.locator('.footer-acp--success')).toHaveCount(0);
 			}),
 		);
 	}
@@ -186,7 +200,7 @@ test('records open-action to rendered ACP ready without claiming spawn breakdown
 		}));
 		const start = performance.now();
 		await open.press('Enter');
-		await expect(page.locator('.ui-badge--acp-ready')).toHaveText(
+		await expect(page.locator('.footer-acp--success')).toContainText(
 			'✓ acp · ready',
 		);
 		const openToReadyMs = performance.now() - start;
@@ -214,14 +228,19 @@ test('empty and whitespace exit-check overrides select only the fake runtime', a
 	for (const realCli of ['', ' \t\r\n ']) {
 		await fixture(async (app, page, project) => {
 			const cli = path.join(path.dirname(project), 'nanocoder/dist/cli.js');
-			await expect(page.locator('.runtime-details')).toContainText(
-				`Nanocoder 9.9.9 at ${cli}`,
-			);
+			await page
+				.getByRole('button', {name: 'runtime details', exact: true})
+				.click();
+			const setup = page.getByRole('dialog', {name: 'runtime details'});
+			await expect(setup.locator('.runtime-rows')).toContainText('9.9.9');
+			await expect(setup.locator('.runtime-rows')).toContainText(cli);
+			await page.keyboard.press('Escape');
+			await expect(setup).toBeHidden();
 			await selectFolder(app, project);
 			await page
 				.getByRole('button', {name: 'open a project folder', exact: true})
 				.click();
-			await expect(page.locator('.ui-badge--acp-ready')).toBeVisible();
+			await expect(page.locator('.footer-acp--success')).toBeVisible();
 		}, realCli);
 	}
 });
@@ -230,7 +249,13 @@ test('keyboard project, palette and approval journey exposes named roles and sta
 	await fixture(async (app, page, project) => {
 		await accessibleControls(page);
 		await selectFolder(app, project);
-		await page.getByRole('button', {name: 'add project folder'}).press('Enter');
+		await page
+			.getByRole('button', {name: 'switch project', exact: true})
+			.press('Enter');
+		await page
+			.getByRole('dialog', {name: 'your projects'})
+			.getByRole('button', {name: 'add project folder'})
+			.press('Enter');
 		const input = page.getByRole('textbox', {name: 'message', exact: true});
 		await expect(input).toBeEnabled();
 		await input.focus();
@@ -301,9 +326,7 @@ test('keyboard project, palette and approval journey exposes named roles and sta
 		await page.keyboard.press('2');
 		await expect(approval).toHaveCount(0);
 		await expect(input).toBeFocused();
-		await expect(
-			page.getByText('turn ended: end_turn', {exact: true}),
-		).toBeVisible();
+		await expect(turnEnded(page)).toBeVisible();
 		await accessibleControls(page);
 	});
 });

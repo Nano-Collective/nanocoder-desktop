@@ -16,6 +16,8 @@ import {
 } from '@playwright/test';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openFolderFromPalette} from './qa/open-folder';
+import {turnEnded} from './qa/turn-state';
 
 const root = path.resolve(import.meta.dirname, '..');
 const work = realpathSync.native(
@@ -57,7 +59,7 @@ test.beforeAll(async () => {
 			filePaths: [folder],
 		})) as typeof dialog.showOpenDialog;
 	}, project);
-	await page.getByRole('button', {name: 'open a project folder'}).click();
+	await openFolderFromPalette(page, project);
 	await expect(input()).toBeEnabled();
 	await input().evaluate(element => {
 		element.dataset.inputEvents = '0';
@@ -145,13 +147,11 @@ test.describe('existing composer state', () => {
 				filePaths: [folder],
 			})) as typeof dialog.showOpenDialog;
 		}, project);
-		await page.getByRole('button', {name: 'open a project folder'}).click();
+		await openFolderFromPalette(page, project);
 		await expect(input()).toBeEnabled();
 		await input().fill('synthetic command fixture');
 		await input().press('Enter');
-		await expect(
-			page.getByText('turn ended: end_turn', {exact: true}),
-		).toBeVisible();
+		await expect(turnEnded(page)).toBeVisible();
 	});
 
 	for (const method of methods) {

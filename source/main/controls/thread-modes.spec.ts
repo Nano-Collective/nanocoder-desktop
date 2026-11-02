@@ -431,6 +431,46 @@ test('native canonical root changed during confirmation refuses before an RPC (A
 	t.deepEqual(f.order, []);
 });
 
+test('view-only threads resume only through an explicit open; mode changes, prompts and restore stay refused (CHAT-09)', async t => {
+	const f = fixture(true);
+	const viewOnly: ThreadInfo = {
+		...f.initial,
+		runState: 'view-only',
+		viewOnlyReason: 'missing',
+	};
+	f.threads.set('thread', viewOnly);
+	await f.operations.runProjectOperation('project', 'open', async lease => {
+		t.notThrows(() => f.modes.validateBeforePrepare(lease, viewOnly, 'open'));
+	});
+	for (const reason of ['prompt', 'restore'] as const)
+		await t.throwsAsync(
+			f.operations.runProjectOperation('project', 'open', async lease => {
+				f.modes.validateBeforePrepare(lease, viewOnly, reason);
+			}),
+			{code: 'DENIED'},
+		);
+	await t.throwsAsync(f.modes.setThreadMode(f.request('plan')), {
+		code: 'DENIED',
+	});
+});
+
+test('archived threads refuse even an explicit open of a view-only thread (CHAT-17)', async t => {
+	const f = fixture(true);
+	const archived: ThreadInfo = {
+		...f.initial,
+		archiveState: 'archived',
+		runState: 'view-only',
+		viewOnlyReason: 'missing',
+	};
+	f.threads.set('thread', archived);
+	await t.throwsAsync(
+		f.operations.runProjectOperation('project', 'open', async lease => {
+			f.modes.validateBeforePrepare(lease, archived, 'open');
+		}),
+		{code: 'DENIED'},
+	);
+});
+
 test('a late acknowledged yolo after scope refusal must not leave a cached normal claim (DEC-31)', async t => {
 	const f = fixture();
 	await f.modes.setThreadMode(f.request('yolo'));

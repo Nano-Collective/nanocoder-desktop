@@ -10,6 +10,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {
 	ThreadRecoveryNotice,
 	type ThreadRecoveryNoticeProps,
+	ViewOnlyFooter,
 } from '@/renderer/thread-recovery-notice';
 import type {ThreadInfo} from '@/shared/ipc';
 import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
@@ -28,6 +29,7 @@ const thread: ThreadInfo = {
 };
 const props: ThreadRecoveryNoticeProps = {
 	thread,
+	projectName: 'tide',
 	pending: false,
 	onRetry() {},
 	onNew() {},
@@ -41,13 +43,34 @@ test('CHAT-09 view-only notice explains missing history and retains escaped desk
 	t.true(html.includes('aria-label="view-only thread"'));
 	t.true(html.includes('thread-view-only-notice'));
 	t.true(html.includes('view-only'));
-	t.true(html.includes('nanocoder can&#x27;t find this session'));
-	t.true(html.includes('start a new thread in this project'));
+	t.true(html.includes('Nanocoder could not find this session'));
+	t.true(html.includes('＋ new thread in tide'));
 	t.true(html.includes('remove from desktop'));
 	t.true(html.includes('&lt;script&gt;manual fixture&lt;/script&gt;'));
 	t.true(html.includes(`dateTime="${thread.lastActivityAt}"`));
 	t.notRegex(html, /<script\b/i);
 	t.false(html.includes('<textarea'));
+	t.true(
+		html.includes(
+			'remove affects desktop metadata only. deleting Nanocoder history is a separate, confirmed action.',
+		),
+	);
+	t.true(html.includes('retry this same thread'));
+	t.false(html.includes('retry this thread'));
+	t.is((html.match(/<button/g) ?? []).length, 3);
+});
+
+test('view-only new-thread action names the project and never invents one', t => {
+	const named = render();
+	t.true(named.includes('＋ new thread in tide</button>'));
+	const unnamed = render({...props, projectName: undefined});
+	t.true(unnamed.includes('＋ new thread</button>'));
+	t.false(unnamed.includes('new thread in'));
+});
+
+test('view-only footer keeps the composer hidden and says messages still shown are memory-only', t => {
+	const html = renderToStaticMarkup(createElement(ViewOnlyFooter));
+	t.true(html.includes('composer hidden'));
 	t.true(
 		html.includes(
 			'any messages still shown are held in memory in this window only',
@@ -58,8 +81,7 @@ test('CHAT-09 view-only notice explains missing history and retains escaped desk
 			'removing desktop metadata does not delete Nanocoder history',
 		),
 	);
-	t.false(html.includes('retry this thread'));
-	t.is((html.match(/<button/g) ?? []).length, 2);
+	t.false(html.includes('<textarea'));
 });
 
 test('retryable failure offers only explicit same-thread retry with its safe reason and no replacement-session action', t => {
@@ -89,7 +111,7 @@ test('pending recovery actions are disabled with a visible reason and native but
 		});
 		t.true(html.includes('waiting for the thread request or native dialog'));
 		const buttons = html.match(/<button[^>]*>/g) ?? [];
-		t.is(buttons.length, runState === 'view-only' ? 2 : 1);
+		t.is(buttons.length, runState === 'view-only' ? 3 : 1);
 		t.true(buttons.every(button => button.includes('disabled=""')));
 		t.true(buttons.every(button => button.includes('type="button"')));
 		t.false(html.includes('tabindex="-1"'));
@@ -135,7 +157,11 @@ test('recovery notices forward only their supplied callbacks and never start wor
 	const missing = ThreadRecoveryNotice(next);
 	t.deepEqual(calls, []);
 	for (const action of actions(missing)) action.props.onClick?.();
-	t.deepEqual(calls, ['metadata-only new', 'metadata-only remove']);
+	t.deepEqual(calls, [
+		'metadata-only new',
+		'same-thread retry',
+		'metadata-only remove',
+	]);
 	calls.length = 0;
 	const retryable = ThreadRecoveryNotice({
 		...next,

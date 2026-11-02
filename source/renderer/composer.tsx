@@ -53,9 +53,11 @@ export function Composer(props: ComposerProps) {
 		element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
 	}, [input, props.draft]);
 	const id = React.useId();
-	const hintId = `${id}-send`;
-	const modelHintId = `${id}-model`;
-	const modeHintId = `${id}-mode`;
+	const descriptionId = `${id}-description`;
+	const helpId = `${id}-help`;
+	const noteId = `${id}-note`;
+	const optionsId = `${id}-options`;
+	const [optionsOpen, setOptionsOpen] = React.useState(false);
 	const defaultHintId = `${id}-default`;
 	const missingOffers =
 		'available after the first message: Nanocoder supplies model options after a session exists';
@@ -79,14 +81,25 @@ export function Composer(props: ComposerProps) {
 				: null);
 	const sendReason =
 		props.sendReason ??
-		(!props.editable
-			? 'this thread cannot accept input'
-			: !props.draft.trim()
-				? 'enter a message to send'
-				: null);
+		(!props.editable ? 'this thread cannot accept input' : null);
+	const emptyDraft = !props.draft.trim();
 	const send = () => {
-		if (!sendReason) props.onSend();
+		if (!sendReason && !emptyDraft) props.onSend();
 	};
+	const hint =
+		sendReason ??
+		(props.running
+			? 'turn in progress · draft is not queued'
+			: 'ready for your next message');
+	const idleEmpty = !props.running && !sendReason && emptyDraft;
+	const description = idleEmpty ? `${hint}; enter a message to send` : hint;
+	const lead = modelReason ?? modeReason;
+	const note = [
+		lead && `${lead.replace(/\.$/, '')}.`,
+		`model applies to every thread in ${props.projectName}. tools in Nanocoder's alwaysAllow list still run without asking.`,
+	]
+		.filter(Boolean)
+		.join(' ');
 	const context =
 		props.context &&
 		Number.isFinite(props.context.used) &&
@@ -99,150 +112,188 @@ export function Composer(props: ComposerProps) {
 		? Math.min(100, Math.round((context.used / context.size) * 100))
 		: 0;
 	return (
-		<form
-			className="gate-composer composer"
-			data-unavailable={!props.editable || undefined}
-			onSubmit={event => {
-				event.preventDefault();
-				send();
-			}}
-		>
-			<label className="composer-message">
-				<span aria-hidden="true" className="composer-prompt">
-					›
-				</span>
-				<span className="sr-only">message</span>
-				<textarea
-					className="composer-inactive-control"
-					ref={input}
-					value={props.draft}
-					onChange={event => props.onDraft(event.currentTarget.value)}
-					onKeyDown={event => {
-						if (
-							composerEnter({
-								key: event.key,
-								shiftKey: event.shiftKey,
-								altKey: event.altKey,
-								ctrlKey: event.ctrlKey,
-								metaKey: event.metaKey,
-								isComposing: event.nativeEvent.isComposing,
-								keyCode: event.nativeEvent.keyCode,
-							})
-						) {
-							event.preventDefault();
-							send();
-						}
-					}}
-					disabled={!props.editable}
-					placeholder="ask anything…"
-					aria-describedby={hintId}
-					rows={2}
-				/>
-			</label>
-			<SlashSuggestions
-				commands={props.commands}
-				draft={props.draft}
-				disabled={!props.editable}
-				onInsert={value => {
-					props.onDraft(value);
-					props.inputRef?.current?.focus();
-				}}
-			/>
-			<div className="composer-control-rail">
-				{options.length ? (
-					options.map(option => (
-						<label key={option.id} className="composer-pill">
-							<span aria-hidden="true">
-								{option.id === 'model' ? '✳ ' : ''}
-								{option.id}
-							</span>
-							<select
-								className="composer-inactive-control"
-								aria-label={`${option.id} for every thread in project ${props.projectName}`}
-								aria-describedby={modelHintId}
-								value={option.currentValue}
-								disabled={!!modelReason}
-								onChange={event =>
-									props.onConfig(option.id, event.currentTarget.value)
-								}
-							>
-								{option.options.map(value => (
-									<option key={value.value} value={value.value}>
-										{value.name}
-									</option>
-								))}
-							</select>
-						</label>
-					))
-				) : (
-					<Button
-						disabled
-						aria-label={`model and provider for every thread in project ${props.projectName}`}
-						aria-describedby={modelHintId}
-					>
-						available after the first message
-					</Button>
-				)}
-				<label className="composer-pill composer-mode">
-					<span aria-hidden="true">mode</span>
-					<select
-						className="composer-inactive-control"
-						aria-label="mode for this thread"
-						aria-describedby={modeHintId}
-						value={props.mode}
-						disabled={!!modeReason}
-						onChange={event =>
-							props.onMode(event.currentTarget.value as NanocoderMode)
-						}
-					>
-						{modes.map(mode => (
-							<option key={mode} value={mode}>
-								{mode}
-							</option>
-						))}
-					</select>
-				</label>
-				{context && (
-					<span className="composer-pill composer-context">
-						⌁ ctx {percentage}%
-					</span>
-				)}
-				<Button
-					className="composer-send"
-					type="submit"
-					aria-label="send"
-					disabled={!!sendReason}
-					aria-describedby={hintId}
-				>
-					<span aria-hidden="true">▶ </span>send
-				</Button>
+		<>
+			<div className="composer-hint-row">
+				<p className="gate-hint">{hint}</p>
 				{props.running && (
 					<Button
 						variant="reject"
+						className="composer-cancel"
 						disabled={props.stopping}
 						onClick={props.onCancel}
 					>
+						<span aria-hidden="true">✕ </span>
 						{props.stopping ? 'cancelling turn' : 'cancel turn'}
 					</Button>
 				)}
 			</div>
-			<p id={hintId} className="gate-hint">
-				{sendReason ?? '⏎ send · ⇧⏎ newline · / commands'}
-			</p>
-			<p id={modelHintId} className="gate-hint">
-				{modelReason ??
-					`applies to every thread in project ${props.projectName}`}
-			</p>
-			{modeReason && <p className="gate-hint">{modeReason}</p>}
-			{props.modePending && (
-				<p className="gate-hint">{props.mode} · pending first message.</p>
-			)}
-			<details className="composer-options">
-				<summary>mode and project default details</summary>
-				<p id={modeHintId} className="gate-hint">
-					tools in Nanocoder's alwaysAllow list run without asking in every mode
+			<form
+				className="gate-composer composer"
+				data-unavailable={!props.editable || undefined}
+				onSubmit={event => {
+					event.preventDefault();
+					send();
+				}}
+			>
+				<span id={descriptionId} className="sr-only" aria-hidden="true">
+					{description}
+				</span>
+				<label className="composer-message">
+					<span className="sr-only">message</span>
+					<textarea
+						className="composer-inactive-control"
+						ref={input}
+						value={props.draft}
+						onChange={event => props.onDraft(event.currentTarget.value)}
+						onKeyDown={event => {
+							if (
+								composerEnter({
+									key: event.key,
+									shiftKey: event.shiftKey,
+									altKey: event.altKey,
+									ctrlKey: event.ctrlKey,
+									metaKey: event.metaKey,
+									isComposing: event.nativeEvent.isComposing,
+									keyCode: event.nativeEvent.keyCode,
+								})
+							) {
+								event.preventDefault();
+								send();
+							}
+						}}
+						disabled={!props.editable}
+						placeholder={
+							props.running ? 'write a draft for later…' : 'ask anything…'
+						}
+						aria-describedby={`${descriptionId} ${helpId}`}
+						rows={2}
+					/>
+				</label>
+				<SlashSuggestions
+					commands={props.commands}
+					draft={props.draft}
+					disabled={!props.editable}
+					onInsert={value => {
+						props.onDraft(value);
+						props.inputRef?.current?.focus();
+					}}
+				/>
+				<div className="composer-control-rail">
+					{options.length ? (
+						options.map(option => (
+							<label
+								key={option.id}
+								className={`composer-pill${option.id === 'model' ? ' composer-model' : ''}`}
+							>
+								<span aria-hidden="true">
+									{option.id === 'model' ? '✳ ' : ''}
+									{option.id}
+								</span>
+								<select
+									className="composer-inactive-control"
+									aria-label={`${option.id} for every thread in project ${props.projectName}`}
+									aria-describedby={noteId}
+									value={option.currentValue}
+									disabled={!!modelReason}
+									onChange={event =>
+										props.onConfig(option.id, event.currentTarget.value)
+									}
+								>
+									{option.options.map(value => (
+										<option key={value.value} value={value.value}>
+											{value.name}
+										</option>
+									))}
+								</select>
+							</label>
+						))
+					) : (
+						<Button
+							disabled
+							aria-label={`model and provider for every thread in project ${props.projectName}`}
+							aria-describedby={noteId}
+						>
+							available after the first message
+						</Button>
+					)}
+					<label className="composer-pill composer-mode">
+						<span aria-hidden="true">mode</span>
+						<select
+							className="composer-inactive-control"
+							aria-label="mode for this thread"
+							aria-describedby={noteId}
+							value={props.mode}
+							disabled={!!modeReason}
+							onChange={event =>
+								props.onMode(event.currentTarget.value as NanocoderMode)
+							}
+						>
+							{modes.map(mode => (
+								<option key={mode} value={mode}>
+									{mode}
+								</option>
+							))}
+						</select>
+					</label>
+					{context && (
+						<span className="composer-pill composer-context">
+							⌁ ctx {percentage}%
+						</span>
+					)}
+					<Button
+						className="composer-send"
+						type="submit"
+						aria-label="send"
+						data-state={
+							props.running
+								? 'running'
+								: props.editable
+									? 'ready'
+									: 'unavailable'
+						}
+						disabled={!!sendReason || emptyDraft}
+						aria-describedby={descriptionId}
+					>
+						<span aria-hidden="true">↑ </span>send
+					</Button>
+				</div>
+				<p id={helpId} className="gate-hint composer-help">
+					<span>↵ send · ⇧↵ newline</span>
+					{props.commands.length > 0 && <span>/ advertised commands</span>}
 				</p>
-				<div className="gate-actions">
+				{props.error && <p role="alert">{props.error}</p>}
+				{context && (
+					<div
+						className="composer-context-gauge"
+						role="progressbar"
+						aria-label="reported context use"
+						aria-valuemin={0}
+						aria-valuemax={100}
+						aria-valuenow={percentage}
+						aria-valuetext={`${context.used} of ${context.size} reported context tokens`}
+					>
+						<span style={{width: `${percentage}%`}} />
+					</div>
+				)}
+			</form>
+			<div className="composer-options">
+				<p className="gate-hint composer-control-note">
+					<span id={noteId}>{note}</span>{' '}
+					<button
+						type="button"
+						className="composer-options-toggle"
+						aria-expanded={optionsOpen}
+						aria-controls={optionsId}
+						onClick={() => setOptionsOpen(open => !open)}
+					>
+						<span aria-hidden="true">{optionsOpen ? '▾ ' : '▸ '}</span>
+						mode and project default details
+					</button>
+				</p>
+				{props.modePending && (
+					<p className="gate-hint">{props.mode} · pending first message.</p>
+				)}
+				<div id={optionsId} className="gate-actions" hidden={!optionsOpen}>
 					<Button
 						disabled={!!defaultReason}
 						aria-describedby={defaultHintId}
@@ -258,21 +309,7 @@ export function Composer(props: ComposerProps) {
 						{defaultReason ? ` · ${defaultReason}` : ''}
 					</p>
 				</div>
-			</details>
-			{props.error && <p role="alert">{props.error}</p>}
-			{context && (
-				<div
-					className="composer-context-gauge"
-					role="progressbar"
-					aria-label="reported context use"
-					aria-valuemin={0}
-					aria-valuemax={100}
-					aria-valuenow={percentage}
-					aria-valuetext={`${context.used} of ${context.size} reported context tokens`}
-				>
-					<span style={{width: `${percentage}%`}} />
-				</div>
-			)}
-		</form>
+			</div>
+		</>
 	);
 }

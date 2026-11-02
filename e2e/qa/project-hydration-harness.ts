@@ -1,8 +1,9 @@
-import {createElement, Fragment, useEffect} from 'react';
+import {createElement, Fragment, useEffect, useState} from 'react';
 import {flushSync} from 'react-dom';
 import {createRoot, type Root} from 'react-dom/client';
 import type {} from '@/renderer/env';
-import {RecentProjects} from '@/renderer/recent-projects';
+import {ProjectsDialogBody} from '@/renderer/projects-dialog';
+import {ProjectSwitch} from '@/renderer/recent-projects';
 import {TrustFeedback} from '@/renderer/trust-feedback';
 import {useProjects} from '@/renderer/use-projects';
 import type {DesktopApi} from '@/shared/desktop-api';
@@ -67,13 +68,26 @@ export const projectHydrationHarness = {
 		Reflect.set(window, 'projectHydrationBridge', bridge);
 		function Fixture() {
 			const controls = useProjects();
+			const [open, setOpen] = useState(false);
 			useEffect(() => {
 				if (controls.projects === empty) resolveApplied();
 			}, [controls.projects]);
 			return createElement(
 				Fragment,
 				null,
-				createElement(RecentProjects, {...controls, compact: true}),
+				createElement(ProjectSwitch, {
+					selected: controls.projects.find(
+						project => project.id === controls.activeProjectId,
+					),
+					onOpen: () => setOpen(true),
+				}),
+				open
+					? createElement(
+							'div',
+							{role: 'dialog', 'aria-label': 'your projects'},
+							createElement(ProjectsDialogBody, controls),
+						)
+					: null,
 				createElement(TrustFeedback, {feedback: controls.feedback}),
 			);
 		}

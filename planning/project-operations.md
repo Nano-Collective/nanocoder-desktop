@@ -131,7 +131,7 @@ All four are optional. Existing operation without controls remains supported.
 
 ```ts
 resolveLiveMode(projectId, threadId, sessionId, connection);
-validateBeforePrepare(lease, thread);
+validateBeforePrepare(lease, thread, reason);
 onSessionPrepared(context);
 beforeFirstPrompt(context);
 ```
@@ -143,10 +143,13 @@ cache readiness, never supplies repository-write fields. Main persistence still
 reads the raw current row and keeps non-yolo metadata; the store coercion is
 unchanged. With controls installed, no live cache means no prepared-session reuse.
 
-`validateBeforePrepare(lease, thread)` is synchronous inside the current lease,
+`validateBeforePrepare(lease, thread, reason)` is synchronous inside the current lease,
 before ThreadService launches or prepares a session. Recovery calls it before
 session/resume, using the supervisor-supplied starting connection. It must refuse
 a stale/dropped pending choice before safe fallback can hide that intent.
+`reason` is `open`, `restore` or `prompt`. Only an explicit `open` may resume a
+view-only thread (`CHAT-09`), and only for that same lease. Archived threads stay
+refused for every reason. Restore and prompt keep refusing view-only threads.
 
 Both session hooks run through `projectOperations.runOwnedStep`, never another
 acquisition. Their main-only context contains the lease, cloned fresh raw thread

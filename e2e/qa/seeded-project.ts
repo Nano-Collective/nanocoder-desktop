@@ -7,14 +7,16 @@ export async function openSeededProject(
 ): Promise<void> {
 	await reload();
 	await expect(page.locator('.project-switch-root')).toHaveText(canonicalRoot);
-	await expect(page.locator('.recent-projects [role="status"]')).toHaveCount(0);
-	const switcher = page.locator('.project-switcher');
-	await expect(switcher).toBeVisible();
-	if (
-		!(await switcher.evaluate(element => (element as HTMLDetailsElement).open))
-	)
-		await page.getByLabel('switch project', {exact: true}).click();
-	const recent = page.getByRole('region', {
+	const dialog = page.getByRole('dialog', {name: 'your projects'});
+	if (!(await dialog.isVisible()))
+		await page
+			.getByRole('button', {name: 'switch project', exact: true})
+			.click();
+	await expect(dialog).toBeVisible();
+	await expect(
+		dialog.getByText('waiting for the project request or native dialog'),
+	).toHaveCount(0);
+	const recent = dialog.getByRole('region', {
 		name: 'recent projects',
 		exact: true,
 	});

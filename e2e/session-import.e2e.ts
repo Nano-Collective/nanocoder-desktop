@@ -12,6 +12,9 @@ import {expect, test} from '@playwright/test';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import {openImportsFromPalette} from './qa/import-palette';
+import {openFolderFromPalette} from './qa/open-folder';
+import {turnEnded} from './qa/turn-state';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 for (const theme of ['dark', 'light'] as const) {
@@ -63,9 +66,7 @@ for (const theme of ['dark', 'light'] as const) {
 						filePaths: [folder],
 					})) as typeof dialog.showOpenDialog;
 				}, folder);
-				await page
-					.getByRole('button', {name: 'open a project folder', exact: true})
-					.click();
+				await openFolderFromPalette(page, folder);
 				await expect(
 					page.getByRole('textbox', {name: 'message', exact: true}),
 				).toBeEnabled();
@@ -101,6 +102,10 @@ for (const theme of ['dark', 'light'] as const) {
 					{timeout: 5_000},
 				);
 			await open(project);
+			const input = page.getByRole('textbox', {name: 'message', exact: true});
+			await input.fill('retained unqueued import draft');
+			const before = await snapshot();
+			await openImportsFromPalette(page);
 			const imports = page.getByRole('region', {
 				name: 'import saved sessions',
 				exact: true,
@@ -116,15 +121,15 @@ for (const theme of ['dark', 'light'] as const) {
 				'2026-10-29T12:00:00.000Z',
 			);
 			expect(await visibleTextContrast(page, theme)).toEqual([]);
-			const input = page.getByRole('textbox', {name: 'message', exact: true});
-			await input.fill('retained unqueued import draft');
-			const before = await snapshot();
+			await expect(
+				page.getByRole('textbox', {name: 'message', exact: true}),
+			).toHaveCount(0);
 			const refresh = imports.getByRole('button', {
-				name: 'refresh saved sessions',
+				name: 'refresh offers',
 				exact: true,
 			});
 			await refresh.focus();
-			await page.keyboard.press('Tab');
+			await page.keyboard.press('Shift+Tab');
 			await expect(importButton).toBeFocused();
 			expect(
 				await importButton.evaluate(button => ({
@@ -136,7 +141,6 @@ for (const theme of ['dark', 'light'] as const) {
 			await page.keyboard.press('Enter');
 			await expect(importButton).toHaveCount(0);
 			await expect(refresh).toBeFocused();
-			await expect(input).toHaveValue('retained unqueued import draft');
 			const after = await snapshot();
 			expect(after.ui).toEqual(before.ui);
 			expect(after.rows).toHaveLength(before.rows.length + 1);
@@ -169,6 +173,10 @@ for (const theme of ['dark', 'light'] as const) {
 					before.methods.filter(row => row === method),
 				);
 			}
+			await page
+				.getByRole('button', {name: 'back to selected thread', exact: true})
+				.click();
+			await expect(input).toHaveValue('retained unqueued import draft');
 			if (!imported) throw new Error('Missing imported thread');
 			await test.step(
 				'explicitly open the imported thread',
@@ -200,9 +208,7 @@ for (const theme of ['dark', 'light'] as const) {
 			).toHaveLength(0);
 			await input.fill('explicit imported follow-up');
 			await input.press('Enter');
-			await expect(
-				page.getByText('turn ended: end_turn', {exact: true}),
-			).toBeVisible();
+			await expect(turnEnded(page)).toBeVisible();
 			expect(
 				(await snapshot()).methods.filter(row => row === 'session/prompt'),
 			).toHaveLength(1);
@@ -210,6 +216,7 @@ for (const theme of ['dark', 'light'] as const) {
 			await expect(
 				page.getByText('<script>saved fixture</script>', {exact: true}),
 			).toHaveCount(0);
+			await openImportsFromPalette(page);
 			await expect(
 				page.getByRole('region', {name: 'import saved sessions'}),
 			).toContainText('no sessions offered for import');

@@ -33,7 +33,9 @@ test('every badge has a word as well as a decorative state glyph', t => {
 	for (const status of [
 		'running',
 		'approval',
-		'idle',
+		'ready',
+		'interrupted',
+		'view-only',
 		'failed',
 		'acp-ready',
 		'acp-exited',
@@ -47,6 +49,25 @@ test('every badge has a word as well as a decorative state glyph', t => {
 		t.true(html.includes(status.startsWith('acp') ? 'acp · ' : status));
 		if (status === 'acp-exited') t.true(html.includes('exited (1)'));
 	}
+});
+
+test('turn states are plain text with a token-coloured glyph, and ACP keeps its pill', t => {
+	const running = renderToStaticMarkup(
+		createElement(StatusBadge, {status: 'running'}),
+	);
+	t.true(running.includes('ui-badge ui-badge--plain ui-badge--running'));
+	t.true(running.includes('ui-badge-glyph ui-badge-glyph--running'));
+	t.true(running.includes('running'));
+	t.true(running.includes('●'));
+	const approval = renderToStaticMarkup(
+		createElement(StatusBadge, {status: 'approval'}),
+	);
+	t.true(approval.includes('approval required'));
+	const ready = renderToStaticMarkup(
+		createElement(StatusBadge, {status: 'acp-ready'}),
+	);
+	t.false(ready.includes('ui-badge--plain'));
+	t.true(ready.includes('ui-badge--success'));
 });
 
 test('cards retain accessible names and dividers retain separator semantics', t => {

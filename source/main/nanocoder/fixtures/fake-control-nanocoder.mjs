@@ -1,4 +1,4 @@
-import {readFileSync, watch} from 'node:fs';
+import {existsSync, readFileSync, watch} from 'node:fs';
 import {createInterface} from 'node:readline';
 
 let scenario = '';
@@ -90,6 +90,19 @@ createInterface({input: process.stdin}).on('line', line => {
 				sessionId: `session-${++nextSession}`,
 				modes: modes(),
 				configOptions: config(),
+			},
+		});
+	} else if (
+		method === 'session/resume' &&
+		scenario === 'resume-missing' &&
+		!existsSync('.fake-resume-ok')
+	) {
+		send({
+			id,
+			error: {
+				code: -32603,
+				message: 'Internal error',
+				data: {details: `Session not found on disk: ${params.sessionId}`},
 			},
 		});
 	} else if (method === 'session/resume') {

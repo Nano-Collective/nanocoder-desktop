@@ -99,14 +99,14 @@ export async function visibleTextContrast(page: Page, theme: string) {
 		for (let node = walker.nextNode(); node; node = walker.nextNode()) {
 			const element = node.parentElement;
 			if (!element || !node.textContent?.trim()) continue;
-			// An exiting toast stays mounted at opacity 0 for its 180ms exit.
 			if (
 				!element.checkVisibility({
 					checkVisibilityCSS: true,
-					opacityProperty: true,
+					checkOpacity: true,
 				})
-			)
+			) {
 				continue;
+			}
 			const style = getComputedStyle(element);
 			let ancestor: Element | null = element;
 			let background: number[] = [];
