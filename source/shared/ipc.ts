@@ -407,6 +407,20 @@ export interface DiscoveredSession {
 	lastActivityAt: string | null;
 }
 
+// Context sent with the next prompt only. It is read in main, passed on, and
+// never stored (CHAT-16).
+export type PromptAttachment =
+	| {kind: 'file'; path: string}
+	| {
+			kind: 'review-comment';
+			path: string;
+			startLine: number;
+			endLine: number;
+			side: 'staged' | 'unstaged';
+			comment: string;
+			excerpt: string;
+	  };
+
 export interface ProjectRequest {
 	projectId: string;
 }
@@ -447,7 +461,10 @@ export interface WorkspaceRequests {
 	archiveThread: ThreadRequest & {archived: boolean};
 	removeThread: ThreadRequest;
 	deleteThreadHistory: ThreadRequest;
-	promptThread: ThreadRequest & {text: string};
+	promptThread: ThreadRequest & {
+		text: string;
+		attachments?: PromptAttachment[];
+	};
 	cancelThread: ThreadRequest;
 	setThreadMode: ThreadRequest & {mode: NanocoderMode};
 	answerThreadPermission: ThreadRequest & {requestId: string; optionId: string};

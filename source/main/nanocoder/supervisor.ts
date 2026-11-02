@@ -1,5 +1,6 @@
 import {stat} from 'node:fs/promises';
 import path from 'node:path';
+import type {ContentBlock} from '@agentclientprotocol/sdk';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {untilAborted} from '@/main/nanocoder/abort';
 import {
@@ -655,6 +656,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		projectId: string,
 		sessionId: string,
 		text: string,
+		attachments?: ContentBlock[],
 	): Promise<NanocoderTurnResult> {
 		const connection = this.getConnection(projectId);
 		const entry = this.entries.get(projectId);
@@ -680,7 +682,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		this.publish(entry);
 		try {
 			if (turn.cancelled) return {stopReason: 'cancelled'};
-			return await connection.prompt(sessionId, text);
+			return await connection.prompt(sessionId, text, attachments);
 		} finally {
 			turn.questions.clear();
 			if (entry.activeTurn === turn) {

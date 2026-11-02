@@ -1,9 +1,27 @@
 import {contextBridge, ipcRenderer} from 'electron';
 import type {DesktopApi} from '@/shared/desktop-api';
+import {FILES_CHANNELS, type FilesEvent} from '@/shared/files';
 import {CHANNELS} from '@/shared/ipc';
 import {projectEventForListener} from '@/shared/project-events';
+import {REVIEW_CHANNELS} from '@/shared/review';
 
 const api: DesktopApi = {
+	files: {
+		list: request => ipcRenderer.invoke(FILES_CHANNELS.list, request),
+		preview: request => ipcRenderer.invoke(FILES_CHANNELS.preview, request),
+		openInEditor: request =>
+			ipcRenderer.invoke(FILES_CHANNELS.openInEditor, request),
+		reveal: request => ipcRenderer.invoke(FILES_CHANNELS.reveal, request),
+		onEvent: listener => {
+			const handler = (_event: unknown, event: FilesEvent) => listener(event);
+			ipcRenderer.on(FILES_CHANNELS.event, handler);
+			return () => ipcRenderer.removeListener(FILES_CHANNELS.event, handler);
+		},
+	},
+	review: {
+		status: request => ipcRenderer.invoke(REVIEW_CHANNELS.status, request),
+		diff: request => ipcRenderer.invoke(REVIEW_CHANNELS.diff, request),
+	},
 	getSettings: request => ipcRenderer.invoke(CHANNELS.getSettings, request),
 	updateSettings: request =>
 		ipcRenderer.invoke(CHANNELS.updateSettings, request),

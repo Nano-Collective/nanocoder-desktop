@@ -11,6 +11,7 @@ import '@/renderer/styles/conversation-stream.css';
 import '@/renderer/styles/overlays.css';
 import '@/renderer/styles/projects.css';
 import '@/renderer/styles/threads.css';
+import '@/renderer/styles/files.css';
 import '@/renderer/styles/projects-dialog.css';
 import '@/renderer/styles/runtime-dialogs.css';
 

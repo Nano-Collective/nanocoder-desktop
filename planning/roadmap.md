@@ -429,113 +429,115 @@ acceptance. Phase 1.8 and `SUB-05` remain app-composed, not full acceptance.
 
 **Build**
 
-- [ ] Canonicalisation and containment module ([`security.md`](security.md#path-canonicalisation), `SEC-03`)
-- [ ] Limits on entries, bytes and time (`SEC-04`)
-- [ ] Link handling that never follows paths out of the root (`FILE-10`)
+- [x] Canonicalisation and containment module ([`security.md`](security.md#path-canonicalisation), `SEC-03`)
+- [x] Limits on entries, bytes and time (`SEC-04`)
+- [x] Link handling that never follows paths out of the root (`FILE-10`)
 
 **Results we want**
 
-- [ ] Traversal, symlink and junction escape tests pass on all three platforms
-- [ ] Case and Unicode edge-case tests pass on case-insensitive volumes
+- [ ] Traversal, symlink and junction escape tests pass on all three platforms: green on macOS locally, Windows and Linux runs are in CI
+- [ ] Case and Unicode edge-case tests pass on case-insensitive volumes: Unicode normalisation and Windows-form names are tested everywhere; a case-insensitive Windows volume run is in CI
 
 ### Phase 2.2: file tree
 
 **Build**
 
-- [ ] Lazy listing per directory with an entry limit (`FILE-01`, `FILE-09`)
-- [ ] Ignored entries marked, `.git` contents hidden (`FILE-02`)
-- [ ] Keyboard tree navigation with tree semantics (`FILE-11`)
+- [x] Lazy listing per directory with an entry limit (`FILE-01`, `FILE-09`)
+- [x] Ignored entries marked, `.git` contents hidden (`FILE-02`)
+- [x] Keyboard tree navigation with tree semantics (`FILE-11`)
 
 **Results we want**
 
-- [ ] A large real repository opens without loading the whole tree, and listings meet `PERF-05`
-- [ ] A huge folder shows "more not shown" instead of hanging
+- [x] A large real repository opens without loading the whole tree, and listings meet `PERF-05`
+- [x] A huge folder shows "more not shown" instead of hanging
 
 ### Phase 2.3: file preview
 
 **Build**
 
-- [ ] Text preview with syntax highlighting and a size limit (`FILE-04`)
-- [ ] Metadata view for binary, unsupported and oversized files
-- [ ] Encoding detection without rewriting files
+- [x] Text preview with syntax highlighting and a size limit (`FILE-04`)
+- [x] Metadata view for binary, unsupported and oversized files
+- [x] Encoding detection without rewriting files
 
 **Results we want**
 
-- [ ] Oversized and binary files never load their full content into the renderer
-- [ ] Previews meet `PERF-06`
-- [ ] Non-UTF-8 files are labelled, not corrupted
+- [x] Oversized and binary files never load their full content into the renderer
+- [x] Previews meet `PERF-06`
+- [x] Non-UTF-8 files are labelled, not corrupted
 
 ### Phase 2.4: watching and refresh
 
 **Build**
 
-- [ ] Debounced file watching (`FILE-05`)
-- [ ] Manual refresh that reconciles the open tree
-- [ ] Fallback when the platform watch limit is reached
+- [x] Debounced file watching (`FILE-05`)
+- [x] Manual refresh that reconciles the open tree
+- [x] Fallback when the platform watch limit is reached
 
 **Results we want**
 
-- [ ] Edits made outside the app appear without a manual refresh
-- [ ] Hitting the Linux watch limit shows a notice and manual refresh still works
+- [x] Edits made outside the app appear without a manual refresh
+- [x] Hitting the Linux watch limit shows a notice and manual refresh still works: proven with an injected watch failure, not with a real exhausted inotify limit
 
 ### Phase 2.5: files into the chat
 
 **Build**
 
-- [ ] ACP `fs/read_text_file` through the same checks (`ACP-11`, `SEC-20`)
-- [ ] Insert a file into the composer as a resource (`FILE-08`, `CHAT-16`)
+- [x] ACP `fs/read_text_file` through the same checks (`ACP-11`, `SEC-20`)
+- [x] Insert a file into the composer as a resource (`FILE-08`, `CHAT-16`)
 
 **Results we want**
 
-- [ ] An ACP read outside the root is refused
-- [ ] An inserted file reaches Nanocoder and is used in the answer
+- [x] An ACP read outside the root is refused
+- [ ] An inserted file reaches Nanocoder and is used in the answer: proven end to end against the scripted fake agent; a run against a real Nanocoder is still to do
 
 ### Phase 2.6: Git service
 
 **Build**
 
-- [ ] Git detection and version display (`GIT-01`, `GIT-13`)
-- [ ] Hardened invocation (`GIT-11`, `SEC-06`)
-- [ ] NUL-delimited status parser (`GIT-02`)
-- [ ] Git status on file tree entries (`FILE-03`)
+- [x] Git detection and version display (`GIT-01`, `GIT-13`)
+- [x] Hardened invocation (`GIT-11`, `SEC-06`)
+- [x] NUL-delimited status parser (`GIT-02`)
+- [x] Git status on file tree entries (`FILE-03`)
 
 **Results we want**
 
-- [ ] A repository configured with `core.fsmonitor` or an external diff does not run them
-- [ ] Parser tests cover renames, untracked files and names with spaces and newlines
-- [ ] A non-Git project shows review as unavailable with a reason
-- [ ] Status on the 100,000-file fixture meets `PERF-07`
+- [x] A repository configured with `core.fsmonitor` or an external diff does not run them
+- [x] Parser tests cover renames, untracked files and names with spaces and newlines
+- [x] A non-Git project shows review as unavailable with a reason
+- [x] Status on the 100,000-file fixture meets `PERF-07`: 170 ms against 5 seconds ([measurements](files-and-review.md#measurements))
 
 ### Phase 2.7: diff and review list
 
 **Build**
 
-- [ ] Staged and unstaged filters (`GIT-03`)
-- [ ] Unified diff with binary, rename, add and delete states (`GIT-04`)
-- [ ] Touched-this-turn labels (`GIT-05`)
-- [ ] `HEAD` recorded before and after each turn, commits made during a turn listed (`GIT-12`)
-- [ ] Refresh on file change and turn end (`GIT-06`)
+- [x] Staged and unstaged filters (`GIT-03`)
+- [x] Unified diff with binary, rename, add and delete states (`GIT-04`)
+- [x] Touched-this-turn labels (`GIT-05`)
+- [x] `HEAD` recorded before and after each turn, commits made during a turn listed (`GIT-12`)
+- [x] Refresh on file change and turn end (`GIT-06`)
 
 **Results we want**
 
-- [ ] After a turn, edited files are labelled as touched and show the real diff
-- [ ] Changes the user made outside the agent appear too
-- [ ] With Nanocoder's `autoCommit` on, the turn's commits are shown
-- [ ] Diffs meet `PERF-08`
+- [x] After a turn, edited files are labelled as touched and show the real diff
+- [x] Changes the user made outside the agent appear too
+- [ ] With Nanocoder's `autoCommit` on, the turn's commits are shown: unit-tested (head before and after, commit list); no end-to-end run with a real `autoCommit`
+- [x] Diffs meet `PERF-08`: 149 ms for about 1 MiB against 1 second ([measurements](files-and-review.md#measurements))
 
 ### Phase 2.8: review comments and handoff
 
 **Build**
 
-- [ ] Line range selection with a comment inserted into the composer (`GIT-07`)
-- [ ] Open in editor and reveal in file manager (`GIT-08`, `FILE-06`, `FILE-07`)
+- [x] Line range selection with a comment inserted into the composer (`GIT-07`)
+- [x] Open in editor and reveal in file manager (`GIT-08`, `FILE-06`, `FILE-07`)
 
 **Results we want**
 
-- [ ] A review comment reaches the next prompt and is not stored afterwards
-- [ ] The chosen editor opens the right file on all three platforms
+- [x] A review comment reaches the next prompt and is not stored afterwards
+- [ ] The chosen editor opens the right file on all three platforms: the path and arguments are tested on every platform; a real editor launch was not exercised on Windows or Linux
 
-### Phase 2.9: agent changes view (only if `DEC-14` is accepted for v1)
+### Phase 2.9: agent changes view (deferred, `DEC-44`)
+
+Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DEC-14` is not accepted. Milestone 2 ships honest labels instead.
 
 **Build**
 
@@ -553,7 +555,7 @@ acceptance. Phase 1.8 and `SUB-05` remain app-composed, not full acceptance.
 - [ ] `SP-08` passes on macOS, Windows and Linux
 - [ ] `SP-09` passes on macOS, Windows and Linux
 - [ ] Path security tests pass on all three platforms
-- [ ] No destructive Git action exists in the app (`GIT-14`)
+- [x] No destructive Git action exists in the app (`GIT-14`)
 
 ## Milestone 3: run and preview
 

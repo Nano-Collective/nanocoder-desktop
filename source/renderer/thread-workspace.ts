@@ -9,7 +9,7 @@ import {
 } from '@/renderer/thread-conversations';
 import {emptyTranscript} from '@/renderer/transcript';
 import type {DesktopApi} from '@/shared/desktop-api';
-import type {IpcResult} from '@/shared/ipc';
+import type {IpcResult, PromptAttachment} from '@/shared/ipc';
 
 export interface ThreadWorkspaceState {
 	workspace: ThreadControllerState;
@@ -169,7 +169,7 @@ export function createThreadWorkspace(options: {
 				: Promise.resolve(false);
 		},
 		setDraft: conversations.setDraft,
-		send: async () => {
+		send: async (attachments?: PromptAttachment[]) => {
 			const threadId = workspace.activeThreadId;
 			if (
 				!threadId ||
@@ -181,7 +181,11 @@ export function createThreadWorkspace(options: {
 				return null;
 			const ticket = conversations.beginTurn(threadId);
 			if (!ticket) return null;
-			const result = await controller.prompt(threadId, ticket.text);
+			const result = await controller.prompt(
+				threadId,
+				ticket.text,
+				attachments,
+			);
 			conversations.finishTurn(ticket, result);
 			return result;
 		},
