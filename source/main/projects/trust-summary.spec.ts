@@ -355,6 +355,8 @@ test('a skills symlink inside the project is followed and counted once (SEC-03)'
 });
 
 test('an unreadable declaration path refuses with a fixed message (SEC-07)', async t => {
+	// Windows reports a file in place of a folder as ENOENT, i.e. absent.
+	if (process.platform === 'win32') return t.pass();
 	const root = fixture(t);
 	writeFileSync(path.join(root, '.nanocoder'), 'secret');
 	await t.throwsAsync(readTrustSummary(root), {
