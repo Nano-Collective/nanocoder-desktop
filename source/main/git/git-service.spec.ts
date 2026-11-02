@@ -236,11 +236,14 @@ test('GIT-04 a path that is invalid or starts with a dash or colon is treated as
 		code: 'VALIDATION',
 	});
 	f.write('-n', 'dash\n');
-	f.write(':(top)evil', 'colon\n');
+	// A colon is not allowed in a Windows file name, so only other platforms can have one.
+	if (process.platform !== 'win32') f.write(':(top)evil', 'colon\n');
 	const dash = await f.service.diff('project', '-n', false);
 	t.is(dash.kind, 'text');
-	const colon = await f.service.diff('project', ':(top)evil', false);
-	t.is(colon.kind, 'text');
+	if (process.platform !== 'win32') {
+		const colon = await f.service.diff('project', ':(top)evil', false);
+		t.is(colon.kind, 'text');
+	}
 });
 
 test('FILE-02 FILE-03 ignored paths and changed folders are marked for the tree', async t => {

@@ -1,7 +1,6 @@
 import {pathToFileURL} from 'node:url';
 import type {ContentBlock} from '@agentclientprotocol/sdk';
 import type {FileService} from '@/main/files/file-service';
-import {relativeSegments} from '@/main/files/safe-path';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import type {ProjectInfo, PromptAttachment} from '@/shared/ipc';
 
@@ -58,12 +57,10 @@ export async function resolveAttachments(
 			summary.push(`attached: ${preview.path}`);
 			continue;
 		}
-		const segments = relativeSegments(item.path);
-		if (
-			!segments.length ||
-			segments.some(part => part.toLowerCase() === '.git')
-		)
-			throw refuse(item.path, 'it is not a project file');
+		// A comment may be on a file that was deleted, so the file need not exist,
+		// but it gets the same trust, containment and .git refusals as a file.
+		if (!item.path) throw refuse(item.path, 'it is not a project file');
+		await files.checkPath(project.id, item.path);
 		const range =
 			item.startLine === item.endLine
 				? `line ${item.startLine}`

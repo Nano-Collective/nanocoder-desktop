@@ -70,6 +70,30 @@ export class FileService {
 		return {root, project: project as ProjectInfo, resolved};
 	}
 
+	// For a path that may no longer exist, such as a comment on a deleted file:
+	// the project must be trusted and unchanged, the path must be valid and not
+	// in .git, and the deepest part that still exists must stay inside the root.
+	async checkPath(projectId: string, input: string): Promise<void> {
+		const root = await authorisedRoot(this.options.project(projectId));
+		const segments = relativeSegments(input);
+		refuseGitFolder(segments);
+		for (let length = segments.length; length >= 0; length--) {
+			try {
+				const found = await resolveInside(
+					root,
+					segments.slice(0, length).join('/'),
+				);
+				refuseGitFolder(
+					path.relative(root, found.real).split(path.sep).filter(Boolean),
+				);
+				return;
+			} catch (error) {
+				if (error instanceof IpcFailure && error.code === 'NOT_FOUND') continue;
+				throw error;
+			}
+		}
+	}
+
 	async list(request: {projectId: string; path: string}): Promise<FileListing> {
 		const {root, project, resolved} = await this.locate(
 			request.projectId,

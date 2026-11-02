@@ -533,10 +533,20 @@ test('GIT-13 a project that is not a Git repository shows review as unavailable 
 	await expect(item('README.md')).toBeVisible();
 });
 
-test('GIT-14 no destructive Git action is reachable from the app', async () => {
+test('GIT-14 the page can only read from Git, so no destructive action is reachable', async () => {
 	await start();
 	await filesButton().click();
 	await page.getByRole('tab', {name: 'review'}).click();
+	// The proof: the review namespace is the page's only route to Git, and it
+	// has two read methods. Main refuses every other Git subcommand as well
+	// (source/main/git/run.spec.ts), so a new write method would fail both.
+	const keys = await page.evaluate(() =>
+		Object.keys(
+			(window as unknown as {desktop: {review: object}}).desktop.review,
+		),
+	);
+	expect(keys.sort()).toEqual(['diff', 'status']);
+	// A smoke check only, not proof: no control is labelled with an obvious write verb.
 	const labels = (await page.getByRole('button').allInnerTexts())
 		.join('\n')
 		.toLowerCase();
@@ -550,12 +560,6 @@ test('GIT-14 no destructive Git action is reachable from the app', async () => {
 		'push',
 	])
 		expect(labels, word).not.toMatch(new RegExp(`(^|\\n)${word}\\b`));
-	const keys = await page.evaluate(() =>
-		Object.keys(
-			(window as unknown as {desktop: {review: object}}).desktop.review,
-		),
-	);
-	expect(keys.sort()).toEqual(['diff', 'status']);
 });
 
 test('A11Y-01 the panels have no contrast gaps in either theme', async () => {

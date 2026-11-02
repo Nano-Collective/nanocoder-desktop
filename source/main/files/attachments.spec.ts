@@ -1,4 +1,5 @@
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	realpathSync,
@@ -208,4 +209,63 @@ test('GIT-07 a review comment on an invalid or .git path is refused', async t =>
 			bad,
 		);
 	}
+});
+
+test('SEC-03 SEC-17 a review comment gets the same trust and containment refusals as a file', async t => {
+	const f = fixture(t);
+	const comment = (path: string) =>
+		({
+			kind: 'review-comment',
+			path,
+			startLine: 1,
+			endLine: 1,
+			side: 'unstaged',
+			comment: 'why',
+			excerpt: '',
+		}) as const;
+	// A file that no longer exists can still be commented on (a deleted file's diff).
+	const deleted = await resolveAttachments(
+		f.files,
+		f.project,
+		[comment('src/deleted.ts')],
+		false,
+	);
+	t.is(deleted.blocks.length, 1);
+	try {
+		symlinkSync(
+			path.join(f.base, 'outside'),
+			path.join(f.root, 'escape'),
+			'junction',
+		);
+	} catch {
+		// Links are skipped where this account cannot create them.
+	}
+	for (const bad of ['escape/secret.txt', 'escape/new-file.txt'])
+		if (existsSync(path.join(f.root, 'escape')))
+			await t.throwsAsync(
+				resolveAttachments(f.files, f.project, [comment(bad)], false),
+				{code: 'OUTSIDE_ROOT'},
+				bad,
+			);
+	await t.throwsAsync(
+		resolveAttachments(f.files, f.project, [comment('.git/config')], false),
+		{
+			code: 'DENIED',
+		},
+	);
+	f.project.trusted = false;
+	await t.throwsAsync(
+		resolveAttachments(f.files, f.project, [comment('src/a.ts')], false),
+		{
+			code: 'DENIED',
+		},
+	);
+	f.project.trusted = true;
+	f.project.availability = 'missing';
+	await t.throwsAsync(
+		resolveAttachments(f.files, f.project, [comment('src/a.ts')], false),
+		{
+			code: 'DENIED',
+		},
+	);
 });
