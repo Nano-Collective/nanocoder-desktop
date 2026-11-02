@@ -85,7 +85,7 @@ The defaults are in [Stack Suggestions](https://docs.nanocollective.org/collecti
 | Native modules | `node-pty`, built from source on Linux | The terminal needs a real PTY |
 | Spec files | Linted by Biome | Nanocoder and Nanotune exclude them; we want security tests linted too |
 | CI | Local macOS, Windows, ACP integration and packaging jobs beside the shared Linux checks, advisory at first ([#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10)) | The app must work on all three platforms |
-| Visual identity | The "monocode" palette in hex, dark first with a full light theme, set in Fira Code ([`DESIGN.md`](DESIGN.md)), instead of the Tokyo Night default in OKLch ([#11](https://github.com/Nano-Collective/nanocoder-desktop/issues/11)) | The design took its look from the Nanocoder landing page and modern agent workspaces, not from the CLI's default theme. Tokyo Night in Nanocoder is dark only and its muted ink is below AA on its base, so it could not meet the text contrast target in both themes |
+| Visual identity | The designer-approved neutral-black/refined-light palette in hex, dark first with a full light theme, set in Fira Code ([`DESIGN.md`](DESIGN.md)), instead of the Tokyo Night default in OKLch ([#11](https://github.com/Nano-Collective/nanocoder-desktop/issues/11)) | The revision-4 mockup and user approval are recorded in `DEC-40`. Tokyo Night in Nanocoder is dark only and its muted ink is below AA on its base, so it could not meet the text contrast target in both themes |
 
 The visual identity is the designer's call. `DESIGN.md` is the source for every colour, type and spacing value; change them there, not in code.
 

@@ -7,6 +7,9 @@ directories:
 files:
   - out/**
   - package.json
+  - THIRD-PARTY-NOTICES.txt
+  - '!e2e/**'
+  - '!.qa/**'
 asarUnpack:
   - '**/*.node'
 npmRebuild: true

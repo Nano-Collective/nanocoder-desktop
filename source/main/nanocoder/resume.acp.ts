@@ -84,9 +84,15 @@ test('after both processes restart, a follow-up is answered with the earlier con
 			'normal',
 		);
 		t.deepEqual(session, {id: project.sessionId, mode: 'normal'});
+		const last = history.at(-1);
+		t.is(last?.type, 'metadata');
+		const durationMs = last?.metadata?.durationMs;
+		t.is(typeof durationMs, 'number');
+		t.true(Number.isFinite(durationMs) && (durationMs ?? -1) >= 0);
 		t.deepEqual(history, [
 			{type: 'user', text: 'Remember the code word pelican.'},
 			{type: 'text', text: 'Noted: the code word is pelican.'},
+			{type: 'metadata', metadata: {durationMs, outcome: 'completed'}},
 		]);
 		t.deepEqual(live, []);
 

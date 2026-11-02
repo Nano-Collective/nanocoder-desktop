@@ -33,7 +33,9 @@ export async function trustDirectory(options: {
 	root: string;
 	env?: NodeJS.ProcessEnv;
 	timeoutMs?: number;
+	signal?: AbortSignal;
 }): Promise<void> {
+	options.signal?.throwIfAborted();
 	const child = launchNanocoder(
 		options.runtime,
 		['--acp'],
@@ -46,10 +48,24 @@ export async function trustDirectory(options: {
 	child.stdin.end();
 	child.stdout.resume();
 	child.stderr.resume();
-	const timer = setTimeout(
-		() => child.kill(),
-		options.timeoutMs ?? TRUST_TIMEOUT_MS,
+	const abort = () => child.kill();
+	const forceAbort = () => {
+		child.kill('SIGKILL');
+		child.stdout.destroy();
+		child.stderr.destroy();
+	};
+	options.signal?.addEventListener('abort', abort, {once: true});
+	const timer = setTimeout(abort, options.timeoutMs ?? TRUST_TIMEOUT_MS);
+	const kill = setTimeout(
+		forceAbort,
+		(options.timeoutMs ?? TRUST_TIMEOUT_MS) + 5_000,
 	);
+	// An aborted trust launch must not retain its normal one-minute timeout.
+	options.signal?.addEventListener('abort', forceAbort, {once: true});
 	await exited;
 	clearTimeout(timer);
+	clearTimeout(kill);
+	options.signal?.removeEventListener('abort', abort);
+	options.signal?.removeEventListener('abort', forceAbort);
+	options.signal?.throwIfAborted();
 }

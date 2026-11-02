@@ -3,7 +3,7 @@
 Every question that still needs an answer, who owns it, and which milestone it blocks.
 
 - Status: Draft
-- Last updated: 2026-10-28
+- Last updated: 2026-10-29
 - Drafted by: @akramcodez
 
 ## How to use this list
@@ -19,7 +19,7 @@ From [whitepaper, Open questions][wp-questions].
 | ID | Question | Current state | Owner | Blocks | Link |
 |---|---|---|---|---|---|
 | OQ-01 | Does the first public release need a user-installed Nanocoder, or ship a bundled tested version? | Proposed (awaiting @will-lamerton): installed for the prototype, bundled and pinned with an override for the public release (`DEC-11`). | NC core team | Technical gate (which artefact the gate spawns) | [#117][i117] |
-| OQ-02 | Which Nanocoder versions and ACP capabilities are supported? | Proposed (awaiting @will-lamerton): the bundled version, plus newer versions above a minimum through the override, with startup capability checks (`DEC-12`). The minimum is not set. | NC core team | Technical gate | [#117][i117] |
+| OQ-02 | Which Nanocoder versions and ACP capabilities are supported? | Proposed (awaiting @will-lamerton): the bundled version, plus newer versions above a minimum through the override, with startup capability checks (`DEC-12`). No public release floor is agreed. The provisional 1.31.0 floor permits 1.31.x only through an explicit override and an isolated fail-closed ACP trust preflight; published npm 1.31.0 remains unsupported. Capability advertisements are not trust proof. Raise the minimum to 1.32.0 when released, verify the first artefact with the required trust check and per-session cwd, and record conformance evidence before public release ([policy](acp-integration.md#provisional-prototype-policy-phase-14)). | NC core team | Technical gate | [#117][i117] |
 | OQ-03 | Which subagent event, child-session, cancellation and approval surfaces can be supported without Nanocoder-specific version coupling? | Open. At Nanocoder `8a5f4d4`, ACP shows a subagent only as the `agent` tool card with a polled title; there are no child IDs, no per-child cancel, and one approval handler per process ([`subagents.md`](features/subagents.md)). [nanocoder#1105][nc1105] is open. | NC core team | Milestone 1 (`SP-05`) | [Whitepaper][wp-questions] |
 | OQ-04 | Is SQLite acceptable as a new desktop dependency and migration surface? | Answered in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): yes, through `node:sqlite` with `better-sqlite3` as the fallback (`DEC-04`). | NC core team | Milestone 1 | [Whitepaper][wp-questions] |
 | OQ-05 | Which code, diff and PTY libraries meet licence and platform requirements? | Answered in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): CodeMirror 6, Git's own diff output, `node-pty` with `@xterm/xterm` (`DEC-28`). | NC core team | Milestone 2 (diff), Milestone 3 (PTY) | [Whitepaper][wp-questions] |

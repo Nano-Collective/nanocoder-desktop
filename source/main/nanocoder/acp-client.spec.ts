@@ -1,9 +1,11 @@
+import {writeFileSync} from 'node:fs';
 import path from 'node:path';
 import test from 'ava';
 import {
 	type ConnectOptions,
 	connectNanocoder,
 	describeExit,
+	type NanocoderConnection,
 	NanocoderFailure,
 	nanocoderMessage,
 } from '@/main/nanocoder/acp-client';
@@ -38,6 +40,154 @@ const failure = (root: string, options?: Partial<ConnectOptions>) =>
 	rejection(connect(root, options));
 
 test.after.always(removeFakeProjects);
+
+function holdListStderr(root: string) {
+	writeFileSync(path.join(root, '.fake-hold-list-stderr'), '');
+	return () => writeFileSync(path.join(root, '.fake-release-list-stderr'), '');
+}
+
+async function waitForFakeMethod(
+	connection: NanocoderConnection,
+	method: string,
+) {
+	const {stderr} = connection;
+	const write = stderr.write;
+	try {
+		await new Promise<void>(resolve => {
+			const check = () => {
+				if (fakeEvents(stderr.lines()).some(event => event.method === method)) {
+					resolve();
+				}
+			};
+			stderr.write = chunk => {
+				write.call(stderr, chunk);
+				check();
+			};
+			check();
+		});
+	} finally {
+		stderr.write = write;
+	}
+}
+
+test('ACP-18 listing filters by the canonical connection root without session creation or loading', async t => {
+	const root = fakeProject();
+	const release = holdListStderr(root);
+	const connection = await connect(root);
+	t.teardown(() => connection.close());
+	t.deepEqual(await connection.listSessions?.(), {
+		sessions: [
+			{
+				sessionId: 'discovered-session',
+				cwd: root,
+				title: 'existing saved session',
+				updatedAt: '2026-10-29T12:00:00.000Z',
+			},
+		],
+	});
+	t.false(
+		fakeEvents(connection.stderr.lines()).some(
+			event => event.method === 'session/list',
+		),
+	);
+	release();
+	await waitForFakeMethod(connection, 'session/list');
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines()).filter(event => event.method),
+		[
+			fakeEvents(connection.stderr.lines()).find(
+				event => event.method === 'initialize',
+			),
+			{method: 'session/list', params: {cwd: root}},
+		],
+	);
+});
+
+test('ACP-18 unadvertised listing refuses without a list/load/new request', async t => {
+	const connection = await connect(fakeProject('no-list'));
+	t.teardown(() => connection.close());
+	await waitForFakeMethod(connection, 'initialize');
+	t.deepEqual(
+		await rejection(connection.listSessions?.() ?? Promise.resolve()),
+		new NanocoderFailure(
+			'UNSUPPORTED',
+			'This version of Nanocoder cannot list saved sessions',
+		),
+	);
+	t.deepEqual(
+		fakeEvents(connection.stderr.lines())
+			.filter(event => event.method)
+			.map(event => event.method),
+		['initialize'],
+	);
+});
+
+for (const state of ['list-fails', 'closed'] as const) {
+	test(`ACP-18 ${state} listing fails safely without loading or creating a session`, async t => {
+		const root = fakeProject(state);
+		const release = holdListStderr(root);
+		const connection = await connect(root);
+		t.teardown(() => connection.close());
+		await waitForFakeMethod(connection, 'initialize');
+		if (state === 'closed') await connection.close();
+		const error = await rejection(
+			connection.listSessions?.() ?? Promise.resolve(),
+		);
+		t.is(error.code, 'AGENT_UNAVAILABLE');
+		t.is(error.message, 'Nanocoder could not list saved sessions');
+		t.false(
+			fakeEvents(connection.stderr.lines()).some(
+				event => event.method === 'session/list',
+			),
+		);
+		release();
+		if (state !== 'closed') await waitForFakeMethod(connection, 'session/list');
+		t.deepEqual(
+			fakeEvents(connection.stderr.lines())
+				.filter(event => event.method)
+				.map(event => event.method),
+			state === 'closed' ? ['initialize'] : ['initialize', 'session/list'],
+		);
+	});
+}
+
+test('ACP-14 replay cleanup preserves closing config display without restoring control authority', async t => {
+	let displayed = 0;
+	const published: string[] = [];
+	const connection = await connect(fakeProject('config-notify-close'), {
+		runtime: {
+			nodePath: process.execPath,
+			cliPath: path.join(
+				import.meta.dirname,
+				'fixtures/fake-control-nanocoder.mjs',
+			),
+		},
+		onUpdate: update => {
+			if (update.sessionUpdate === 'config_option_update') displayed++;
+		},
+	});
+	const session = await connection.newSession('normal');
+	connection.observeConfigOptions?.({
+		isCurrentSession: id => id === session.id,
+		onChange: id => published.push(id),
+	});
+	await connection.close();
+	t.is(displayed, 1);
+	t.deepEqual(published, []);
+	t.is(connection.getSessionOffers(session.id), undefined);
+});
+
+test('retains validated prompt-response tokens and vendor cost in main only (CHAT-19)', async t => {
+	const connection = await connect(fakeProject('reported-usage'));
+	t.teardown(() => connection.close());
+	const session = await connection.newSession('normal');
+	t.deepEqual(await connection.prompt(session.id, 'fixture'), {
+		stopReason: 'end_turn',
+		metadata: {
+			usage: {inputTokens: 12, outputTokens: 8, totalTokens: 20, cost: 0.01},
+		},
+	});
+});
 
 test('records the protocol version, agent version and capabilities', async t => {
 	const root = fakeProject();
@@ -147,7 +297,7 @@ test('opens a session at the project root and sets its mode before handing it ou
 	);
 	t.deepEqual(
 		requests.map(event => event.method),
-		['initialize', 'session/new', 'session/set_mode'],
+		['initialize', 'session/new', 'session/set_mode', 'session/close'],
 	);
 	t.like(requests[1].params, {cwd: root, mcpServers: []});
 	t.deepEqual(requests[2].params, {
@@ -276,6 +426,73 @@ test('tells an error Nanocoder reports apart from Nanocoder stopping', async t =
 	);
 });
 
+test('CHAT-08 resume collects only the exact saved session, without forwarding foreign replay as live', async t => {
+	const live: string[] = [];
+	const connection = await connect(fakeProject('replay-foreign'), {
+		onUpdate: update => live.push(update.sessionUpdate),
+	});
+	t.teardown(() => connection.close());
+	const {history} = await connection.resumeSession('fake-session', 'normal');
+	t.deepEqual(
+		history.filter(event => event.type === 'user').map(event => event.text),
+		['Earlier question'],
+	);
+	t.deepEqual(live, []);
+});
+
+for (const limit of ['count', 'bytes', 'utf8']) {
+	test(`CHAT-08 resume ${limit} overflow refuses the whole prefix and never marks the session ready`, async t => {
+		const connection = await connect(fakeProject(`replay-${limit}-overflow`));
+		t.teardown(() => connection.close());
+		const error = await connection.resumeSession('fake-session', 'normal').then(
+			() => undefined,
+			(error: unknown) => error,
+		);
+		t.true(error instanceof NanocoderFailure);
+		if (!(error instanceof NanocoderFailure)) return;
+		t.is(error.code, 'AGENT_UNAVAILABLE');
+		t.is(error.message, 'Nanocoder replay exceeded the safe history limit');
+		t.is(connection.getSessionOffers('fake-session'), undefined);
+		t.false(
+			fakeEvents(connection.stderr.lines()).some(
+				event => event.method === 'session/set_mode',
+			),
+		);
+	});
+}
+
+for (const limit of ['count', 'bytes']) {
+	test(`CHAT-08 resume accepts the exact ${limit} limit without truncating the complete prefix`, async t => {
+		const connection = await connect(fakeProject(`replay-${limit}-limit`));
+		t.teardown(() => connection.close());
+		const resumed = await connection.resumeSession('fake-session', 'normal');
+		if (limit === 'count') t.is(resumed.history.length, 100_000);
+		else {
+			t.is(resumed.history.length, 1);
+			t.is(resumed.history[0].type, 'text');
+		}
+		t.is(resumed.session.mode, 'normal');
+		t.truthy(connection.getSessionOffers('fake-session'));
+	});
+}
+
+test('CHAT-08 one in-flight replay cannot be overwritten by a second collector and close retires both requests', async t => {
+	const connection = await connect(fakeProject('slow-resume'));
+	const first = connection
+		.resumeSession('fake-session', 'normal')
+		.catch(() => undefined);
+	const duplicate = connection.resumeSession('foreign-session', 'normal');
+	const error = rejection(duplicate);
+	await connection.close();
+	await first;
+	t.is((await error).message, 'A session replay is already active');
+	t.is(connection.getSessionOffers('fake-session'), undefined);
+	const closed = await rejection(
+		connection.resumeSession('fake-session', 'normal'),
+	);
+	t.is(closed.message, 'Nanocoder could not resume the session');
+});
+
 test('resumes a session, rebuilds it from the replay and sets its mode', async t => {
 	const root = fakeProject();
 	const live: string[] = [];
@@ -304,7 +521,7 @@ test('resumes a session, rebuilds it from the replay and sets its mode', async t
 	const requests = fakeEvents(connection.stderr.lines()).filter(e => e.method);
 	t.deepEqual(
 		requests.map(e => e.method),
-		['initialize', 'session/resume', 'session/set_mode'],
+		['initialize', 'session/resume', 'session/set_mode', 'session/close'],
 	);
 	t.like(requests[1].params, {sessionId: 'fake-session', cwd: root});
 	t.deepEqual(requests[2].params, {
@@ -455,4 +672,88 @@ test("picks Nanocoder's own line out of other stderr output", t => {
 		'second',
 	);
 	t.is(nanocoderMessage(['plain output']), undefined);
+});
+
+test('blocks a prompt while session/set_mode is still waiting', async t => {
+	let modeWaiting!: () => void;
+	const waiting = new Promise<void>(resolve => {
+		modeWaiting = resolve;
+	});
+	const connection = await connect(fakeProject('slow-mode'), {
+		onUpdate: () => modeWaiting(),
+	});
+	const opening = connection.newSession('normal').catch(() => undefined);
+	await waiting;
+	await t.throwsAsync(connection.prompt('fake-session', 'Must not run'), {
+		message: /until its mode is set/,
+	});
+	await connection.close();
+	await opening;
+	t.false(
+		fakeEvents(connection.stderr.lines()).some(
+			e => e.method === 'session/prompt',
+		),
+	);
+});
+
+test('never restores yolo on resume', async t => {
+	const connection = await connect(fakeProject());
+	const {session} = await connection.resumeSession('fake-session', 'yolo');
+	await connection.close();
+	t.is(session.mode, 'normal');
+	t.like(
+		fakeEvents(connection.stderr.lines()).find(
+			e => e.method === 'session/set_mode',
+		)?.params,
+		{modeId: 'normal'},
+	);
+});
+
+test('probes extensions with no session ID or title and tries prefixed then bare names', async t => {
+	for (const mode of ['extensions', 'prefixed-extensions']) {
+		const connection = await connect(fakeProject(mode));
+		t.deepEqual(await connection.probeExtensions(), {
+			rename: true,
+			timeline: true,
+		});
+		await connection.close();
+		const probes = fakeEvents(connection.stderr.lines()).filter(
+			e => e.method !== 'initialize' && e.method,
+		);
+		t.true(probes.every(p => JSON.stringify(p.params) === '{}'));
+		t.true(probes.some(p => p.method === '_renameSession'));
+		t.is(
+			probes.some(p => p.method === 'renameSession'),
+			mode === 'extensions',
+		);
+		t.false(
+			probes.some(
+				p => p.method === 'timeline/revert' || p.method === 'retryTurn',
+			),
+		);
+	}
+});
+
+test('unknown extension methods fail closed', async t => {
+	const connection = await connect(fakeProject());
+	t.deepEqual(await connection.probeExtensions(), {
+		rename: false,
+		timeline: false,
+	});
+	await connection.close();
+});
+
+test('ambiguous, unexpectedly successful and silent probes never enable features', async t => {
+	for (const mode of [
+		'ambiguous-probes',
+		'successful-probes',
+		'silent-probes',
+	]) {
+		const connection = await connect(fakeProject(mode), {probeTimeoutMs: 20});
+		t.deepEqual(await connection.probeExtensions(), {
+			rename: false,
+			timeline: false,
+		});
+		await connection.close();
+	}
 });

@@ -29,6 +29,7 @@ export default defineConfig({
 		oxc: {jsx: {runtime: 'automatic'}},
 		build: {
 			outDir: fromRoot('out/renderer'),
+			assetsInlineLimit: 0,
 			rolldownOptions: {
 				input: {index: fromRoot('source/renderer/index.html')},
 			},

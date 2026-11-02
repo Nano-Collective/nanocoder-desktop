@@ -1,0 +1,148 @@
+# Projects and directory trust
+
+- Last updated: 2026-10-31
+
+Phase 1.2 implements `CHAT-01`, `CHAT-02` and the current `DEC-30` proposal.
+`DEC-30` is still awaiting the founder. This does not approve or replace it.
+
+## Main owns project identity and consent
+
+- The native folder picker is the only source of a new root. Main resolves its
+  real path, checks that it is a directory, and saves its display name and equal
+  canonical root/session cwd in the desktop metadata store. Non-Git folders work.
+- A canonical folder has one stored project ID and one supervisor process.
+  Selecting it again reuses the project. A successful opening updates recency and
+  the active project. Merely selecting it does not grant trust.
+- The renderer sends project IDs, never paths or a trusted flag. The existing
+  strict IPC schemas reject extra fields. A native, cancel-by-default dialog
+  remains the only way to accept a Nanocoder trust refusal.
+- A missing or replaced canonical root cannot open. Locate asks for another
+  native selection, refuses another project's root, stops the former process
+  before saving the new root, and clears trust. Existing thread history and its
+  recorded cwd are not rewritten. ThreadService refuses the former session's
+  cwd before resume, keeps its identity and never silently substitutes a session.
+- A trust refusal clears the desktop trust flag, including when it comes from a
+  direct supervisor start. A refusal does not trigger an automatic restart.
+
+## Read-only execution summary
+
+The native dialog names the canonical root and counts these project declarations:
+
+- `.nanocoder/plugins/*.mjs`, hooks, MCP servers, formatters and LSP servers;
+- custom tools, subscribed skills, agents and commands;
+- project `.env` presence, confirmation-setting declarations and provider endpoints.
+
+Counts deliberately do not expose command bodies, config values, endpoint URLs
+or environment values. The summary never imports plugins, runs project code,
+starts Git, creates sessions or installs watchers. It does not read `.env`
+contents. User-level Nanocoder configuration also applies, and the dialog says
+that trust is not a sandbox.
+
+Inspection is limited to 256 KiB per declaration, 2 MiB in total, 512 directory
+entries and eight nested directory levels. Files must be regular files. Relevant
+paths and symlinks must resolve inside the canonical root. Broken links, malformed
+metadata, YAML aliases, incomplete front matter, scan limits and changing files
+refuse consent instead of producing a supposedly complete summary. Errors are
+fixed messages, never parser input or filesystem error payloads.
+
+Main holds a SHA-256 snapshot in memory and inspects again after native
+acceptance. Equal-count edits still change the snapshot and refuse the grant.
+Neither the snapshot nor declaration contents enter SQLite, the renderer or logs.
+
+## Pre-trust probe exception and upstream gaps
+
+The documented G.3 exception to `SEC-17` and `ACP-20` remains: without Nanocoder's
+read-only status command, main first runs one normal `nanocoder --acp` probe to
+learn its trust verdict. Nanocoder may read the project's `.env` before refusing.
+The desktop does not create a session, run Git or install watchers before a ready
+trust outcome.
+
+After explicit native acceptance, only the short trust launch sets
+`NANOCODER_TRUST_DIRECTORY=1`. Normal launches drop an inherited override and
+never pass `--trust-directory`. The next normal launch verifies Nanocoder's
+verdict; a second refusal is shown without another automatic attempt.
+
+The desktop summary is a conservative local inspection, not Nanocoder's own
+versioned fingerprint. The second inspection narrows the consent window but
+cannot make Nanocoder's later grant atomic with the displayed snapshot.
+Nanocoder's short trust launch can initialise project MCP before stdin closes.
+The status command, fingerprint-bound grant and fingerprint versioning remain
+blocked on [nanocoder#1899](https://github.com/Nano-Collective/nanocoder/issues/1899).
+See [the trust integration notes](acp-integration.md#directory-trust).
+
+On Windows, a project folder cannot be moved while Nanocoder is running in it; stop it or quit first.
+
+The provisional minimum is `1.31.0` for an explicit `NANOCODER_DESKTOP_CLI`
+override only, with an isolated, fail-closed ACP directory-trust preflight before
+any selected-project launch. Published npm 1.31.0 remains unsupported. The check
+neither grants trust nor replaces selected-project consent. Raise the minimum to
+`1.32.0` when released and verify the artefact; `DEC-12` and `OQ-02` remain open.
+See the [version policy](acp-integration.md#provisional-prototype-policy-phase-14).
+
+The preflight awaits temporary-state cleanup before its final identity check.
+It returns a main-only runtime binding, and the shared launcher synchronously
+checks both Node and CLI realpaths, device, inode, size and modification time
+immediately before every spawn, with no `await` between that check and spawn.
+This covers normal and trust launches, recovery and idle restarts. A changed or
+missing identity refuses before entering the selected project.
+
+Admission and retention are separate. Only the complete existing proof returns
+an identity-bound runtime: no stdout, no truncated or failed observation, the one
+exact refusal for the isolated root, natural exit 1 with no signal before the
+unchanged 5000 ms deadline, successful cleanup and unchanged executable identity.
+An exact refusal followed by a stall never qualifies. The 32-entry, memory-only
+cache retains verified results and narrow definitive rejections, such as observed
+stdout or a complete known refusal with the wrong root or natural exit code.
+Timeout, abort, cleanup or identity failure takes precedence over retention.
+Unknown startup errors, silent exits, unexplained termination and incomplete
+observations refuse the current request without poisoning later explicit Retry.
+
+One explicit request without a reusable verdict makes one fresh isolated probe.
+There is no automatic retry, warm-up, expiry timer or background loop. A cached
+definitive rejection still refuses without another execution. Per-runtime-key
+ownership prevents an older completion, including one for another project, from
+returning a runtime or replacing a newer verdict. Existing project busy,
+removal, root-change and disposal barriers remain in main. A successful probe
+still grants no project trust.
+
+The probe is self-reporting, not executable authentication. A malicious override
+can print the exact refusal and exit 1, then behave differently in the selected
+project. It runs with the user's OS privileges, not in a sandbox, and can
+independently read accessible files or use the network. Minimal environment and
+isolated state do not prevent that. Retry explicitly executes that already
+selected code again.
+
+The fingerprint is filesystem metadata, not a content hash. Synchronous checks
+cannot atomically pin the bytes opened by the OS. Stat/open races, swaps that
+restore the old identity, same-metadata changes and imported dependency changes
+remain outside that guarantee. Fresh probes preserve these limits, not solve
+them, and do not replace file permissions.
+
+## Renderer integration
+
+`RecentProjects` takes only projects, active ID, pending state and add/open/locate
+callbacks. `TrustFeedback` takes a feedback value. Both reuse U.1 parts and use
+`source/renderer/styles/projects.css`, without assuming an app-shell layout.
+`useProjects` handles the typed bridge calls. `RecentProjects` mounts in the app
+shell's project-rail slot and `TrustFeedback` in its stream-tools slot. A successful
+recent-project opening clears the former technical-gate composer, so it cannot
+appear to target the newly selected folder. The ACP badge still follows that
+project's live supervisor events, not a saved trust flag or opening result.
+Default-mode controls and project removal remain unavailable here; their later
+phases retain the existing IPC contracts.
+
+Recent projects subscribe before their first read. Successful add, locate and
+open commits publish a `projects-changed` notification through the existing
+project-event channel, containing only its type, the changed project ID and the
+existing per-project sequence. Preload validates this exact shape and refuses
+unknown variants. The renderer re-reads the list and active ID through the
+existing methods; the notification never selects, attaches or starts a project.
+Older event sequences, superseded read results and reads completing after
+unmount cannot replace current recents or selection. Existing project and
+removal events also refresh recents, as does a supervisor trust refusal.
+
+## Approved workspace presentation (DEC-40)
+
+The first-launch canvas centres the local logo, an open-folder action and known recent-project metadata. Opening and locating call the existing project-id callbacks; unavailable folders offer locate, never an unsafe open. Native trust consent and its cancel default stay in main. Trust refusals remain visible in the canvas.
+
+Runtime paths and connected-agent/capability details live in a keyboard-native disclosure instead of preceding every conversation. Setup errors open that disclosure; version warnings stay visible outside it. The compact ready/recovery area retains explicit retry and captured-diagnostics review/export. View-only notices show metadata, the missing-history reason and desktop-only removal scope with no composer. Saved-session offers stay in their independently scoped, metadata-only list, with native import focus return unchanged.

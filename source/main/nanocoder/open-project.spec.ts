@@ -1,4 +1,4 @@
-import {existsSync} from 'node:fs';
+import {copyFileSync, existsSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import test from 'ava';
 import {NanocoderFailure} from '@/main/nanocoder/acp-client';
@@ -8,7 +8,7 @@ import {
 	fakeRuntime,
 	removeFakeProjects,
 } from '@/main/nanocoder/fixtures/fake-project';
-import {openProject} from '@/main/nanocoder/open-project';
+import {connectProject, openProject} from '@/main/nanocoder/open-project';
 import type {TrustRefusal} from '@/main/nanocoder/trust';
 
 function open(
@@ -32,6 +32,98 @@ function open(
 }
 
 test.after.always(removeFakeProjects);
+
+for (const source of ['override', 'path'] as const) {
+	test(`a published-like 1.31.0 ${source} cannot open a project or request trust (ACP-04 ACP-20)`, async t => {
+		const installation = fakeProject();
+		const cliPath = path.join(installation, 'cli.mjs');
+		copyFileSync(
+			path.join(import.meta.dirname, 'fixtures/fake-trust-preflight.mjs'),
+			cliPath,
+		);
+		writeFileSync(path.join(installation, 'preflight-behaviour'), 'published');
+		let confirmations = 0;
+		const result = connectProject({
+			runtime: {nodePath: process.execPath, cliPath, version: '1.31.0', source},
+			root: fakeProject(),
+			clientInfo: {name: 'fixture', version: '0'},
+			confirmTrust: async () => {
+				confirmations++;
+				return true;
+			},
+		}).then(async connection => {
+			if (!('status' in connection)) await connection.close();
+		});
+		await t.throwsAsync(result, {
+			code: 'UNSUPPORTED',
+			message:
+				source === 'path'
+					? /NANOCODER_DESKTOP_CLI/
+					: /could not verify.*directory trust check/i,
+		});
+		t.is(confirmations, 0);
+	});
+}
+
+test('a verified 1.31.0 override still asks about the actual selected project and respects cancellation (ACP-20)', async t => {
+	const installation = fakeProject();
+	const cliPath = path.join(installation, 'cli.mjs');
+	copyFileSync(
+		path.join(import.meta.dirname, 'fixtures/fake-trust-preflight.mjs'),
+		cliPath,
+	);
+	writeFileSync(path.join(installation, 'preflight-behaviour'), 'refuse');
+	const root = fakeProject();
+	const asked: TrustRefusal[] = [];
+	const result = await connectProject({
+		runtime: {
+			nodePath: process.execPath,
+			cliPath,
+			version: '1.31.0',
+			source: 'override',
+		},
+		root,
+		clientInfo: {name: 'fixture', version: '0'},
+		confirmTrust: async refusal => {
+			asked.push(refusal);
+			return false;
+		},
+	});
+	t.deepEqual(result, {
+		status: 'untrusted',
+		message: `Directory ${root} is not trusted.`,
+	});
+	t.deepEqual(asked, [
+		{reason: 'not-trusted', summary: `Directory ${root} is not trusted.`},
+	]);
+});
+
+test('initialize cannot downgrade newer metadata into an unverified 1.31.0 exception (ACP-04)', async t => {
+	const installation = fakeProject();
+	const cliPath = path.join(installation, 'cli.mjs');
+	copyFileSync(
+		path.join(import.meta.dirname, 'fixtures/fake-trust-preflight.mjs'),
+		cliPath,
+	);
+	writeFileSync(path.join(installation, 'preflight-behaviour'), 'published');
+	await t.throwsAsync(
+		connectProject({
+			runtime: {
+				nodePath: process.execPath,
+				cliPath,
+				version: '9.9.9',
+				source: 'override',
+			},
+			root: fakeProject(),
+			clientInfo: {name: 'fixture', version: '0'},
+			confirmTrust: async () => {
+				t.fail('downgrade must not ask for trust');
+				return true;
+			},
+		}),
+		{code: 'UNSUPPORTED', message: /matching override version metadata/},
+	);
+});
 
 test('opens a trusted folder without asking', async t => {
 	const {asked, outcome} = open(fakeProject(), false);

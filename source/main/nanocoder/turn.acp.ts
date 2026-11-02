@@ -133,8 +133,9 @@ test('allow once: the tool runs and the turn ends', async t => {
 		outcome.events.map(event =>
 			event.type === 'tool' ? event.status : event.type,
 		),
-		['pending', 'in_progress', 'completed', 'text'],
+		['commands', 'pending', 'in_progress', 'completed', 'text'],
 	);
+	t.deepEqual(outcome.events[0], {type: 'commands', commands: []});
 	t.deepEqual(outcome.events.at(-1), {type: 'text', text: 'All done.'});
 });
 
@@ -153,8 +154,9 @@ test('reject once: the tool does not run and the turn goes on', async t => {
 		outcome.events.map(event =>
 			event.type === 'tool' ? event.status : event.type,
 		),
-		['pending', 'failed', 'text'],
+		['commands', 'pending', 'failed', 'text'],
 	);
+	t.deepEqual(outcome.events[0], {type: 'commands', commands: []});
 	t.is(
 		outcome.requests.at(1)?.messages.at(-1)?.content,
 		'Tool call denied by user',
@@ -172,8 +174,9 @@ test('with no handler, nothing is allowed by default', async t => {
 		outcome.events.map(event =>
 			event.type === 'tool' ? event.status : event.type,
 		),
-		['pending', 'failed'],
+		['commands', 'pending', 'failed'],
 	);
+	t.deepEqual(outcome.events[0], {type: 'commands', commands: []});
 });
 
 test('plugins load for a session at the project root', async t => {

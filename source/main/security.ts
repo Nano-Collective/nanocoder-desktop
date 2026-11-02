@@ -1,4 +1,5 @@
 import path from 'node:path';
+import {canonicalPathSync, isInside} from '@/main/paths';
 
 export const APP_SCHEME = 'app';
 const APP_HOST = 'renderer';
@@ -51,10 +52,14 @@ export function resolveRendererFile(
 		pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
 	const root = path.resolve(rendererRoot);
 	const resolved = path.resolve(root, relative);
-	if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+	if (!isInside(resolved, [root])) return null;
+	try {
+		const canonicalRoot = canonicalPathSync(root);
+		const canonicalFile = canonicalPathSync(resolved);
+		return isInside(canonicalFile, [canonicalRoot]) ? canonicalFile : null;
+	} catch {
 		return null;
 	}
-	return resolved;
 }
 
 export function contentSecurityPolicy(devServerUrl?: string): string {

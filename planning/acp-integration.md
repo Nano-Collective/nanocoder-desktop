@@ -3,7 +3,7 @@
 How the desktop drives `nanocoder --acp`: methods, capability negotiation, supported versions, known Nanocoder quirks, and the Nanocoder changes the plan depends on.
 
 - Status: Draft
-- Last updated: 2026-10-28
+- Last updated: 2026-10-31
 - Drafted by: @akramcodez
 
 ## Baseline
@@ -93,17 +93,19 @@ None of these is declared in `initialize`, so the desktop detects them by versio
 
    | Desktop feature | Gate |
    |---|---|
-   | Durable resume | `sessionCapabilities.resume` advertised. Without it, threads open view-only after a restart. |
+   | Durable resume | `sessionCapabilities.resume` advertised. Without it, saved threads fail safely after a restart and offer explicit same-thread retry. Only an actual missing-history response makes them view-only (`CHAT-09`). |
    | Close on idle | `sessionCapabilities.close` advertised. Without it, idle shutdown just ends the process. |
    | Thread deletion | `sessionCapabilities.delete` advertised. |
    | Session discovery | `sessionCapabilities.list` advertised. |
-   | Rename | Version at or above the first version known to answer `renameSession`, or a probe that returns anything other than "unknown method". |
-   | Touched files from the timeline | Same rule for `timeline/list`. Otherwise fall back to tool call locations. |
+   | Rename | An accepted version and a safe probe confirming `renameSession`. |
+   | Touched files from the timeline | Same rule for `timeline/list`. Otherwise tool call locations remain available. |
    | Agent changes view | A snapshot-read method that does not exist yet (`DEC-14`). Off until it does. |
    | Agent browser control | Nanocoder honours `mcpServers` (a version gate once [#116][i116] lands) and the broker and browser view are ready. Off otherwise. |
    | Subagent run tree | A child-event projection that does not exist yet (`OQ-03`). Otherwise subagents show as tool cards. |
 
 5. **Report.** The thread list shows which features are on and why any are off (`CHAT-15`).
+
+Phase 1.4 implements these gates in [`capabilities.ts`](../source/main/nanocoder/capabilities.ts), with reasons shown in the existing technical-gate screen. The full thread list remains a later phase. The extension adapter sends an empty object, first to the `_`-prefixed method, then to the bare name only after method-not-found or Nanocoder's exact unknown-extension response. At the pinned source, both handlers reject missing arguments before any session or filesystem access. A parameter-validation error or the exact known validation detail confirms support. Other errors, unexpected success, a closed connection or the two-second probe deadline leave the feature off. No probe creates, renames, loads, deletes or reverts a session.
 
 Suggestion (not discussed): record the gate results per tested Nanocoder version in a small fixture file, so a contributor can see what changed when the bundled version moves.
 
@@ -117,8 +119,26 @@ Proposed (awaiting @will-lamerton), from [#117][i117-c]:
 
 Open:
 
-- **The minimum version.** No published Nanocoder has `session/close` yet. Version 1.31.0 was published to npm on 2026-09-26 ([npm][npm-nc]), before [nanocoder#1709][nc1709] merged on 2026-10-19, and at `8a5f4d4` the fix is still a pending changeset ([changeset][nc-cs-close]). The directory trust check, per-session `cwd` and the built-in `browser` tool are in the same position ([changesets][nc-cs-dir]). The minimum supported version is therefore the next Nanocoder release, and the technical gate runs against a build of Nanocoder `main` until that release exists.
+- **The minimum published version.** No published Nanocoder has `session/close` yet. Version 1.31.0 was published to npm on 2026-09-26 ([npm][npm-nc]), before [nanocoder#1709][nc1709] merged on 2026-10-19, and at `8a5f4d4` the fix is still a pending changeset ([changeset][nc-cs-close]). The directory trust check, per-session `cwd` and the built-in `browser` tool are in the same position ([changesets][nc-cs-dir]). Published 1.31.0 remains unsupported. The next release is the intended published floor; the provisional development-only exception below lets the desktop use the pinned technical-gate build until that release exists.
 - **Runtime.** Nanocoder requires Node 22 or newer ([source][nc-engines]). Electron 45.1.0 embeds Node 24.22.1 ([Electron releases][el-releases]), so Electron's Node mode meets the requirement. Public builds are proposed to use a bundled Node sidecar instead, because that lets the `runAsNode` fuse be turned off (`DEC-38`, `OQ-22`).
+
+### Provisional prototype policy (phase 1.4)
+
+`MIN_NANOCODER_VERSION` in [`version-policy.ts`](../source/main/nanocoder/version-policy.ts) is provisionally **1.31.0**. Only an explicit `NANOCODER_DESKTOP_CLI` override can use 1.31.x, and only after the fail-closed ACP trust preflight below succeeds. This admits the development build `fc01e239a80ddb2e09ca174e3c909508832d5340`, which reports 1.31.0, without accepting published npm 1.31.0. Raise the minimum back to **1.32.0 when released**, verify its required trust check and per-session cwd, and record conformance evidence. This exception is not an agreed public release floor; `DEC-12` remains Proposed and `OQ-02` remains open.
+
+The supervisor checks package metadata before any ACP or trust launch, then checks `agentInfo.version` from `initialize` again before opening a session or probing extensions. A missing, malformed or pre-release version is refused, as is any stable version below the floor. Discovery refuses 1.31.x without an explicit override. The project connector also refuses a negotiated 1.31.x version that does not match the verified override metadata. Every accepted external version keeps an untested warning. Tests at 1.32.0 and 9.9.9 use the fake fixture and do not establish real-release compatibility.
+
+Before a 1.31.x project or trust launch, [`trust-preflight.ts`](../source/main/nanocoder/trust-preflight.ts) starts the selected absolute runtime with `--acp` and no shell in a fresh, canonical, empty OS temporary directory outside the selected project. A separate temporary home holds empty config and data directories. The environment contains those paths only, plus Windows `SystemRoot` where needed and the main-owned Windows-only `NODE_DISABLE_COMPILE_CACHE=1`: no inherited trust variable, compile-cache path, provider configuration or API keys. The opt-out disables only Node's compile-cache optimisation for this isolated Windows probe, never for normal project or trust launches. No trust flag or grant is sent. Only natural exit code 1 with a null signal, no stdout bytes, no truncated or failed observation and the one exact known not-trusted message for that temporary root establish the trust check. Successful initialisation, unknown errors, early exit, stdout, truncation and the unchanged 5000 ms deadline all refuse the build. Seeing the expected refusal before a stall or forced kill never establishes success. Owned termination and all temporary cleanup settle before final identity validation. Cleanup failure refuses. The normal selected-project consent still follows and is never inferred from the preflight.
+
+Admission and retention are separate. The main-only classifier has `verified`, `rejected` and `inconclusive` outcomes, and only the full verified proof returns an identity-bound runtime. The 32-entry memory cache retains verified results and narrowly definitive rejections: observed stdout, or a complete recognisable trust refusal with the wrong root or natural exit code. Deadline, abort, failed cleanup and identity failure take precedence. Unknown stderr, silent exit, unexplained termination, truncation, setup and observation failure remain uncached refusals. A stdout-triggered kill does not erase the directly observed violation. No classification, raw stderr or new diagnostic payload goes to IPC or disk.
+
+Keys use CLI and Node realpaths and version, with each file's device, inode, size and nanosecond modification time as the fingerprint. Changed entries are invalidated before a new attempt. A per-key generation check after awaited cleanup and identity validation prevents late or replaced attempts, including probes for different projects sharing a runtime, from returning a runtime or overwriting newer state. With no reusable verdict, one explicit request makes one fresh isolated probe through existing main-process ownership. There is no automatic Retry, warm-up, TTL or background loop. Definitive rejection remains cached; a new verified result permits only the existing guarded project-opening flow, not trust.
+
+This self-reporting compatibility probe cannot authenticate a malicious override: it can print the exact refusal and exit 1, then behave differently in a real project. It executes with the user's OS privileges and is not a sandbox. The fingerprint is metadata, not a content hash; synchronous rechecks do not eliminate OS stat/open races, identity-restoring swaps, same-metadata edits or imported dependency changes. Fresh probes preserve, not solve, these limits. Capability advertisements also cannot prove safety: both published 1.31.0 and the pinned build advertise `session/close`, despite the published build lacking the handler. See [the trust boundaries](projects-and-trust.md#pre-trust-probe-exception-and-upstream-gaps).
+
+For `PERF-02`, local pinned-build samples added 559–618 ms for a cold preflight and 0.06–0.16 ms for the cached file-identity check. The preflight is lazy at first project connection, not window creation. These are development-machine observations, not a release startup guarantee or a replacement for the five-second spawn-to-`initialize` measurement.
+
+The policy function accepts an exact main-owned bundled version without a warning. No Nanocoder is bundled by this phase, so that exception is not enabled by runtime metadata, environment variables or renderer input. Low-level ACP conformance remains separate; the version-policy ACP check now also exercises desktop runtime resolution, the isolated preflight, normal project consent and a real session through the supervisor.
 
 ## Known Nanocoder ACP quirks
 
@@ -214,15 +234,16 @@ Decided ([whitepaper, Project and session identity][wp-identity]):
 - The desktop stores both the **canonical project root** (used for security checks) and the **session cwd** (the directory passed to ACP).
 - The **Nanocoder session ID** is the durable join key. Listing is discovery only.
 
-How discovery should work, Suggestion (not discussed):
+Phase 1.8 implementation of `DEC-34`:
 
-1. Call `session/list` without a `cwd` filter. Nanocoder then returns every saved session ([source][nc-sm-list]).
-2. Canonicalise each session's `cwd` the same way the desktop canonicalises project roots: resolve symlinks, and compare case-insensitively on case-insensitive filesystems.
-3. Treat a session as belonging to the project when its canonical `cwd` is the root or inside it.
-4. Offer unknown matching sessions for import into the thread list. Do not store sessions that do not belong to a known project.
-5. Never persist titles of sessions from other projects: they can contain sensitive text.
+1. Only an already-ready connection advertising listing may send `session/list`, with `{cwd: canonicalProjectRoot}`. Discovery never launches Nanocoder, asks for trust, opens a session or falls back to a global list.
+2. Main resolves each reported `cwd` with native realpath and requires **exact equality with the canonical project root**. Native symlink and volume-case aliases can match; unconditional lowercasing is not used. Nested folders are refused because they may be separately configured projects or trust scopes. This narrow import rule does not change general path containment.
+3. Foreign, nested and outside-symlink entries are dropped before their titles are read into the candidate projection. IDs use the shared opaque session-ID schema unchanged, including permitted nonblank surrounding spaces. Duplicate IDs are ambiguous and all their entries are dropped. Titles use the existing bounded plain-text parser; unknown fields are ignored.
+4. At most 512 entries and 512 KiB of allowlisted UTF-8 metadata are accepted. Malformed, unavailable, unsupported or oversized lists provide no offers. An empty list never removes or changes a known thread.
+5. Offer unknown sessions newest first. Import is an explicit metadata operation under the existing project authority, not a new execution lease: no ACP call, history copy, automatic selection, resume or prompt. Another project's session owner is refused without exposing its title.
+6. Import requires the latest connection/root/cwd/attachment-scoped offer, revalidates the original reported path natively, and checks ownership again after the asynchronous check. An already-owned same-project offer returns its existing thread unchanged, including archive state, manual title, mode and activity. A new row takes the project's non-`yolo` default, never a mode from the list. Explicit opening later uses the existing same-ID resume and mode gates.
 
-This avoids depending on Nanocoder changing its exact-match filter. A Nanocoder change is still useful for other clients.
+The pinned development build `fc01e239a80ddb2e09ca174e3c909508832d5340` forwards `params.cwd` to `workingDirectory` in [`acp-agent.ts`][nc-discovery-pinned]. Its [`session-manager.ts`][nc-discovery-filter-pinned] compares exact `path.normalize` strings, not native realpaths. The requested canonical-root filter can therefore omit sessions saved under an alias even when main would consider them equivalent. That is an accepted best-effort omission, never proof that saved history is absent, and does not justify requesting every project's sessions.
 
 ## Process-global model state
 
@@ -300,6 +321,8 @@ Nanocoder already has unit-level ACP specs (`acp-agent.spec.ts`, `acp-capabiliti
 [nc-replay-meta]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/acp/acp-agent.ts#L932-L951
 [nc-server]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/acp/acp-server.ts#L24-L50
 [nc-sm-list]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/session/session-manager.ts#L390-L401
+[nc-discovery-pinned]: https://github.com/Nano-Collective/nanocoder/blob/fc01e239a80ddb2e09ca174e3c909508832d5340/source/acp/acp-agent.ts#L632-L648
+[nc-discovery-filter-pinned]: https://github.com/Nano-Collective/nanocoder/blob/fc01e239a80ddb2e09ca174e3c909508832d5340/source/session/session-manager.ts#L390-L400
 [nc-retention]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/session/session-manager.ts#L521-L607
 [nc-subagent-approval]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/acp/acp-conversation.ts#L90-L160
 [nc-global-handler]: https://github.com/Nano-Collective/nanocoder/blob/8a5f4d46317d93128c531f39b80b5ac6fd2da25b/source/acp/acp-conversation.ts#L163-L193
