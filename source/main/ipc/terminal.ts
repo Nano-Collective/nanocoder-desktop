@@ -5,7 +5,7 @@ import type {TerminalService} from '@/main/terminal/terminal-service';
 import {
 	TERMINAL_CHANNELS,
 	type TerminalRequests,
-	type TerminalSnapshot,
+	type TerminalResults,
 } from '@/shared/terminal';
 
 export function registerTerminalHandlers(
@@ -45,14 +45,14 @@ export function registerTerminalHandlers(
 		registerHandler(
 			TERMINAL_CHANNELS[key],
 			schemas[key],
-			async (request): Promise<TerminalSnapshot> => {
+			async (request): Promise<TerminalResults[K]> => {
 				if (!service)
 					throw new IpcFailure('UNAVAILABLE', 'The terminal is unavailable');
 				try {
 					// Each schema and method share the same keyed contract.
 					const method = service[key] as (
 						input: TerminalRequests[K],
-					) => TerminalSnapshot | Promise<TerminalSnapshot>;
+					) => TerminalResults[K] | Promise<TerminalResults[K]>;
 					return await method.call(service, request);
 				} catch (error) {
 					if (error instanceof IpcFailure) throw error;

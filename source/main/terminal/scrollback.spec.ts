@@ -21,6 +21,35 @@ test('TERM-09 scrollback bounds long lines, line counts and Unicode without disk
 	t.deepEqual(buffer.snapshot(), {output: '', truncated: false});
 });
 
+test('TERM-09 incremental trimming matches whole-buffer trimming', t => {
+	const reference = (text: string, maxChars: number, maxLines: number) => {
+		let output = text.slice(-maxChars);
+		if (text.length > maxChars && /^[\uDC00-\uDFFF]/u.test(output))
+			output = output.slice(1);
+		const lines = output.split('\n');
+		return lines.length > maxLines ? lines.slice(-maxLines).join('\n') : output;
+	};
+	let seed = 7;
+	const random = () => {
+		seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+		return seed / 2_147_483_648;
+	};
+	const pieces = ['a', 'bc', '\n', '\n\n', '😀', 'line\n', 'x'.repeat(9)];
+	const buffer = new Scrollback(40, 5);
+	let expected = '';
+	let truncated = false;
+	for (let index = 0; index < 2000; ++index) {
+		let chunk = '';
+		for (let count = Math.floor(random() * 4); count >= 0; --count)
+			chunk += pieces[Math.floor(random() * pieces.length)];
+		buffer.append(chunk);
+		const next = reference(expected + chunk, 40, 5);
+		truncated ||= next !== expected + chunk;
+		expected = next;
+		t.deepEqual(buffer.snapshot(), {output: expected, truncated});
+	}
+});
+
 test('SEC-05 teardown refuses invalid or main-process IDs and project-owned system utilities', async t => {
 	for (const pid of [0, 1, -1, Number.NaN, process.pid]) {
 		await t.throwsAsync(terminateTree(pid, []), {

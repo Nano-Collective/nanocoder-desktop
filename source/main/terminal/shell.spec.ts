@@ -1,3 +1,6 @@
+import {mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
 import test from 'ava';
 import {discoverShell, terminalEnvironment} from '@/main/terminal/shell';
 
@@ -86,4 +89,37 @@ test('SEC-05 inherited loader and trust variables never reach the terminal', t =
 			TERM: 'xterm-256color',
 		},
 	);
+});
+
+test('SEC-05 the default validator refuses folders, non-executables and shells under a root', async t => {
+	if (process.platform === 'win32') {
+		t.pass();
+		return;
+	}
+	const root = await realpath(await mkdtemp(path.join(tmpdir(), 'shell-')));
+	t.teardown(() => rm(root, {recursive: true, force: true}));
+	const plain = path.join(root, 'plain');
+	const owned = path.join(root, 'owned');
+	await writeFile(plain, '#!/bin/sh\n', {mode: 0o644});
+	await writeFile(owned, '#!/bin/sh\n', {mode: 0o755});
+	const shell = await discoverShell({
+		roots: [],
+		platform: 'linux',
+		accountShell: root,
+		env: {SHELL: plain},
+	});
+	t.is(
+		shell.file,
+		await realpath('/bin/bash').catch(() => realpath('/bin/sh')),
+	);
+	const outside = await discoverShell({
+		roots: [root],
+		accountShell: owned,
+		env: {SHELL: owned},
+	});
+	t.false(outside.file.startsWith(root));
+	t.true(path.isAbsolute(outside.file));
+	const account = await discoverShell({roots: [root], env: {}});
+	t.true(path.isAbsolute(account.file));
+	t.false(account.file.startsWith(root));
 });

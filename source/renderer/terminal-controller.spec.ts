@@ -53,11 +53,11 @@ function fixture(overrides: Partial<TerminalApi> = {}) {
 		clear: request,
 		write: async request => {
 			calls.push(`write:${request.projectId}:${request.data}`);
-			return {ok: true, value: snapshot(request.projectId)};
+			return {ok: true, value: null};
 		},
 		resize: async request => {
 			calls.push(`resize:${request.cols}:${request.rows}`);
-			return {ok: true, value: snapshot(request.projectId)};
+			return {ok: true, value: null};
 		},
 		onEvent: receive => {
 			listener = receive;

@@ -1,12 +1,19 @@
+import {execFile, spawn} from 'node:child_process';
+import {once} from 'node:events';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
+import {promisify} from 'node:util';
 import test from 'ava';
 import {
+	captureTerminalProcesses,
 	type ProcessIdentity,
 	type ProcessOperations,
 	stopPosixTree,
 	type TerminalProcesses,
+	terminateTree,
 	waitForProcessExit,
 } from '@/main/terminal/process-tree';
+
+const run = promisify(execFile);
 
 type Row = ProcessIdentity & {parent: number; group: number; state: string};
 const first = 'Fri Oct 30 00:00:00 2026';
@@ -310,4 +317,89 @@ test('TERM-07 deadline is enforced during discovery, before large graph work can
 	});
 	t.true(now < 4000);
 	t.false(value.signals.some(([, signal]) => signal === 'SIGSTOP'));
+});
+
+async function processRows(): Promise<Map<number, string[]>> {
+	const {stdout} = await run('/bin/ps', ['-axo', 'pid=,ppid=,stat=,tty='], {
+		env: {PATH: '/usr/bin:/bin', LC_ALL: 'C'},
+	});
+	return new Map(
+		stdout
+			.split('\n')
+			.map(line => line.trim().split(/\s+/u))
+			.filter(fields => fields.length === 4)
+			.map(fields => [Number(fields[0]), fields]),
+	);
+}
+
+test('TERM-07 real POSIX teardown captures a shell and its jobs on a real tty and leaves none alive', async t => {
+	if (process.platform === 'win32') {
+		t.pass();
+		return;
+	}
+	const job = 'sleep 600 & sleep 601 & wait';
+	const host = spawn(
+		'/usr/bin/script',
+		process.platform === 'darwin'
+			? ['-q', '/dev/null', '/bin/sh', '-c', job]
+			: ['-q', '-c', job, '/dev/null'],
+		{
+			shell: false,
+			stdio: 'ignore',
+			env: {PATH: '/usr/bin:/bin', SHELL: '/bin/sh'},
+		},
+	);
+	const exited = once(host, 'exit');
+	t.teardown(() => {
+		if (host.exitCode === null) host.kill('SIGKILL');
+	});
+	let shell: string[] | undefined;
+	let known: TerminalProcesses = {root: null, members: []};
+	for (let attempt = 0; attempt < 400; ++attempt) {
+		const rows = await processRows();
+		shell ??= [...rows.values()].find(
+			fields => Number(fields[1]) === host.pid && !/^\?+$/u.test(fields[3]),
+		);
+		if (shell) {
+			// A loaded runner can time out one probe; the next attempt retries.
+			known = await captureTerminalProcesses(
+				Number(shell[0]),
+				[],
+				`/dev/${shell[3]}`,
+				known,
+			).catch(() => known);
+			if (known.members.length >= 3) break;
+		}
+		await yieldTurn();
+	}
+	if (!shell) throw new Error('No shell on a real tty');
+	const pid = Number(shell[0]);
+	t.is(known.root?.pid, pid);
+	t.is(known.root?.tty, shell[3]);
+	const members = known.members.map(value => value.pid);
+	t.true(members.length >= 3);
+	const other = shell[3].startsWith('pts/') ? '/dev/pts/999' : '/dev/ttys999';
+	await t.throwsAsync(captureTerminalProcesses(pid, [], other), {
+		message: 'Terminal process identity unavailable',
+	});
+	// No tty never becomes ownership; the probe ends at its deadline or timeout.
+	await t.throwsAsync(captureTerminalProcesses(host.pid ?? 0, [], other));
+	const stale = {
+		root: known.root && {...known.root, started: 'Thu Jan 1 00:00:00 1970'},
+		members: [],
+	};
+	t.is(
+		await captureTerminalProcesses(pid, [], `/dev/${shell[3]}`, stale),
+		stale,
+	);
+	await terminateTree(pid, [], `/dev/${shell[3]}`, known);
+	await exited;
+	const after = await processRows();
+	for (const member of members) {
+		const fields = after.get(member);
+		t.true(!fields || fields[2].startsWith('Z'), `${member} survived`);
+	}
+	await t.throwsAsync(terminateTree(pid + 1, [], undefined, known), {
+		message: 'Terminal process identity unavailable',
+	});
 });

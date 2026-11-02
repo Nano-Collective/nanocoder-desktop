@@ -644,6 +644,29 @@ function serve() {
 				const supported =
 					(mode === 'extensions' && !method.startsWith('_')) ||
 					mode === 'prefixed-extensions';
+				if (
+					supported &&
+					bare === 'renameSession' &&
+					typeof params?.sessionId === 'string' &&
+					typeof params?.title === 'string'
+				) {
+					if (params.sessionId === 'gone-session')
+						send({
+							id,
+							error: {
+								code: -32603,
+								message: 'Internal error',
+								data: {details: 'Session not found: gone-session'},
+							},
+						});
+					else if (params.title === 'malformed reply')
+						send({id, result: {title: 42}});
+					else if (params.title === 'empty reply') send({id, result: {}});
+					else if (params.title === 'internal failure')
+						send({id, error: {code: -32603, message: 'Internal error'}});
+					else send({id, result: {title: `${params.title} (saved)`}});
+					return;
+				}
 				send({
 					id,
 					error: supported
@@ -675,6 +698,13 @@ function serve() {
 			if (method === 'session/prompt') {
 				void runTurn(id, params);
 				return;
+			}
+			if (method === 'session/new' && mode === 'title-notice') {
+				for (const title of [{title: 42}, {title: 'Fixture title'}])
+					send({
+						method: '_nanocoder/sessionTitleChanged',
+						params: {sessionId: 'fake-session', ...title},
+					});
 			}
 			if (method === 'session/set_config_option' && mode === 'replay-gates') {
 				replayModel = params.value;

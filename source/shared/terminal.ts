@@ -45,8 +45,15 @@ export interface TerminalRequests {
 	clear: {projectId: string};
 }
 
+// Input and resize are frequent, so they return no scrollback.
+export type TerminalResults = {
+	[K in keyof TerminalRequests]: K extends 'write' | 'resize'
+		? null
+		: TerminalSnapshot;
+};
+
 export type TerminalApi = {
 	[K in keyof TerminalRequests]: (
 		request: TerminalRequests[K],
-	) => Promise<IpcResult<TerminalSnapshot>>;
+	) => Promise<IpcResult<TerminalResults[K]>>;
 } & {onEvent(listener: (event: TerminalEvent) => void): () => void};

@@ -201,3 +201,13 @@ test('ACP-18 discovery neither copies unknown payload fields nor accepts a nonca
 	for (const malformed of [null, [], {}, {sessions: null}])
 		t.deepEqual(await sessionDiscovery(malformed, f.root), []);
 });
+
+test('a project root that no longer resolves discovers no sessions (DEC-34)', async t => {
+	t.deepEqual(
+		await sessionDiscovery(
+			{sessions: [{sessionId: 's', cwd: '/missing-root'}]},
+			path.join(tmpdir(), 'nd-missing-root-for-discovery'),
+		),
+		[],
+	);
+});

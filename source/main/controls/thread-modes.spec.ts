@@ -18,7 +18,7 @@ function deferred<T>() {
 	return {promise, resolve};
 }
 
-function fixture(saved = false) {
+function fixture(saved = false, withConfirm = true) {
 	const project: ProjectInfo = {
 		id: 'project',
 		canonicalRoot: '/fixture',
@@ -107,10 +107,12 @@ function fixture(saved = false) {
 		publishThread: row => published.push(row),
 		publishProject: row => projectPublished.push(row),
 		canonicalise: path => canonicalise(path),
-		confirmYolo: async () => {
-			confirmations++;
-			return confirm();
-		},
+		confirmYolo: withConfirm
+			? async () => {
+					confirmations++;
+					return confirm();
+				}
+			: undefined,
 	});
 	const request = (mode: NanocoderMode) => ({
 		projectId: 'project',
@@ -452,4 +454,163 @@ test('a late acknowledged yolo after scope refusal must not leave a cached norma
 	);
 	t.true(f.writes.every(saved => saved.mode !== 'yolo'));
 	t.false(f.order.includes('prompt'));
+});
+
+test('wrong or failed mode acknowledgements refuse with fixed messages and save nothing (ACP-13 DEC-31)', async t => {
+	const f = fixture(true);
+	await f.prepare();
+	f.writes.length = 0;
+	f.change(async id => ({id, mode: 'normal'}));
+	await t.throwsAsync(f.modes.setThreadMode(f.request('plan')), {
+		code: 'AGENT_UNAVAILABLE',
+		message: 'Nanocoder did not acknowledge the selected mode',
+	});
+	t.deepEqual(f.writes, []);
+	const g = fixture(true);
+	await g.prepare();
+	g.writes.length = 0;
+	g.change(async () => {
+		throw new Error('/secret/path');
+	});
+	await t.throwsAsync(g.modes.setThreadMode(g.request('plan')), {
+		code: 'AGENT_UNAVAILABLE',
+		message: 'Nanocoder did not set the selected mode',
+	});
+	t.deepEqual(g.writes, []);
+});
+
+test('a pending choice whose first-prompt acknowledgement fails must be selected again (DEC-31)', async t => {
+	for (const [change, message] of [
+		[
+			async (id: string) => ({id, mode: 'normal' as NanocoderMode}),
+			'Nanocoder did not acknowledge the selected mode',
+		],
+		[
+			async () => {
+				throw new Error('/secret/path');
+			},
+			'Nanocoder did not set the selected mode; select it again',
+		],
+	] as const) {
+		const f = fixture();
+		await f.modes.setThreadMode(f.request('yolo'));
+		f.change(change);
+		await t.throwsAsync(f.prepare(true), {code: 'AGENT_UNAVAILABLE', message});
+		t.deepEqual(f.order, ['new', 'safe-mode', 'yolo']);
+		t.not(
+			f.modes.resolveLiveMode('project', 'thread', 'session', f.connection),
+			'yolo',
+		);
+	}
+});
+
+test('native confirmation and root failures refuse yolo before any RPC (DEC-31 ACP-13)', async t => {
+	const unresumed = fixture(true);
+	await t.throwsAsync(
+		unresumed.modes.setThreadMode(unresumed.request('yolo')),
+		{
+			code: 'UNAVAILABLE',
+			message: 'Resume this thread before choosing yolo',
+		},
+	);
+	t.is(unresumed.confirmations(), 0);
+	const failing = fixture(true);
+	await failing.prepare();
+	failing.order.length = 0;
+	failing.confirm(async () => {
+		throw new Error('dialog crashed');
+	});
+	await t.throwsAsync(failing.modes.setThreadMode(failing.request('yolo')), {
+		code: 'AGENT_UNAVAILABLE',
+		message: 'The mode confirmation could not finish',
+	});
+	failing.confirm(async () => true);
+	failing.canonicalise(async () => {
+		throw new Error('ENOENT /secret');
+	});
+	await t.throwsAsync(failing.modes.setThreadMode(failing.request('yolo')), {
+		code: 'DENIED',
+		message: 'The project root changed; locate and trust it again',
+	});
+	t.deepEqual(failing.order, []);
+});
+
+test('preparation refuses unoffered session modes and a pending choice on resume (ACP-13 DEC-31)', async t => {
+	const unoffered = fixture();
+	unoffered.offers(['plan']);
+	await t.throwsAsync(unoffered.prepare(), {
+		code: 'DENIED',
+		message: 'A session must first acknowledge a safe offered mode',
+	});
+	const resumed = fixture();
+	await resumed.modes.setThreadMode(resumed.request('plan'));
+	await t.throwsAsync(resumed.prepare(false, 'resume'), {code: 'DENIED'});
+});
+
+test('invalidating a thread forgets its pending and live modes (DEC-31)', async t => {
+	const f = fixture();
+	await f.modes.setThreadMode(f.request('plan'));
+	t.is(f.modes.resolveLiveMode('project', 'thread', null, undefined), 'plan');
+	f.modes.invalidateThread('project', 'thread');
+	t.not(f.modes.resolveLiveMode('project', 'thread', null, undefined), 'plan');
+});
+
+test('yolo without a main-process confirmer is refused before any RPC (DEC-31)', async t => {
+	const f = fixture(true, false);
+	await f.prepare();
+	f.order.length = 0;
+	await t.throwsAsync(f.modes.setThreadMode(f.request('yolo')), {
+		code: 'DENIED',
+		message: 'Yolo requires confirmation in the main process',
+	});
+	t.deepEqual(f.order, []);
+});
+
+test('aborting the preparing lease forgets its acknowledged live mode (DEC-31)', async t => {
+	t.plan(2);
+	const f = fixture(true);
+	await f.operations
+		.runProjectOperation('project', 'open', async lease => {
+			const before = f.threads.get('thread') ?? f.initial;
+			f.modes.validateBeforePrepare(lease, before);
+			f.connections.set('project', f.connection);
+			f.operations.bindSession(lease, 'session');
+			f.modes.onSessionPrepared({
+				lease,
+				thread: before,
+				connection: f.connection,
+				session: {id: 'session', mode: 'normal'},
+				source: 'resume',
+			});
+			t.is(
+				f.modes.resolveLiveMode('project', 'thread', 'session', f.connection),
+				'normal',
+			);
+			f.operations.invalidate('project');
+			t.is(
+				f.modes.resolveLiveMode('project', 'thread', 'session', f.connection),
+				undefined,
+			);
+		})
+		.catch(() => undefined);
+});
+
+test('aborting the attempt that adopted a pending yolo choice forgets it (DEC-31)', async t => {
+	t.plan(2);
+	const f = fixture();
+	await f.modes.setThreadMode(f.request('yolo'));
+	await f.operations
+		.runProjectOperation('project', 'prompt', async lease => {
+			f.modes.validateBeforePrepare(lease, f.initial);
+			t.is(
+				f.modes.resolveLiveMode('project', 'thread', null, undefined),
+				'yolo',
+			);
+			f.operations.invalidate('project');
+			t.not(
+				f.modes.resolveLiveMode('project', 'thread', null, undefined),
+				'yolo',
+			);
+		})
+		.catch(() => undefined);
 });

@@ -416,3 +416,23 @@ test('disposed project controls ignore a later current-session config notificati
 		'old',
 	);
 });
+
+test('thread invalidation forgets pending yolo and session controls so the next prompt stays safe (DEC-31)', async t => {
+	const f = await fixture(t);
+	await f.controls.setThreadMode({...f.request, mode: 'yolo'});
+	await f.threads.promptThread({...f.request, text: 'first fixture'});
+	const before = f.published.length;
+	f.controls.invalidateThread(f.project.id, f.thread.id);
+	t.true(f.published.length > before);
+	f.controls.invalidateThread(f.project.id, f.thread.id);
+	await f.threads.promptThread({...f.request, text: 'second fixture'});
+	t.is(
+		f
+			.rpc()
+			.filter(event => event.method === 'session/set_mode')
+			.map(event => (event.params as {modeId: string}).modeId)
+			.at(-1),
+		'normal',
+	);
+	t.is(f.confirmations(), 1);
+});

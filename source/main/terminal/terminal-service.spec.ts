@@ -5,7 +5,7 @@ import test from 'ava';
 import type {PtyHostFactory, PtyLaunch} from '@/main/terminal/pty-contracts';
 import {TerminalService} from '@/main/terminal/terminal-service';
 import type {ProjectInfo} from '@/shared/ipc';
-import type {TerminalEvent} from '@/shared/terminal';
+import type {AgentCommandInfo, TerminalEvent} from '@/shared/terminal';
 
 async function fixture(t: {teardown(fn: () => Promise<void>): void}) {
 	const root = await realpath(
@@ -79,6 +79,19 @@ test('TERM-01/03/04 canonical root, one PTY, UTF-8 and a clean launch environmen
 	t.deepEqual(f.writes, ['printf café 😀\r']);
 	f.service.resize({...request, cols: 120, rows: 40});
 	t.deepEqual(f.sizes, [[120, 40]]);
+});
+
+test('TERM-09 input and resize results never copy the scrollback', async t => {
+	const f = await fixture(t);
+	const request = {projectId: f.project.id};
+	await f.service.start(request);
+	f.callbacks[0].data('scrollback secret\n'.repeat(1000));
+	t.is(f.service.write({...request, data: 'ls\r'}), null);
+	t.is(f.service.resize({...request, cols: 100, rows: 30}), null);
+	const published = f.events.length;
+	t.is(f.service.resize({...request, cols: 100, rows: 30}), null);
+	t.is(f.events.length, published);
+	t.deepEqual(f.sizes, [[100, 30]]);
 });
 
 test('TERM-02/06/09 output stays bounded in memory and clear/stop erase it', async t => {
@@ -222,4 +235,75 @@ test('TERM-07 a start still awaiting its host is stopped before a switch can fin
 	await switched;
 	t.is(stops, 1);
 	t.throws(() => service.get({projectId: f.project.id}), {code: 'DENIED'});
+});
+
+test('TERM-12 agent commands reach only the active project snapshot', async t => {
+	const f = await fixture(t);
+	const command: AgentCommandInfo = {
+		threadId: 't',
+		command: 'ls',
+		approval: 'pending',
+	};
+	f.service.setAgentCommand('other', command);
+	t.is(f.service.get({projectId: f.project.id}).agentCommand, null);
+	f.service.setAgentCommand(f.project.id, command);
+	command.approval = 'allowed';
+	t.deepEqual(f.service.get({projectId: f.project.id}).agentCommand, {
+		threadId: 't',
+		command: 'ls',
+		approval: 'pending',
+	});
+});
+
+test('TERM-07 a failed teardown reports failure and keeps the host for another stop', async t => {
+	const f = await fixture(t);
+	let refuse = true;
+	let stops = 0;
+	const service = new TerminalService({
+		project: () => f.project,
+		projects: () => [f.project],
+		emit: () => {},
+		shell: async () => ({file: '/bin/sh', args: []}),
+		createHost: async () => ({
+			write: () => {},
+			resize: () => {},
+			clear: () => {},
+			stop: async () => {
+				stops++;
+				if (refuse) throw new Error('still alive');
+			},
+		}),
+	});
+	t.teardown(async () => {
+		refuse = false;
+		await service.close();
+	});
+	const request = {projectId: f.project.id};
+	await service.activate(f.project.id);
+	await service.start(request);
+	await t.throwsAsync(service.stop(request), {
+		code: 'UNAVAILABLE',
+		message: 'The terminal process tree could not be stopped',
+	});
+	t.is(service.get(request).status, 'failed');
+	refuse = false;
+	t.is((await service.stop(request)).status, 'stopped');
+	t.is(stops, 2);
+});
+
+test('TERM-01 a clean shell exit records its code, releases the host and can start again', async t => {
+	const f = await fixture(t);
+	const request = {projectId: f.project.id};
+	await f.service.start(request);
+	f.callbacks[0].exit(0, false);
+	t.like(f.service.get(request), {
+		status: 'exited',
+		exitCode: 0,
+		reason: null,
+	});
+	t.throws(() => f.service.write({...request, data: 'x'}), {
+		code: 'UNAVAILABLE',
+	});
+	t.is((await f.service.start(request)).status, 'running');
+	t.is(f.launches.length, 2);
 });

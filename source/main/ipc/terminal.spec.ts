@@ -103,3 +103,37 @@ test('SEC-02 every terminal handler refuses foreign origins and child frames', a
 	}
 	t.is(f.calls(), 0);
 });
+
+test('SEC-02 unexpected terminal errors return a generic failure without their message', async t => {
+	const handlers = new Map<
+		string,
+		(payload: unknown) => Promise<IpcResult<unknown>>
+	>();
+	const service = {
+		get: () => {
+			throw new Error('/secret/path leaked');
+		},
+	} as unknown as TerminalService;
+	const register = (services?: TerminalService) =>
+		registerTerminalHandlers(
+			(channel, schema, handler, allowedOrigins) => {
+				handlers.set(channel, payload =>
+					handleRequest({sender, payload, schema, handler, allowedOrigins}),
+				);
+			},
+			[APP_ORIGIN],
+			services,
+		);
+	register(service);
+	const failed = await handlers.get(TERMINAL_CHANNELS.get)?.({projectId});
+	t.deepEqual(
+		failed?.ok ? null : failed?.error.message,
+		'The terminal request could not finish',
+	);
+	register();
+	const missing = await handlers.get(TERMINAL_CHANNELS.get)?.({projectId});
+	t.deepEqual(
+		missing?.ok ? null : missing?.error.message,
+		'The terminal is unavailable',
+	);
+});

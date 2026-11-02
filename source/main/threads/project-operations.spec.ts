@@ -959,3 +959,33 @@ test('CHAT-17 cancellation cannot follow a replacement connection', async t => {
 		'AGENT_UNAVAILABLE',
 	);
 });
+
+test('a failed owned step rethrows its error while the lease is current and then releases', async t => {
+	const {operations} = fixture();
+	const failure = new Error('step failed');
+	const result = operations.runProjectOperation('project', 'prompt', owner =>
+		operations.runOwnedStep(owner, async () => {
+			throw failure;
+		}),
+	);
+	t.is(await t.throwsAsync(result), failure);
+	t.false(operations.isBusy('project'));
+});
+
+test('CHAT-17 a failed cancellation step rethrows its own error while its connection is current', async t => {
+	const {operations, connections} = fixture();
+	const failure = new Error('cancel failed');
+	const result = operations.runProjectOperation(
+		'project',
+		'prompt',
+		async lease => {
+			operations.bindConnection(lease, required(connections, 'project'));
+			await operations.runCancellationStep(lease, async () => {
+				throw failure;
+			});
+		},
+		{threadId: 'thread'},
+	);
+	t.is(await t.throwsAsync(result), failure);
+	t.false(operations.isBusy('project'));
+});

@@ -153,17 +153,17 @@ export class TerminalService {
 		return this.start(request);
 	}
 
-	write(request: TerminalRequests['write']): TerminalSnapshot {
+	write(request: TerminalRequests['write']): null {
 		this.check(request.projectId, true);
 		if (!this.host || this.state.status !== 'running')
 			throw new IpcFailure('UNAVAILABLE', 'Start the terminal before typing');
 		if (request.data.length > 65_536 || request.data.length === 0)
 			throw new IpcFailure('LIMIT', 'Terminal input is too large');
 		this.host.write(request.data);
-		return this.get(request);
+		return null;
 	}
 
-	resize(request: TerminalRequests['resize']): TerminalSnapshot {
+	resize(request: TerminalRequests['resize']): null {
 		this.check(request.projectId, true);
 		if (
 			![request.cols, request.rows].every(
@@ -171,11 +171,13 @@ export class TerminalService {
 			)
 		)
 			throw new IpcFailure('VALIDATION', 'Invalid terminal dimensions');
+		if (request.cols === this.state.cols && request.rows === this.state.rows)
+			return null;
 		this.host?.resize(request.cols, request.rows);
 		this.state.cols = request.cols;
 		this.state.rows = request.rows;
 		this.publish();
-		return this.get(request);
+		return null;
 	}
 
 	clear(request: TerminalRequests['clear']): TerminalSnapshot {

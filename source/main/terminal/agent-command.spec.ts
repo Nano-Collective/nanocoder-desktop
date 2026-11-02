@@ -90,3 +90,34 @@ test('TERM-12 rejected, stale, replayed or unoffered answers never claim approva
 	rejected?.();
 	t.is(f.updates.length, count);
 });
+
+test('TERM-12 repeated tool updates publish once and unknown option kinds stay unknown', t => {
+	const f = fixture();
+	const tool: TurnEvent = {
+		type: 'tool',
+		id: 'shell',
+		title: 'execute_bash: npm test',
+	};
+	f.observer.observe(f.event([tool, {...tool, id: 'update'}]));
+	t.is(f.updates.length, 1);
+	f.observer.observe(
+		f.event([
+			{
+				...f.permission,
+				request: {
+					...f.permission.request,
+					options: [{id: 'other', name: 'other', kind: 'invented'}],
+				},
+			} as unknown as TurnEvent,
+		]),
+	);
+	const answered = f.observer.capture({
+		projectId: 'project',
+		threadId: 'thread',
+		requestId: 'request',
+		optionId: 'other',
+	});
+	answered?.();
+	t.is(f.updates.at(-1)?.approval, 'unknown');
+	t.is(f.updates.length, 3);
+});

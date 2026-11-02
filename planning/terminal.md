@@ -18,7 +18,10 @@ dock. No terminal capability is advertised to Nanocoder (`TERM-08`).
   detachment and orderly app quit also stop it. A stale pending start
   cannot publish or remain alive after a switch.
 - Input is bounded to 65,536 UTF-16 code units per request, with malformed
-  surrogate pairs refused. Dimensions are integers from 2 to 500.
+  surrogate pairs refused. Dimensions are integers from 2 to 500. Input
+  and resize return no snapshot, so a keystroke never copies the
+  scrollback over IPC; output reaches the renderer through terminal
+  events, and a resize to the current size changes nothing.
 - Scrollback retains at most 10,000 lines and 1,048,576 UTF-16 code units,
   with a truncation flag. Clear and stop discard it. Output uses
   acknowledgement-gated 16 ms utility-process batches, capped at 64 KiB

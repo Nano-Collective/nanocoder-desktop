@@ -6470,3 +6470,30 @@ test('first prompt retains the new thread captured mode after its project defaul
 		['normal'],
 	);
 });
+
+test('thread modes are unavailable from the bare service until the controls are composed (DEC-31)', async t => {
+	const f = await fixture(t);
+	await t.throwsAsync(
+		f.service.setThreadMode({
+			projectId: f.project.id,
+			threadId: '11111111-1111-4111-8111-111111111111',
+			mode: 'plan',
+		}),
+		{code: 'UNAVAILABLE', message: 'This feature is not available yet'},
+	);
+});
+
+test('CHAT-14 a thread without Nanocoder history refuses history deletion before confirmation', async t => {
+	const f = await fixture(t);
+	const thread = seed(f.project, {nanocoderSessionId: null});
+	f.store.threads.save(thread);
+	await t.throwsAsync(
+		f.service.deleteThreadHistory({
+			projectId: f.project.id,
+			threadId: thread.id,
+		}),
+		{code: 'UNSUPPORTED'},
+	);
+	t.false(f.calls.includes('confirm-delete'));
+	t.truthy(f.store.threads.get(f.project.id, thread.id));
+});
