@@ -16,11 +16,13 @@ export function mirrorStyles<S extends SheetLike, E extends object>(
 	host: StyleHost<S, E>,
 ): () => void {
 	const mirrored = new Map<E, S>();
+	const texts = new Map<E, string>();
 	const owned = new Set<S>();
 	let stopped = false;
 	const apply = () => {
 		if (stopped) return;
 		const live = new Set<E>();
+		let membership = false;
 		for (const element of host.styles()) {
 			live.add(element);
 			let sheet = mirrored.get(element);
@@ -28,15 +30,27 @@ export function mirrorStyles<S extends SheetLike, E extends object>(
 				sheet = host.createSheet();
 				mirrored.set(element, sheet);
 				owned.add(sheet);
+				membership = true;
 			}
-			sheet.replaceSync(element.textContent ?? '');
+			// Re-parsing is skipped when xterm rewrote nothing, as on most output.
+			const text = element.textContent ?? '';
+			if (texts.get(element) !== text) {
+				sheet.replaceSync(text);
+				texts.set(element, text);
+			}
 		}
 		for (const element of mirrored.keys())
-			if (!live.has(element)) mirrored.delete(element);
-		host.adopted = [
-			...host.adopted.filter(sheet => !owned.has(sheet)),
-			...mirrored.values(),
-		];
+			if (!live.has(element)) {
+				mirrored.delete(element);
+				texts.delete(element);
+				membership = true;
+			}
+		// Assigning the list restyles the whole document, so only do it when the set changed.
+		if (membership)
+			host.adopted = [
+				...host.adopted.filter(sheet => !owned.has(sheet)),
+				...mirrored.values(),
+			];
 	};
 	const unwatch = host.watch(apply);
 	apply();
@@ -45,7 +59,30 @@ export function mirrorStyles<S extends SheetLike, E extends object>(
 		stopped = true;
 		host.adopted = host.adopted.filter(sheet => !owned.has(sheet));
 		mirrored.clear();
+		texts.clear();
 	};
+}
+
+interface NodeLike {
+	nodeName: string;
+	parentNode?: {nodeName: string} | null;
+}
+
+// xterm rewrites rows on every output batch, so only a change that involves a style
+// element, or the text inside one, needs the mirror to look again.
+export function touchesStyle(record: {
+	target: NodeLike;
+	addedNodes: ArrayLike<{nodeName: string}>;
+	removedNodes: ArrayLike<{nodeName: string}>;
+}): boolean {
+	const style = (node: {nodeName: string} | null | undefined) =>
+		node?.nodeName === 'STYLE';
+	return (
+		style(record.target) ||
+		style(record.target.parentNode) ||
+		Array.from(record.addedNodes).some(style) ||
+		Array.from(record.removedNodes).some(style)
+	);
 }
 
 export function mirrorTerminalStyles(root: HTMLElement): () => void {
@@ -60,7 +97,9 @@ export function mirrorTerminalStyles(root: HTMLElement): () => void {
 		},
 		createSheet: () => new CSSStyleSheet(),
 		watch: onChange => {
-			const observer = new MutationObserver(onChange);
+			const observer = new MutationObserver(records => {
+				if (records.some(touchesStyle)) onChange();
+			});
 			observer.observe(root, {
 				childList: true,
 				subtree: true,

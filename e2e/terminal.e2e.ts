@@ -483,24 +483,41 @@ test('TERM-02/04/06/11 mounted terminal types, escapes, restarts, clears and sto
 			await expect(page.locator('.terminal-view')).toContainText(
 				'RED_TEXT GREEN_BG',
 			);
+			// The terminal theme maps ANSI green and the cursor to these design tokens.
 			const painted = () =>
-				page.locator('.terminal-view .xterm-rows').evaluate(rows => {
+				page.locator('.terminal-view').evaluate(view => {
+					const rows = view.querySelector('.xterm-rows');
 					const find = (text: string) =>
-						[...rows.querySelectorAll('span')].find(
+						[...(rows?.querySelectorAll('span') ?? [])].find(
 							span => span.textContent === text,
 						);
+					const token = (name: string) => {
+						const probe = document.createElement('span');
+						probe.style.backgroundColor = `var(${name})`;
+						document.body.append(probe);
+						const colour = getComputedStyle(probe).backgroundColor;
+						probe.remove();
+						return colour;
+					};
 					const red = find('RED_TEXT');
 					const green = find('GREEN_BG');
-					if (!red || !green) return null;
+					const cursor = view.querySelector('.xterm-cursor');
+					if (!rows || !red || !green || !cursor) return null;
 					return {
 						redDiffers:
 							getComputedStyle(red).color !== getComputedStyle(rows).color,
 						greenBackground: getComputedStyle(green).backgroundColor,
+						success: token('--colors-success'),
+						cursorBackground: getComputedStyle(cursor).backgroundColor,
+						primary: token('--colors-primary'),
 					};
 				});
 			await expect.poll(async () => (await painted())?.redDiffers).toBe(true);
 			const result = await painted();
-			expect(result?.greenBackground).not.toBe('rgba(0, 0, 0, 0)');
+			if (!result)
+				throw new Error('The coloured text or the cursor is missing');
+			expect(result.greenBackground).toBe(result.success);
+			expect(result.cursorBackground).toBe(result.primary);
 		},
 	);
 	await step('keyboard escape and focus return', async () => {

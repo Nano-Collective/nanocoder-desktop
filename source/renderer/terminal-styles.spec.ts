@@ -1,19 +1,29 @@
 import test from 'ava';
-import {mirrorStyles} from '@/renderer/terminal-styles';
+import {mirrorStyles, touchesStyle} from '@/renderer/terminal-styles';
 
 class Sheet {
 	text = '';
+	writes = 0;
 	replaceSync(text: string) {
 		this.text = text;
+		this.writes += 1;
 	}
 }
 
 function setup(initial: Array<{textContent: string | null}> = []) {
 	const styles = [...initial];
 	const other = new Sheet();
+	let adopted = [other] as Sheet[];
 	const host = {
 		styles: () => styles,
-		adopted: [other] as Sheet[],
+		assignments: 0,
+		get adopted() {
+			return adopted;
+		},
+		set adopted(sheets: Sheet[]) {
+			host.assignments += 1;
+			adopted = sheets;
+		},
 		createSheet: () => new Sheet(),
 		onChange: undefined as (() => void) | undefined,
 		stopped: false,
@@ -74,4 +84,44 @@ test('stopping removes every mirrored sheet, stops watching and keeps other shee
 	t.deepEqual(host.adopted, [other]);
 	host.onChange?.();
 	t.deepEqual(host.adopted, [other]);
+});
+
+test('output writes that change no style leave the sheets and the document alone', t => {
+	const first = {textContent: '.a{color:red}'};
+	const {host} = setup([first]);
+	mirrorStyles(host);
+	const sheet = host.adopted[1];
+	const assignments = host.assignments;
+	const writes = sheet.writes;
+	host.onChange?.();
+	host.onChange?.();
+	t.is(sheet.writes, writes);
+	t.is(host.assignments, assignments);
+	first.textContent = '.a{color:blue}';
+	host.onChange?.();
+	t.is(sheet.writes, writes + 1);
+	t.is(host.assignments, assignments, 'the set of sheets did not change');
+});
+
+test('only changes that involve a style element are worth re-reading', t => {
+	const style = {nodeName: 'STYLE'};
+	const row = {nodeName: 'DIV', parentNode: {nodeName: 'DIV'}};
+	const none: never[] = [];
+	t.false(
+		touchesStyle({
+			target: row,
+			addedNodes: [{nodeName: 'SPAN'}],
+			removedNodes: none,
+		}),
+	);
+	t.true(touchesStyle({target: style, addedNodes: none, removedNodes: none}));
+	t.true(
+		touchesStyle({
+			target: {nodeName: '#text', parentNode: style},
+			addedNodes: none,
+			removedNodes: none,
+		}),
+	);
+	t.true(touchesStyle({target: row, addedNodes: [style], removedNodes: none}));
+	t.true(touchesStyle({target: row, addedNodes: none, removedNodes: [style]}));
 });

@@ -1,7 +1,7 @@
 # Terminal implementation
 
 - Status: Draft
-- Last updated: 2026-10-31
+- Last updated: 2026-11-03
 
 ## Part A: host and bridge
 
@@ -73,13 +73,18 @@ restoring the mounted preference. Links, including OSC 8
 links, remain inert until phase 3.6. No remote resources or CSP changes
 are needed.
 
-xterm writes its colour, cursor and scrollbar rules into `<style>` elements,
-which the strict `style-src 'self'` policy refuses to apply. Without help,
-ANSI colours render in the default colour. The renderer
-mirrors each of those elements into an adopted constructable sheet, which
-the policy allows, and removes the sheets on teardown. The policy is
-unchanged. The browser still logs one blocked inline style message for each
-element when the terminal opens.
+xterm writes its colour, cursor, selection and scrollbar rules into three
+`<style>` elements inside the terminal, which the strict `style-src 'self'`
+policy refuses to apply (`TERM-13`). Without help, ANSI colours render in the
+default colour. The renderer mirrors each of those elements into an adopted
+constructable sheet, which the policy allows, and removes the sheets on
+teardown. The mirror looks again only when a change involves a style element,
+skips re-parsing a sheet whose text is unchanged, and reassigns the document's
+sheet list only when the set changes, so ordinary output writes neither re-parse
+CSS nor restyle the document.
+The policy is unchanged. The browser still logs one blocked inline style
+message for each element when the terminal opens. The end-to-end test checks
+that ANSI red, the green background and the cursor use their design tokens.
 
 `TERM-11` specifics are bounded local choices, not an upstream status change:
 
