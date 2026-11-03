@@ -36,6 +36,17 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/terminal-output.ts` | Serialised xterm writes and supported screen-reader queue reset on clear and stop |
 | `e2e/terminal.e2e.ts`, `planning/terminal.md` | Hidden native teardown, terminal UI, focus, contrast and theme/width screenshots, plus local implementation limits |
 | `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |
+| `source/main/files/safe-path.ts`, `source/main/files/limits.ts` | The one relative-path validator, contained realpath resolution and post-open identity check, and every bound the file service and ACP reads share (`SEC-03`, `SEC-04`) |
+| `source/main/files/file-service.ts`, `source/main/files/encoding.ts` | Lazy one-folder listings, bounded text previews, encoding detection that never rewrites, and the `.git` and outside-link refusals (`FILE-01` to `FILE-04`, `FILE-10`) |
+| `source/main/files/watcher.ts`, `source/main/files/editor.ts` | Debounced project watching with a limit fallback, and editor and reveal handoff from known absolute paths (`FILE-05` to `FILE-07`, `DEC-43`) |
+| `source/main/files/acp-fs.ts`, `source/main/files/attachments.ts` | Root-checked `fs/read_text_file` answers for Nanocoder and transient prompt attachments (`ACP-11`, `SEC-20`, `FILE-08`, `CHAT-16`) |
+| `source/main/files/runtime.ts`, `source/main/ipc/files.ts`, `source/shared/files.ts`, `source/shared/review.ts` | Composition of files, Git, watching and turn tracking; strict file and review IPC; shared contracts |
+| `source/main/git/run.ts` | The only place Git starts: argument array, hardened flags, scrubbed environment and a read-only subcommand allow-list (`GIT-11`, `GIT-14`, `SEC-06`) |
+| `source/main/git/locate.ts`, `source/main/git/git-service.ts`, `source/main/git/status-parser.ts` | Absolute Git discovery, cached NUL-delimited status, per-file diffs and tree marks (`GIT-01` to `GIT-04`, `GIT-13`) |
+| `source/main/git/turn-tracker.ts`, `source/main/git/review-service.ts` | Last-turn touched labels from edit tool calls and commits made during a turn (`GIT-05`, `GIT-12`) |
+| `source/renderer/files-controller.ts`, `source/renderer/review-controller.ts`, `source/renderer/diff-parse.ts` | Lazy tree and review state with stale-answer guards, tree and diff keyboard models, unified-diff parsing |
+| `source/renderer/workbench.tsx`, `source/renderer/file-tree.tsx`, `source/renderer/file-preview.tsx`, `source/renderer/review-panel.tsx`, `source/renderer/code-editor.ts` | The files and review panel; CodeMirror loads lazily inside a shadow root so the strict style policy holds |
+| `source/renderer/attachments.ts` | Per-thread, in-memory prompt attachments that ride with one message and are then forgotten |
 | `source/main/ipc/workspace-services.ts` | Main-only project and thread service contracts |
 | `source/main/projects/` | Canonical project selection and relocation, bounded read-only trust summaries, and snapshot-checked native consent |
 | `source/main/store/contracts.ts` | Metadata store, repositories and replaceable SQLite driver seam (`DEC-04`) |

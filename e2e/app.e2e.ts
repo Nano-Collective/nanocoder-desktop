@@ -43,6 +43,8 @@ test('the preload bridge exposes typed methods only', async () => {
 		[
 			...Object.keys(CHANNELS).filter(key => key !== 'projectEvent'),
 			'onProjectEvent',
+			'files',
+			'review',
 			'terminal',
 		].sort(),
 	);
@@ -59,6 +61,24 @@ test('the preload bridge exposes typed methods only', async () => {
 		].sort(),
 	);
 	expect(keys).not.toContain('ipcRenderer');
+	// The new namespaces expose typed functions only, never a channel or a path to Node.
+	const nested = await page.evaluate(() => {
+		const desktop = (window as unknown as {desktop: Record<string, object>})
+			.desktop;
+		return {
+			files: Object.keys(desktop.files).sort(),
+			review: Object.keys(desktop.review).sort(),
+			types: [
+				...Object.values(desktop.files),
+				...Object.values(desktop.review),
+			].map(value => typeof value),
+		};
+	});
+	expect(nested.files).toEqual(
+		['list', 'onEvent', 'openInEditor', 'preview', 'reveal'].sort(),
+	);
+	expect(nested.review).toEqual(['diff', 'status']);
+	expect(new Set(nested.types)).toEqual(new Set(['function']));
 });
 
 test('project selection uses main and cancellation saves no project', async () => {

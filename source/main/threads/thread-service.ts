@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import type {ResolvedAttachments} from '@/main/files/attachments';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import type {ThreadService} from '@/main/ipc/workspace-services';
 import {untilAborted} from '@/main/nanocoder/abort';
@@ -41,6 +42,7 @@ import type {
 	NanocoderMode,
 	ProjectEvent,
 	ProjectInfo,
+	PromptAttachment,
 	SessionInfo,
 	ThreadInfo,
 	ThreadReplay,
@@ -110,6 +112,11 @@ interface ThreadOptions {
 		project: ProjectInfo;
 		thread: ThreadInfo;
 	}): Promise<boolean>;
+	// Turns validated attachments into prompt content for this turn only (CHAT-16).
+	resolveAttachments?(
+		project: ProjectInfo,
+		attachments: PromptAttachment[],
+	): Promise<ResolvedAttachments>;
 }
 
 type AsyncThreadService = {
@@ -1534,6 +1541,19 @@ export function createThreadService(
 							'Nanocoder is already working on a turn',
 							true,
 						);
+					let attached: ResolvedAttachments | undefined;
+					if (request.attachments?.length) {
+						if (!options.resolveAttachments)
+							throw new IpcFailure(
+								'UNSUPPORTED',
+								'Attachments are not available',
+							);
+						attached = await options.resolveAttachments(
+							getProject(thread.projectId),
+							request.attachments,
+						);
+						signal.throwIfAborted();
+					}
 					pending.set(thread.projectId, thread.id);
 					preparationAborts.set(thread.projectId, {
 						threadId: thread.id,
@@ -1693,11 +1713,19 @@ export function createThreadService(
 						if (preparation?.abort === abort) preparation.turnStarted = true;
 						started = true;
 						prompted.set(thread.id, connection);
-						append(thread, [{type: 'user', text: request.text}]);
+						append(thread, [
+							{
+								type: 'user',
+								text: attached?.summary.length
+									? `${request.text}\n\n${attached.summary.join('\n')}`
+									: request.text,
+							},
+						]);
 						const result = await options.supervisor.prompt(
 							project.id,
 							sessionId,
 							request.text,
+							attached?.blocks,
 						);
 						const liveFailure = liveTurns.get(thread.id)?.failure;
 						if (liveFailure) throw liveFailure;

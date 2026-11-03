@@ -1,7 +1,15 @@
 // Stands in for `nanocoder --acp` in tests. A .fake-nanocoder file in the working directory picks the behaviour.
 import {createHash, randomUUID} from 'node:crypto';
-import {existsSync, readFileSync, watch, writeFileSync} from 'node:fs';
+import {
+	appendFileSync,
+	existsSync,
+	readFileSync,
+	watch,
+	writeFileSync,
+} from 'node:fs';
+import {join} from 'node:path';
 import {createInterface} from 'node:readline';
+import {fileURLToPath} from 'node:url';
 
 const mode = existsSync('.fake-nanocoder')
 	? readFileSync('.fake-nanocoder', 'utf8').trim()
@@ -340,6 +348,51 @@ const tool = (sessionId, toolCallId, update) =>
 		update: {sessionUpdate: 'tool_call_update', toolCallId, ...update},
 	});
 
+// Reads each linked file back through the desktop, echoes attached comments, and
+// can edit a file with an `edit` tool call: enough to see files, review comments
+// and touched labels work end to end.
+async function filesFixture(id, params) {
+	const {sessionId} = params;
+	const blocks = params.prompt ?? [];
+	const [first, ...rest] = blocks;
+	const typed = first?.type === 'text' ? first.text : '';
+	for (const block of rest) {
+		if (block.type === 'resource_link') {
+			const answer = await ask('fs/read_text_file', {
+				sessionId,
+				path: fileURLToPath(block.uri),
+			});
+			say(
+				sessionId,
+				answer?.error
+					? `read refused for ${block.name}: ${answer.error.message}\n`
+					: `read ${block.name}: ${String(answer?.content ?? '').trim()}\n`,
+			);
+		} else if (block.type === 'resource') {
+			say(sessionId, `embedded ${block.resource.uri}\n`);
+		} else if (block.type === 'text') {
+			say(sessionId, `comment received: ${block.text}\n`);
+		}
+	}
+	const edit = /edit (\S+)/u.exec(typed)?.[1];
+	if (edit) {
+		appendFileSync(edit, 'agent edit\n');
+		notify('session/update', {
+			sessionId,
+			update: {
+				sessionUpdate: 'tool_call',
+				toolCallId: 'edit-1',
+				title: `edit_file: ${edit}`,
+				kind: 'edit',
+				status: 'completed',
+				locations: [{path: join(process.cwd(), edit)}],
+			},
+		});
+	}
+	say(sessionId, 'files fixture done');
+	send({id, result: {stopReason: 'end_turn'}});
+}
+
 async function streamFixture(id, sessionId) {
 	const update = body => notify('session/update', {sessionId, update: body});
 	update({
@@ -532,6 +585,7 @@ async function runTurn(id, params) {
 		send({id, result: {stopReason: 'end_turn'}});
 		return;
 	}
+	if (mode === 'files') return filesFixture(id, params);
 	if (mode === 'streaming') return streamFixture(id, sessionId);
 	if (mode === 'subagents') return subagentFixture(id, params);
 	if (mode === 'reported-usage' || mode === 'session-discovery') {
@@ -640,9 +694,9 @@ function serve() {
 	}
 	createInterface({input: process.stdin})
 		.on('line', line => {
-			const {id, method, params, result: answered} = JSON.parse(line);
+			const {id, method, params, result: answered, error} = JSON.parse(line);
 			if (method === undefined) {
-				waiting.get(id)?.(answered);
+				waiting.get(id)?.(error ? {error} : answered);
 				waiting.delete(id);
 				return;
 			}

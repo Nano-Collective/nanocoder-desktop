@@ -1,4 +1,5 @@
 import * as React from 'react';
+import type {AttachmentChip} from '@/renderer/attachments';
 import {composerEnter} from '@/renderer/composer-key';
 import {SlashSuggestions} from '@/renderer/stream-commands';
 import type {Transcript} from '@/renderer/transcript';
@@ -26,6 +27,8 @@ export interface ComposerProps {
 	error?: string | null;
 	commands: readonly StreamCommand[];
 	context?: Transcript['context'];
+	attachments?: readonly AttachmentChip[];
+	onRemoveAttachment?(id: string): void;
 	inputRef?: React.RefObject<HTMLTextAreaElement | null>;
 	onDraft(value: string): void;
 	onSend(): void;
@@ -138,6 +141,26 @@ export function Composer(props: ComposerProps) {
 				<span id={descriptionId} className="sr-only" aria-hidden="true">
 					{description}
 				</span>
+				{props.attachments && props.attachments.length > 0 && (
+					<ul
+						className="composer-attachments"
+						aria-label="attached to your next message"
+					>
+						{props.attachments.map(chip => (
+							<li key={chip.id} className="composer-chip">
+								<span className="composer-chip-label">{chip.label}</span>
+								<button
+									type="button"
+									className="composer-chip-remove"
+									aria-label={`remove ${chip.label}`}
+									onClick={() => props.onRemoveAttachment?.(chip.id)}
+								>
+									<span aria-hidden="true">✕</span>
+								</button>
+							</li>
+						))}
+					</ul>
+				)}
 				<label className="composer-message">
 					<span className="sr-only">message</span>
 					<textarea

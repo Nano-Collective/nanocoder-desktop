@@ -4,6 +4,7 @@ import type {
 	IpcResult,
 	NanocoderMode,
 	ProjectEvent,
+	PromptAttachment,
 	ThreadInfo,
 	ThreadSnapshot,
 } from '@/shared/ipc';
@@ -341,7 +342,11 @@ export function createThreadController(options: {
 		selectProject,
 		open: (threadId: string) => load(threadId, true),
 		read: (threadId: string) => load(threadId, false),
-		prompt: (threadId: string, text: string) => {
+		prompt: (
+			threadId: string,
+			text: string,
+			attachments?: PromptAttachment[],
+		) => {
 			const thread = state.threads.find(row => row.id === threadId);
 			if (
 				!text.trim() ||
@@ -351,7 +356,12 @@ export function createThreadController(options: {
 			)
 				return Promise.resolve(null);
 			return command(threadId, 'prompt', 'prompt', projectId =>
-				options.bridge.promptThread({projectId, threadId, text}),
+				options.bridge.promptThread({
+					projectId,
+					threadId,
+					text,
+					...(attachments?.length ? {attachments} : {}),
+				}),
 			);
 		},
 		cancel: (threadId: string) =>

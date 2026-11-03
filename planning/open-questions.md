@@ -24,7 +24,7 @@ From [whitepaper, Open questions][wp-questions].
 | OQ-04 | Is SQLite acceptable as a new desktop dependency and migration surface? | Answered in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): yes, through `node:sqlite` with `better-sqlite3` as the fallback (`DEC-04`). | NC core team | Milestone 1 | [Whitepaper][wp-questions] |
 | OQ-05 | Which code, diff and PTY libraries meet licence and platform requirements? | Answered in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): CodeMirror 6, Git's own diff output, `node-pty` with `@xterm/xterm` (`DEC-28`). | NC core team | Milestone 2 (diff), Milestone 3 (PTY) | [Whitepaper][wp-questions] |
 | OQ-06 | One app-wide browser profile, or one per project? | Open. Trade-offs in [`data-model.md`](data-model.md#browser-partition). | NC core team | Milestone 3 | [Whitepaper][wp-questions] |
-| OQ-07 | Which external editors get first-class "Open in editor" support? | Open. | NC core team | Milestone 2 | [Whitepaper][wp-questions] |
+| OQ-07 | Which external editors get first-class "Open in editor" support? | Answered in `DEC-43`: the system default, Visual Studio Code, Cursor and Zed. | NC core team | Milestone 2 | [Whitepaper][wp-questions] |
 | OQ-08 | When does full-text chat and file search become worth its index and retention surface? | Open, and deferred: search is on the "Later" list. Not a v1 blocker. | NC core team | None in v1 | [Whitepaper][wp-questions] |
 | OQ-09 | Separate repository or a Nanocoder workspace package? | Proposed (awaiting @will-lamerton): separate repository (`DEC-10`). The repository exists already. | @will-lamerton (to record) | Stage 4 repository setup | [#117][i117] |
 

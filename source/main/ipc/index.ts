@@ -5,11 +5,15 @@ import {
 	BrowserWindow,
 	dialog,
 	type OpenDialogOptions,
+	shell,
 	type WebContents,
 } from 'electron';
 import {z} from 'zod';
 import {createWorkspaceControls} from '@/main/controls/workspace-controls';
 import {confirmYolo} from '@/main/controls/yolo-consent';
+import {resolveAttachments} from '@/main/files/attachments';
+import {createFilesRuntime, type FilesRuntime} from '@/main/files/runtime';
+import {registerFilesHandlers} from '@/main/ipc/files';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
 import {registerTerminalHandlers} from '@/main/ipc/terminal';
@@ -32,6 +36,7 @@ import {createUtilityPtyHost} from '@/main/terminal/utility-host';
 import {deleteHistoryDialog} from '@/main/threads/delete-history-consent';
 import {createThreadService} from '@/main/threads/thread-service';
 import {APP_NAME} from '@/shared/app-info';
+import {FILES_CHANNELS, type FilesEvent} from '@/shared/files';
 import {
 	type AppInfo,
 	CHANNELS,
@@ -61,6 +66,7 @@ let connecting: Promise<void> | undefined;
 let rendererCleanup: Promise<void> = Promise.resolve();
 let threads: ReturnType<typeof createThreadService> | undefined;
 let controlRuntime: ReturnType<typeof createWorkspaceControls> | undefined;
+let filesRuntime: FilesRuntime | undefined;
 let appOrigins: readonly string[] = [];
 let workspaceServices: WorkspaceServices = {};
 let unsubscribeProjectEvents: (() => void) | undefined;
@@ -101,13 +107,25 @@ function sendProjectEvent(event: ProjectEvent): void {
 	}
 }
 
+function sendFilesEvent(event: FilesEvent): void {
+	for (const window of BrowserWindow.getAllWindows()) {
+		if (
+			!window.webContents.isDestroyed() &&
+			isAllowedOrigin(window.webContents.getURL(), appOrigins)
+		) {
+			window.webContents.send(FILES_CHANNELS.event, event);
+		}
+	}
+}
+
 function sendTerminalEvent(event: TerminalEvent): void {
 	for (const window of BrowserWindow.getAllWindows()) {
 		if (
 			!window.webContents.isDestroyed() &&
 			isAllowedOrigin(window.webContents.getURL(), appOrigins)
-		)
+		) {
 			window.webContents.send(TERMINAL_CHANNELS.event, event);
+		}
 	}
 }
 
@@ -242,6 +260,7 @@ export function closeNanocoder(): Promise<void> {
 					threads?.detach(workspaceServices.store?.projects.list() ?? []),
 				]);
 			} finally {
+				filesRuntime?.dispose();
 				controlRuntime?.dispose();
 				threads?.dispose();
 			}
@@ -443,12 +462,48 @@ export function registerIpcHandlers(
 					})
 				: undefined),
 	};
+	const store = services.store;
+	filesRuntime = store
+		? createFilesRuntime({
+				projects: () => store.projects.list(),
+				project: projectId => store.projects.get(projectId),
+				editor: () => store.getSettings().editor,
+				send: sendFilesEvent,
+				openPath: file => shell.openPath(file),
+				showItemInFolder: file => shell.showItemInFolder(file),
+			})
+		: undefined;
 	threads =
 		!services.threads && services.store && supervisor
 			? createThreadService({
 					store: services.store,
 					supervisor,
-					onEvent: sendProjectEvent,
+					onEvent: event => {
+						sendProjectEvent(event);
+						filesRuntime?.tracker.observe(event);
+					},
+					resolveAttachments: (project, attachments) => {
+						const runtime = filesRuntime;
+						if (!runtime)
+							throw new IpcFailure(
+								'UNAVAILABLE',
+								'Attachments are unavailable',
+							);
+						let embedded = false;
+						try {
+							embedded =
+								supervisor?.getConnection(project.id).agent.capabilities.prompt
+									.embeddedContext === true;
+						} catch {
+							embedded = false;
+						}
+						return resolveAttachments(
+							runtime.files,
+							project,
+							attachments,
+							embedded,
+						);
+					},
 					onSessionPrepared: context =>
 						availableControls().hooks.onSessionPrepared(context),
 					beforeFirstPrompt: context =>
@@ -493,9 +548,30 @@ export function registerIpcHandlers(
 				}),
 		});
 		workspaceServices.controls = services.controls ?? controlRuntime.controls;
+		const owned = threads;
 		workspaceServices.threads = {
-			...threads,
+			...owned,
 			setThreadMode: controlRuntime.setThreadMode,
+			// Record HEAD around the turn and which files it edited (GIT-05, GIT-12).
+			// None of it runs ahead of the prompt, so a cancel always finds the turn.
+			promptThread: async request => {
+				const tracker = filesRuntime?.tracker;
+				const tracking = tracker?.begin(request.projectId, request.threadId);
+				let succeeded = false;
+				try {
+					const result = await owned.promptThread(request);
+					succeeded = true;
+					return result;
+				} finally {
+					void tracking
+						?.then(started =>
+							started
+								? tracker?.end(request.projectId, request.threadId, succeeded)
+								: undefined,
+						)
+						.catch(() => undefined);
+				}
+			},
 		};
 		if (workspaceServices.projects)
 			workspaceServices.projects = {
@@ -518,6 +594,7 @@ export function registerIpcHandlers(
 	for (const window of BrowserWindow.getAllWindows())
 		watchRenderer(window.webContents);
 	registerWorkspaceHandlers(registerHandler, allowedOrigins, workspaceServices);
+	registerFilesHandlers(registerHandler, allowedOrigins, filesRuntime);
 	registerTerminalHandlers(registerHandler, allowedOrigins, terminal);
 	unsubscribeProjectEvents = workspaceServices.supervisor?.subscribe(event => {
 		if (event.type === 'supervisor' && event.state.status === 'untrusted') {
@@ -526,6 +603,11 @@ export function registerIpcHandlers(
 			if (project?.trusted) store?.projects.save({...project, trusted: false});
 		}
 		if (event.type !== 'turn') sendProjectEvent(event);
+		if (
+			event.type === 'project-removed' ||
+			(event.type === 'project' && !event.project.trusted)
+		)
+			filesRuntime?.closeProject(event.projectId);
 		if (
 			(event.type === 'supervisor' &&
 				event.state.status !== 'ready' &&

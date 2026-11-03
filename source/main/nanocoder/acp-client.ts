@@ -1,5 +1,6 @@
 import {
 	type ClientCapabilities,
+	type ContentBlock,
 	client,
 	type Implementation,
 	methods,
@@ -10,6 +11,7 @@ import {
 	type ResumeSessionResponse,
 	type SessionNotification,
 } from '@agentclientprotocol/sdk';
+import {readTextForAgent} from '@/main/files/acp-fs';
 import {
 	describeAgent,
 	type ExtensionProbes,
@@ -50,7 +52,7 @@ const INITIALIZE_TIMEOUT_MS = 60_000;
 const SHUTDOWN_GRACE_MS = 5_000;
 const NANOCODER_PREFIX = '[nanocoder] ';
 
-// readTextFile is advertised (ACP-02); until ACP-11 the SDK answers it with method-not-found.
+// readTextFile is advertised (ACP-02) and answered by readTextForAgent (ACP-11).
 const CLIENT_CAPABILITIES: ClientCapabilities = {
 	fs: {readTextFile: true, writeTextFile: false},
 	terminal: false,
@@ -86,7 +88,11 @@ export interface NanocoderConnection {
 		configId: ProjectConfigSelect['id'],
 		value: string,
 	): Promise<SessionOffers>;
-	prompt(sessionId: string, text: string): Promise<NanocoderTurnResult>;
+	prompt(
+		sessionId: string,
+		text: string,
+		attachments?: ContentBlock[],
+	): Promise<NanocoderTurnResult>;
 	cancel(sessionId: string): Promise<void>;
 	probeExtensions(): Promise<ExtensionProbes>;
 	close(): Promise<void>;
@@ -212,6 +218,9 @@ export async function connectNanocoder(
 			options.onPermission
 				? options.onPermission(params)
 				: {outcome: {outcome: 'cancelled'}},
+		)
+		.onRequest(methods.client.fs.readTextFile, ({params}) =>
+			readTextForAgent(options.root, params),
 		)
 		.onNotification(methods.client.session.update, ({params}) => {
 			if (replay) {
@@ -536,6 +545,7 @@ export async function connectNanocoder(
 	const prompt = async (
 		sessionId: string,
 		text: string,
+		attachments: ContentBlock[] = [],
 	): Promise<NanocoderTurnResult> => {
 		if (!sessionControls.canPrompt())
 			throw new NanocoderFailure(
@@ -551,7 +561,7 @@ export async function connectNanocoder(
 		const pending = connection.agent
 			.request(methods.agent.session.prompt, {
 				sessionId,
-				prompt: [{type: 'text', text}],
+				prompt: [{type: 'text', text}, ...attachments],
 			})
 			.catch((error: unknown) => {
 				// An error answer means Nanocoder is still running; anything else is the connection going.

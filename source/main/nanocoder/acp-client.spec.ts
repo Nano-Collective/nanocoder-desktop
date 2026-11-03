@@ -1,5 +1,6 @@
 import {writeFileSync} from 'node:fs';
 import path from 'node:path';
+import {pathToFileURL} from 'node:url';
 import test from 'ava';
 import {
 	type ConnectOptions,
@@ -802,4 +803,51 @@ test('CHAT-12 title notifications reach the owner only when they parse as bounde
 	await connection.newSession('normal');
 	await connection.close();
 	t.deepEqual(titles, [{sessionId: 'fake-session', title: 'Fixture title'}]);
+});
+
+test('ACP-11 SEC-20 the agent reads a linked project file through the checked handler and is refused outside the project', async t => {
+	const root = fakeProject('files');
+	writeFileSync(path.join(root, 'notes.txt'), 'project notes\n');
+	const outside = fakeProject();
+	writeFileSync(path.join(outside, 'secret.txt'), 'top secret');
+	const said: string[] = [];
+	const connection = await connect(root, {
+		onUpdate: update => {
+			if (
+				update.sessionUpdate === 'agent_message_chunk' &&
+				update.content.type === 'text'
+			)
+				said.push(update.content.text);
+		},
+	});
+	const session = await connection.newSession('normal');
+	await connection.prompt(session.id, 'read these', [
+		{
+			type: 'resource_link',
+			uri: pathToFileURL(path.join(root, 'notes.txt')).href,
+			name: 'notes.txt',
+		},
+		{
+			type: 'resource_link',
+			uri: pathToFileURL(path.join(outside, 'secret.txt')).href,
+			name: 'secret.txt',
+		},
+		{type: 'text', text: 'a quoted review comment'},
+	]);
+	await connection.close();
+	const text = said.join('');
+	t.regex(text, /read notes\.txt: project notes/);
+	t.regex(
+		text,
+		/read refused for secret\.txt: That path leaves the project folder/,
+	);
+	t.false(text.includes('top secret'));
+	t.regex(text, /comment received: a quoted review comment/);
+	const advertised = fakeEvents(connection.stderr.lines()).find(
+		event => event.method === 'initialize',
+	);
+	t.deepEqual(
+		(advertised?.params as {clientCapabilities: unknown}).clientCapabilities,
+		{fs: {readTextFile: true, writeTextFile: false}, terminal: false},
+	);
 });

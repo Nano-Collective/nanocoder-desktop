@@ -2,6 +2,15 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
 import {ApprovalRequests} from '@/renderer/approval-requests';
 import logoUrl from '@/renderer/assets/nano-collective-avatar.png';
+import {
+	type AttachmentStore,
+	addAttachment,
+	attachmentKey,
+	chips,
+	clearAttachments,
+	labelFor,
+	removeAttachment,
+} from '@/renderer/attachments';
 import {Composer} from '@/renderer/composer';
 import {ConversationStream} from '@/renderer/conversation-stream';
 import {
@@ -43,12 +52,15 @@ import {
 import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, StatusBadge} from '@/renderer/ui';
 import {useDiagnosticReview} from '@/renderer/use-diagnostic-review';
+import {useFiles} from '@/renderer/use-files';
 import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
+import {useReview} from '@/renderer/use-review';
 import {useSessionImports} from '@/renderer/use-session-imports';
 import {useTerminal} from '@/renderer/use-terminal';
 import {useThreads} from '@/renderer/use-threads';
 import {WelcomePage} from '@/renderer/welcome-page';
+import {Workbench, type WorkbenchTab} from '@/renderer/workbench';
 import {
 	WorkspaceDialogs,
 	type WorkspaceDialogsProps,
@@ -61,6 +73,7 @@ import type {
 	ConnectResult,
 	IpcResult,
 	NanocoderRuntime,
+	PromptAttachment,
 } from '@/shared/ipc';
 import {REPLAY_FAILURE_REASON, REPLAY_REASON} from '@/shared/thread-replay';
 
@@ -172,6 +185,28 @@ export function App() {
 	);
 	const configUncertain =
 		modelControls.controls?.modelGate.reason === CONFIG_UNCERTAINTY_REASON;
+	const [inspector, setInspector] = useState<WorkbenchTab | null>(null);
+	const inspectorLoaded = useRef(false);
+	const filesTrigger = useRef<HTMLButtonElement>(null);
+	const inspectorOpen =
+		inspector !== null &&
+		projectId !== null &&
+		currentProject?.trusted === true;
+	const files = useFiles(projectId, inspectorOpen);
+	const reviewPanel = useReview(projectId, inspectorOpen);
+	const [attachments, setAttachments] = useState<AttachmentStore>({});
+	const attachKey =
+		projectId && thread ? attachmentKey(projectId, thread.id) : null;
+	const attached: PromptAttachment[] = attachKey
+		? (attachments[attachKey] ?? [])
+		: [];
+	const attachReason = !thread
+		? 'open or create a thread first'
+		: thread.archiveState === 'archived'
+			? 'this thread is archived'
+			: thread.runState === 'view-only'
+				? 'this thread is view-only'
+				: null;
 	const failed =
 		thread?.runState === 'failed' ||
 		(turn !== null && !turn.ok && thread?.runState !== 'ready');
@@ -325,9 +360,59 @@ export function App() {
 			!modelControls.pending &&
 			!configUncertain &&
 			draft.trim()
-		)
-			void controls.send();
+		) {
+			const key = attachKey;
+			void controls
+				.send(attached.length ? attached : undefined)
+				.then(result => {
+					// Attached context goes with one message only, then it is forgotten.
+					if (result?.ok && key)
+						setAttachments(current => clearAttachments(current, key));
+				});
+		}
 	};
+	const attach = (item: PromptAttachment) => {
+		if (!attachKey) return;
+		setAttachments(current => addAttachment(current, attachKey, item));
+		overlays.current?.notify(`attached ${labelFor(item)} to your next message`);
+	};
+	const editorFailure = async (
+		work: Promise<{ok: boolean; error?: {message: string}}>,
+	): Promise<string | null> => {
+		const result = await work.catch(() => null);
+		if (!result) return 'the request could not finish';
+		return result.ok ? null : (result.error?.message ?? 'the request failed');
+	};
+	const openInEditor = (path: string, line?: number) =>
+		projectId
+			? editorFailure(
+					window.desktop.files.openInEditor({
+						projectId,
+						path,
+						...(line ? {line} : {}),
+					}),
+				)
+			: Promise.resolve('open a project first');
+	const reveal = (path: string) =>
+		projectId
+			? editorFailure(window.desktop.files.reveal({projectId, path}))
+			: Promise.resolve('open a project first');
+	const showPanel = (tab: WorkbenchTab) => setInspector(tab);
+	const hidePanel = () => {
+		setInspector(null);
+		filesTrigger.current?.focus();
+	};
+	useEffect(() => {
+		void window.desktop.getUiState({}).then(result => {
+			if (result.ok && result.value.inspector)
+				setInspector(result.value.inspector);
+			inspectorLoaded.current = true;
+		});
+	}, []);
+	useEffect(() => {
+		if (inspectorLoaded.current)
+			void window.desktop.updateUiState({patch: {inspector}});
+	}, [inspector]);
 	const cancel = async () => {
 		if (thread) await controls.cancel(thread.id);
 	};
@@ -553,6 +638,24 @@ export function App() {
 					ready: sessionImports.ready,
 					onImport: openImportPage,
 				}),
+				...(['files', 'review'] as const).map(tab => ({
+					id: `panel-${tab}`,
+					label:
+						inspectorOpen && inspector === tab
+							? `hide ${tab === 'files' ? 'project files' : 'review of changes'}`
+							: `show ${tab === 'files' ? 'project files' : 'review of changes'}`,
+					glyph: tab === 'files' ? '▤' : '±',
+					keywords:
+						tab === 'files'
+							? 'browse tree folder preview'
+							: 'git diff changes staged unstaged comment',
+					disabledReason:
+						projectId && currentProject?.trusted
+							? undefined
+							: 'open a trusted project first',
+					run: () =>
+						inspectorOpen && inspector === tab ? hidePanel() : showPanel(tab),
+				})),
 				...projectPalette({
 					...projectControls,
 					pending: connecting || projectControls.pending,
@@ -624,6 +727,18 @@ export function App() {
 				}
 				palette={
 					<>
+						{projectId && currentProject?.trusted && (
+							<Button
+								ref={filesTrigger}
+								aria-label="open project files"
+								aria-expanded={inspectorOpen}
+								onClick={() =>
+									inspectorOpen ? hidePanel() : showPanel(inspector ?? 'files')
+								}
+							>
+								files
+							</Button>
+						)}
 						{projectId && (
 							<Button
 								ref={terminalTrigger}
@@ -659,6 +774,27 @@ export function App() {
 							}}
 						/>
 					)
+				}
+				workbench={
+					inspectorOpen && inspector
+						? {
+								title: 'files and review',
+								onClose: hidePanel,
+								children: (
+									<Workbench
+										tab={inspector}
+										onTab={showPanel}
+										files={files}
+										review={reviewPanel}
+										attachReason={attachReason}
+										onAttachFile={path => attach({kind: 'file', path})}
+										onComment={attach}
+										onOpenEditor={openInEditor}
+										onReveal={reveal}
+									/>
+								),
+							}
+						: undefined
 				}
 				projectRail={
 					<ProjectSwitch
@@ -781,6 +917,13 @@ export function App() {
 								}
 								commands={transcript.commands ?? []}
 								context={transcript.context}
+								attachments={chips(attached)}
+								onRemoveAttachment={id => {
+									if (attachKey)
+										setAttachments(current =>
+											removeAttachment(current, attachKey, id),
+										);
+								}}
 								inputRef={composerInput}
 								onDraft={controls.setDraft}
 								onSend={send}
