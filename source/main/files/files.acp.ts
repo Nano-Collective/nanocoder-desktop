@@ -243,6 +243,9 @@ test('GIT-12 with autoCommit on, the commit Nanocoder makes during the turn is l
 					config.nanocoder.autoCommit = true;
 					writeFileSync(configFile, JSON.stringify(config));
 					git(root, '-c', 'init.defaultBranch=main', 'init', '-q');
+					// Nanocoder's own commit needs an identity in the repository, as CI has none.
+					git(root, 'config', 'user.name', 'Test');
+					git(root, 'config', 'user.email', 'test@example.com');
 					writeFileSync(path.join(root, 'README.md'), '# demo\n');
 					git(root, 'add', '-A');
 					git(root, 'commit', '-q', '-m', 'initial');
