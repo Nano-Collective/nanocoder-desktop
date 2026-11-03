@@ -56,6 +56,13 @@ One recursive `fs.watch` per browsed project, closed when the project changes, i
 
 An attached file is checked through the file service. If Nanocoder advertises embedded context the text travels in the prompt; otherwise the prompt carries a `file://` resource link and Nanocoder reads it back through the checked handler. A review comment is sent as quoted text. Attachments live in the renderer's memory and in one prompt call. They are never written to the store, and an end-to-end test searches the database files for them.
 
+[`files.acp.ts`](../source/main/files/files.acp.ts) runs the attachment and `autoCommit` paths against the pinned real Nanocoder with a scripted model:
+
+- The pinned Nanocoder does not advertise embedded context, so in practice the desktop sends a resource link and Nanocoder reads it back through `fs/read_text_file`. A UTF-16 file proves it: only the desktop's checked read decodes it, and the model request shows the real text.
+- Nanocoder also accepts an embedded resource and a quoted review comment, and both reach the model.
+- When the desktop refuses a read, Nanocoder falls back to reading the linked file from disk itself. `SEC-20` therefore bounds what the desktop answers, not what the agent can read. The desktop never builds a link to an outside path, because attachments are made only from files the file service has checked.
+- With `autoCommit` on, Nanocoder commits the file it edited during the turn. The turn tracker records `HEAD` before and after, lists that commit and labels the file as touched.
+
 ## Git
 
 `source/main/git/run.ts` is the only place Git starts.
@@ -102,7 +109,7 @@ Local, macOS arm64, Node 22, generated fixtures.
 ## Known limits
 
 - Windows and Linux were not run locally. Their results are the CI jobs on the pull request.
-- The attachment path was proven against the scripted fake agent. How a real Nanocoder treats a resource link or an embedded resource still needs one real run.
+- Windows and Linux editor launches are not exercised for real: the path and arguments are tested on every platform, but no editor was started on Windows or Linux.
 - A repository file name that is not valid UTF-8 is shown with replacement characters and its diff cannot be read.
 - The review list is capped at 5,000 files and a diff view at 5,000 rows.
 - CodeMirror virtualises long documents, so a screen reader reads only the visible part (`A11Y-06`).

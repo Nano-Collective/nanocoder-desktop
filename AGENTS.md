@@ -41,6 +41,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/files/watcher.ts`, `source/main/files/editor.ts` | Debounced project watching with a limit fallback, and editor and reveal handoff from known absolute paths (`FILE-05` to `FILE-07`, `DEC-43`) |
 | `source/main/files/acp-fs.ts`, `source/main/files/attachments.ts` | Root-checked `fs/read_text_file` answers for Nanocoder and transient prompt attachments (`ACP-11`, `SEC-20`, `FILE-08`, `CHAT-16`) |
 | `source/main/files/runtime.ts`, `source/main/ipc/files.ts`, `source/shared/files.ts`, `source/shared/review.ts` | Composition of files, Git, watching and turn tracking; strict file and review IPC; shared contracts |
+| `source/main/files/files.acp.ts` | Real pinned Nanocoder with a scripted model: linked and embedded attachments, review comments and `autoCommit` in the turn review (`FILE-08`, `ACP-11`, `GIT-12`) |
 | `source/main/git/run.ts` | The only place Git starts: argument array, hardened flags, scrubbed environment and a read-only subcommand allow-list (`GIT-11`, `GIT-14`, `SEC-06`) |
 | `source/main/git/locate.ts`, `source/main/git/git-service.ts`, `source/main/git/status-parser.ts` | Absolute Git discovery, cached NUL-delimited status, per-file diffs and tree marks (`GIT-01` to `GIT-04`, `GIT-13`) |
 | `source/main/git/turn-tracker.ts`, `source/main/git/review-service.ts` | Last-turn touched labels from edit tool calls and commits made during a turn (`GIT-05`, `GIT-12`) |
