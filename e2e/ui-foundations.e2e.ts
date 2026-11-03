@@ -484,8 +484,9 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		const failure = page.getByRole('alert');
 		await expect(failure).toContainText('Nanocoder stopped during the turn');
 		await expect(failure).toHaveCSS('font-size', '11px');
+		// The badge only: the stream announcement region is also a status and says "turn failed".
 		await expect(
-			page.getByRole('status').filter({hasText: 'failed'}),
+			page.locator('.ui-badge[role="status"]').filter({hasText: 'failed'}),
 		).toBeVisible();
 		await expect(
 			page
