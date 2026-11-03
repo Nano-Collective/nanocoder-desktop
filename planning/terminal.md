@@ -83,8 +83,11 @@ skips re-parsing a sheet whose text is unchanged, and reassigns the document's
 sheet list only when the set changes, so ordinary output writes neither re-parse
 CSS nor restyle the document.
 The policy is unchanged. The browser still logs one blocked inline style
-message for each element when the terminal opens. The end-to-end test checks
-that ANSI red, the green background and the cursor use their design tokens.
+message for each element when the terminal opens. Without the mirror the
+cursor is not shown at all. The end-to-end test checks that ANSI red, the green
+background and the cursor use their design tokens in both themes, that no
+`<style>` element lives outside the terminal, and that the selection and
+scrollbar rules are among the mirrored sheets.
 
 `TERM-11` specifics are bounded local choices, not an upstream status change:
 
