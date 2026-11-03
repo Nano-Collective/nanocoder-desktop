@@ -473,6 +473,36 @@ test('TERM-02/04/06/11 mounted terminal types, escapes, restarts, clears and sto
 		await page.keyboard.press('Enter');
 		await expect(page.locator('.terminal-view')).toContainText('café UI_READY');
 	});
+	await step(
+		'ANSI colours are painted although the style policy blocks inline styles',
+		async () => {
+			await page.keyboard.insertText(
+				"printf '\\033[31mRED_TEXT\\033[0m \\033[42mGREEN_BG\\033[0m\\n'",
+			);
+			await page.keyboard.press('Enter');
+			await expect(page.locator('.terminal-view')).toContainText(
+				'RED_TEXT GREEN_BG',
+			);
+			const painted = () =>
+				page.locator('.terminal-view .xterm-rows').evaluate(rows => {
+					const find = (text: string) =>
+						[...rows.querySelectorAll('span')].find(
+							span => span.textContent === text,
+						);
+					const red = find('RED_TEXT');
+					const green = find('GREEN_BG');
+					if (!red || !green) return null;
+					return {
+						redDiffers:
+							getComputedStyle(red).color !== getComputedStyle(rows).color,
+						greenBackground: getComputedStyle(green).backgroundColor,
+					};
+				});
+			await expect.poll(async () => (await painted())?.redDiffers).toBe(true);
+			const result = await painted();
+			expect(result?.greenBackground).not.toBe('rgba(0, 0, 0, 0)');
+		},
+	);
 	await step('keyboard escape and focus return', async () => {
 		await input.press('Control+Shift+Tab');
 		await expect(

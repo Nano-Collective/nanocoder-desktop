@@ -73,6 +73,14 @@ restoring the mounted preference. Links, including OSC 8
 links, remain inert until phase 3.6. No remote resources or CSP changes
 are needed.
 
+xterm writes its colour, cursor and scrollbar rules into `<style>` elements,
+which the strict `style-src 'self'` policy refuses to apply. Without help,
+ANSI colours render in the default colour. The renderer
+mirrors each of those elements into an adopted constructable sheet, which
+the policy allows, and removes the sheets on teardown. The policy is
+unchanged. The browser still logs one blocked inline style message for each
+element when the terminal opens.
+
 `TERM-11` specifics are bounded local choices, not an upstream status change:
 
 - `ctrl+shift+tab` leaves terminal input and returns focus to the terminal

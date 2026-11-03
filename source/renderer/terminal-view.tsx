@@ -2,6 +2,7 @@ import type {Terminal} from '@xterm/xterm';
 import * as React from 'react';
 import {terminalFocusLease} from '@/renderer/terminal-focus';
 import {TerminalOutput} from '@/renderer/terminal-output';
+import {mirrorTerminalStyles} from '@/renderer/terminal-styles';
 
 export interface TerminalHandle {
 	focus(): void;
@@ -66,6 +67,7 @@ export function TerminalView(props: {
 		let theme: MutationObserver | undefined;
 		let subscription: {dispose(): void} | undefined;
 		let output: TerminalOutput | undefined;
+		let unmirror: (() => void) | undefined;
 		const initialise = async () => {
 			await document.fonts.ready;
 			const {Terminal} = await import('@xterm/xterm');
@@ -122,6 +124,7 @@ export function TerminalView(props: {
 			};
 			style();
 			terminal.open(element);
+			unmirror = mirrorTerminalStyles(element);
 			terminal.textarea?.setAttribute('aria-label', 'your terminal input');
 			terminal.textarea?.setAttribute('aria-describedby', 'terminal-help');
 			terminal.textarea?.setAttribute('aria-keyshortcuts', 'Control+Shift+Tab');
@@ -203,6 +206,7 @@ export function TerminalView(props: {
 			theme?.disconnect();
 			subscription?.dispose();
 			output?.dispose();
+			unmirror?.();
 			instance.current?.dispose();
 			instance.current = null;
 			sync.current = () => {};

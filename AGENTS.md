@@ -34,6 +34,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/terminal-panel.tsx`, `source/renderer/terminal-view.tsx`, `source/renderer/styles/terminal.css` | Token-based xterm bottom dock, explicit lifecycle controls, separate agent display and keyboard/screen-reader access |
 | `source/renderer/terminal-controller.ts`, `source/renderer/use-terminal.ts` | Project-scoped sequenced terminal data, bounded memory, pending actions and stale-result refusal |
 | `source/renderer/terminal-output.ts` | Serialised xterm writes and supported screen-reader queue reset on clear and stop |
+| `source/renderer/terminal-styles.ts` | Mirrors xterm's generated `<style>` rules into adopted sheets so ANSI colours render under the strict style policy |
 | `e2e/terminal.e2e.ts`, `planning/terminal.md` | Hidden native teardown, terminal UI, focus, contrast and theme/width screenshots, plus local implementation limits |
 | `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |
 | `source/main/files/safe-path.ts`, `source/main/files/limits.ts` | The one relative-path validator, contained realpath resolution and post-open identity check, and every bound the file service and ACP reads share (`SEC-03`, `SEC-04`) |
