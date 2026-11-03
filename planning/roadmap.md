@@ -3,7 +3,7 @@
 Where Nanocoder Desktop is in the NC process, and the build broken into small phases with checklists, from scaffold to the first public release. No dates: no source gives one.
 
 - Status: Draft
-- Last updated: 2026-10-30
+- Last updated: 2026-11-03
 - Drafted by: @akramcodez
 
 ## How to use this roadmap
@@ -435,8 +435,8 @@ acceptance. Phase 1.8 and `SUB-05` remain app-composed, not full acceptance.
 
 **Results we want**
 
-- [ ] Traversal, symlink and junction escape tests pass on all three platforms: green on macOS locally, Windows and Linux runs are in CI
-- [ ] Case and Unicode edge-case tests pass on case-insensitive volumes: Unicode normalisation and Windows-form names are tested everywhere; a case-insensitive Windows volume run is in CI
+- [x] Traversal, symlink and junction escape tests pass on all three platforms: the unit tests pass on macOS and Windows, and `SEC-03 FILE-10` in `files.e2e.ts` passes on all three ([Desktop Checks on `main`](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/41614184452))
+- [x] Case and Unicode edge-case tests pass on case-insensitive volumes: Unicode normalisation and Windows-form names are tested everywhere, and the Windows runner's NTFS volume is case-insensitive and green
 
 ### Phase 2.2: file tree
 
@@ -488,7 +488,7 @@ acceptance. Phase 1.8 and `SUB-05` remain app-composed, not full acceptance.
 **Results we want**
 
 - [x] An ACP read outside the root is refused
-- [ ] An inserted file reaches Nanocoder and is used in the answer: proven end to end against the scripted fake agent; a run against a real Nanocoder is still to do
+- [x] An inserted file reaches Nanocoder and is used in the answer: proven against the scripted fake agent and against the pinned real Nanocoder ([`files.acp.ts`](../source/main/files/files.acp.ts)). A linked file is read back through the desktop's checked handler (a UTF-16 file only the desktop decodes shows the real text in the model request), an embedded file and a review comment reach the model, and Nanocoder falls back to reading a linked file itself when the desktop refuses ([notes](files-and-review.md#acp-reads-and-attachments))
 
 ### Phase 2.6: Git service
 
@@ -520,7 +520,7 @@ acceptance. Phase 1.8 and `SUB-05` remain app-composed, not full acceptance.
 
 - [x] After a turn, edited files are labelled as touched and show the real diff
 - [x] Changes the user made outside the agent appear too
-- [ ] With Nanocoder's `autoCommit` on, the turn's commits are shown: unit-tested (head before and after, commit list); no end-to-end run with a real `autoCommit`
+- [x] With Nanocoder's `autoCommit` on, the turn's commits are shown: unit-tested, and run against the pinned real Nanocoder with `autoCommit` on, where its commit appears in the turn review with the edited file labelled as touched ([`files.acp.ts`](../source/main/files/files.acp.ts))
 - [x] Diffs meet `PERF-08`: 149 ms for about 1 MiB against 1 second ([measurements](files-and-review.md#measurements))
 
 ### Phase 2.8: review comments and handoff
@@ -551,10 +551,10 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 ### Milestone 2 exit
 
-- [ ] `SP-07` passes on macOS, Windows and Linux
-- [ ] `SP-08` passes on macOS, Windows and Linux
-- [ ] `SP-09` passes on macOS, Windows and Linux
-- [ ] Path security tests pass on all three platforms
+- [x] `SP-07` passes on macOS, Windows and Linux: its `files.e2e.ts` tests pass on all three ([Desktop Checks on `main`](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/41614184452))
+- [x] `SP-08` passes on macOS, Windows and Linux: its `files.e2e.ts` tests pass on all three ([Desktop Checks on `main`](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/41614184452))
+- [x] `SP-09` passes on macOS, Windows and Linux: its `files.e2e.ts` tests pass on all three ([Desktop Checks on `main`](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/41614184452))
+- [x] Path security tests pass on all three platforms ([Desktop Checks on `main`](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/41614184452))
 - [x] No destructive Git action exists in the app (`GIT-14`)
 
 ## Milestone 3: run and preview
@@ -569,28 +569,28 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 **Build**
 
-- [ ] One PTY per active project in the canonical root (`TERM-01`)
-- [ ] Shell discovery per platform, launched by absolute path (`TERM-03`, `TERM-10`)
-- [ ] Interactive input with UTF-8 handling (`TERM-04`)
+- [x] One PTY per active project in the canonical root (`TERM-01`): [`terminal.md`](terminal.md), tested on macOS and Linux; the Windows UI and real-shell tests are skipped as POSIX fixtures
+- [x] Shell discovery per platform, launched by absolute path (`TERM-03`, `TERM-10`): [`shell.spec.ts`](../source/main/terminal/shell.spec.ts)
+- [x] Interactive input with UTF-8 handling (`TERM-04`): tested end to end on macOS and Linux
 
 **Results we want**
 
 - [ ] The user's shell starts in the project root on all three platforms
-- [ ] A PTY crash does not take down the main process
+- [x] A PTY crash does not take down the main process: `TERM-01` crash test passes on all three
 
 ### Phase 3.2: terminal lifecycle
 
 **Build**
 
-- [ ] Start, stop, restart and resize (`TERM-02`)
-- [ ] Process tree teardown on stop, project switch and quit (`TERM-07`)
-- [ ] Clear output and bounded in-memory scrollback (`TERM-06`, `TERM-09`)
-- [ ] Keyboard escape from the terminal and screen-reader mode (`TERM-11`)
-- [ ] Agent strip showing the agent's last shell command and its approval result (`TERM-12`)
+- [x] Start, stop, restart and resize (`TERM-02`)
+- [x] Process tree teardown on stop, project switch and quit (`TERM-07`): passes on all three
+- [x] Clear output and bounded in-memory scrollback (`TERM-06`, `TERM-09`)
+- [x] Keyboard escape from the terminal and screen-reader mode (`TERM-11`): automated keyboard checks on macOS and Linux; native screen-reader acceptance is not done
+- [x] Agent strip showing the agent's last shell command and its approval result (`TERM-12`)
 
 **Results we want**
 
-- [ ] Stopping a running dev server leaves no orphaned process on any platform
+- [x] Stopping a running dev server leaves no orphaned process on any platform: the `TERM-07` tests pass on all three ([Desktop Checks on `main`](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/41614184452))
 - [ ] Nothing from the terminal is written to disk
 
 ### Phase 3.3: browser view
