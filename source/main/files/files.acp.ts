@@ -18,7 +18,7 @@ import {
 import type {Reply} from '@/main/nanocoder/fixtures/scripted-provider';
 import {trustDirectory} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
-import type {ProjectInfo, TurnEvent} from '@/shared/ipc';
+import type {ProjectInfo, PromptAttachment, TurnEvent} from '@/shared/ipc';
 
 // A real Nanocoder against a scripted model, as the *.acp.ts tests do. These
 // close two gaps the fake agent cannot: how Nanocoder treats attached files
@@ -48,6 +48,26 @@ const filesFor = (root: string) =>
 		openPath: async () => '',
 		showItemInFolder: () => {},
 	});
+
+// The blocks the desktop would send, built by the production resolver.
+async function attachmentBlocks(
+	root: string,
+	attachments: PromptAttachment[],
+	embedded: boolean,
+): Promise<ContentBlock[]> {
+	const files = filesFor(root);
+	try {
+		const resolved = await resolveAttachments(
+			files.files,
+			projectFor(root),
+			attachments,
+			embedded,
+		);
+		return resolved.blocks;
+	} finally {
+		files.dispose();
+	}
+}
 
 const git = (root: string, ...args: string[]) =>
 	execFileSync('git', args, {
@@ -138,22 +158,18 @@ test('FILE-08 ACP-11 a linked file is read back through the checked handler and 
 			);
 		},
 		blocks: async root => {
-			const files = filesFor(root);
-			try {
-				const resolved = await resolveAttachments(
-					files.files,
-					projectFor(root),
-					[{kind: 'file', path: 'src/notes.txt'}],
-					false,
-				);
-				t.is(resolved.blocks[0].type, 'resource_link');
-				return resolved.blocks;
-			} finally {
-				files.dispose();
-			}
+			const blocks = await attachmentBlocks(
+				root,
+				[{kind: 'file', path: 'src/notes.txt'}],
+				false,
+			);
+			t.is(blocks[0].type, 'resource_link');
+			return blocks;
 		},
 	});
 	t.is(outcome.result.stopReason, 'end_turn');
+	// The desktop sends a link only when Nanocoder does not take embedded context.
+	t.false(outcome.embeddedContext);
 	t.true(seenByModel(outcome.requests).includes(secret));
 });
 
@@ -201,21 +217,41 @@ test('SEC-20 the desktop refuses to read outside the project, but Nanocoder then
 	// after a refused client read. SEC-20 bounds the desktop's answer, not the
 	// agent, which is why attachments are only ever built from checked files and
 	// never from a path the page chose (resolveAttachments).
-	t.true(seenByModel(outcome.requests).includes('OUTSIDE-SECRET-91bd'));
+	t.true(
+		seenByModel(outcome.requests).includes('OUTSIDE-SECRET-91bd'),
+		'The pinned Nanocoder no longer falls back to reading a linked file itself: this is not a desktop defect, so update planning/files-and-review.md',
+	);
 });
 
-test('CHAT-16 GIT-07 a review comment block reaches the model as text', async t => {
+test('CHAT-16 GIT-07 a review comment, built by the production resolver, reaches the model as text', async t => {
 	t.timeout(120_000);
 	const outcome = await turn('comment', [{text: 'Noted.'}], {
-		blocks: () => [
-			{
-				type: 'text',
-				text: 'Review comment on src/a.ts, line 3 (unstaged changes):\n> const a = 1;\nREVIEW-COMMENT-3c5e',
-			},
-		],
+		blocks: async root => {
+			const blocks = await attachmentBlocks(
+				root,
+				[
+					{
+						kind: 'review-comment',
+						path: 'src/a.ts',
+						startLine: 3,
+						endLine: 3,
+						side: 'unstaged',
+						excerpt: 'const a = 1;',
+						comment: 'REVIEW-COMMENT-3c5e',
+					},
+				],
+				false,
+			);
+			t.is(blocks[0].type, 'text');
+			return blocks;
+		},
 	});
 	t.is(outcome.result.stopReason, 'end_turn');
-	t.true(seenByModel(outcome.requests).includes('REVIEW-COMMENT-3c5e'));
+	const seen = seenByModel(outcome.requests);
+	t.true(
+		seen.includes('Review comment on src/a.ts, line 3 (unstaged changes)'),
+	);
+	t.true(seen.includes('REVIEW-COMMENT-3c5e'));
 });
 
 test('GIT-12 with autoCommit on, the commit Nanocoder makes during the turn is listed by the review', async t => {

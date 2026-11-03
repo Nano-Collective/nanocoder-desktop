@@ -3,7 +3,7 @@
 Where Nanocoder Desktop is in the NC process, and the build broken into small phases with checklists, from scaffold to the first public release. No dates: no source gives one.
 
 - Status: Draft
-- Last updated: 2026-10-30
+- Last updated: 2026-11-03
 - Drafted by: @akramcodez
 
 ## How to use this roadmap
