@@ -3,7 +3,7 @@
 The single project terminal.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-11-03
 - Drafted by: @akramcodez
 
 ## Purpose
@@ -26,6 +26,7 @@ Let the user run, test and inspect the project in one PTY tied to the project ro
 | TERM-10 | Start the shell as a login shell where that is the platform norm, so the user's usual `PATH` applies. | Suggestion (not discussed) |
 | TERM-11 | Keyboard focus can always leave the terminal with a documented key, and a screen-reader mode is available (`A11Y-01`). | Decided as a v1 goal ([whitepaper, Milestone 4][wp-next]); specifics Suggestion (not discussed) |
 | TERM-12 | Above the terminal output, show the agent's most recent shell command (from Nanocoder's `execute_bash` tool calls) and its approval result, labelled as the agent's, so it is never mistaken for input typed into this terminal. | Proposed (awaiting @will-lamerton) ([`DESIGN.md`](../../DESIGN.md#terminal), [PR #1][pr1]) |
+| TERM-13 | Output shows the colours programs ask for (ANSI foreground and background, cursor and selection) in both themes, without loosening the style policy. | Suggestion (not discussed) |
 
 ## Behaviour
 

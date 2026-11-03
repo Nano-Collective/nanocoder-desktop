@@ -473,6 +473,82 @@ test('TERM-02/04/06/11 mounted terminal types, escapes, restarts, clears and sto
 		await page.keyboard.press('Enter');
 		await expect(page.locator('.terminal-view')).toContainText('café UI_READY');
 	});
+	await step(
+		'ANSI colours are painted in both themes although the style policy blocks inline styles',
+		async () => {
+			await page.keyboard.insertText(
+				"printf '\\033[31mRED_TEXT\\033[0m \\033[42mGREEN_BG\\033[0m\\n'",
+			);
+			await page.keyboard.press('Enter');
+			const view = page.locator('.terminal-view');
+			const span = (text: string) =>
+				view.locator('.xterm-rows').getByText(text, {exact: true});
+			// Each element is named, so a failure says which one is absent.
+			await expect(span('RED_TEXT')).toBeVisible();
+			await expect(span('GREEN_BG')).toBeVisible();
+			await expect(view.locator('.xterm-cursor')).toBeVisible();
+			// The terminal theme maps ANSI red, ANSI green and the cursor to design tokens.
+			const tokens = () =>
+				page.evaluate(() => {
+					const token = (name: string) => {
+						const probe = document.createElement('span');
+						probe.style.backgroundColor = `var(${name})`;
+						document.body.append(probe);
+						const colour = getComputedStyle(probe).backgroundColor;
+						probe.remove();
+						return colour;
+					};
+					return {
+						red: token('--colors-error'),
+						green: token('--colors-success'),
+						cursor: token('--colors-primary'),
+					};
+				});
+			const painted = () =>
+				view.evaluate(root => {
+					const style = (selector: string, text?: string) => {
+						const found = [...root.querySelectorAll(selector)].find(
+							element => text === undefined || element.textContent === text,
+						);
+						return found ? getComputedStyle(found) : null;
+					};
+					return {
+						red: style('.xterm-rows span', 'RED_TEXT')?.color,
+						green: style('.xterm-rows span', 'GREEN_BG')?.backgroundColor,
+						cursor: style('.xterm-cursor')?.backgroundColor,
+					};
+				});
+			const expectTokens = async () => {
+				const want = await tokens();
+				await expect.poll(painted).toEqual(want);
+			};
+			await expectTokens();
+			// A theme change makes xterm rewrite its own stylesheet, which the mirror must carry over.
+			await page.evaluate(() =>
+				document.documentElement.setAttribute('data-theme', 'light'),
+			);
+			await expectTokens();
+			await page.evaluate(() =>
+				document.documentElement.removeAttribute('data-theme'),
+			);
+			await expectTokens();
+			// Every rule element xterm writes lives inside the terminal and is mirrored,
+			// including the selection and scrollbar rules.
+			const rules = await page.evaluate(() => ({
+				outside: [...document.querySelectorAll('style')].filter(
+					style => !style.closest('.terminal-view'),
+				).length,
+				mirrored: document.adoptedStyleSheets
+					.map(sheet =>
+						[...sheet.cssRules].map(rule => rule.cssText).join('\n'),
+					)
+					.join('\n'),
+			}));
+			expect(rules.outside).toBe(0);
+			expect(rules.mirrored).toContain('.scrollbar > .slider');
+			expect(rules.mirrored).toContain('xterm-selection');
+		},
+	);
 	await step('keyboard escape and focus return', async () => {
 		await input.press('Control+Shift+Tab');
 		await expect(
