@@ -4,7 +4,7 @@ import {
 	type ThreadWorkspaceState,
 	threadWorkspaceForProject,
 } from '@/renderer/thread-workspace';
-import type {IpcResult, NanocoderMode} from '@/shared/ipc';
+import type {IpcResult, NanocoderMode, PromptAttachment} from '@/shared/ipc';
 
 export function useThreads(projectId: string | null, ready: boolean) {
 	const [state, setState] = useState<ThreadWorkspaceState | null>(null);
@@ -52,7 +52,8 @@ export function useThreads(projectId: string | null, ready: boolean) {
 		setDraft: (draft: string) => model.current?.setDraft(draft),
 		create: () => model.current?.create() ?? Promise.resolve(false),
 		open: (id: string) => model.current?.open(id) ?? Promise.resolve(false),
-		send: () => model.current?.send() ?? Promise.resolve(null),
+		send: (attachments?: PromptAttachment[]) =>
+			model.current?.send(attachments) ?? Promise.resolve(null),
 		cancel: (id: string) => model.current?.cancel(id) ?? Promise.resolve(null),
 		answer: (
 			id: string,

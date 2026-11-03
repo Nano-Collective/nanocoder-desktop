@@ -1,3 +1,4 @@
+import type {FilesApi} from '@/shared/files';
 import type {
 	AppInfo,
 	ConnectResult,
@@ -8,6 +9,7 @@ import type {
 	WorkspaceRequests,
 	WorkspaceValues,
 } from '@/shared/ipc';
+import type {ReviewApi} from '@/shared/review';
 
 export type WorkspaceApi = {
 	[K in WorkspaceMethod]: (
@@ -16,6 +18,8 @@ export type WorkspaceApi = {
 };
 
 export interface DesktopApi extends WorkspaceApi {
+	files: FilesApi;
+	review: ReviewApi;
 	getAppInfo(): Promise<IpcResult<AppInfo>>;
 	getNanocoderRuntime(): Promise<IpcResult<NanocoderRuntime>>;
 	connectNanocoder(): Promise<IpcResult<ConnectResult>>;

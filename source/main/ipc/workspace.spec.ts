@@ -520,3 +520,57 @@ test('main-owned recovery refuses unknown or stale handles and renderer paths', 
 	if (!stale.ok) t.is(stale.error.code, 'NOT_FOUND');
 	t.is(launches, 1);
 });
+
+const comment = {
+	kind: 'review-comment',
+	path: 'src/a.ts',
+	startLine: 3,
+	endLine: 4,
+	side: 'unstaged',
+	comment: 'Why?',
+	excerpt: '+a\n+b',
+} as const;
+
+test('CHAT-16 attachments are bounded, strict and carry no authority', async t => {
+	const services: WorkspaceServices = {
+		threads: {
+			promptThread: async () => ({stopReason: 'end_turn' as const}),
+		} as unknown as WorkspaceServices['threads'],
+	};
+	const request = registered(services);
+	for (const attachments of [
+		[{kind: 'file', path: 'a.ts'}],
+		[comment],
+		[{kind: 'file', path: 'a.ts'}, comment],
+		[],
+	])
+		t.true(
+			(await request('promptThread', {...thread, text: 'Hi', attachments})).ok,
+			JSON.stringify(attachments).slice(0, 60),
+		);
+	for (const attachments of [
+		Array.from({length: 21}, () => ({kind: 'file', path: 'a.ts'})),
+		[{kind: 'file', path: ''}],
+		[{kind: 'file', path: 'a'.repeat(4_097)}],
+		[{kind: 'file', path: 'a.ts', trusted: true}],
+		[{kind: 'file', path: 'a.ts', uri: 'file:///etc/passwd'}],
+		[{kind: 'url', path: 'a.ts'}],
+		[{...comment, startLine: 0}],
+		[{...comment, startLine: 5, endLine: 4}],
+		[{...comment, endLine: 3 + 2_001}],
+		[{...comment, comment: ''}],
+		[{...comment, comment: 'x'.repeat(4_001)}],
+		[{...comment, excerpt: 'x'.repeat(20_001)}],
+		[{...comment, side: 'both'}],
+		[{...comment, extra: 1}],
+		'not-an-array',
+	]) {
+		const result = await request('promptThread', {
+			...thread,
+			text: 'Hi',
+			attachments,
+		});
+		t.false(result.ok, JSON.stringify(attachments).slice(0, 80));
+		if (!result.ok) t.is(result.error.code, 'VALIDATION');
+	}
+});

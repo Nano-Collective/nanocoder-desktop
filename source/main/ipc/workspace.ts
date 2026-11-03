@@ -23,6 +23,26 @@ const empty = z.strictObject({});
 const projectRequest = z.strictObject(project);
 const threadRequest = z.strictObject(thread);
 
+const relativePath = z.string().min(1).max(4096);
+const attachmentSchema = z.discriminatedUnion('kind', [
+	z.strictObject({kind: z.literal('file'), path: relativePath}),
+	z
+		.strictObject({
+			kind: z.literal('review-comment'),
+			path: relativePath,
+			startLine: z.number().int().min(1).max(10_000_000),
+			endLine: z.number().int().min(1).max(10_000_000),
+			side: z.enum(['staged', 'unstaged']),
+			comment: z.string().trim().min(1).max(4_000),
+			excerpt: z.string().max(20_000),
+		})
+		.refine(
+			value =>
+				value.endLine >= value.startLine &&
+				value.endLine - value.startLine <= 2_000,
+		),
+]);
+
 const workspaceSchemas: {
 	[K in WorkspaceMethod]: z.ZodType<WorkspaceRequests[K]>;
 } = {
@@ -71,6 +91,7 @@ const workspaceSchemas: {
 	promptThread: z.strictObject({
 		...thread,
 		text: z.string().trim().min(1).max(100_000),
+		attachments: z.array(attachmentSchema).max(20).optional(),
 	}),
 	cancelThread: threadRequest,
 	setThreadMode: z.strictObject({...thread, mode}),
