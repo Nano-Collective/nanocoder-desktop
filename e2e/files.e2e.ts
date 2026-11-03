@@ -202,6 +202,14 @@ test('SP-07 FILE-04 a text file previews with highlighting, and binary and non-U
 	await expect(preview.locator('.cm-content')).toContainText(
 		'export const a = 1;',
 	);
+	// Plain text would pass the check above; a keyword token with its own colour proves highlighting.
+	const keyword = preview.locator('.cm-line span', {hasText: /^export$/});
+	await expect(keyword.first()).toBeVisible();
+	const colours = await keyword.first().evaluate(element => ({
+		token: getComputedStyle(element).color,
+		line: getComputedStyle(element.closest('.cm-line') as Element).color,
+	}));
+	expect(colours.token).not.toBe(colours.line);
 	await expect(
 		preview.getByRole('textbox', {name: 'contents of src/a.ts'}),
 	).toHaveAttribute('aria-readonly', 'true');

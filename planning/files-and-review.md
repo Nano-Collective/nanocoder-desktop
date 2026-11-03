@@ -36,7 +36,7 @@ Each is one constant in `source/main/files/limits.ts` or `source/main/git/git-se
 | Status time | 5 seconds | `LIMIT` with a retry |
 | Diff size | 1 MiB | `too-large` with `open in editor` |
 | Diff rows drawn | 5,000 | The rest is left to an editor |
-| Attachments per message | 20 | Further ones are ignored |
+| Attachments per message | 20 | The renderer ignores further ones and the prompt schema in `source/main/ipc/workspace.ts` refuses more |
 
 ## Browsing and preview
 
