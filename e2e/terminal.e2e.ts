@@ -482,7 +482,7 @@ test('TERM-02/04/06/11 mounted terminal types, escapes, restarts, clears and sto
 			await page.keyboard.press('Enter');
 			const view = page.locator('.terminal-view');
 			const span = (text: string) =>
-				view.locator('.xterm-rows span', {hasText: new RegExp(`^${text}$`)});
+				view.locator('.xterm-rows').getByText(text, {exact: true});
 			// Each element is named, so a failure says which one is absent.
 			await expect(span('RED_TEXT')).toBeVisible();
 			await expect(span('GREEN_BG')).toBeVisible();
