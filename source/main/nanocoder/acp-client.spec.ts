@@ -735,6 +735,42 @@ test('probes extensions with no session ID or title and tries prefixed then bare
 	}
 });
 
+test('CHAT-12 rename uses only the probed method and refuses bad titles and replies', async t => {
+	const unprobed = await connect(fakeProject('extensions'));
+	await t.throwsAsync(unprobed.renameSession('fake-session', 'Title'), {
+		code: 'UNSUPPORTED',
+		message: 'Session rename is unavailable',
+	});
+	await unprobed.close();
+	const connection = await connect(fakeProject('extensions'));
+	await connection.probeExtensions();
+	t.is(
+		await connection.renameSession('fake-session', '  Release notes  '),
+		'Release notes (saved)',
+	);
+	await t.throwsAsync(connection.renameSession('fake-session', '   '), {
+		code: 'UNSUPPORTED',
+		message: 'Choose a non-empty, bounded title',
+	});
+	await t.throwsAsync(connection.renameSession('gone-session', 'Title'), {
+		code: 'NOT_FOUND',
+	});
+	for (const title of ['malformed reply', 'empty reply', 'internal failure'])
+		await t.throwsAsync(connection.renameSession('fake-session', title), {
+			code: 'AGENT_UNAVAILABLE',
+			message: 'Nanocoder could not rename the session',
+		});
+	await connection.close();
+	t.like(
+		fakeEvents(connection.stderr.lines()).find(
+			e =>
+				e.method === 'renameSession' &&
+				(e.params as {sessionId?: string} | undefined)?.sessionId,
+		)?.params,
+		{sessionId: 'fake-session', title: 'Release notes'},
+	);
+});
+
 test('unknown extension methods fail closed', async t => {
 	const connection = await connect(fakeProject());
 	t.deepEqual(await connection.probeExtensions(), {
@@ -757,6 +793,16 @@ test('ambiguous, unexpectedly successful and silent probes never enable features
 		});
 		await connection.close();
 	}
+});
+
+test('CHAT-12 title notifications reach the owner only when they parse as bounded titles', async t => {
+	const titles: unknown[] = [];
+	const connection = await connect(fakeProject('title-notice'), {
+		onTitleChanged: change => titles.push(change),
+	});
+	await connection.newSession('normal');
+	await connection.close();
+	t.deepEqual(titles, [{sessionId: 'fake-session', title: 'Fixture title'}]);
 });
 
 test('ACP-11 SEC-20 the agent reads a linked project file through the checked handler and is refused outside the project', async t => {

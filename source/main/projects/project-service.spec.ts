@@ -471,3 +471,30 @@ test('picker failures return a fixed refusal without exposing their inputs (SEC-
 	});
 	t.false(error?.message.includes('fixture-sensitive-value'));
 });
+
+test('unsupported or failed probes refuse opening without trust; later actions stay unavailable (ACP-04)', async t => {
+	const {root, choose, service, store, outcome} = await fixture(t);
+	choose(root);
+	const added = await service.addProject({});
+	if (added.status !== 'selected') return t.fail();
+	for (const [status, code] of [
+		['unsupported', 'UNSUPPORTED'],
+		['failed', 'AGENT_UNAVAILABLE'],
+	] as const) {
+		outcome(status);
+		await t.throwsAsync(service.openProject({projectId: added.project.id}), {
+			code,
+			message: 'Nanocoder could not start',
+		});
+		t.false(store.projects.get(added.project.id)?.trusted);
+	}
+	for (const action of [
+		() => service.removeProject({projectId: added.project.id}),
+		() =>
+			service.setProjectDefaultMode({
+				projectId: added.project.id,
+				mode: 'plan',
+			} as never),
+	])
+		await t.throwsAsync(action(), {code: 'UNAVAILABLE'});
+});

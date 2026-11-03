@@ -4,6 +4,7 @@ import {FILES_CHANNELS, type FilesEvent} from '@/shared/files';
 import {CHANNELS} from '@/shared/ipc';
 import {projectEventForListener} from '@/shared/project-events';
 import {REVIEW_CHANNELS} from '@/shared/review';
+import {TERMINAL_CHANNELS, type TerminalEvent} from '@/shared/terminal';
 
 const api: DesktopApi = {
 	files: {
@@ -21,6 +22,21 @@ const api: DesktopApi = {
 	review: {
 		status: request => ipcRenderer.invoke(REVIEW_CHANNELS.status, request),
 		diff: request => ipcRenderer.invoke(REVIEW_CHANNELS.diff, request),
+	},
+	terminal: {
+		get: request => ipcRenderer.invoke(TERMINAL_CHANNELS.get, request),
+		start: request => ipcRenderer.invoke(TERMINAL_CHANNELS.start, request),
+		stop: request => ipcRenderer.invoke(TERMINAL_CHANNELS.stop, request),
+		restart: request => ipcRenderer.invoke(TERMINAL_CHANNELS.restart, request),
+		resize: request => ipcRenderer.invoke(TERMINAL_CHANNELS.resize, request),
+		write: request => ipcRenderer.invoke(TERMINAL_CHANNELS.write, request),
+		clear: request => ipcRenderer.invoke(TERMINAL_CHANNELS.clear, request),
+		onEvent: listener => {
+			const handler = (_event: unknown, event: TerminalEvent) =>
+				listener(event);
+			ipcRenderer.on(TERMINAL_CHANNELS.event, handler);
+			return () => ipcRenderer.removeListener(TERMINAL_CHANNELS.event, handler);
+		},
 	},
 	getSettings: request => ipcRenderer.invoke(CHANNELS.getSettings, request),
 	updateSettings: request =>

@@ -18,6 +18,7 @@ import {
 	type Page,
 	test,
 } from '@playwright/test';
+import {build} from 'vite';
 import {shortRoot} from '@/renderer/recency';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {
@@ -30,11 +31,63 @@ import {
 } from '@/shared/ipc';
 import {electron} from './qa/electron';
 import {qaEnvironment} from './qa/environment';
+import type {projectHydrationHarness} from './qa/project-hydration-harness';
+import {openSeededProject} from './qa/seeded-project';
 import {visibleTextContrast} from './qa/ui-contrast';
 
 let work: string;
 let app: ElectronApplication;
 let page: Page;
+let hydrationCode: Promise<string> | undefined;
+
+interface HydrationWindow extends Window {
+	projectHydrationFixture: {
+		projectHydrationHarness: typeof projectHydrationHarness;
+	};
+}
+
+function hydrationFixtureCode(): Promise<string> {
+	hydrationCode ??= build({
+		configFile: false,
+		logLevel: 'silent',
+		define: {
+			'process.env.NODE_ENV': JSON.stringify('production'),
+			'window.desktop': 'window.projectHydrationBridge',
+		},
+		resolve: {alias: {'@': path.resolve(import.meta.dirname, '../source')}},
+		build: {
+			write: false,
+			minify: false,
+			lib: {
+				entry: path.join(
+					import.meta.dirname,
+					'qa/project-hydration-harness.ts',
+				),
+				name: 'projectHydrationFixture',
+				formats: ['iife'],
+			},
+		},
+	}).then(result => {
+		const outputs = Array.isArray(result) ? result : [result];
+		const code = outputs
+			.flatMap(output => ('output' in output ? output.output : []))
+			.filter(chunk => chunk.type === 'chunk')
+			.map(chunk => chunk.code)
+			.join('\n');
+		if (!code) throw new Error('Missing project hydration fixture');
+		return code;
+	});
+	return hydrationCode;
+}
+
+async function mountHydrationFixture(code: string, controlled: boolean) {
+	await page.evaluate(code);
+	await page.evaluate(controlled => {
+		(
+			window as unknown as HydrationWindow
+		).projectHydrationFixture.projectHydrationHarness.mount(controlled);
+	}, controlled);
+}
 
 async function launch() {
 	app = await electron.launch({
@@ -399,6 +452,82 @@ async function openRuntimeDetails() {
 async function closeDialog(dialog: Locator) {
 	await page.keyboard.press('Escape');
 	await expect(dialog).toBeHidden();
+}
+
+for (const ordering of ['initial empty', 'delayed empty'] as const) {
+	test(`recents stay coherent after ${ordering} hydration and the seeded helper opens a closed compact switcher`, async () => {
+		const code = await hydrationFixtureCode();
+		await mountHydrationFixture(code, true);
+		await page.evaluate(() =>
+			(
+				window as unknown as HydrationWindow
+			).projectHydrationFixture.projectHydrationHarness.waitForEmptyRead(),
+		);
+		if (ordering === 'initial empty') {
+			await page.evaluate(() =>
+				(
+					window as unknown as HydrationWindow
+				).projectHydrationFixture.projectHydrationHarness.releaseEmpty(),
+			);
+		}
+		const root = path.join(work, 'project');
+		mkdirSync(root);
+		writeFileSync(path.join(root, '.fake-nanocoder'), 'untrusted');
+		const project = await add(root);
+		await picker(root, 0);
+		expect(await call('openProject', {projectId: project.id})).toMatchObject({
+			ok: true,
+			value: {status: 'opened'},
+		});
+		const recent = projectsRecent();
+		const assertCoherent = async () => {
+			expect(await call('listProjects', {})).toMatchObject({
+				ok: true,
+				value: [{id: project.id, canonicalRoot: root}],
+			});
+			expect(await call('getUiState', {})).toMatchObject({
+				ok: true,
+				value: {activeProjectId: project.id},
+			});
+			expect(
+				await call('getSupervisorState', {projectId: project.id}),
+			).toMatchObject({ok: true, value: {status: 'ready'}});
+			await expect(page.locator('.project-switch-root')).toHaveText(root);
+			await showProjects();
+			await expect(recent.locator('.projects-dialog-item')).toHaveCount(1);
+			await expect(recent.locator('.projects-dialog-row')).toHaveAttribute(
+				'aria-current',
+				'true',
+			);
+			await expect(recent.locator('.projects-dialog-root')).toHaveText(root);
+			await expect(
+				recent.getByRole('button', {name: 'open project', exact: true}),
+			).toBeEnabled();
+			await expect(recent).not.toContainText('no recent projects');
+		};
+		await assertCoherent();
+		if (ordering === 'delayed empty') {
+			await page.evaluate(() =>
+				(
+					window as unknown as HydrationWindow
+				).projectHydrationFixture.projectHydrationHarness.releaseEmpty(
+					'settled',
+				),
+			);
+			await assertCoherent();
+		}
+		await openSeededProject(page, root, async () => {
+			await page.reload();
+			await mountHydrationFixture(code, false);
+			await expect(page.locator('.project-switch-root')).toHaveText(root);
+			await expect(projectsDialog()).toBeHidden();
+		});
+		expect(
+			await app.evaluate(
+				() => (globalThis as {projectPickerCalls?: number}).projectPickerCalls,
+			),
+		).toBe(0);
+	});
 }
 
 test('a recent-project action opens by id without reopening the folder picker (CHAT-02)', async () => {

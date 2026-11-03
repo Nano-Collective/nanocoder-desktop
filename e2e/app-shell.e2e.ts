@@ -418,6 +418,7 @@ test('keyboard controls remain reachable and visibly focused inside the stream i
 				page.getByRole('button', {name: 'keyboard shortcuts', exact: true}),
 				page.getByRole('button', {name: 'thread actions', exact: true}),
 				page.getByRole('button', {name: 'open project files', exact: true}),
+				page.getByRole('button', {name: 'open terminal', exact: true}),
 				palette,
 				stream,
 				input,

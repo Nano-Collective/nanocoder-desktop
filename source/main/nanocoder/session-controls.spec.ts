@@ -398,3 +398,16 @@ test('raw notification frames require own valid notification fields and non-empt
 	);
 	t.deepEqual(f.updates, ['two']);
 });
+
+test('a hostile notification frame whose property reads throw is ignored (ACP-14 SEC-07)', t => {
+	const f = fixture();
+	const hostile = new Proxy(
+		{},
+		{
+			getOwnPropertyDescriptor() {
+				throw new Error('secret getter');
+			},
+		},
+	);
+	t.false(f.controls.receiveConfigNotification(hostile));
+});

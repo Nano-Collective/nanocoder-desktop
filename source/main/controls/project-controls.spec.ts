@@ -443,3 +443,16 @@ test('late config success after invalidation stays reserved through settlement a
 	);
 	t.is(f.calls.length, 1);
 });
+
+test('a root check that fails refuses with a fixed message before any config RPC (ACP-14 SEC-07)', async t => {
+	const f = fixture();
+	await f.observe();
+	f.canonicalise(async () => {
+		throw new Error('ENOENT /secret/root');
+	});
+	await t.throwsAsync(f.controls.setProjectConfigOption(f.request()), {
+		code: 'DENIED',
+		message: 'The project root changed; locate and trust it again',
+	});
+	t.deepEqual(f.calls, []);
+});

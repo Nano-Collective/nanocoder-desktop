@@ -273,3 +273,94 @@ test('the summary inspects plugins, custom tools and subscribed Markdown without
 	t.false(existsSync(marker));
 	t.false(JSON.stringify(summary).includes('fixture-private'));
 });
+
+test('malformed declarations refuse with fixed messages and never summarise as empty (SEC-17)', async t => {
+	const cases: Array<[string, (root: string) => void, string]> = [
+		[
+			'non-object config',
+			root => writeFileSync(path.join(root, 'agents.config.json'), '[]'),
+			'Project trust configuration cannot be summarised',
+		],
+		[
+			'invalid JSON',
+			root => writeFileSync(path.join(root, '.mcp.json'), '{secret'),
+			'Project trust configuration cannot be summarised',
+		],
+		[
+			'non-array formatters',
+			root =>
+				writeFileSync(
+					path.join(root, 'agents.config.json'),
+					JSON.stringify({nanocoder: {formatters: {secret: true}}}),
+				),
+			'Project trust configuration cannot be summarised',
+		],
+		[
+			'invalid YAML front matter',
+			root => {
+				mkdirSync(path.join(root, '.nanocoder/agents'), {recursive: true});
+				writeFileSync(
+					path.join(root, '.nanocoder/agents/a.md'),
+					'---\nsubscribe: [secret\n---\n',
+				);
+			},
+			'Project subscription metadata cannot be summarised',
+		],
+		[
+			'config folder',
+			root => mkdirSync(path.join(root, 'agents.config.json')),
+			'A project declaration is not a regular file',
+		],
+		[
+			'plugins file',
+			root => {
+				mkdirSync(path.join(root, '.nanocoder'));
+				writeFileSync(path.join(root, '.nanocoder/plugins'), 'x');
+			},
+			'Project declarations contain an invalid directory',
+		],
+	];
+	for (const [label, build, message] of cases) {
+		const root = fixture(t);
+		build(root);
+		const error = await t.throwsAsync(readTrustSummary(root), {
+			instanceOf: IpcFailure,
+		});
+		t.is(error?.message, message, label);
+		t.false(error?.message.includes('secret'), label);
+	}
+	const root = fixture(t);
+	await t.throwsAsync(readTrustSummary(`${root}/./`), {
+		message: 'Choose an available canonical project folder',
+	});
+	await t.throwsAsync(readTrustSummary('relative/project'), {
+		message: 'Choose an available canonical project folder',
+	});
+});
+
+test('a skills symlink inside the project is followed and counted once (SEC-03)', async t => {
+	const root = fixture(t);
+	mkdirSync(path.join(root, 'shared/review'), {recursive: true});
+	writeFileSync(
+		path.join(root, 'shared/review/SKILL.md'),
+		'---\nsubscribe: true\n---\n',
+	);
+	mkdirSync(path.join(root, '.nanocoder/skills'), {recursive: true});
+	symlinkSync(
+		path.join(root, 'shared/review'),
+		path.join(root, '.nanocoder/skills/review'),
+		'junction',
+	);
+	t.is((await readTrustSummary(root)).counts.subscribedSkills, 1);
+});
+
+test('an unreadable declaration path refuses with a fixed message (SEC-07)', async t => {
+	// Windows reports a file in place of a folder as ENOENT, i.e. absent.
+	if (process.platform === 'win32') return t.pass();
+	const root = fixture(t);
+	writeFileSync(path.join(root, '.nanocoder'), 'secret');
+	await t.throwsAsync(readTrustSummary(root), {
+		code: 'DENIED',
+		message: 'Project trust declarations cannot be inspected',
+	});
+});

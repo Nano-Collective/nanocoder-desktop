@@ -415,3 +415,208 @@ test('malformed vendor fields report fixed names without copying payloads (ACP-1
 	]);
 	t.false(JSON.stringify({event, fields}).includes('synthetic-private'));
 });
+
+const map = (update: unknown, history = false) =>
+	toTurnEvent(update as SessionUpdate, {history});
+
+test('media, terminal content and unserialisable tool values are named, never forwarded (CHAT-05)', t => {
+	t.deepEqual(
+		map({
+			sessionUpdate: 'agent_message_chunk',
+			content: {type: 'audio', data: 'AA==', mimeType: 'audio/wav'},
+		}),
+		{type: 'text', text: '[audio not played]'},
+	);
+	const tool = map({
+		sessionUpdate: 'tool_call_update',
+		toolCallId: 'call',
+		content: [
+			{type: 'terminal', terminalId: 'secret-terminal'},
+			{
+				type: 'content',
+				content: {
+					type: 'resource',
+					resource: {uri: 'file:///secret', text: 'secret'},
+				},
+			},
+			{
+				type: 'content',
+				content: {type: 'resource_link', name: 'notes', uri: 'file:///x'},
+			},
+		],
+		rawInput: 'plain input',
+		rawOutput: {big: 1n},
+	}) as {details?: Record<string, unknown>};
+	t.deepEqual(tool.details?.content, [
+		'[agent terminal output unavailable]',
+		'[embedded resource not displayed]',
+		'[resource: notes (not opened)]',
+	]);
+	t.is(tool.details?.input, 'plain input');
+	t.is(tool.details?.output, '[unavailable]');
+	t.false(JSON.stringify(tool).includes('secret'));
+});
+
+test('notices are live only; compaction, subagent and session messages keep nulls distinct (CHAT-05 SUB-01)', t => {
+	const notice = {
+		sessionUpdate: 'notice',
+		severity: 'warning',
+		title: 'Heads up',
+		description: 'Details',
+	};
+	t.deepEqual(map(notice), {
+		type: 'notice',
+		severity: 'warning',
+		title: 'Heads up',
+		description: 'Details',
+	});
+	t.is(map(notice, true), undefined);
+	t.deepEqual(
+		map({
+			sessionUpdate: 'compaction_update',
+			compactionId: 'c',
+			status: 'failed',
+			summary: null,
+			error: 'too long',
+		}),
+		{
+			type: 'compaction',
+			id: 'c',
+			status: 'failed',
+			summary: null,
+			error: 'too long',
+		},
+	);
+	t.deepEqual(
+		map({
+			sessionUpdate: 'compaction_update',
+			compactionId: 'c',
+			status: 'done',
+			summary: [{type: 'text', text: 'short'}],
+			error: null,
+		}),
+		{
+			type: 'compaction',
+			id: 'c',
+			status: 'done',
+			summary: 'short',
+			error: null,
+		},
+	);
+	t.deepEqual(
+		map({
+			sessionUpdate: 'subagent_update',
+			sessionId: 's',
+			title: null,
+			description: 'Reviewing',
+			state: {state: 'invented'},
+		}),
+		{
+			type: 'subagent',
+			id: 's',
+			title: null,
+			description: 'Reviewing',
+			state: 'unknown',
+		},
+	);
+	t.deepEqual(
+		map({
+			sessionUpdate: 'subagent_update',
+			sessionId: 's',
+			title: 'Reviewer',
+			description: null,
+			state: null,
+		}),
+		{
+			type: 'subagent',
+			id: 's',
+			title: 'Reviewer',
+			description: null,
+			state: null,
+		},
+	);
+	t.deepEqual(
+		map({
+			sessionUpdate: 'session_message_chunk',
+			messageId: 'm',
+			senderSessionId: 'a',
+			recipientSessionId: 'b',
+			content: {type: 'text', text: 'hello'},
+		}),
+		{
+			type: 'session-message',
+			id: 'm',
+			sender: 'a',
+			recipient: 'b',
+			text: 'hello',
+			append: true,
+		},
+	);
+	t.deepEqual(
+		map({sessionUpdate: 'session_message', messageId: 'm', content: null}),
+		{type: 'session-message', id: 'm', text: '', append: false},
+	);
+	t.deepEqual(
+		map({
+			sessionUpdate: 'session_message',
+			messageId: 'm',
+			content: [
+				{type: 'text', text: 'one'},
+				{type: 'text', text: 'two'},
+			],
+		}),
+		{type: 'session-message', id: 'm', text: 'one\ntwo', append: false},
+	);
+	t.is(map({sessionUpdate: 'invented_update'}), undefined);
+});
+
+test('optional fields stay absent and bounded plans and usage keep only safe values (CHAT-05 ACP-12)', t => {
+	t.deepEqual(
+		map({
+			sessionUpdate: 'plan_update',
+			plan: {
+				type: 'items',
+				planId: 'p',
+				entries: [{content: 'step', priority: 'high', status: 'pending'}],
+			},
+		}),
+		{
+			type: 'plan',
+			id: 'p',
+			content: {
+				kind: 'items',
+				entries: [{content: 'step', priority: 'high', status: 'pending'}],
+			},
+		},
+	);
+	t.deepEqual(
+		map({
+			sessionUpdate: 'usage_update',
+			used: 10,
+			size: 100,
+			cost: {amount: -1, currency: 'GBP'},
+		}),
+		{type: 'context', used: 10, size: 100},
+	);
+	t.deepEqual(
+		map({sessionUpdate: 'notice', severity: 'info', title: 'Only a title'}),
+		{type: 'notice', severity: 'info', title: 'Only a title'},
+	);
+	t.deepEqual(
+		map({
+			sessionUpdate: 'compaction_update',
+			compactionId: 'c',
+			status: 'started',
+		}),
+		{type: 'compaction', id: 'c', status: 'started'},
+	);
+	t.deepEqual(map({sessionUpdate: 'subagent_update', sessionId: 's'}), {
+		type: 'subagent',
+		id: 's',
+	});
+	t.deepEqual(map({sessionUpdate: 'session_message', messageId: 'm'}), {
+		type: 'session-message',
+		id: 'm',
+		append: false,
+	});
+});

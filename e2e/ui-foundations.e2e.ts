@@ -209,6 +209,12 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 		name: 'command palette',
 		exact: true,
 	});
+	const terminal = page.getByRole('button', {
+		name: 'open terminal',
+		exact: true,
+	});
+	await expect(terminal).toHaveAttribute('aria-expanded', 'false');
+	await expect(page.locator('.shell-bottom-panel')).toHaveCount(0);
 	const rail = page.getByRole('region', {name: 'project threads'});
 	const input = page.getByRole('textbox', {name: 'message'});
 	const send = page.getByRole('button', {name: 'send', exact: true});
@@ -226,6 +232,7 @@ test('keyboard focus is visible on buttons and the message input', async () => {
 		page.getByRole('button', {name: 'keyboard shortcuts', exact: true}),
 		page.getByRole('button', {name: 'thread actions', exact: true}),
 		page.getByRole('button', {name: 'open project files', exact: true}),
+		terminal,
 		palette,
 		page.getByRole('region', {name: 'conversation', exact: true}),
 		input,
@@ -266,6 +273,12 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		exact: true,
 	});
 	const rail = page.getByRole('region', {name: 'project threads'});
+	const terminal = page.getByRole('button', {
+		name: 'open terminal',
+		exact: true,
+	});
+	await expect(terminal).toHaveAttribute('aria-expanded', 'false');
+	await expect(page.locator('.shell-bottom-panel')).toHaveCount(0);
 	const focusOrder = [
 		switcher,
 		rail.getByRole('button', {name: 'new thread', exact: true}),
@@ -276,6 +289,7 @@ test('approval parts have named actions and no new contrast gaps in either theme
 		page.getByRole('button', {name: 'keyboard shortcuts', exact: true}),
 		page.getByRole('button', {name: 'thread actions', exact: true}),
 		page.getByRole('button', {name: 'open project files', exact: true}),
+		terminal,
 		page.getByRole('button', {name: 'command palette', exact: true}),
 		page.getByRole('region', {name: 'conversation', exact: true}),
 		card.getByRole('button', {name: 'Allow', exact: true}),

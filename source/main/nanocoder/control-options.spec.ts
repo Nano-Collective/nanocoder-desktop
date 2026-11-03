@@ -1,5 +1,8 @@
 import test from 'ava';
-import {projectConfigOptions} from '@/main/nanocoder/control-options';
+import {
+	projectConfigOptions,
+	sessionModeOptions,
+} from '@/main/nanocoder/control-options';
 
 const offered = (id = 'model', values = ['fixture-model']) => ({
 	id,
@@ -108,4 +111,14 @@ test('control projection never executes getters on offers (CHAT-10 ACP-14)', t =
 	const projected = projectConfigOptions([value]);
 	t.is(reads, 0);
 	t.is(projected, undefined);
+});
+
+test('hostile option arrays whose property reads throw fail closed (ACP-13 SEC-07)', t => {
+	const hostile = new Proxy([{id: 'normal'}], {
+		getOwnPropertyDescriptor() {
+			throw new Error('secret getter');
+		},
+	});
+	t.deepEqual(sessionModeOptions(hostile), []);
+	t.is(projectConfigOptions(hostile), undefined);
 });

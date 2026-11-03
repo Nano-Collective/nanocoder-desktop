@@ -29,6 +29,12 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/paths.ts` | Shared native realpath canonicalisation (symlinks and volume case aliases) and component containment |
 | `source/main/ipc/handle-request.ts` | Sender check, schema validation and the result shape for every IPC call |
 | `source/main/ipc/index.ts` | Registers the IPC handlers |
+| `source/main/terminal/`, `source/main/ipc/terminal.ts`, `source/shared/terminal.ts` | Isolated utility-process PTY, main-owned active-project lifecycle, bounded memory-only output and strict typed terminal IPC (`TERM-01` to `TERM-10`) |
+| `source/main/terminal/agent-command.ts` | Passive bounded last-command and accepted-option display projection (`TERM-12`), never a terminal or permission capability |
+| `source/renderer/terminal-panel.tsx`, `source/renderer/terminal-view.tsx`, `source/renderer/styles/terminal.css` | Token-based xterm bottom dock, explicit lifecycle controls, separate agent display and keyboard/screen-reader access |
+| `source/renderer/terminal-controller.ts`, `source/renderer/use-terminal.ts` | Project-scoped sequenced terminal data, bounded memory, pending actions and stale-result refusal |
+| `source/renderer/terminal-output.ts` | Serialised xterm writes and supported screen-reader queue reset on clear and stop |
+| `e2e/terminal.e2e.ts`, `planning/terminal.md` | Hidden native teardown, terminal UI, focus, contrast and theme/width screenshots, plus local implementation limits |
 | `source/main/ipc/workspace.ts` | Strict workspace request schemas and injectable handlers; absent services return `UNAVAILABLE` |
 | `source/main/files/safe-path.ts`, `source/main/files/limits.ts` | The one relative-path validator, contained realpath resolution and post-open identity check, and every bound the file service and ACP reads share (`SEC-03`, `SEC-04`) |
 | `source/main/files/file-service.ts`, `source/main/files/encoding.ts` | Lazy one-folder listings, bounded text previews, encoding detection that never rewrites, and the `.git` and outside-link refusals (`FILE-01` to `FILE-04`, `FILE-10`) |

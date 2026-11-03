@@ -856,3 +856,15 @@ test('an aborted preflight is cleaned up and never leaves a cached success (ACP-
 	await f.verify();
 	t.is(f.launches.length, 2);
 });
+
+test('a CLI whose identity cannot be read is refused before launching (ACP-20)', async t => {
+	const f = fixture(t);
+	await t.throwsAsync(
+		f.preflight.verify(
+			{...f.runtime, cliPath: `${f.runtime.cliPath}.missing`},
+			path.join(path.parse(tmpdir()).root, 'nd-unrelated-project'),
+		),
+		{code: 'UNSUPPORTED'},
+	);
+	t.is(f.launches.length, 0);
+});

@@ -16,6 +16,7 @@ import {createFilesRuntime, type FilesRuntime} from '@/main/files/runtime';
 import {registerFilesHandlers} from '@/main/ipc/files';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
+import {registerTerminalHandlers} from '@/main/ipc/terminal';
 import {registerWorkspaceHandlers} from '@/main/ipc/workspace';
 import type {WorkspaceServices} from '@/main/ipc/workspace-services';
 import {disposeDesktop} from '@/main/lifecycle';
@@ -29,6 +30,9 @@ import type {TrustRefusal} from '@/main/nanocoder/trust';
 import {confirmProjectTrust} from '@/main/projects/project-consent';
 import {createProjectService} from '@/main/projects/project-service';
 import {isAllowedOrigin} from '@/main/security';
+import {AgentCommandObserver} from '@/main/terminal/agent-command';
+import {TerminalService} from '@/main/terminal/terminal-service';
+import {createUtilityPtyHost} from '@/main/terminal/utility-host';
 import {deleteHistoryDialog} from '@/main/threads/delete-history-consent';
 import {createThreadService} from '@/main/threads/thread-service';
 import {APP_NAME} from '@/shared/app-info';
@@ -41,6 +45,7 @@ import {
 	type ProjectEvent,
 	type ProjectInfo,
 } from '@/shared/ipc';
+import {TERMINAL_CHANNELS, type TerminalEvent} from '@/shared/terminal';
 
 const runtimeDiscovery = new AbortController();
 const lookupRuntime = createLookup(() =>
@@ -65,6 +70,10 @@ let filesRuntime: FilesRuntime | undefined;
 let appOrigins: readonly string[] = [];
 let workspaceServices: WorkspaceServices = {};
 let unsubscribeProjectEvents: (() => void) | undefined;
+let terminal: TerminalService | undefined;
+const agentCommands = new AgentCommandObserver((projectId, command) =>
+	terminal?.setAgentCommand(projectId, command),
+);
 
 function availableControls() {
 	if (!controlRuntime)
@@ -87,6 +96,7 @@ function stopProject(projectId: string) {
 
 // Only windows showing the app get events; the renderer never sees the IPC event object.
 function sendProjectEvent(event: ProjectEvent): void {
+	agentCommands.observe(event);
 	for (const window of BrowserWindow.getAllWindows()) {
 		if (
 			!window.webContents.isDestroyed() &&
@@ -104,6 +114,17 @@ function sendFilesEvent(event: FilesEvent): void {
 			isAllowedOrigin(window.webContents.getURL(), appOrigins)
 		) {
 			window.webContents.send(FILES_CHANNELS.event, event);
+		}
+	}
+}
+
+function sendTerminalEvent(event: TerminalEvent): void {
+	for (const window of BrowserWindow.getAllWindows()) {
+		if (
+			!window.webContents.isDestroyed() &&
+			isAllowedOrigin(window.webContents.getURL(), appOrigins)
+		) {
+			window.webContents.send(TERMINAL_CHANNELS.event, event);
 		}
 	}
 }
@@ -183,6 +204,7 @@ async function connect(): Promise<ConnectResult> {
 		if (runtimeDiscovery.signal.aborted)
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'The desktop is shutting down');
 		activeProjectId = undefined;
+		agentCommands.reset(null);
 		activeProjectId = selected.project.id;
 		const opened = await untilAborted(
 			Promise.resolve(projects.openProject({projectId: selected.project.id})),
@@ -232,6 +254,7 @@ export function closeNanocoder(): Promise<void> {
 		cancelPermissions: async () => {
 			try {
 				await Promise.all([
+					terminal?.close(),
 					rendererCleanup,
 					connecting,
 					threads?.detach(workspaceServices.store?.projects.list() ?? []),
@@ -257,8 +280,10 @@ function watchRenderer(contents: WebContents): void {
 		);
 		rendererAttachment = new AbortController();
 		activeProjectId = undefined;
+		agentCommands.reset(null);
 		invalidateControls();
 		rendererCleanup = Promise.allSettled([
+			terminal?.activate(null),
 			rendererCleanup,
 			threads?.detach(
 				runtimeDiscovery.signal.aborted
@@ -286,6 +311,15 @@ export function registerIpcHandlers(
 	services: WorkspaceServices = {},
 ): void {
 	appOrigins = allowedOrigins;
+	if (services.store) {
+		const store = services.store;
+		terminal = new TerminalService({
+			project: id => store.projects.get(id),
+			projects: () => store.projects.list(),
+			createHost: createUtilityPtyHost,
+			emit: sendTerminalEvent,
+		});
+	}
 	supervisor = services.supervisor
 		? undefined
 		: new ProjectSupervisor({
@@ -414,6 +448,10 @@ export function registerIpcHandlers(
 							stop: stopProject,
 						},
 						signal: () => rendererAttachment.signal,
+						beforeOpenProject: async project => {
+							agentCommands.reset(project.id);
+							await terminal?.activate(project.id);
+						},
 						projectsChanged: projectId =>
 							ownedSupervisor.publishProjectsChanged(projectId),
 						announceProject: project => {
@@ -541,11 +579,23 @@ export function registerIpcHandlers(
 				setProjectDefaultMode: controlRuntime.setProjectDefaultMode,
 			};
 	}
+	const commandThreads = workspaceServices.threads;
+	if (commandThreads)
+		workspaceServices.threads = {
+			...commandThreads,
+			answerThreadPermission: async request => {
+				const accepted = agentCommands.capture(request);
+				const result = await commandThreads.answerThreadPermission(request);
+				accepted?.();
+				return result;
+			},
+		};
 	app.on('web-contents-created', (_event, contents) => watchRenderer(contents));
 	for (const window of BrowserWindow.getAllWindows())
 		watchRenderer(window.webContents);
 	registerWorkspaceHandlers(registerHandler, allowedOrigins, workspaceServices);
 	registerFilesHandlers(registerHandler, allowedOrigins, filesRuntime);
+	registerTerminalHandlers(registerHandler, allowedOrigins, terminal);
 	unsubscribeProjectEvents = workspaceServices.supervisor?.subscribe(event => {
 		if (event.type === 'supervisor' && event.state.status === 'untrusted') {
 			const store = workspaceServices.store;
