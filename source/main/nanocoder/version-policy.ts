@@ -53,7 +53,7 @@ export function versionPolicy(
 		return {
 			status: 'untested',
 			version,
-			reason: `Nanocoder ${version} is newer than the tested ${LAST_TESTED_VERSION} development build (fc01e239). Compatibility is unverified; missing features stay disabled.`,
+			reason: `Nanocoder ${version} is newer than the tested ${LAST_TESTED_VERSION} development build (2c1bf7bf). Compatibility is unverified; missing features stay disabled.`,
 		};
 	}
 	return {status: 'supported', version, reason: null};

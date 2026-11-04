@@ -129,11 +129,12 @@ test('allow once: the tool runs and the turn ends', async t => {
 	]);
 	t.true(outcome.ran);
 	t.deepEqual(outcome.result, {stopReason: 'end_turn'});
+	// `mode` confirms the set_mode the session was opened with (nanocoder#1912).
 	t.deepEqual(
 		outcome.events.map(event =>
 			event.type === 'tool' ? event.status : event.type,
 		),
-		['commands', 'pending', 'in_progress', 'completed', 'text'],
+		['commands', 'mode', 'pending', 'in_progress', 'completed', 'text'],
 	);
 	t.deepEqual(outcome.events[0], {type: 'commands', commands: []});
 	t.deepEqual(outcome.events.at(-1), {type: 'text', text: 'All done.'});
@@ -154,7 +155,7 @@ test('reject once: the tool does not run and the turn goes on', async t => {
 		outcome.events.map(event =>
 			event.type === 'tool' ? event.status : event.type,
 		),
-		['commands', 'pending', 'failed', 'text'],
+		['commands', 'mode', 'pending', 'failed', 'text'],
 	);
 	t.deepEqual(outcome.events[0], {type: 'commands', commands: []});
 	t.is(
@@ -174,7 +175,7 @@ test('with no handler, nothing is allowed by default', async t => {
 		outcome.events.map(event =>
 			event.type === 'tool' ? event.status : event.type,
 		),
-		['commands', 'pending', 'failed'],
+		['commands', 'mode', 'pending', 'failed'],
 	);
 	t.deepEqual(outcome.events[0], {type: 'commands', commands: []});
 });

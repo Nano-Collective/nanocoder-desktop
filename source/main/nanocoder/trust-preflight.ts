@@ -13,6 +13,9 @@ import {
 import {StderrRing} from '@/main/nanocoder/stderr-ring';
 import {canonicalPath, isInside} from '@/main/paths';
 
+// nanocoder#1908 exits with 3 for a trust refusal; builds before it use 1 for every startup failure.
+const TRUST_REFUSAL_EXIT = 3;
+
 interface Runtime {
 	nodePath: string;
 	cliPath: string;
@@ -173,7 +176,7 @@ export function createTrustPreflight(
 							!timedOut &&
 							!output &&
 							!ring.truncated &&
-							exit.code === 1 &&
+							(exit.code === 1 || exit.code === TRUST_REFUSAL_EXIT) &&
 							exit.signal === null &&
 							ring.lines().length === 1 &&
 							ring.lines()[0] === expected;

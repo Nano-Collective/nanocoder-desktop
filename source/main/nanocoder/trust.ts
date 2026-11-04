@@ -16,7 +16,7 @@ const REASONS: Record<string, TrustReason> = {
 	'needs re-approval after the upgrade': 'needs-re-approval',
 };
 
-// Every startup failure exits with code 1, so the wording is the only signal (nanocoder#1899).
+// Older builds exit with code 1 for every startup failure, so the wording is the signal (nanocoder#1899).
 const REFUSAL =
 	/^(Directory .+? (is not trusted|changed since you trusted it|needs re-approval after the upgrade))\./;
 

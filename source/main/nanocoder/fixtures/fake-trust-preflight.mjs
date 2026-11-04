@@ -26,9 +26,13 @@ if (behaviour === 'refuse') {
 } else if (behaviour === 'wrong-root') {
 	process.stderr.write(refusal.replace(process.cwd(), '/different-root'));
 	process.exitCode = 1;
-} else if (behaviour === 'wrong-exit') {
+} else if (behaviour === 'refuse-code-3') {
+	// The distinct trust-refusal code (nanocoder#1908); other startup failures use 1.
 	process.stderr.write(refusal);
 	process.exitCode = 3;
+} else if (behaviour === 'wrong-exit') {
+	process.stderr.write(refusal);
+	process.exitCode = 2;
 } else if (behaviour === 'exit') {
 	process.exitCode = 0;
 } else if (behaviour === 'silent-one') {
