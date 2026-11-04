@@ -106,7 +106,7 @@ scope checks. A cancelled yolo can also be selected again and explicitly accepte
 - `pnpm test:all`: 954 unit tests; formatting, types, lint, Knip and audit pass.
 - `pnpm test:ava:coverage`: 97.06% lines.
 - `pnpm test:e2e`: 147 pass, including seven mounted controls/composer checks.
-- Update, 2026-11-04: against Nanocoder `2c1bf7bf` the same test shows model state is per session. A provider switch changes the model of that session only, and `resume` restores the model saved with the session. The desktop's control stays project-wide and is unchanged, so another thread can now run a different model from the one shown (`ACP-14`, phase 4.5). A turn now begins with a `current_mode_update` confirming the mode that was set.
+- Update, 2026-11-04: against Nanocoder `2c1bf7bf` the same test shows model state is per session. A provider switch changes the model of that session only, and `resume` restores the model saved with the session. The desktop's control stays project-wide and is unchanged, so another thread can now run a different model from the one shown (`ACP-14`, phase 4.5). Nanocoder now confirms each mode change with a `current_mode_update`. It arrives while a session is opened or resumed, before any turn, and adds no line to the stream; a mode Nanocoder reports during a turn still shows as "reported mode" (`connect.e2e.ts`).
 - Pinned ACP `fc01e239a80ddb2e09ca174e3c909508832d5340`: 20 pass,
   including real mode acknowledgement, provider-confirmed different model and
   resume retaining the process-current model rather than historical config.
