@@ -3,7 +3,7 @@
 The whitepaper's open risks, expanded with likelihood, impact, mitigation, owner and trigger, plus the risks this plan found.
 
 - Status: Draft
-- Last updated: 2026-10-28
+- Last updated: 2026-11-04
 - Drafted by: @akramcodez
 
 Likelihood and impact are this plan's estimates: Suggestion (not discussed). "NC core team" means `@Nano-Collective/core-team`.
@@ -29,7 +29,7 @@ Source: [whitepaper, Open risks][wp-risks].
 
 | ID | Risk | Likelihood | Impact | Mitigation | Owner | Trigger |
 |---|---|---|---|---|---|---|
-| RISK-11 | Nanocoder retention deletes sessions behind durable threads | High for occasional users | Medium | ViewOnly with explanation (`ACP-19`); `OQ-16` | NC core team | A thread goes view-only after 30 idle days |
+| RISK-11 | Nanocoder retention deletes sessions behind durable threads | High for occasional users | Medium | ViewOnly with explanation (`ACP-19`), a warning before expiry and a pointer to Nanocoder's settings (`DEC-45`) | NC core team | A thread goes view-only after 30 idle days |
 | RISK-12 | Nanocoder's built-in `browser` tool bypasses the desktop's browsing policy | High once Milestone 3 ships | High | `OQ-13` | NC core team with Nanocoder maintainers | Agent reaches a public site with desktop public browsing off |
 | RISK-13 | No signing identity or owner for releases | High | High (`SP-01`) | `OQ-10` | @will-lamerton (governance) | First public binary is due |
 | RISK-14 | Sessions start in `auto-accept`, so edits apply without approval | Certain unless the desktop sets the mode | High (`SP-04`) | `ACP-13`, `DEC-31`: start in `normal`, and no prompt until the mode is set | NC core team | A first turn edits files without a prompt |

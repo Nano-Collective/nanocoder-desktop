@@ -3,7 +3,7 @@
 Where Nanocoder Desktop is in the NC process, and the build broken into small phases with checklists, from scaffold to the first public release. No dates: no source gives one.
 
 - Status: Draft
-- Last updated: 2026-11-03
+- Last updated: 2026-11-04
 - Drafted by: @akramcodez
 
 ## How to use this roadmap
@@ -254,7 +254,7 @@ Can run in parallel with G.4 and G.5. Proposed in `DEC-38`: public builds bundle
 
 **Goal.** Trusted projects, durable threads, streaming and approvals, model and mode controls, process errors and bounded subagent runs ([whitepaper][wp-next]).
 
-**Blockers.** Technical gate; `OQ-03`, `OQ-19`. **Risks.** `RISK-04`, `RISK-05`, `RISK-06`, `RISK-11`, `RISK-14`.
+**Blockers.** Technical gate; `OQ-03`. `OQ-19` is answered by `DEC-46`. **Risks.** `RISK-04`, `RISK-05`, `RISK-06`, `RISK-11`, `RISK-14`.
 
 Local macOS automation was rerun on `8c01146`, the exit-check merge of
 `d16f9ac`, with Node 22.22.0. The newly checked items below have exact-tip
@@ -386,6 +386,7 @@ acceptance. Phase 1.8 and `SUB-05` remain app-composed, not full acceptance.
 - [x] Model and provider controls labelled as project-wide (`CHAT-10`, `ACP-14`) ([`controls.e2e.ts`](../e2e/controls.e2e.ts), [`controls.acp.ts`](../source/main/nanocoder/controls.acp.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
 - [x] Mode control, set between turns only, with an explicit project default and a confirmation for `yolo` (`CHAT-11`, `ACP-13`, `DEC-31`) ([`controls.e2e.ts`](../e2e/controls.e2e.ts), [`thread-modes.spec.ts`](../source/main/controls/thread-modes.spec.ts); implementation verified, DEC-31 remains Proposed, not policy approval; [final local run](milestone-1-exit-checks.md#final-local-run))
 - [x] One root turn per project process (`CHAT-17`) ([`project-operations.spec.ts`](../source/main/threads/project-operations.spec.ts), [`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
+- [ ] Background turns after a project switch: a rail marker, a generic OS notification and a quit prompt for unfinished turns (`CHAT-22`, `DEC-46`)
 
 **Results we want**
 
@@ -715,7 +716,7 @@ Needs `OQ-13` answered.
 
 **Goal.** Validate packaging, path security, ACP compatibility, crash recovery, browser security, large-project performance, accessibility and keyboard navigation on macOS, Windows and Linux ([whitepaper][wp-next]).
 
-**Blockers.** `OQ-10`, `OQ-16`, `OQ-22`. **Risks.** `RISK-07`, `RISK-13`.
+**Blockers.** `OQ-10`, `OQ-22`. `OQ-16` is answered by `DEC-45`. **Risks.** `RISK-07`, `RISK-13`.
 
 ### Phase 4.1: runtime and bundling
 
@@ -785,12 +786,12 @@ Needs `OQ-10` answered.
 
 ### Phase 4.6: crash recovery and retention
 
-Needs `OQ-16` answered.
+`OQ-16` is answered by `DEC-45`: the notice wording, the settings pointer and the early warning are built here.
 
 **Build**
 
 - [ ] Crash recovery tests for the app, Nanocoder and the PTY (`ACP-17`)
-- [ ] Apply the agreed retention handling (`ACP-19`)
+- [ ] Apply the agreed retention handling: the view-only notice names the defaults and Nanocoder's settings (`ACP-19`), and the desktop warns before threads expire in any project (`CHAT-23`)
 
 **Results we want**
 

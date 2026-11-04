@@ -3,7 +3,7 @@
 The processes, trust boundaries, IPC contract, process policy, thread state machine and key sequences of Nanocoder Desktop.
 
 - Status: Draft
-- Last updated: 2026-10-29
+- Last updated: 2026-11-04
 - Drafted by: @akramcodez
 
 ## Scope
@@ -152,7 +152,7 @@ Decided ([whitepaper, Architecture][wp-arch]): standard output is protocol only,
 | One root turn at a time | The desktop refuses a new prompt in any thread of a project while another thread in the same process is mid-turn (`CHAT-17`). Nanocoder will not do this for you: it queues prompts within a session ([source][nc-queue]) but runs different sessions concurrently, while model state ([source][nc-model]) and the subagent approval handler ([docs][nc-acp-limits]) are shared by the whole process. | Decided |
 | Bounded subagents | Nanocoder enforces a delegation depth of 2 and at most 5 concurrent subagents ([source][nc-subagent-limits]). The desktop shows their parent-child status and cancellation where Nanocoder exposes it (`SUB-`). | Decided (bounds are Nanocoder's) |
 | Idle shutdown | After a period with no running turn and no open thread for the project, close open sessions (`session/close`) and stop the process. Resume on next use (`ACP-23`). | Decided in principle ("resumes persisted sessions after idle shutdown"); the period is a Suggestion (not discussed) |
-| One active project | v1 shows one active project at a time ([Main window][wp-window]). What happens to a background project's running turn is `OQ-19`. | Decided (one active); background behaviour Open |
+| One active project | v1 shows one active project at a time ([Main window][wp-window]). A background project's running turn keeps running in its own process (`DEC-46`). | Decided |
 | Parallel root turns | Future work, after Nanocoder isolates model state per session. | Decided (deferred) |
 
 ## Phase 1.3 supervisor implementation

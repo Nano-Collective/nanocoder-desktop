@@ -3,7 +3,7 @@
 How the desktop drives `nanocoder --acp`: methods, capability negotiation, supported versions, known Nanocoder quirks, and the Nanocoder changes the plan depends on.
 
 - Status: Draft
-- Last updated: 2026-10-31
+- Last updated: 2026-11-04
 - Drafted by: @akramcodez
 
 ## Baseline
@@ -34,11 +34,11 @@ Nanocoder declares `@agentclientprotocol/sdk` `^1.3.0` and its lockfile resolves
 | ACP-16 | Keep stderr in a bounded, redacted, in-memory ring that is never persisted and leaves the machine only after the user reviews it. | Decided ([whitepaper][wp-arch]) |
 | ACP-17 | Supervise the process: detect exit, keep the exit code and signal, mark running threads Failed, restart with limited backoff, resume the open thread. Never restart automatically when the process exits before `initialize` returns, as it does on a trust refusal. | Decided ([whitepaper, Process policy][wp-process]); backoff policy Suggestion (not discussed); no restart before `initialize` Proposed (awaiting @will-lamerton) (`DEC-30`) |
 | ACP-18 | Discover sessions with `session/list` on a best-effort basis. The stored Nanocoder session ID is the durable join key; listing never decides whether a known thread exists. | Decided ([whitepaper, Project and session identity][wp-identity]) |
-| ACP-19 | When `session/resume` reports a missing session, move the thread to ViewOnly and explain the likely cause (deleted, or removed by Nanocoder's retention settings). | Decided (ViewOnly state); the explanation is Suggestion (not discussed) |
+| ACP-19 | When `session/resume` reports a missing session, move the thread to ViewOnly and explain the likely cause: Nanocoder's retention (by default 30 idle days, or the oldest beyond 100) or a deletion elsewhere, with a pointer to Nanocoder's session settings. The error cannot tell the two apart, so the notice says retention is likely. | Decided (ViewOnly state); explanation decided in `DEC-45` |
 | ACP-20 | Never start a session in a project the user has not trusted. The one exception is a pre-trust probe: until Nanocoder can report trust without starting ACP ([nanocoder#1899][nc1899]), the desktop starts `nanocoder --acp` once to learn the verdict, and it exits on a refusal before opening any session. After the user confirms, record trust in Nanocoder's own store with one short trust launch; no other launch sets a trust override. If Nanocoder refuses at startup, show its reason and the trust prompt again. See [Directory trust](#directory-trust). | Proposed (awaiting @will-lamerton) (`DEC-30`, [#4][i4]) |
 | ACP-21 | Run the shared ACP conformance tests against every Nanocoder version the desktop supports. | Proposed (awaiting @will-lamerton) ([#118][i118]) |
 | ACP-22 | Pass the desktop's browser-control MCP server in `mcpServers` on `session/new` and `session/resume` once Nanocoder honours it, and advertise agent browser control only when that server and the browser view are both ready. | Proposed (awaiting @will-lamerton) ([#116][i116]); transport Open (`OQ-17`) |
-| ACP-23 | Shut the project process down after an idle period, closing open sessions first, and resume on next use. | Decided in principle ([whitepaper, Process policy][wp-process]); the period is Suggestion (not discussed) |
+| ACP-23 | Shut the project process down after an idle period, closing open sessions first, and resume on next use. A process with a running turn, a pending approval or an open session is never idle-stopped, including when the user has switched to another project (`DEC-46`). | Decided in principle ([whitepaper, Process policy][wp-process]); the period is Suggestion (not discussed) |
 
 ## ACP methods used
 
@@ -155,7 +155,7 @@ The six findings from [#122][pr122], checked at both commits, then the quirks th
 | 7 | A second prompt in the same session | Rejected with "Prompt already in progress" | Queued behind the first ([source][nc-queue]) | The desktop prevents overlap itself (`CHAT-17`). |
 | 8 | `session/load` with an unknown ID | Creates an empty session | Same ([source][nc-load]) | Use `session/resume` (`ACP-06`). |
 | 9 | Initial mode | `auto-accept` | `auto-accept` ([source][nc-register], [docs][nc-acp-modes]) | Set the mode explicitly (`ACP-13`, `DEC-31`). |
-| 10 | Session retention | Not checked | Sessions idle for 30 days, and the oldest beyond 100, are deleted by default ([source][nc-retention]) | ViewOnly with an explanation (`ACP-19`, `OQ-16`). |
+| 10 | Session retention | Not checked | Sessions idle for 30 days, and the oldest beyond 100, are deleted by default ([source][nc-retention]) | ViewOnly with an explanation (`ACP-19`, `DEC-45`). |
 | 11 | `session/resume` working directory | Not checked | Uses the persisted directory and ignores the client's ([source][nc-resume]) | Store both canonical root and session cwd (`DATA-02`). |
 | 12 | Resume does not restore the session's model | Not checked | The resumed session uses the process's current model ([source][nc-resume]) | Show the current model on resume; do not imply the old one is active. |
 | 13 | Directory trust at startup | No check | `--acp` exits if the spawn directory is untrusted ([nanocoder#1847][nc1847]) | `ACP-20`, `DEC-30` ([Directory trust](#directory-trust)). |
@@ -266,7 +266,7 @@ The UI says what is true: the model control belongs to the project, not the thre
 | Apply `session/set_mode` to a running turn, or reject it | `DEC-15` relies on mode to gate public-site control. | [nanocoder#1857][nc1857] | Open | Milestone 3 | Open |
 | A way to disable the built-in `browser` tool for one session or process without editing user config | Keeps one browser in desktop sessions. | New issue needed | Open | Milestone 3 | Open (`OQ-13`) |
 | Prefix extension methods with `_` and advertise them under `_meta` in `agentCapabilities` | ACP requires the prefix and recommends advertising extensions ([ACP extensibility][acp-ext]); removes version guessing for `renameSession` and `timeline/*`. | Finding 2 in [#122][pr122] | Open | Nice to have | Open |
-| Exempt client-referenced sessions from retention, or expose retention settings over ACP | Durable threads (`SP-06`). | New issue needed | Open | Milestone 4 | Open (`OQ-16`) |
+| Exempt client-referenced sessions from retention, or expose retention settings over ACP | Durable threads (`SP-06`). | New issue needed | Open | Milestone 4 | Open (`OQ-16` is answered for v1 by `DEC-45`; this is the long-term request) |
 | Report failed tool calls by `isError` | Accurate tool status in the chat. | [`6dac501`][nc-6dac501] | @addyCooks | Technical gate | Decided (on upstream `main`) |
 | A read-only trust status command: summary, fingerprint and status (trusted, not trusted, changed, needs re-approval) as JSON, without loading project config | The prompt shows exactly what Nanocoder fingerprints, and the desktop can check before launching (`DEC-30`). | [nanocoder#1899][nc1899] | Open | Milestone 1 (phase 1.2) | Open (raised in [#4 review][i4-review]) |
 | Save trust for a given fingerprint, refusing if the folder has changed since | Ties consent to what the user saw and replaces the `NANOCODER_TRUST_DIRECTORY` trust launch (`DEC-30`). | [nanocoder#1899][nc1899] | Open | Milestone 1 (phase 1.2) | Open |

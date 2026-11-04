@@ -3,7 +3,7 @@
 Projects, threads, durable resume, view-only threads, approvals, and model and mode controls.
 
 - Status: Draft
-- Last updated: 2026-10-31
+- Last updated: 2026-11-04
 - Drafted by: @akramcodez
 
 ## Purpose
@@ -30,11 +30,13 @@ Let the user add a project, start or resume durable Nanocoder chats, follow each
 | CHAT-14 | "Remove from desktop" removes desktop rows, after a renderer confirmation with cancel holding initial focus. "Delete chat history" also calls `session/delete`, after a separate native confirmation. | Suggestion (not discussed); confirmations per `DEC-41` |
 | CHAT-15 | Process failures, unsupported capabilities and version problems are shown in the thread and the project, with the redacted diagnostics available. | Decided ([whitepaper, Engineering requirements][wp-scope]) |
 | CHAT-16 | The composer sends text plus attached resources: files from the browser (`FILE-08`), review comments (`GIT-07`) and the browser URL and title (`BRW-10`). Attached context is transient: it goes into the prompt, not into desktop storage. | Decided ([whitepaper][wp-git-section]) |
-| CHAT-17 | Only one root turn runs per project process. While one thread runs, other threads in the project can be read but not prompted, and say why. | Decided ([whitepaper, Process policy][wp-process]) |
+| CHAT-17 | Only one root turn runs per project process. While one thread runs, other threads in the project can be read but not prompted, and say why. Another project is not affected: its turn keeps running in its own process (`CHAT-22`). | Decided ([whitepaper, Process policy][wp-process]) |
 | CHAT-18 | The conversation is fully keyboard operable; new content is announced to assistive technology at a polite rate; permission requests move focus to the request and are announced assertively. | Decided as a v1 goal ([whitepaper, Milestone 4][wp-next]); specifics are Suggestion (not discussed) |
 | CHAT-19 | Show per-turn usage and cost when Nanocoder provides it in `_meta`. Show a context-window gauge only when Nanocoder reports context use; at `8a5f4d4` it sends per-turn token counts but no context-window figure, so the gauge stays hidden. | Suggestion (not discussed) |
 | CHAT-20 | Offer Nanocoder's custom slash commands from `available_commands_update`. Do not present Nanocoder's built-in `/help` reply as desktop help, since it is written for the VS Code sidebar. | Suggestion (not discussed), based on [source][nc-slash] |
 | CHAT-21 | `ask_user` questions render as selectable options only, since ACP permission options have no text input. Main recognises them by shape and adds a display-only hint, and the desktop shows them in the question dialog. Closing the dialog does not answer. | Decided by Nanocoder's behaviour ([docs][nc-acp-limits]); hint per `DEC-41` |
+| CHAT-22 | Switching project does not stop a running turn. The project keeps running it in the background and shows a marker in the rail, and a turn that waits for approval is never answered automatically. The marker, and an OS notification as an extra, carry generic text with no command, file name or message text (`SEC-07`). Quitting with an unfinished turn asks whether to wait or to cancel and quit. Switching back never uses `session/resume` for a running thread. | Decided (`DEC-46`); the marker, notification and quit prompt are not built |
+| CHAT-23 | Warn before a thread expires under Nanocoder's retention, from the desktop's own last activity, for threads in every project, and say where Nanocoder's session settings are. The desktop never edits them. | Decided (`DEC-45`); not built (phase 4.6) |
 
 ## Behaviour
 
@@ -72,7 +74,7 @@ Full-text thread search, pinning, parallel root turns, forking a thread, editing
 
 ## Edge cases and failure modes
 
-- **Missing session on resume.** Nanocoder deleted it (retention, `OQ-16`) or the user deleted it elsewhere. ViewOnly (`CHAT-09`).
+- **Missing session on resume.** Nanocoder deleted it (retention, `DEC-45`) or the user deleted it elsewhere. ViewOnly (`CHAT-09`), saying retention is the likely cause.
 - **Session saved by another client.** The same session can be open in the Nanocoder CLI or VS Code. Nanocoder now locks its session index across processes, but two clients writing the same session file is not prevented. Suggestion (not discussed): warn when the session's `lastAccessedAt` changes while the thread is open.
 - **Crash mid-turn.** Replay shows the last saved state, not the partial stream ([`architecture.md`](../architecture.md#crash-recovery)).
 - **Prompt while another thread runs.** Refused with `BUSY` (`CHAT-17`). Nanocoder alone would run both.
@@ -94,11 +96,11 @@ See [`security.md`](../security.md): `SEC-02` (IPC), `SEC-07` (no transcripts st
 
 ## Dependencies on Nanocoder changes
 
-`session/close` (merged), `set_mode` mid-turn ([nanocoder#1857][nc1857]), `--mode` for ACP and an error for unknown modes (`DEC-31`), retention handling (`OQ-16`). See [`acp-integration.md`](../acp-integration.md#nanocoder-changes-needed).
+`session/close` (merged), `set_mode` mid-turn ([nanocoder#1857][nc1857]), `--mode` for ACP and an error for unknown modes (`DEC-31`), retention handling: archive instead of delete, or a way to keep referenced sessions (`DEC-45`). See [`acp-integration.md`](../acp-integration.md#nanocoder-changes-needed).
 
 ## Open questions
 
-`OQ-14` (trust, proposed in `DEC-30`), `OQ-15` (starting mode, proposed in `DEC-31`), `OQ-16` (retention), `OQ-19` (switching project mid-turn).
+`OQ-14` (trust, proposed in `DEC-30`) and `OQ-15` (starting mode, proposed in `DEC-31`). `OQ-16` (retention) and `OQ-19` (switching project mid-turn) are answered in `DEC-45` and `DEC-46`.
 
 ## Acceptance criteria
 
