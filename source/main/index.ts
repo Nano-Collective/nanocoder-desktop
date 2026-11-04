@@ -1,7 +1,9 @@
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {app, BrowserWindow, dialog, net, protocol, session} from 'electron';
-import {closeNanocoder, registerIpcHandlers} from '@/main/ipc';
+import {createExitGuard} from '@/main/exit-guard';
+import {createExitPrompt} from '@/main/exit-prompt';
+import {closeNanocoder, registerIpcHandlers, unfinishedWork} from '@/main/ipc';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {createQuitHandler, createWindowRequestHandler} from '@/main/lifecycle';
 import {
@@ -49,7 +51,27 @@ const windowRequests = createWindowRequestHandler(() => {
 });
 app.on('second-instance', windowRequests.request);
 app.on('activate', windowRequests.request);
-app.on('before-quit', windowRequests.stop);
+// An unfinished turn is never ended silently (CHAT-22). Hidden test runs skip the question
+// unless a test asks for it; a packaged app ignores the hidden switch and always asks.
+const exitGuard = createExitGuard({
+	enabled: () =>
+		!hiddenWindows || process.env.NANOCODER_E2E_EXIT_PROMPT === '1',
+	unfinished: unfinishedWork.projects,
+	onChange: unfinishedWork.onChange,
+	confirm: createExitPrompt({
+		showMessageBox: options => {
+			const [window] = BrowserWindow.getAllWindows();
+			return window
+				? dialog.showMessageBox(window, options)
+				: dialog.showMessageBox(options);
+		},
+		projectName: unfinishedWork.name,
+	}),
+});
+app.on('before-quit', event => {
+	exitGuard.check(event, () => app.quit(), 'quit');
+	if (!event.defaultPrevented) windowRequests.stop();
+});
 app.on('will-quit', windowRequests.stop);
 if (!primaryInstance) app.quit();
 
@@ -115,6 +137,11 @@ function createWindow(): void {
 			webSecurity: true,
 		},
 	});
+	const scope = `window-${window.id}`;
+	window.on('close', event =>
+		exitGuard.check(event, () => window.close(), scope),
+	);
+	window.once('closed', () => exitGuard.release(scope));
 	window.once('ready-to-show', () => {
 		if (windowRequests.stopped) return;
 		if (smokeTest) {
@@ -145,7 +172,7 @@ void app
 		}
 		serveRenderer();
 		lockDownSession();
-		registerIpcHandlers(allowedOrigins, {store});
+		registerIpcHandlers(allowedOrigins, {store, quiet: hiddenWindows});
 		windowRequests.ready();
 	})
 	.catch((error: unknown) => {

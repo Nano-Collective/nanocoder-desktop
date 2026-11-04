@@ -3,7 +3,7 @@
 Implementation notes for U.2 from [work list #17](https://github.com/Nano-Collective/nanocoder-desktop/issues/17).
 
 - Status: Draft
-- Last updated: 2026-10-31
+- Last updated: 2026-11-04
 
 Visual decisions remain in [`DESIGN.md`](../DESIGN.md). The M1 workspace follows the user-approved revision-4 overhaul (`DEC-40`).
 
@@ -11,7 +11,7 @@ Visual decisions remain in [`DESIGN.md`](../DESIGN.md). The M1 workspace follows
 
 `source/renderer/app-shell.tsx` owns compact project/thread navigation, the conversation header, independently scrolling transcript, pinned composer and optional workbench/bottom slots. Ordinary React children fill the slots; no capability or authority moves into the renderer. Unused later slots mount nothing and show no placeholder.
 
-The compact project switcher retains recent-root, add and locate actions. Thread-title search remains a labelled new idea, not part of M1. Today/earlier ordering stays last activity; archive stays separate. The selected thread reports its state in words as well as a glyph.
+The compact project switcher retains recent-root, add and locate actions. While a project is open, a small "in the background" section appears under the thread rail only when another project is running, needs approval, has finished or has failed. Each row opens that project, and the section is not there otherwise (`CHAT-22`). Thread-title search remains a labelled new idea, not part of M1. Today/earlier ordering stays last activity; archive stays separate. The selected thread reports its state in words as well as a glyph.
 
 At 1240/1020/840 the sidebar is 222/204/188px. Reading content and the composer share a constrained centred column. An open workbench stays beside chat above 840px, then takes the conversation canvas at 840px and below with a back-to-chat action. Project navigation remains reachable. The optional terminal slot stays absent in M1.
 

@@ -54,4 +54,6 @@ export interface WorkspaceServices {
 	controls?: ProjectControlService;
 	stopProject?: (projectId: string) => Promise<SupervisorState>;
 	restartProject?: (projectId: string) => Promise<SupervisorState>;
+	// Hidden test runs: no operating system notifications.
+	quiet?: boolean;
 }
