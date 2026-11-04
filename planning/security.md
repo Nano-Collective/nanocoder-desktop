@@ -3,7 +3,7 @@
 The threat model, trust boundaries and security rules for Nanocoder Desktop, including the browser-to-agent boundary and signing.
 
 - Status: Draft
-- Last updated: 2026-10-28
+- Last updated: 2026-11-04
 - Drafted by: @akramcodez
 
 ## Why this matters here
@@ -87,7 +87,7 @@ flowchart LR
 | SEC-09 | Protected Nanocoder tools are approved through Nanocoder's permission requests; sensitive browser actions are approved by the desktop. Neither approves anything on the user's behalf. | Decided (approvals, [whitepaper][wp-threat]); the split is Proposed (awaiting @will-lamerton) ([#108][i108]) |
 | SEC-10 | The browser denies permissions, file uploads, popups and external protocols by default, and confirms every download's destination. | Decided ([whitepaper][wp-threat]) |
 | SEC-11 | Page content is untrusted input. Agent actions are confined to the active tab and approved origins, and observations are labelled as page data. | Decided (confinement, [whitepaper][wp-threat]); labelling Proposed (awaiting @will-lamerton) ([#108][i108]) |
-| SEC-12 | The browser view has no Node, no preload and no desktop IPC, runs sandboxed, and uses its own persistent partition. | Decided ([whitepaper, Security boundary][wp-browser-sec]) |
+| SEC-12 | The browser view has no Node, no preload and no desktop IPC, runs sandboxed, and uses its own persistent partition for each profile (`DEC-49`). | Decided ([whitepaper, Security boundary][wp-browser-sec]) |
 | SEC-13 | The browser-control adapter exposes typed actions only: no arbitrary JavaScript, raw CDP, filesystem, terminal or file-upload access. | Decided ([whitepaper, Architecture][wp-arch]) |
 | SEC-14 | Releases are signed, updates are signed, and Electron and Chromium security releases are applied promptly. | Decided as a requirement ([whitepaper][wp-threat]); how is Open ([#120][i120]) |
 | SEC-15 | The app UI loads only bundled code over a custom protocol (not `file://`), with a restrictive Content Security Policy. Navigation away from the app and new windows are denied in app UI renderers. | Suggestion (not discussed), from [Electron security guidance][el-security] items 7, 13, 14 and 18 |
@@ -108,7 +108,7 @@ Proposed (awaiting @will-lamerton), from @puri-adityakumar's [reply][i108-c]:
 1. **Label page data.** Anything the agent reads from a page is labelled as page data, never presented as instructions from the user.
 2. **Gate public sites on mode.** The agent can control public sites only while the session is in `normal` mode, where Nanocoder asks before file edits and shell commands. Localhost preview works in every mode.
 3. **Split approvals.** Nanocoder approves workspace actions (file edits, shell commands, Git). The desktop approves browser actions. Neither approves anything on the user's behalf.
-4. **Keep the browser subagent open.** A low-privilege browser subagent is attractive, but its summary could still carry injected text back to the main agent, so approvals are needed either way (`OQ-11`).
+4. **Leave the browser subagent for later.** A low-privilege browser subagent is attractive, but its summary could still carry injected text back to the main agent, so approvals are needed either way (`DEC-50`).
 
 ### What each layer owns
 
@@ -124,7 +124,7 @@ Proposed (awaiting @will-lamerton), from @puri-adityakumar's [reply][i108-c]:
 
 - **Labels are not a control.** A model can follow labelled text. Labelling helps the model and the reader; the approval gates are the real control.
 - **Modes are the weak point.** At Nanocoder `8a5f4d4`, ACP sessions start in `auto-accept`, where file edits apply without a prompt ([source][nc-mode]), and a mode change during a turn is not applied to that turn ([nanocoder#1857][nc1857]). The desktop must set the mode before the first turn (`ACP-13`) and must not enable public-site control in a session that is not in `normal` mode. Threads start in `normal`, and a thread takes no prompt until its mode is set (`DEC-31`). Even `normal` does not ask for tools in Nanocoder's `alwaysAllow`, which is checked before the mode ([source][nc-approval]).
-- **Other web paths exist.** Nanocoder's `fetch_url`, `web_search` and built-in `browser` tools bring web content into the agent regardless of the desktop (`OQ-13`).
+- **Other web paths exist.** Nanocoder's `fetch_url`, `web_search` and built-in `browser` tools bring web content into the agent regardless of the desktop (`DEC-48`).
 
 ## Path canonicalisation
 

@@ -3,7 +3,7 @@
 What the desktop stores in SQLite, how it migrates, and what it never stores.
 
 - Status: Draft
-- Last updated: 2026-10-29
+- Last updated: 2026-11-04
 - Drafted by: @akramcodez
 
 ## Principle
@@ -20,7 +20,7 @@ The desktop keeps a relational index for navigation and UI state. Nanocoder's se
 | DATA-04 | Never store full ACP messages, file contents, tool results or stderr. | Decided ([whitepaper, Sources of truth][wp-truth]) |
 | DATA-05 | Store touched files as project-relative paths only. | Suggestion (not discussed) |
 | DATA-06 | Browser cookies, storage, cache and history live in an Electron partition, never in SQLite. | Decided ([whitepaper][wp-truth]) |
-| DATA-07 | Removing a project or thread from the desktop removes desktop rows only. Deleting the Nanocoder session needs a separate, explicit confirmation (`CHAT-14`). | Suggestion (not discussed) |
+| DATA-07 | Removing a project or thread from the desktop removes desktop rows only. Deleting the Nanocoder session needs a separate, explicit confirmation (`CHAT-14`). A project's browser profile is kept; clearing it is done in settings (`BRW-08`, `DEC-49`). | Suggestion (not discussed) |
 | DATA-08 | On startup, run an integrity check. If the database is unusable, move it aside and start empty; threads can be rediscovered from `session/list` (`ACP-18`). | Suggestion (not discussed) |
 | DATA-09 | App settings (public browsing enabled, default mode, editor choice, Nanocoder override path) are stored in a settings table, never secrets. | Suggestion (not discussed) |
 | DATA-10 | Window and panel state is stored as opaque UI state, not modelled here. | Decided (desktop owns it, [whitepaper][wp-split]) |
@@ -134,14 +134,15 @@ Tests cover real commit failure, malformed staged prefixes, stale callbacks, rem
 
 ## Browser partition
 
-Open (whitepaper question 6, `OQ-06`): one app-wide persistent partition, or one per project.
+Decided (`DEC-49`, `OQ-06`): profiles, not one shared partition. A persistent Default profile, named profiles the user creates and an in-memory Incognito profile. Each project uses one, and a new project gets its own persistent profile.
 
-| Option | For | Against |
+| Choice | For | Against |
 |---|---|---|
-| App-wide | One sign-in for a staging site works across projects; simplest. | A page in one project can see cookies set while previewing another; clearing data clears everything. |
-| Per project | Isolation between clients' projects; clearing one project's data is precise. | More partitions on disk; repeated sign-ins. |
+| Own profile per project (the starting default) | Isolation between clients' projects, which matters because the browser is agent-controlled; clearing one profile is precise. | More partitions on disk; repeated sign-ins. |
+| Shared Default or a named profile (the user's choice) | One sign-in for a staging site works across projects. | A page in one project can see cookies set while previewing another, and so can an agent working there. |
+| Incognito | Nothing is kept. | Nothing is kept. |
 
-Either way the partition is persistent, separate from the user's normal browser profile, and cleared from settings (`BRW-05`, `BRW-08`).
+Every persistent profile is separate from the user's normal browser and is cleared from settings (`BRW-05`, `BRW-08`). Removing a project leaves its profile alone. The tables for profiles and the project-to-profile choice are added in phase 3.3.
 
 ## SQLite library
 

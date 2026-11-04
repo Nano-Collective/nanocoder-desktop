@@ -325,7 +325,7 @@ Subagent tool approvals arrive the same way, with tool call IDs prefixed `subage
 
 ### Browser tool call
 
-This sequence depends on Nanocoder honouring client `mcpServers` ([#116][i116], Proposed) and on the adapter transport (`OQ-17`).
+This sequence passes the browser server in `mcpServers` on each session and serves it over HTTP (`DEC-47`). It needs the Nanocoder change from [#116][i116], which is merged and unreleased.
 
 ```mermaid
 sequenceDiagram

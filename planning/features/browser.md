@@ -3,7 +3,7 @@
 The isolated, agent-controlled browser: navigation, agent control, approvals, downloads, settings, and annotations as a follow-up.
 
 - Status: Draft
-- Last updated: 2026-10-27
+- Last updated: 2026-11-04
 - Drafted by: @akramcodez
 
 ## Purpose
@@ -14,30 +14,30 @@ A user-visible preview for a running application or a reference page. The user c
 
 | ID | Requirement | Status and source |
 |---|---|---|
-| BRW-01 | A dedicated `WebContentsView` with a persistent partition, sandboxed, with no Node, preload or desktop IPC. | Decided ([whitepaper][wp-browser-sec]) |
+| BRW-01 | A dedicated `WebContentsView` with a persistent partition for each profile (`DEC-49`), sandboxed, with no Node, preload or desktop IPC. | Decided ([whitepaper][wp-browser-sec]) |
 | BRW-02 | Open from a clicked chat or terminal URL or an address bar; back, forward, reload, stop. | Decided ([whitepaper][wp-browser]) |
 | BRW-03 | Localhost by default; public HTTP(S) only after the user enables it in settings. | Decided ([whitepaper][wp-browser]) |
 | BRW-04 | Expose the current origin and loading and security state. | Decided ([whitepaper][wp-browser]) |
-| BRW-05 | A browser profile separate from the user's normal browser. | Decided ([whitepaper][wp-browser]) |
+| BRW-05 | Browser profiles separate from the user's normal browser: a persistent Default, named profiles and an in-memory Incognito, with each project starting on its own persistent profile. | Decided ([whitepaper][wp-browser]); profile model in `DEC-49` |
 | BRW-06 | Visible downloads with destination confirmation. | Decided ([whitepaper][wp-browser]) |
 | BRW-07 | Default-deny browser permissions, popups, external protocols and file uploads (`SEC-10`). | Decided ([whitepaper][wp-browser]) |
-| BRW-08 | Clear browser data from settings. | Decided ([whitepaper][wp-browser]) |
+| BRW-08 | Clear browser data from settings, for each profile. Removing a project leaves its profile alone. | Decided ([whitepaper][wp-browser]); per profile in `DEC-49` |
 | BRW-09 | Open the current URL externally. | Decided ([whitepaper][wp-browser]) |
 | BRW-10 | Send the current URL and title to the active chat. | Decided ([whitepaper][wp-browser]) |
-| BRW-11 | The agent can request typed navigation, waiting, page snapshots, screenshots, clicks, text entry and scrolling, through the desktop's MCP server passed in `mcpServers`. | Decided (operations, [whitepaper][wp-arch]); the route is Proposed (awaiting @will-lamerton) ([#116][i116]) |
+| BRW-11 | The agent can request typed navigation, waiting, page snapshots, screenshots, clicks, text entry and scrolling, through the desktop's MCP server passed in `mcpServers`. | Decided (operations, [whitepaper][wp-arch]); the route is Proposed (awaiting @will-lamerton) ([#116][i116]); route decided in `DEC-47`; the Nanocoder side is merged and unreleased |
 | BRW-12 | Each agent action, observation and pending approval is shown in the chat and the browser activity. | Decided ([whitepaper][wp-browser]) |
 | BRW-13 | Sensitive submissions, purchases, permission changes, deletion and downloads need desktop approval. | Decided ([whitepaper][wp-browser-sec]) |
 | BRW-14 | The user can pause agent control, interrupt an action, or take control. | Decided ([whitepaper][wp-browser]) |
 | BRW-15 | Observations are labelled as untrusted page data and size-bounded. | Proposed (awaiting @will-lamerton) ([#108][i108]) |
 | BRW-16 | Agent control of public sites only while the session is in `normal` mode; localhost in every mode. | Proposed (awaiting @will-lamerton) ([#108][i108]) |
 | BRW-17 | Advertise agent browser control only when the adapter and the browser view are both ready; otherwise it is unavailable, with no privileged fallback. | Decided ([whitepaper][wp-arch]) |
-| BRW-18 | Nanocoder's built-in `browser` tool is handled consistently with `BRW-03` and `BRW-16`. | Open (`OQ-13`) |
+| BRW-18 | Nanocoder's built-in `browser` tool stays available beside the in-app browser, under Nanocoder's own approvals. The public-site rules (`BRW-03`, `BRW-16`) cover the in-app browser only, and a desktop setting turns Nanocoder's browser off for a session. | Decided (`DEC-48`); the Nanocoder side is merged and unreleased |
 | BRW-19 | Annotations: select an element or region, record URL, viewport, selector or rectangle and comment, send to chat. User-authored annotations work even with agent control off. | Decided as a follow-up, not v1 ([whitepaper][wp-browser]) |
 | BRW-20 | Pages that need the user's regular profile open externally without agent control. | Decided ([whitepaper][wp-browser-sec]) |
 
 ## Adapter transport
 
-Open (`OQ-17`). Once Nanocoder honours `mcpServers` ([#116][i116]), the desktop's server can reach Nanocoder three ways:
+Decided (`DEC-47`): HTTP on `127.0.0.1` with a secret in the headers for each session, passed in `mcpServers` ([#116][i116], merged in Nanocoder and unreleased). The three ways the desktop's server could reach Nanocoder, of which Nanocoder supports stdio and HTTP:
 
 | Transport | How | Trade-off |
 |---|---|---|
@@ -95,7 +95,7 @@ Annotations (`BRW-19`), multiple tabs, browser extensions, raw CDP, arbitrary Ja
 - The dev server stops while the agent waits: the wait times out with an error result.
 - The agent targets an element that is gone: error result, no retry loop in the broker.
 - Download started by the agent: approval plus destination confirmation.
-- Nanocoder's own `browser` tool reaching a public site while desktop public browsing is off (`OQ-13`).
+- Nanocoder's own `browser` tool reaching a public site while desktop public browsing is off. Expected while its setting is on (`DEC-48`); the docs and the settings screen say so.
 
 ## Platform notes
 
@@ -107,11 +107,11 @@ Chromium behaviour is the same on all three platforms because Electron bundles i
 
 ## Dependencies on Nanocoder changes
 
-`mcpServers` ([#116][i116]), `set_mode` mid-turn ([nanocoder#1857][nc1857]), a way to disable the built-in `browser` tool (`OQ-13`), and a way to read the effective approval policy, since `alwaysAllow` skips approvals even in `normal` (`DEC-31`).
+All merged in Nanocoder `main` and unreleased until 1.32.0 ([#12](https://github.com/Nano-Collective/nanocoder-desktop/issues/12)): `mcpServers` for each session ([#116][i116]), `set_mode` mid-turn ([nanocoder#1857][nc1857]), `_meta["nanocoder/disabledTools"]` to turn off the built-in `browser` tool for a session (`DEC-48`), and a way to read the effective approval policy, since `alwaysAllow` skips approvals even in `normal` (`DEC-31`).
 
 ## Open questions
 
-`OQ-06` (profile scope), `OQ-11` (browser subagent), `OQ-13`, `OQ-17`.
+`OQ-06`, `OQ-11`, `OQ-13` and `OQ-17` are answered in `DEC-49`, `DEC-50`, `DEC-48` and `DEC-47`.
 
 ## Acceptance criteria
 

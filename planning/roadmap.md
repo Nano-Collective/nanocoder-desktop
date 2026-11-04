@@ -44,7 +44,7 @@ flowchart TB
     NCmcp["Nanocoder honours client mcpServers (#116)"]
     NCsnap["Nanocoder snapshot-read method (#109)"]
     NCmode["Nanocoder applies set_mode mid-turn (nanocoder#1857)"]
-    NCbrowser["Built-in browser tool decision (OQ-13)"]
+    NCbrowser["Nanocoder per-session switch for its browser tool (DEC-48)"]
     Sign["Signing and update keys (#120)"]
 
     P115 --> Scaffold
@@ -562,7 +562,7 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 **Goal.** One PTY, localhost handling, the isolated agent-controlled browser, browser data and download settings, and URL-to-chat context ([whitepaper][wp-next]).
 
-**Blockers.** Nanocoder honours `mcpServers` ([#116][i116]); `DEC-15`; `OQ-06`, `OQ-11`, `OQ-13`, `OQ-17`; [nanocoder#1857][nc1857]. **Risks.** `RISK-03`, `RISK-09`, `RISK-10`, `RISK-12`.
+**Blockers.** A published Nanocoder with `mcpServers` for each session ([#116][i116]), per-session `disabledTools` and `set_mode` mid-turn ([nanocoder#1857][nc1857]), all merged and unreleased until 1.32.0 ([#12](https://github.com/Nano-Collective/nanocoder-desktop/issues/12)); `DEC-15`. `OQ-06`, `OQ-11`, `OQ-13` and `OQ-17` are answered by `DEC-47` to `DEC-50`. **Risks.** `RISK-03`, `RISK-09`, `RISK-10`, `RISK-12`.
 
 ### Phase 3.1: PTY host
 
@@ -596,11 +596,11 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 ### Phase 3.3: browser view
 
-Needs `OQ-06` answered.
+`OQ-06` is answered by `DEC-49`: this phase builds a persistent profile for each project.
 
 **Build**
 
-- [ ] `WebContentsView` with its own persistent partition (`BRW-01`, `BRW-05`)
+- [ ] `WebContentsView` with its own persistent partition for each project's profile (`BRW-01`, `BRW-05`, `DEC-49`)
 - [ ] Sandbox on, no Node, no preload, no IPC (`SEC-12`)
 
 **Results we want**
@@ -627,13 +627,14 @@ Needs `OQ-06` answered.
 
 - [ ] Deny permissions, popups, external protocols and uploads (`BRW-07`, `SEC-10`)
 - [ ] Downloads with destination confirmation (`BRW-06`)
-- [ ] Clear browser data (`BRW-08`)
+- [ ] Profiles: the shared Default, named profiles and Incognito, managed in Settings (`BRW-05`, `DEC-49`)
+- [ ] Clear browser data for each profile (`BRW-08`)
 - [ ] Open current URL externally (`BRW-09`, `SEC-16`)
 
 **Results we want**
 
 - [ ] Camera, microphone, location and notification requests are denied without asking the user
-- [ ] Clearing data removes cookies and history for the partition
+- [ ] Clearing data removes cookies and history for the profile's partition
 
 ### Phase 3.6: links into the browser and chat
 
@@ -649,11 +650,12 @@ Needs `OQ-06` answered.
 
 ### Phase 3.7: Nanocoder `mcpServers` support
 
-Needs [#116][i116] merged in Nanocoder and `OQ-17` answered.
+`OQ-17` is answered by `DEC-47`: the browser server goes in `mcpServers` on each session. Needs the Nanocoder change from [#116][i116] released (merged, unreleased until 1.32.0).
 
 **Build**
 
-- [ ] Confirm the Nanocoder change is released and gate it by version
+- [ ] Confirm the Nanocoder change is released and gate it by version and by `mcpCapabilities.http`
+- [ ] Serve the browser tools over HTTP on `127.0.0.1` with a secret in the headers for each session, and reject requests that carry an `Origin` header (`DEC-47`)
 - [ ] Pass the desktop's browser server in `mcpServers` on new and resumed sessions (`ACP-22`)
 - [ ] Implement the agreed transport
 
@@ -694,7 +696,7 @@ Needs `DEC-15` agreed.
 
 ### Phase 3.10: Nanocoder's own browser and external pages
 
-Needs `OQ-13` answered.
+`OQ-13` is answered by `DEC-48`: both browsers stay, and a desktop setting turns Nanocoder's off for a session through `_meta["nanocoder/disabledTools"]`.
 
 **Build**
 
@@ -703,8 +705,8 @@ Needs `OQ-13` answered.
 
 **Results we want**
 
-- [ ] With public browsing off, the agent cannot reach a public site through any browser tool
-- [ ] The decision is recorded in [`decisions.md`](decisions.md)
+- [ ] With public browsing off and the Nanocoder browser setting off, the agent cannot reach a public site through any browser tool. With the setting on, Nanocoder's own approvals apply and the docs say so
+- [x] The decision is recorded in [`decisions.md`](decisions.md) (`DEC-48`)
 
 ### Milestone 3 exit
 
@@ -791,7 +793,7 @@ Needs `OQ-10` answered.
 **Build**
 
 - [ ] Crash recovery tests for the app, Nanocoder and the PTY (`ACP-17`)
-- [ ] Apply the agreed retention handling: the view-only notice names the defaults and Nanocoder's settings (`ACP-19`), and the desktop warns before threads expire in any project (`CHAT-23`)
+- [ ] Apply the agreed retention handling: pin the session behind each thread where Nanocoder offers it, the view-only notice names the limits and Nanocoder's settings (`ACP-19`), and the desktop warns before unpinned threads expire in any project (`CHAT-23`)
 
 **Results we want**
 

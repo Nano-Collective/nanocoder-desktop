@@ -3,7 +3,7 @@
 What Nanocoder Desktop is, who it is for, what v1 includes and excludes, and what would prove it works.
 
 - Status: Draft
-- Last updated: 2026-10-27
+- Last updated: 2026-11-04
 - Drafted by: @akramcodez
 
 ## What it is
@@ -134,7 +134,7 @@ The first release succeeds when a user can do each of the following ([whitepaper
 | SP-08 | Review the repository's actual Git diff. | `GIT-02` to `GIT-05` | |
 | SP-09 | Send a file or review comment into the active chat. | `FILE-08`, `GIT-07`, `BRW-10` | |
 | SP-10 | Start a development server in the terminal. | `TERM-01` to `TERM-05` | |
-| SP-11 | Ask the agent to inspect and interact with it in an isolated in-app browser, while keeping the page away from desktop privileges. | `BRW-01`, `BRW-11` to `BRW-17` | Depends on Nanocoder honouring client `mcpServers` ([#116][i116], Proposed). Nanocoder now also has its own headless `browser` tool ([nanocoder#1626][nc1626]); see `OQ-13`. |
+| SP-11 | Ask the agent to inspect and interact with it in an isolated in-app browser, while keeping the page away from desktop privileges. | `BRW-01`, `BRW-11` to `BRW-17` | Depends on Nanocoder honouring client `mcpServers` ([#116][i116], Proposed). Nanocoder now also has its own headless `browser` tool ([nanocoder#1626][nc1626]); see `DEC-48`. |
 
 The release must not duplicate provider credentials, agent prompts, tool policy, skills, MCP, LSP or semantic memory (Decided, same source).
 
@@ -158,7 +158,7 @@ The whitepaper's split ([Composition with Nanocoder][wp-split]), with the rows t
 | Window and panel state | Semantic memory |
 | Update and packaging UX | Timeline, retry, revert and artefacts |
 
-Two rows overlap: directory trust, which has a proposal (`DEC-30`), and browsing (`OQ-13`), which still needs one.
+Two rows overlap: directory trust, which has a proposal (`DEC-30`), and browsing, which is decided (`DEC-48`).
 
 ## Relationship to Scriptura
 
