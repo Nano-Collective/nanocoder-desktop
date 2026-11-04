@@ -373,6 +373,7 @@ test('sends the prompt and returns how the turn ended', async t => {
 	t.deepEqual(result, {stopReason: 'end_turn'});
 	t.deepEqual(asked, ['execute_bash: echo hi']);
 	t.deepEqual(updates, [
+		'current_mode_update',
 		'agent_message_chunk',
 		'tool_call',
 		'tool_call_update',
@@ -438,7 +439,8 @@ test('CHAT-08 resume collects only the exact saved session, without forwarding f
 		history.filter(event => event.type === 'user').map(event => event.text),
 		['Earlier question'],
 	);
-	t.deepEqual(live, []);
+	// Foreign replay is never live. The only live update is the confirmation of the mode just set (nanocoder#1912).
+	t.deepEqual(live, ['current_mode_update']);
 });
 
 for (const limit of ['count', 'bytes', 'utf8']) {
@@ -517,8 +519,8 @@ test('resumes a session, rebuilds it from the replay and sets its mode', async t
 			status: 'completed',
 		},
 	]);
-	// Replayed updates are history, not new activity (ACP-07).
-	t.deepEqual(live, []);
+	// Replayed updates are history, not new activity (ACP-07). The mode confirmation (nanocoder#1912) is the only live update.
+	t.deepEqual(live, ['current_mode_update']);
 	const requests = fakeEvents(connection.stderr.lines()).filter(e => e.method);
 	t.deepEqual(
 		requests.map(e => e.method),
@@ -543,6 +545,7 @@ test('shows later updates as live again once the replay is over', async t => {
 	await connection.prompt('fake-session', 'Next question');
 	await connection.close();
 	t.deepEqual(live, [
+		'current_mode_update',
 		'agent_message_chunk',
 		'tool_call',
 		'tool_call_update',

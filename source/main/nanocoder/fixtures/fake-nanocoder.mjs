@@ -122,7 +122,18 @@ const results = {
 						},
 					],
 				},
-	'session/set_mode': () => (mode === 'mode-fails' ? undefined : {}),
+	'session/set_mode': params => {
+		if (mode === 'mode-fails') return undefined;
+		// Like Nanocoder since nanocoder#1912: the change is confirmed with an update.
+		notify('session/update', {
+			sessionId: params.sessionId,
+			update: {
+				sessionUpdate: 'current_mode_update',
+				currentModeId: params.modeId,
+			},
+		});
+		return {};
+	},
 	'session/close': () => ({}),
 	'session/delete': () => (mode === 'delete-fails' ? undefined : {}),
 };
@@ -585,6 +596,16 @@ async function runTurn(id, params) {
 		send({id, result: {stopReason: 'end_turn'}});
 		return;
 	}
+	if (mode === 'mode-report') {
+		// A mode change Nanocoder reports during a turn, as opposed to the confirmation at session open.
+		notify('session/update', {
+			sessionId,
+			update: {sessionUpdate: 'current_mode_update', currentModeId: 'plan'},
+		});
+		say(sessionId, 'Mode reported.');
+		send({id, result: {stopReason: 'end_turn'}});
+		return;
+	}
 	if (mode === 'files') return filesFixture(id, params);
 	if (mode === 'streaming') return streamFixture(id, sessionId);
 	if (mode === 'subagents') return subagentFixture(id, params);
@@ -800,7 +821,7 @@ function serve() {
 			if (id === undefined || (method === 'initialize' && mode === 'silent')) {
 				return;
 			}
-			const result = results[method]?.();
+			const result = results[method]?.(params);
 			send(
 				result === undefined
 					? {id, error: {code: -32603, message: 'Internal error'}}
