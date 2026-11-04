@@ -372,6 +372,19 @@ test('reject once: the tool is marked failed and the turn goes on', async () => 
 	await expect(conversation).toContainText('failed execute_bash: echo hi');
 	await expect(conversation).toContainText('Tool denied.');
 	await expect(turnEnded(page)).toBeVisible();
+	// Nanocoder confirms the mode set when the session opened (nanocoder#1912); that adds no line to the stream.
+	await expect(
+		page.locator('.stream-session', {hasText: 'reported mode'}),
+	).toHaveCount(0);
+});
+
+test('a mode Nanocoder reports during a turn is shown once, as reported mode', async () => {
+	await startTurn('mode-report', 'mode-report');
+	const conversation = page.getByRole('list', {name: 'Conversation'});
+	await expect(conversation).toContainText('Mode reported.');
+	await expect(
+		page.locator('.stream-session', {hasText: 'reported mode'}),
+	).toHaveText('reported mode: plan');
 });
 
 test('only an option Nanocoder offered can answer a waiting request', async () => {

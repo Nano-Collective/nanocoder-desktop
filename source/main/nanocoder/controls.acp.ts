@@ -17,7 +17,7 @@ const folder = createWorkFolder('nd-controls-real-');
 test.before(requireCli);
 test.after.always(folder.remove);
 
-test('pinned ACP offers, provider-confirmed different model and historical resume remain process-current (CHAT-10 ACP-14)', async t => {
+test('pinned ACP offers and a provider-confirmed different model, and resume restores the model saved with the session (CHAT-10 ACP-14)', async t => {
 	t.timeout(120_000);
 	const {root, provider, env} = await setupProject(folder.work, 'config', [
 		{text: 'fixture saved history'},
@@ -76,11 +76,12 @@ test('pinned ACP offers, provider-confirmed different model and historical resum
 		'other-fixture-model',
 	);
 	await connection.resumeSession(session.id, 'normal');
+	// Model state is per session (nanocoder#1919): resume restores what was saved, not the process's last choice.
 	t.is(
 		connection
 			.getSessionOffers(session.id)
 			?.configOptions?.find(option => option.id === 'model')?.currentValue,
-		'other-fixture-model',
+		SCRIPTED_MODEL,
 	);
 });
 

@@ -780,6 +780,7 @@ Needs `OQ-10` answered.
 
 - [ ] Shared conformance tests running against the bundled and minimum Nanocoder versions (`ACP-21`)
 - [ ] Gate results recorded per tested version (`ACP-04`)
+- [ ] Review `ACP-14` and `CHAT-10` for Nanocoder's per-session model state, which the desktop's project-wide model control does not yet reflect
 
 **Results we want**
 

@@ -12,7 +12,6 @@ import {
 } from '@/main/nanocoder/fixtures/real-nanocoder';
 import type {Reply} from '@/main/nanocoder/fixtures/scripted-provider';
 import {trustDirectory} from '@/main/nanocoder/trust';
-import type {TurnEvent} from '@/shared/ipc';
 
 const folder = createWorkFolder('nd-resume-');
 
@@ -70,13 +69,13 @@ test('after both processes restart, a follow-up is answered with the earlier con
 		],
 		'follow-up',
 	);
-	const live: TurnEvent[] = [];
+	const live: string[] = [];
 	const second = await connectNanocoder({
 		runtime,
 		root: project.root,
 		clientInfo,
 		env: project.env,
-		onUpdate: () => live.push({type: 'text', text: 'unexpected'}),
+		onUpdate: update => live.push(update.sessionUpdate),
 	});
 	try {
 		const {session, history} = await second.resumeSession(
@@ -94,7 +93,8 @@ test('after both processes restart, a follow-up is answered with the earlier con
 			{type: 'text', text: 'Noted: the code word is pelican.'},
 			{type: 'metadata', metadata: {durationMs, outcome: 'completed'}},
 		]);
-		t.deepEqual(live, []);
+		// Replay arrives as history. The only live update is the confirmation of the mode just set (nanocoder#1912).
+		t.deepEqual(live, ['current_mode_update']);
 
 		await second.prompt(session.id, 'What was the code word?');
 		const turn = project.provider.requests

@@ -710,6 +710,16 @@ test('a CLI swapped during awaited cleanup cannot carry a successful verdict int
 	t.false(existsSync(f.launches[0].root));
 });
 
+test('the exact refusal with the distinct trust exit code 3 passes, and any other code does not (ACP-20)', async t => {
+	const passing = fixture(t, 'refuse-code-3');
+	await passing.verify();
+	t.is(passing.launches.length, 1);
+	assertClean(t, passing);
+	const failing = fixture(t, 'wrong-exit');
+	await t.throwsAsync(failing.verify(), {code: 'UNSUPPORTED'});
+	assertClean(t, failing);
+});
+
 test('an exact not-trusted refusal passes, uses only isolated state and removes both temporary roots (ACP-20)', async t => {
 	const previous = process.env.NANOCODER_TRUST_DIRECTORY;
 	const api = process.env.OPENAI_API_KEY;

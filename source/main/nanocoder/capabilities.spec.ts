@@ -52,6 +52,18 @@ test('treats anything missing or malformed as not offered', t => {
 	});
 });
 
+test('reads HTTP client MCP servers as offered only when it is exactly true (DEC-47)', t => {
+	const offered = (mcpCapabilities: unknown) =>
+		describeAgent('/p', {
+			protocolVersion: 1,
+			agentCapabilities: {mcpCapabilities},
+		} as unknown as Parameters<typeof describeAgent>[1]).capabilities.mcp;
+	t.deepEqual(offered({http: true}), {http: true, sse: false});
+	t.deepEqual(offered({http: true, sse: true}), {http: true, sse: true});
+	t.deepEqual(offered({http: 'yes', sse: 1}), {http: false, sse: false});
+	t.deepEqual(offered(undefined), {http: false, sse: false});
+});
+
 test('copes with no capabilities or agent info at all', t => {
 	const agent = describeAgent('/p', {protocolVersion: 1});
 	t.is(agent.name, null);

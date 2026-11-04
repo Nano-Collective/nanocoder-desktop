@@ -3233,7 +3233,11 @@ test('thread recovery uses the supplied starting connection and replaces its map
 			event => event.type === 'user' && event.text === 'Earlier question',
 		),
 	);
-	t.deepEqual(raw, []);
+	// Replay is never raw. The only live event is the confirmation of the mode just set (nanocoder#1912).
+	t.deepEqual(
+		raw.flatMap(event => (event.type === 'turn' ? event.events : [])),
+		[{type: 'mode', id: 'normal'}],
+	);
 	const requests = fakeEvents(
 		supervisor.getConnection(project.id).stderr.lines(),
 	).filter(

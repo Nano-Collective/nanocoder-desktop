@@ -3,7 +3,7 @@
 Everything read to write this planning set, with commits and the date read.
 
 - Status: Draft
-- Last updated: 2026-10-29
+- Last updated: 2026-11-04
 - Drafted by: @akramcodez
 
 Sources were first read on 2026-10-23; later source checks are dated below.
@@ -44,6 +44,10 @@ Nanocoder: [#1709](https://github.com/Nano-Collective/nanocoder/pull/1709), [#16
 ## Subagent source recheck (2026-10-29)
 
 Nanocoder [`fc01e239a80ddb2e09ca174e3c909508832d5340`](https://github.com/Nano-Collective/nanocoder/tree/fc01e239a80ddb2e09ca174e3c909508832d5340), package version 1.31.0: `source/acp/acp-tool-call.ts`, `source/acp/acp-conversation.ts`, `source/acp/acp-permission.ts`, `source/acp/acp-agent.ts`, `source/subagents/subagent-executor.ts`, `source/tools/approval-policy.ts`, `source/plain/initialize.ts` and `source/hooks/chat-handler/conversation/tool-executor.tsx`. Checked delegation classification, initial/progress/update wire shapes, early approval completion, policy-dependent requests, whole-turn cancellation, synthetic replay and the distinction between executor/batch bounds and ACP sequential execution. Three scripted real ACP tests accompany phase 1.10. This does not change the provisional desktop minimum or close `OQ-02`/`OQ-03`.
+
+## Pinned build bump (2026-11-04)
+
+CI moved from Nanocoder `fc01e239` (2026-10-26) to [`2c1bf7bf6a93d2a07401d0720940aafd94577467`](https://github.com/Nano-Collective/nanocoder/tree/2c1bf7bf6a93d2a07401d0720940aafd94577467) (2026-11-04, package version 1.31.0), so the integration tests run against the Nanocoder changes merged since: a trust refusal exit code of 3 ([#1908](https://github.com/Nano-Collective/nanocoder/pull/1908)), `current_mode_update` after `set_mode` ([#1912](https://github.com/Nano-Collective/nanocoder/pull/1912)), per-session `mcpServers` ([#1914](https://github.com/Nano-Collective/nanocoder/pull/1914)), per-session `disabledTools` ([#1915](https://github.com/Nano-Collective/nanocoder/pull/1915)), session pinning ([#1917](https://github.com/Nano-Collective/nanocoder/pull/1917)) and per-session model state ([#1919](https://github.com/Nano-Collective/nanocoder/pull/1919)). Documents that describe `fc01e239` stay as evidence for that build.
 
 ## This repository
 
