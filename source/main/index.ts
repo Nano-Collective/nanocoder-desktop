@@ -137,6 +137,7 @@ function createWindow(): void {
 			webSecurity: true,
 		},
 	});
+	// Closing the window detaches the renderer, which stops running turns, so it asks too.
 	const scope = `window-${window.id}`;
 	window.on('close', event =>
 		exitGuard.check(event, () => window.close(), scope),

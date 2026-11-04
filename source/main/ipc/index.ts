@@ -312,7 +312,6 @@ function watchRenderer(contents: WebContents): void {
 	};
 	contents.on('did-finish-load', () => {
 		attached = isAllowedOrigin(contents.getURL(), appOrigins);
-		if (attached) activity?.republish();
 	});
 	contents.on('did-start-navigation', (_event, url, isInPlace, isMainFrame) => {
 		if (isMainFrame && !isInPlace) {

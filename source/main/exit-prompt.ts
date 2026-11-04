@@ -19,6 +19,8 @@ const MAX_NAMES = 3;
 
 // The native question when a turn is still unfinished. Keeping the turn running is the
 // default and the cancel answer, so closing the box or pressing Escape ends nothing.
+// "Leaving ends it" is true for a window close too: the renderer detaches and the thread
+// service stops the project's process (thread-service detach), on every platform.
 export function createExitPrompt(options: {
 	showMessageBox: ShowMessageBox;
 	projectName(projectId: string): string | undefined;

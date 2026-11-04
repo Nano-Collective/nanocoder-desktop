@@ -121,18 +121,11 @@ test('CHAT-22 unfinished lists projects with a running or waiting turn, in any p
 	t.deepEqual(f.tracker.unfinished().sort(), ['a', 'b']);
 });
 
-test('CHAT-22 republish repeats only what needs attention, and reset clears everything', t => {
+test('CHAT-22 reset clears everything, and a turn that was running is then not marked failed', t => {
 	const f = fixture();
 	f.tracker.observe(f.thread('b', '1', 'running'));
 	f.tracker.observe(f.thread('c', '1', 'running'));
 	f.tracker.observe(f.thread('c', '1', 'ready'));
-	f.tracker.observe(f.thread('d', '1', 'view-only'));
-	f.published.length = 0;
-	f.tracker.republish();
-	t.deepEqual(f.published.sort(), [
-		['b', 'running'],
-		['c', 'finished'],
-	]);
 	f.published.length = 0;
 	f.tracker.reset();
 	t.deepEqual(f.published.sort(), [
@@ -140,6 +133,10 @@ test('CHAT-22 republish repeats only what needs attention, and reset clears ever
 		['c', 'idle'],
 	]);
 	t.deepEqual(f.tracker.unfinished(), []);
+	// The stopped turn reports itself interrupted afterwards; nothing was tracked for it.
+	f.published.length = 0;
+	f.tracker.observe(f.thread('b', '1', 'interrupted'));
+	t.deepEqual(f.published, []);
 });
 
 test('CHAT-22 listeners hear each change with the previous status, and can stop listening', t => {

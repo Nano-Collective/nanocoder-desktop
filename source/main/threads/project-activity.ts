@@ -72,15 +72,7 @@ export class ProjectActivityTracker {
 		this.refresh(projectId);
 	}
 
-	// A new renderer knows nothing yet, so it is told what needs attention.
-	republish(): void {
-		for (const [projectId, state] of this.projects) {
-			const status = this.status(state);
-			if (status !== 'idle') this.options.publish(projectId, status);
-		}
-	}
-
-	// No renderer is attached, so there is nobody to mark anything for.
+	// The renderer detached, which stopped every running turn, so there is nothing to mark.
 	reset(): void {
 		for (const [projectId, state] of this.projects) {
 			state.threads.clear();

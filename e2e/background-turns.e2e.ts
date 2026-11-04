@@ -192,6 +192,26 @@ const quitQuestions = () =>
 				.exitQuestions ?? [],
 	) ?? Promise.resolve([]);
 
+// Answers the first question with the first value, and so on. Any later question keeps working.
+async function stubQuitAnswers(...answers: number[]) {
+	await app?.evaluate(({dialog}, list) => {
+		const state = globalThis as {exitQuestions?: unknown[]};
+		state.exitQuestions = [];
+		dialog.showMessageBox = (async (...args: unknown[]) => {
+			const index = state.exitQuestions?.length ?? 0;
+			state.exitQuestions?.push(args.at(-1));
+			return {response: list[index] ?? 0, checkboxChecked: false};
+		}) as typeof dialog.showMessageBox;
+	}, answers);
+}
+
+const closeWindow = () =>
+	app
+		?.evaluate(({BrowserWindow}) => {
+			BrowserWindow.getAllWindows()[0]?.close();
+		})
+		.catch(() => undefined);
+
 const quit = () =>
 	app
 		?.evaluate(({app: electronApp}) => {
@@ -237,4 +257,31 @@ test('CHAT-22 waiting before quitting lets the turn finish, then the app quits b
 		.click();
 	await closed;
 	app = undefined;
+});
+
+test('CHAT-22 closing the window with an unfinished turn asks first, keeps it when told to, and does not ask again on the way out', async () => {
+	await launch({NANOCODER_E2E_EXIT_PROMPT: '1'});
+	await openFolder(project('alpha-close'));
+	await startTurn();
+	await stubQuitAnswers(0, 2);
+	await closeWindow();
+	await expect.poll(async () => (await quitQuestions()).length).toBe(1);
+	// The window is still open and its request is still waiting.
+	expect(page.isClosed()).toBe(false);
+	await expect(
+		page.getByRole('region', {name: 'Permission request'}),
+	).toBeVisible();
+	const windowClosed = page.waitForEvent('close');
+	// On Windows and Linux the app quits behind the last window. A second question would be
+	// answered with keep working and stop that, so the app closing proves it was not asked.
+	const appClosed =
+		process.platform === 'darwin' ? undefined : app?.waitForEvent('close');
+	await closeWindow();
+	await windowClosed;
+	if (appClosed) {
+		await appClosed;
+		app = undefined;
+	} else {
+		expect((await quitQuestions()).length).toBe(2);
+	}
 });
