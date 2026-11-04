@@ -4,11 +4,13 @@ import {
 	app,
 	BrowserWindow,
 	dialog,
+	Notification,
 	type OpenDialogOptions,
 	shell,
 	type WebContents,
 } from 'electron';
 import {z} from 'zod';
+import {createActivityNotifier} from '@/main/activity-notifier';
 import {createWorkspaceControls} from '@/main/controls/workspace-controls';
 import {confirmYolo} from '@/main/controls/yolo-consent';
 import {resolveAttachments} from '@/main/files/attachments';
@@ -34,6 +36,7 @@ import {AgentCommandObserver} from '@/main/terminal/agent-command';
 import {TerminalService} from '@/main/terminal/terminal-service';
 import {createUtilityPtyHost} from '@/main/terminal/utility-host';
 import {deleteHistoryDialog} from '@/main/threads/delete-history-consent';
+import {ProjectActivityTracker} from '@/main/threads/project-activity';
 import {createThreadService} from '@/main/threads/thread-service';
 import {APP_NAME} from '@/shared/app-info';
 import {FILES_CHANNELS, type FilesEvent} from '@/shared/files';
@@ -71,6 +74,7 @@ let appOrigins: readonly string[] = [];
 let workspaceServices: WorkspaceServices = {};
 let unsubscribeProjectEvents: (() => void) | undefined;
 let terminal: TerminalService | undefined;
+let activity: ProjectActivityTracker | undefined;
 const agentCommands = new AgentCommandObserver((projectId, command) =>
 	terminal?.setAgentCommand(projectId, command),
 );
@@ -105,6 +109,9 @@ function sendProjectEvent(event: ProjectEvent): void {
 			window.webContents.send(CHANNELS.projectEvent, event);
 		}
 	}
+	// After the send: the activity this event causes carries a later sequence, and the
+	// renderer drops anything older than what it has seen, so it must not overtake it.
+	activity?.observe(event);
 }
 
 function sendFilesEvent(event: FilesEvent): void {
@@ -244,6 +251,15 @@ function connectedProject(
 	return {status: 'connected', agent: connection.agent};
 }
 
+// What the exit guard needs to know, without exposing the tracker (CHAT-22).
+export const unfinishedWork = {
+	projects: (): readonly string[] => activity?.unfinished() ?? [],
+	onChange: (listener: () => void): (() => void) =>
+		activity?.onChange(() => listener()) ?? (() => undefined),
+	name: (projectId: string): string | undefined =>
+		workspaceServices.store?.projects.get(projectId)?.displayName,
+};
+
 export function closeNanocoder(): Promise<void> {
 	runtimeDiscovery.abort();
 	rendererAttachment.abort(
@@ -281,6 +297,7 @@ function watchRenderer(contents: WebContents): void {
 		rendererAttachment = new AbortController();
 		activeProjectId = undefined;
 		agentCommands.reset(null);
+		activity?.reset();
 		invalidateControls();
 		rendererCleanup = Promise.allSettled([
 			terminal?.activate(null),
@@ -349,6 +366,37 @@ export function registerIpcHandlers(
 				},
 			});
 	const ownedSupervisor = supervisor;
+	activity = new ProjectActivityTracker({
+		active: () => activeProjectId,
+		publish: (projectId, status) =>
+			ownedSupervisor?.publishProjectActivity(projectId, status),
+	});
+	const quiet = services.quiet === true;
+	activity.onChange(
+		createActivityNotifier({
+			// Hidden test runs never raise real operating system notifications.
+			supported: () => !quiet && Notification.isSupported(),
+			windowFocused: () =>
+				BrowserWindow.getAllWindows().some(
+					window => window.isFocused() && !window.isMinimized(),
+				),
+			active: () => activeProjectId,
+			projectName: id => services.store?.projects.get(id)?.displayName,
+			show: ({title, body}, onClick) => {
+				const notification = new Notification({title, body});
+				notification.on('click', onClick);
+				notification.show();
+			},
+			open: projectId => {
+				const [window] = BrowserWindow.getAllWindows();
+				if (!window) return;
+				if (window.isMinimized()) window.restore();
+				window.show();
+				window.focus();
+				ownedSupervisor?.publishProjectRequested(projectId);
+			},
+		}),
+	);
 	workspaceServices = {
 		...services,
 		supervisor: services.supervisor ?? supervisor,
@@ -456,6 +504,7 @@ export function registerIpcHandlers(
 							ownedSupervisor.publishProjectsChanged(projectId),
 						announceProject: project => {
 							activeProjectId = project.id;
+							activity?.activate(project.id);
 							threads?.attachProject(project.id);
 							supervisor?.announceProject(project);
 						},

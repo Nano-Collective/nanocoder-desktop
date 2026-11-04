@@ -386,7 +386,7 @@ acceptance. Phase 1.8 and `SUB-05` remain app-composed, not full acceptance.
 - [x] Model and provider controls labelled as project-wide (`CHAT-10`, `ACP-14`) ([`controls.e2e.ts`](../e2e/controls.e2e.ts), [`controls.acp.ts`](../source/main/nanocoder/controls.acp.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
 - [x] Mode control, set between turns only, with an explicit project default and a confirmation for `yolo` (`CHAT-11`, `ACP-13`, `DEC-31`) ([`controls.e2e.ts`](../e2e/controls.e2e.ts), [`thread-modes.spec.ts`](../source/main/controls/thread-modes.spec.ts); implementation verified, DEC-31 remains Proposed, not policy approval; [final local run](milestone-1-exit-checks.md#final-local-run))
 - [x] One root turn per project process (`CHAT-17`) ([`project-operations.spec.ts`](../source/main/threads/project-operations.spec.ts), [`thread-service.spec.ts`](../source/main/threads/thread-service.spec.ts); [final local run](milestone-1-exit-checks.md#final-local-run))
-- [ ] Background turns after a project switch: a rail marker, a generic OS notification and a quit prompt for unfinished turns (`CHAT-22`, `DEC-46`)
+- [x] Background turns after a project switch: a rail marker, a generic OS notification and a quit prompt for unfinished turns (`CHAT-22`, `DEC-46`) ([`background-turns.e2e.ts`](../e2e/background-turns.e2e.ts), [`project-activity.spec.ts`](../source/main/threads/project-activity.spec.ts), [`exit-guard.spec.ts`](../source/main/exit-guard.spec.ts)); macOS shows no notification until the app is signed
 
 **Results we want**
 

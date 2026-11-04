@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {AppShell} from '@/renderer/app-shell';
 import {ApprovalRequests} from '@/renderer/approval-requests';
 import logoUrl from '@/renderer/assets/nano-collective-avatar.png';
@@ -11,6 +11,7 @@ import {
 	labelFor,
 	removeAttachment,
 } from '@/renderer/attachments';
+import {BackgroundProjects} from '@/renderer/background-projects';
 import {Composer} from '@/renderer/composer';
 import {ConversationStream} from '@/renderer/conversation-stream';
 import {
@@ -24,6 +25,7 @@ import {
 	OverlayProvider,
 	PaletteButton,
 } from '@/renderer/overlays';
+import {backgroundItems} from '@/renderer/project-activity';
 import {projectPalette} from '@/renderer/project-palette';
 import {ProjectSwitch} from '@/renderer/recent-projects';
 import {
@@ -53,6 +55,10 @@ import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, StatusBadge} from '@/renderer/ui';
 import {useDiagnosticReview} from '@/renderer/use-diagnostic-review';
 import {useFiles} from '@/renderer/use-files';
+import {
+	useBackgroundAnnouncements,
+	useProjectActivity,
+} from '@/renderer/use-project-activity';
 import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
 import {useReview} from '@/renderer/use-review';
@@ -235,6 +241,15 @@ export function App() {
 	const retrying = useRef(false);
 	const [overlayOpen, setOverlayOpen] = useState(false);
 	const overlays = useRef<OverlayHandle>(null);
+	// What is happening in other projects, kept apart from the one in view (CHAT-22).
+	const activity = useProjectActivity(id => void projectControls.onOpen(id));
+	const background = useMemo(
+		() => backgroundItems(activity, projectControls.projects, projectId),
+		[activity, projectControls.projects, projectId],
+	);
+	useBackgroundAnnouncements(background, message =>
+		overlays.current?.notify(message),
+	);
 	const review = useDiagnosticReview(projectId, {
 		capture: id => window.desktop.getDiagnostics({projectId: id}),
 		exportSnapshot: request => window.desktop.exportDiagnostics(request),
@@ -832,6 +847,13 @@ export function App() {
 							onOpenArchives={opener => openDialog('archives', opener)}
 							onOpenImport={openImportPage}
 						/>
+						{projectId && (
+							<BackgroundProjects
+								items={background}
+								pending={connecting || projectControls.pending}
+								onOpen={projectControls.onOpen}
+							/>
+						)}
 						{!projectId && (
 							<SidebarRecents
 								projects={projectControls.projects}

@@ -30,6 +30,7 @@ import {canonicalPath, isInside} from '@/main/paths';
 import type {
 	CapabilityGates,
 	DiagnosticsSnapshot,
+	ProjectActivityStatus,
 	ProjectControls,
 	ProjectEvent,
 	ProjectInfo,
@@ -254,6 +255,26 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			projectId: thread.projectId,
 			sequence: this.sequence(thread.projectId),
 			thread,
+		});
+	}
+
+	publishProjectRequested(projectId: string): void {
+		this.emit({
+			type: 'project-requested',
+			projectId,
+			sequence: this.sequence(projectId),
+		});
+	}
+
+	publishProjectActivity(
+		projectId: string,
+		status: ProjectActivityStatus,
+	): void {
+		this.emit({
+			type: 'project-activity',
+			projectId,
+			sequence: this.sequence(projectId),
+			status,
 		});
 	}
 

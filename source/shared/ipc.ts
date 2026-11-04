@@ -364,6 +364,14 @@ export interface DiagnosticsSnapshot {
 	truncated: boolean;
 }
 
+// What a project needs from the user, for the rail marker and notifications (CHAT-22).
+export type ProjectActivityStatus =
+	| 'idle'
+	| 'running'
+	| 'needs-approval'
+	| 'finished'
+	| 'failed';
+
 export type ThreadRunState =
 	| 'new'
 	| 'ready'
@@ -545,6 +553,14 @@ export type ProjectEvent =
 			gates: CapabilityGates;
 	  }
 	| {type: 'thread'; projectId: string; sequence: number; thread: ThreadInfo}
+	| {
+			type: 'project-activity';
+			projectId: string;
+			sequence: number;
+			status: ProjectActivityStatus;
+	  }
+	// Main asks the window to open a project, for example after a notification click.
+	| {type: 'project-requested'; projectId: string; sequence: number}
 	| {
 			type: 'turn';
 			projectId: string;
