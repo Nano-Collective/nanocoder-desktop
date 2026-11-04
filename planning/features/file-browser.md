@@ -3,7 +3,7 @@
 The read-oriented project tree and file preview.
 
 - Status: Draft
-- Last updated: 2026-10-26
+- Last updated: 2026-11-04
 - Drafted by: @akramcodez
 
 ## Purpose
@@ -19,7 +19,7 @@ Help the user understand and reference the project without turning the desktop i
 | FILE-03 | Show each entry's Git status from the Git service. | Decided ([whitepaper][wp-files]) |
 | FILE-04 | Preview text and code with syntax highlighting up to a size limit; show metadata only for binary, unsupported or oversized files. | Decided ([whitepaper][wp-files]) |
 | FILE-05 | Refresh from file watching with debouncing, plus a manual refresh that reconciles the whole open tree. | Decided ([whitepaper][wp-files]) |
-| FILE-06 | "Open in editor" launches the user's chosen editor with an argument array. | Decided ([whitepaper][wp-files]); editors Open (`OQ-07`) |
+| FILE-06 | "Open in editor" launches the user's chosen editor with an argument array. | Decided ([whitepaper][wp-files]); editors decided in `DEC-43` |
 | FILE-07 | "Reveal in file manager". | Decided ([whitepaper][wp-files]) |
 | FILE-08 | Insert the selected file into the composer as an ACP resource. | Decided ([whitepaper][wp-files]) |
 | FILE-09 | All privileged file operations run in the main process; the renderer receives data only. | Decided ([whitepaper][wp-files]) |
