@@ -32,11 +32,12 @@ test('shows the app shell, loaded over IPC', async () => {
 });
 
 test('the preload bridge exposes typed methods only', async () => {
-	const {keys, terminalKeys} = await page.evaluate(() => {
+	const {keys, terminalKeys, browserKeys} = await page.evaluate(() => {
 		const desktop = (window as unknown as {desktop: DesktopApi}).desktop;
 		return {
 			keys: Object.keys(desktop),
 			terminalKeys: Object.keys(desktop.terminal),
+			browserKeys: Object.keys(desktop.browser),
 		};
 	});
 	expect(keys.sort()).toEqual(
@@ -46,7 +47,11 @@ test('the preload bridge exposes typed methods only', async () => {
 			'files',
 			'review',
 			'terminal',
+			'browser',
 		].sort(),
+	);
+	expect(browserKeys.sort()).toEqual(
+		['get', 'open', 'setBounds', 'close', 'onEvent'].sort(),
 	);
 	expect(terminalKeys.sort()).toEqual(
 		[

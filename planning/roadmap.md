@@ -600,13 +600,13 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 **Build**
 
-- [ ] `WebContentsView` with its own persistent partition for each project's profile (`BRW-01`, `BRW-05`, `DEC-49`)
-- [ ] Sandbox on, no Node, no preload, no IPC (`SEC-12`)
+- [x] `WebContentsView` with its own persistent partition for each project's profile (`BRW-01`, `BRW-05`, `DEC-49`)
+- [x] Sandbox on, no Node, no preload, no IPC (`SEC-12`)
 
 **Results we want**
 
-- [ ] A test page cannot reach any desktop API
-- [ ] Browser data is stored apart from the user's normal browser
+- [x] A test page cannot reach any desktop API
+- [x] Browser data is stored apart from the user's normal browser
 
 ### Phase 3.4: navigation and origin policy
 
