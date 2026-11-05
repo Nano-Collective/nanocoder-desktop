@@ -7,9 +7,10 @@ import {
 import {resolveNanocoder} from '@/main/nanocoder/runtime';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
 import {createTrustPreflight} from '@/main/nanocoder/trust-preflight';
+import {requiresTrustPreflight} from '@/main/nanocoder/version-policy';
 import type {ProjectInfo} from '@/shared/ipc';
 
-test('the real 1.31.0 override passes isolated preflight and opens a project with normal trust consent and an untested warning (ACP-04 ACP-20 PERF-02)', async t => {
+test('a real override build opens a project with normal trust consent and an untested warning, after the isolated preflight where its version needs one (ACP-04 ACP-20 PERF-02)', async t => {
 	t.timeout(120_000);
 	const folder = createWorkFolder('nd-min-version-real-profile-');
 	const f = await setupProject(folder.work, 'fixture', [
@@ -28,18 +29,20 @@ test('the real 1.31.0 override passes isolated preflight and opens a project wit
 		untrustedRoots: [f.root],
 	});
 	if (!resolved.ok) throw new Error(resolved.message);
-	t.is(resolved.runtime.version, '1.31.0');
+	t.regex(resolved.runtime.version ?? '', /^1\.3\d\.\d+$/);
 	t.is(resolved.runtime.source, 'override');
-	const probe = createTrustPreflight();
-	let start = performance.now();
-	await probe.verify(resolved.runtime, f.root);
-	const coldMs = performance.now() - start;
-	start = performance.now();
-	await probe.verify(resolved.runtime, f.root);
-	const cachedMs = performance.now() - start;
-	t.log(
-		JSON.stringify({coldMs, cachedMs, scope: '1.31.x trust preflight only'}),
-	);
+	if (requiresTrustPreflight(resolved.runtime.version)) {
+		const probe = createTrustPreflight();
+		let start = performance.now();
+		await probe.verify(resolved.runtime, f.root);
+		const coldMs = performance.now() - start;
+		start = performance.now();
+		await probe.verify(resolved.runtime, f.root);
+		const cachedMs = performance.now() - start;
+		t.log(
+			JSON.stringify({coldMs, cachedMs, scope: '1.31.x trust preflight only'}),
+		);
+	}
 	const supervisor = new ProjectSupervisor({
 		resolveRuntime: async () => resolved,
 		clientInfo,
@@ -72,7 +75,7 @@ test('the real 1.31.0 override passes isolated preflight and opens a project wit
 	t.is(state.gates?.versionPolicy.status, 'untested');
 	t.regex(
 		state.gates?.versionPolicy.reason ?? '',
-		/NANOCODER_DESKTOP_CLI.*trust/,
+		/Compatibility is unverified/,
 	);
 	t.is(confirmations, 1);
 	const connection = supervisor.getConnection(project.id);
