@@ -1,3 +1,4 @@
+import type {BrowserApi} from '@/shared/browser';
 import type {FilesApi} from '@/shared/files';
 import type {
 	AppInfo,
@@ -22,6 +23,7 @@ export interface DesktopApi extends WorkspaceApi {
 	files: FilesApi;
 	review: ReviewApi;
 	terminal: TerminalApi;
+	browser: BrowserApi;
 	getAppInfo(): Promise<IpcResult<AppInfo>>;
 	getNanocoderRuntime(): Promise<IpcResult<NanocoderRuntime>>;
 	connectNanocoder(): Promise<IpcResult<ConnectResult>>;

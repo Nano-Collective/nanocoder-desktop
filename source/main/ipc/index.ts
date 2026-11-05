@@ -11,10 +11,16 @@ import {
 } from 'electron';
 import {z} from 'zod';
 import {createActivityNotifier} from '@/main/activity-notifier';
+import {BrowserService} from '@/main/browser/browser-service';
+import {
+	createElectronViewFactory,
+	isBrowserSession,
+} from '@/main/browser/electron-view';
 import {createWorkspaceControls} from '@/main/controls/workspace-controls';
 import {confirmYolo} from '@/main/controls/yolo-consent';
 import {resolveAttachments} from '@/main/files/attachments';
 import {createFilesRuntime, type FilesRuntime} from '@/main/files/runtime';
+import {registerBrowserHandlers} from '@/main/ipc/browser';
 import {registerFilesHandlers} from '@/main/ipc/files';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
@@ -39,6 +45,7 @@ import {deleteHistoryDialog} from '@/main/threads/delete-history-consent';
 import {ProjectActivityTracker} from '@/main/threads/project-activity';
 import {createThreadService} from '@/main/threads/thread-service';
 import {APP_NAME} from '@/shared/app-info';
+import {BROWSER_CHANNELS, type BrowserEvent} from '@/shared/browser';
 import {FILES_CHANNELS, type FilesEvent} from '@/shared/files';
 import {
 	type AppInfo,
@@ -74,6 +81,7 @@ let appOrigins: readonly string[] = [];
 let workspaceServices: WorkspaceServices = {};
 let unsubscribeProjectEvents: (() => void) | undefined;
 let terminal: TerminalService | undefined;
+let browser: BrowserService | undefined;
 let activity: ProjectActivityTracker | undefined;
 const agentCommands = new AgentCommandObserver((projectId, command) =>
 	terminal?.setAgentCommand(projectId, command),
@@ -132,6 +140,25 @@ function sendTerminalEvent(event: TerminalEvent): void {
 			isAllowedOrigin(window.webContents.getURL(), appOrigins)
 		) {
 			window.webContents.send(TERMINAL_CHANNELS.event, event);
+		}
+	}
+}
+
+function appWindow(): BrowserWindow | undefined {
+	return BrowserWindow.getAllWindows().find(
+		window =>
+			!window.isDestroyed() &&
+			isAllowedOrigin(window.webContents.getURL(), appOrigins),
+	);
+}
+
+function sendBrowserEvent(event: BrowserEvent): void {
+	for (const window of BrowserWindow.getAllWindows()) {
+		if (
+			!window.webContents.isDestroyed() &&
+			isAllowedOrigin(window.webContents.getURL(), appOrigins)
+		) {
+			window.webContents.send(BROWSER_CHANNELS.event, event);
 		}
 	}
 }
@@ -271,6 +298,7 @@ export function closeNanocoder(): Promise<void> {
 			try {
 				await Promise.all([
 					terminal?.close(),
+					browser?.close(),
 					rendererCleanup,
 					connecting,
 					threads?.detach(workspaceServices.store?.projects.list() ?? []),
@@ -287,6 +315,7 @@ export function closeNanocoder(): Promise<void> {
 }
 
 function watchRenderer(contents: WebContents): void {
+	if (isBrowserSession(contents.session)) return;
 	let attached = false;
 	const detach = () => {
 		if (!attached) return;
@@ -301,6 +330,7 @@ function watchRenderer(contents: WebContents): void {
 		invalidateControls();
 		rendererCleanup = Promise.allSettled([
 			terminal?.activate(null),
+			browser?.activate(null),
 			rendererCleanup,
 			threads?.detach(
 				runtimeDiscovery.signal.aborted
@@ -335,6 +365,11 @@ export function registerIpcHandlers(
 			projects: () => store.projects.list(),
 			createHost: createUtilityPtyHost,
 			emit: sendTerminalEvent,
+		});
+		browser = new BrowserService({
+			project: id => store.projects.get(id),
+			emit: sendBrowserEvent,
+			createView: createElectronViewFactory(appWindow),
 		});
 	}
 	supervisor = services.supervisor
@@ -499,6 +534,7 @@ export function registerIpcHandlers(
 						beforeOpenProject: async project => {
 							agentCommands.reset(project.id);
 							await terminal?.activate(project.id);
+							browser?.activate(project.id);
 						},
 						projectsChanged: projectId =>
 							ownedSupervisor.publishProjectsChanged(projectId),
@@ -645,6 +681,7 @@ export function registerIpcHandlers(
 	registerWorkspaceHandlers(registerHandler, allowedOrigins, workspaceServices);
 	registerFilesHandlers(registerHandler, allowedOrigins, filesRuntime);
 	registerTerminalHandlers(registerHandler, allowedOrigins, terminal);
+	registerBrowserHandlers(registerHandler, allowedOrigins, browser);
 	unsubscribeProjectEvents = workspaceServices.supervisor?.subscribe(event => {
 		if (event.type === 'supervisor' && event.state.status === 'untrusted') {
 			const store = workspaceServices.store;

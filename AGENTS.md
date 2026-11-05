@@ -32,6 +32,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/terminal/`, `source/main/ipc/terminal.ts`, `source/shared/terminal.ts` | Isolated utility-process PTY, main-owned active-project lifecycle, bounded memory-only output and strict typed terminal IPC (`TERM-01` to `TERM-10`) |
 | `source/main/terminal/agent-command.ts` | Passive bounded last-command and accepted-option display projection (`TERM-12`), never a terminal or permission capability |
 | `source/renderer/terminal-panel.tsx`, `source/renderer/terminal-view.tsx`, `source/renderer/styles/terminal.css` | Token-based xterm bottom dock, explicit lifecycle controls, separate agent display and keyboard/screen-reader access |
+| `source/main/browser/`, `source/main/ipc/browser.ts`, `source/shared/browser.ts`, `e2e/browser.e2e.ts` | Phase 3.3 main-owned browser view: a sandboxed `WebContentsView` with a persistent partition per project, no preload, Node or IPC, permissions denied, loopback pages only until phase 3.4 (`BRW-01`, `BRW-05`, `SEC-12`) |
 | `source/renderer/terminal-controller.ts`, `source/renderer/use-terminal.ts` | Project-scoped sequenced terminal data, bounded memory, pending actions and stale-result refusal |
 | `source/renderer/terminal-output.ts` | Serialised xterm writes and supported screen-reader queue reset on clear and stop |
 | `source/renderer/terminal-styles.ts` | Mirrors xterm's generated `<style>` rules into adopted sheets so ANSI colours and the cursor render under the strict style policy |

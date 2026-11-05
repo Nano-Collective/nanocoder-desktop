@@ -1,4 +1,5 @@
 import {contextBridge, ipcRenderer} from 'electron';
+import {BROWSER_CHANNELS, type BrowserEvent} from '@/shared/browser';
 import type {DesktopApi} from '@/shared/desktop-api';
 import {FILES_CHANNELS, type FilesEvent} from '@/shared/files';
 import {CHANNELS} from '@/shared/ipc';
@@ -36,6 +37,18 @@ const api: DesktopApi = {
 				listener(event);
 			ipcRenderer.on(TERMINAL_CHANNELS.event, handler);
 			return () => ipcRenderer.removeListener(TERMINAL_CHANNELS.event, handler);
+		},
+	},
+	browser: {
+		get: request => ipcRenderer.invoke(BROWSER_CHANNELS.get, request),
+		open: request => ipcRenderer.invoke(BROWSER_CHANNELS.open, request),
+		setBounds: request =>
+			ipcRenderer.invoke(BROWSER_CHANNELS.setBounds, request),
+		close: request => ipcRenderer.invoke(BROWSER_CHANNELS.close, request),
+		onEvent: listener => {
+			const handler = (_event: unknown, event: BrowserEvent) => listener(event);
+			ipcRenderer.on(BROWSER_CHANNELS.event, handler);
+			return () => ipcRenderer.removeListener(BROWSER_CHANNELS.event, handler);
 		},
 	},
 	getSettings: request => ipcRenderer.invoke(CHANNELS.getSettings, request),

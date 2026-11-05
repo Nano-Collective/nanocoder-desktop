@@ -1,6 +1,7 @@
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {app, BrowserWindow, dialog, net, protocol, session} from 'electron';
+import {isBrowserSession} from '@/main/browser/electron-view';
 import {createExitGuard} from '@/main/exit-guard';
 import {createExitPrompt} from '@/main/exit-prompt';
 import {closeNanocoder, registerIpcHandlers, unfinishedWork} from '@/main/ipc';
@@ -112,6 +113,9 @@ function lockDownSession(): void {
 
 app.on('web-contents-created', (_event, contents) => {
 	contents.setWindowOpenHandler(() => ({action: 'deny'}));
+	contents.on('will-attach-webview', event => event.preventDefault());
+	// The browser view applies its own loopback rule where it is created.
+	if (isBrowserSession(contents.session)) return;
 	contents.on('will-navigate', (event, url) => {
 		if (!isAllowedOrigin(url, allowedOrigins)) {
 			event.preventDefault();
@@ -122,7 +126,6 @@ app.on('web-contents-created', (_event, contents) => {
 			event.preventDefault();
 		}
 	});
-	contents.on('will-attach-webview', event => event.preventDefault());
 });
 
 function createWindow(): void {
