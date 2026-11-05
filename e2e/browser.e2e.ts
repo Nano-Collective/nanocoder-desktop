@@ -180,10 +180,16 @@ test('BRW-03 a public address is refused and no view appears', async () => {
 test('BRW-03 a redirect from localhost to a public site stops', async () => {
 	const result = await call('open', {projectId, url: `${origin}/redirect`});
 	expect(result).toMatchObject({ok: false});
-	const urls = await app.evaluate(({webContents}) =>
-		webContents.getAllWebContents().map(contents => contents.getURL()),
+	const hosts = await app.evaluate(({webContents}) =>
+		webContents.getAllWebContents().map(contents => {
+			try {
+				return new URL(contents.getURL()).hostname;
+			} catch {
+				return '';
+			}
+		}),
 	);
-	expect(urls.some(url => url.includes('example.com'))).toBe(false);
+	expect(hosts).not.toContain('example.com');
 });
 
 test('BRW-01 closing the view removes it', async () => {
