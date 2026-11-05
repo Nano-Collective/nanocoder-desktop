@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NANOCODER_REF: 2c1bf7bf6a93d2a07401d0720940aafd94577467
+  NANOCODER_REF: b65627e48d8c092d03953ca8c6b9e3cc64625edd
 
 jobs:
   changes:
