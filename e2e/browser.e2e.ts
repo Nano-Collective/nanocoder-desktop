@@ -18,7 +18,7 @@ import {
 	type Page,
 	test,
 } from '@playwright/test';
-import type {BrowserRequests, BrowserSnapshot} from '@/shared/browser';
+import type {BrowserRequests, BrowserResults} from '@/shared/browser';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {IpcResult} from '@/shared/ipc';
 import {electron} from './qa/electron';
@@ -48,15 +48,13 @@ const publicUrl = (suffix = '/') => `http://${PUBLIC_HOST}:${port}${suffix}`;
 function call<K extends keyof BrowserRequests>(
 	key: K,
 	request: BrowserRequests[K],
-): Promise<IpcResult<BrowserSnapshot | null>> {
+): Promise<IpcResult<BrowserResults[K]>> {
 	return page.evaluate(
 		({key, request}) => {
 			const api = (window as unknown as {desktop: DesktopApi}).desktop.browser;
-			return (
-				api[key] as (
-					request: unknown,
-				) => Promise<IpcResult<BrowserSnapshot | null>>
-			)(request);
+			return (api[key] as (request: unknown) => Promise<IpcResult<never>>)(
+				request,
+			);
 		},
 		{key, request},
 	);
@@ -65,6 +63,14 @@ function call<K extends keyof BrowserRequests>(
 test.beforeEach(async () => {
 	server = createServer((request, response) => {
 		if (request.url === '/slow') return;
+		if (request.url === '/cookie') {
+			response.writeHead(200, {
+				'Content-Type': 'text/html',
+				'Set-Cookie': 'sid=abc123; Path=/; Max-Age=3600',
+			});
+			response.end('<!doctype html><title>cookie</title>cookie');
+			return;
+		}
 		if (request.url === '/file.txt') {
 			response.writeHead(200, {
 				'Content-Type': 'text/plain',
@@ -711,4 +717,240 @@ test('BRW-06 BRW-03 a download from a public site is cancelled while public brow
 		.toBe('public-off');
 	expect(await downloadList()).toEqual([]);
 	expect(existsSync(target)).toBe(false);
+});
+
+const cookiesIn = (partition: string) =>
+	app.evaluate(
+		({session}, name) =>
+			session
+				.fromPartition(name)
+				.cookies.get({})
+				.then(list => list.map(cookie => cookie.name)),
+		partition,
+	);
+
+const setProfile = (profile: string) =>
+	call('setProfile', {projectId, profile});
+
+test('BRW-08 clearing a profile removes its cookies and closes the page that was using them', async () => {
+	const own = `persist:browser-${projectId}`;
+	await call('open', {projectId, url: `${origin}/cookie`});
+	expect(await cookiesIn(own)).toEqual(['sid']);
+	const cleared = await call('clearData', {projectId, profile: 'project'});
+	expect(cleared).toMatchObject({
+		ok: true,
+		value: {status: 'closed', url: null, canGoBack: false},
+	});
+	expect(await cookiesIn(own)).toEqual([]);
+});
+
+test('BRW-05 each profile keeps its own cookies and clearing one leaves the others alone', async () => {
+	const own = `persist:browser-${projectId}`;
+	await call('open', {projectId, url: `${origin}/cookie`});
+	expect(await setProfile('default')).toMatchObject({
+		ok: true,
+		value: {status: 'closed'},
+	});
+	expect(await cookiesIn('persist:browser-default')).toEqual([]);
+	await call('open', {projectId, url: `${origin}/cookie`});
+	expect(await cookiesIn('persist:browser-default')).toEqual(['sid']);
+	expect(
+		await call('clearData', {projectId, profile: 'default'}),
+	).toMatchObject({ok: true});
+	expect(await cookiesIn('persist:browser-default')).toEqual([]);
+	expect(await cookiesIn(own)).toEqual(['sid']);
+});
+
+test('BRW-05 a named profile is created, used, listed and removed with its data', async () => {
+	const created = await call('createProfile', {projectId, name: 'Docs'});
+	expect(created).toMatchObject({
+		ok: true,
+		value: {profiles: [{name: 'Docs'}], current: 'project'},
+	});
+	const id = (created as {value: {profiles: Array<{id: string}>}}).value
+		.profiles[0].id;
+	await setProfile(id);
+	expect(await call('profiles', {projectId})).toMatchObject({
+		ok: true,
+		value: {current: id},
+	});
+	await call('open', {projectId, url: `${origin}/cookie`});
+	const named = `persist:browser-profile-${id}`;
+	expect(await cookiesIn(named)).toEqual(['sid']);
+	const removed = await call('deleteProfile', {projectId, id});
+	expect(removed).toMatchObject({
+		ok: true,
+		value: {profiles: [], current: 'project'},
+	});
+	expect(await cookiesIn(named)).toEqual([]);
+	expect(await call('get', {projectId})).toMatchObject({
+		ok: true,
+		value: {status: 'closed'},
+	});
+});
+
+test('BRW-05 incognito keeps nothing on disk and is wiped when the page closes', async () => {
+	await setProfile('incognito');
+	await call('open', {projectId, url: `${origin}/cookie`});
+	const incognito = `browser-incognito-${projectId}`;
+	expect(await cookiesIn(incognito)).toEqual(['sid']);
+	const storage = await app.evaluate(
+		({session}, name) => session.fromPartition(name).storagePath ?? null,
+		incognito,
+	);
+	expect(storage).toBeNull();
+	await call('close', {projectId});
+	await expect.poll(() => cookiesIn(incognito)).toEqual([]);
+});
+
+test('BRW-05 a profile that is not known is refused', async () => {
+	expect(
+		await setProfile('0c7b2a54-1d6e-4f8a-9b3c-5e2d1a0f9c88'),
+	).toMatchObject({ok: false, error: {code: 'NOT_FOUND'}});
+	expect(await setProfile('shared')).toMatchObject({
+		ok: false,
+		error: {code: 'VALIDATION'},
+	});
+});
+
+test('BRW-09 SEC-16 the page opens in the system browser only after the user confirms its exact address', async () => {
+	await app.evaluate(({dialog, shell}) => {
+		const state = globalThis as unknown as {
+			external: string[];
+			asked: string[];
+			answer: number;
+		};
+		state.external = [];
+		state.asked = [];
+		state.answer = 1;
+		dialog.showMessageBox = (async (...args: unknown[]) => {
+			const options = args[args.length - 1] as {detail: string};
+			state.asked.push(options.detail);
+			return {response: state.answer, checkboxChecked: false};
+		}) as unknown as typeof dialog.showMessageBox;
+		shell.openExternal = async url => {
+			state.external.push(url);
+		};
+	});
+	expect(await call('openExternal', {projectId})).toMatchObject({
+		ok: false,
+		error: {code: 'UNAVAILABLE'},
+	});
+	await call('open', {projectId, url: `${origin}/a`});
+	expect(await call('openExternal', {projectId})).toMatchObject({
+		ok: true,
+		value: {opened: true},
+	});
+	await app.evaluate(() => {
+		(globalThis as unknown as {answer: number}).answer = 0;
+	});
+	expect(await call('openExternal', {projectId})).toMatchObject({
+		ok: true,
+		value: {opened: false},
+	});
+	const seen = await app.evaluate(
+		() => globalThis as unknown as {external: string[]; asked: string[]},
+	);
+	expect(seen.asked).toEqual([`${origin}/a`, `${origin}/a`]);
+	expect(seen.external).toEqual([`${origin}/a`]);
+});
+
+async function openAddress(url: string) {
+	await page.getByRole('textbox', {name: 'address'}).fill(url);
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	await expect.poll(loadingStatus).toBe('ready');
+}
+
+test('BRW-05 the profile chosen in the panel decides where the page keeps its cookies', async () => {
+	await openBrowserTab();
+	const picker = page.getByRole('combobox', {name: 'browser profile'});
+	await expect(picker).toHaveValue('project');
+	await picker.selectOption('incognito');
+	await expect(picker).toHaveValue('incognito');
+	await openAddress(`127.0.0.1:${port}/cookie`);
+	expect(await cookiesIn(`browser-incognito-${projectId}`)).toEqual(['sid']);
+	expect(await cookiesIn(`persist:browser-${projectId}`)).toEqual([]);
+	await picker.selectOption('project');
+	await expect(picker).toHaveValue('project');
+	await expect(page.getByText('no page open')).toBeVisible();
+	await openAddress(`127.0.0.1:${port}/cookie`);
+	expect(await cookiesIn(`persist:browser-${projectId}`)).toEqual(['sid']);
+});
+
+test('BRW-05 a profile is added and removed from the panel, and removing asks first', async () => {
+	await openBrowserTab();
+	await page.getByText('manage profiles and data').click();
+	await page.getByRole('textbox', {name: 'new profile name'}).fill('Docs');
+	await page.getByRole('button', {name: 'add profile'}).click();
+	const picker = page.getByRole('combobox', {name: 'browser profile'});
+	await expect(picker.getByRole('option', {name: 'Docs'})).toHaveCount(1);
+	await picker.selectOption({label: 'Docs'});
+	await openAddress(`127.0.0.1:${port}/cookie`);
+	await page.getByRole('button', {name: 'remove this profile'}).click();
+	await expect(page.getByRole('alert')).toContainText(
+		'remove the Docs profile',
+	);
+	await page.getByRole('button', {name: 'keep it'}).click();
+	await expect(picker.getByRole('option', {name: 'Docs'})).toHaveCount(1);
+	await page.getByRole('button', {name: 'remove this profile'}).click();
+	await page.getByRole('button', {name: 'yes, remove it'}).click();
+	await expect(picker.getByRole('option', {name: 'Docs'})).toHaveCount(0);
+	await expect(picker).toHaveValue('project');
+});
+
+test('BRW-08 clearing data from the panel asks first, then empties the profile and closes the page', async () => {
+	await openBrowserTab();
+	await openAddress(`127.0.0.1:${port}/cookie`);
+	expect(await cookiesIn(`persist:browser-${projectId}`)).toEqual(['sid']);
+	await page.getByText('manage profiles and data').click();
+	await page.getByRole('button', {name: 'clear data for this profile'}).click();
+	await expect(page.getByRole('alert')).toContainText('cannot be undone');
+	expect(await cookiesIn(`persist:browser-${projectId}`)).toEqual(['sid']);
+	await page.getByRole('button', {name: 'yes, clear it'}).click();
+	await expect
+		.poll(() => cookiesIn(`persist:browser-${projectId}`))
+		.toEqual([]);
+	await expect(page.getByText('no page open')).toBeVisible();
+});
+
+test('BRW-09 the panel opens the current page in the system browser after the native question', async () => {
+	await app.evaluate(({dialog, shell}) => {
+		const state = globalThis as unknown as {opened: string[]};
+		state.opened = [];
+		dialog.showMessageBox = (async () => ({
+			response: 1,
+			checkboxChecked: false,
+		})) as unknown as typeof dialog.showMessageBox;
+		shell.openExternal = async url => {
+			state.opened.push(url);
+		};
+	});
+	await openBrowserTab();
+	const button = page.getByRole('button', {name: 'open in system browser'});
+	await expect(button).toBeDisabled();
+	await openAddress(`127.0.0.1:${port}/a`);
+	await button.click();
+	await expect
+		.poll(() =>
+			app.evaluate(() => (globalThis as unknown as {opened: string[]}).opened),
+		)
+		.toEqual([`${origin}/a`]);
+});
+
+test('BRW-06 a finished download shows in the panel list with its state', async () => {
+	const target = path.join(work, 'chosen', 'listed.txt');
+	await openBrowserTab();
+	await openAddress(`127.0.0.1:${port}/downloads`);
+	await app.evaluate(
+		({session}, args) => {
+			session
+				.fromPartition(args.partition)
+				.on('will-download', (_event, item) => item.setSavePath(args.target));
+		},
+		{partition: `persist:browser-${projectId}`, target},
+	);
+	await runInView(origin, "document.getElementById('ok').click()");
+	const list = page.getByRole('list', {name: 'downloads'});
+	await expect(list).toContainText('report.txt');
+	await expect(list).toContainText('saved');
 });

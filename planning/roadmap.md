@@ -625,16 +625,16 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 **Build**
 
-- [ ] Deny permissions, popups, external protocols and uploads (`BRW-07`, `SEC-10`)
-- [ ] Downloads with destination confirmation (`BRW-06`)
-- [ ] Profiles: the shared Default, named profiles and Incognito, managed in Settings (`BRW-05`, `DEC-49`)
-- [ ] Clear browser data for each profile (`BRW-08`)
-- [ ] Open current URL externally (`BRW-09`, `SEC-16`)
+- [x] Deny permissions, popups, external protocols and uploads (`BRW-07`, `SEC-10`). The File System Access pickers are removed from the view; the plain file chooser has no Electron hook and stays an operating system dialog the user drives, see [`features/browser.md`](features/browser.md)
+- [x] Downloads with destination confirmation (`BRW-06`)
+- [x] Profiles: the shared Default, named profiles and Incognito, managed in Settings (`BRW-05`, `DEC-49`). Managed from the browser tab until a Settings screen exists
+- [x] Clear browser data for each profile (`BRW-08`)
+- [x] Open current URL externally (`BRW-09`, `SEC-16`)
 
 **Results we want**
 
-- [ ] Camera, microphone, location and notification requests are denied without asking the user
-- [ ] Clearing data removes cookies and history for the profile's partition
+- [x] Camera, microphone, location and notification requests are denied without asking the user
+- [x] Clearing data removes cookies and history for the profile's partition
 
 ### Phase 3.6: links into the browser and chat
 

@@ -46,6 +46,17 @@ const api: DesktopApi = {
 		setBounds: request =>
 			ipcRenderer.invoke(BROWSER_CHANNELS.setBounds, request),
 		close: request => ipcRenderer.invoke(BROWSER_CHANNELS.close, request),
+		profiles: request => ipcRenderer.invoke(BROWSER_CHANNELS.profiles, request),
+		setProfile: request =>
+			ipcRenderer.invoke(BROWSER_CHANNELS.setProfile, request),
+		createProfile: request =>
+			ipcRenderer.invoke(BROWSER_CHANNELS.createProfile, request),
+		deleteProfile: request =>
+			ipcRenderer.invoke(BROWSER_CHANNELS.deleteProfile, request),
+		clearData: request =>
+			ipcRenderer.invoke(BROWSER_CHANNELS.clearData, request),
+		openExternal: request =>
+			ipcRenderer.invoke(BROWSER_CHANNELS.openExternal, request),
 		onEvent: listener => {
 			const handler = (_event: unknown, event: BrowserEvent) => listener(event);
 			ipcRenderer.on(BROWSER_CHANNELS.event, handler);

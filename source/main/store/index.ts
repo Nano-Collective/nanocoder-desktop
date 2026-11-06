@@ -34,6 +34,8 @@ const defaultSettings: DesktopSettings = {
 	editor: 'system',
 	nanocoderOverridePath: null,
 	theme: 'dark',
+	browserProfiles: [],
+	browserAssignments: {},
 };
 const defaultUiState: UiState = {
 	window: {width: 1020, height: 720, x: null, y: null, maximised: false},

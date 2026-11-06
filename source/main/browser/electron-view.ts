@@ -1,7 +1,9 @@
 import {
 	type BrowserWindow,
+	dialog,
 	type Session,
 	session,
+	shell,
 	WebContentsView,
 } from 'electron';
 import type {
@@ -9,10 +11,42 @@ import type {
 	BrowserViewHooks,
 	BrowserViewLaunch,
 } from '@/main/browser/browser-service';
+import {createExternalOpener} from '@/main/browser/external';
 import {denyBrowserPermissions} from '@/main/browser/profile';
 
 const browserSessions = new WeakSet<Session>();
 const ERR_ABORTED = -3;
+
+export async function clearBrowserPartition(partition: string): Promise<void> {
+	const target = session.fromPartition(partition);
+	await target.clearStorageData();
+	await target.clearCache();
+	await target.clearAuthCache();
+}
+
+export function createSystemOpener(
+	host: () => BrowserWindow | undefined,
+): (url: string) => Promise<boolean> {
+	return createExternalOpener({
+		confirm: async url => {
+			const options = {
+				type: 'question' as const,
+				buttons: ['Cancel', 'Open in system browser'],
+				defaultId: 0,
+				cancelId: 0,
+				title: 'Open outside the app',
+				message: 'Open this page in your system browser?',
+				detail: url,
+			};
+			const window = host();
+			const {response} = window
+				? await dialog.showMessageBox(window, options)
+				: await dialog.showMessageBox(options);
+			return response === 1;
+		},
+		open: url => shell.openExternal(url),
+	});
+}
 
 export function isBrowserSession(candidate: Session): boolean {
 	return browserSessions.has(candidate);

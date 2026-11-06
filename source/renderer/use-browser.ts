@@ -23,6 +23,7 @@ export function useBrowser(projectId: string | null) {
 	return {
 		snapshot: current?.snapshot ?? null,
 		publicSites: current?.publicSites ?? false,
+		profiles: current?.profiles ?? null,
 		loading: current?.loading ?? true,
 		pending: current?.pending ?? false,
 		error: current?.error ?? null,
@@ -33,6 +34,20 @@ export function useBrowser(projectId: string | null) {
 		},
 		setPublicSites: (enabled: boolean) => {
 			void controller.current?.setPublicSites(enabled);
+		},
+		setProfile: (profile: string) => {
+			void controller.current?.setProfile(profile);
+		},
+		createProfile: (name: string) =>
+			controller.current?.createProfile(name) ?? Promise.resolve(false),
+		deleteProfile: (id: string) => {
+			void controller.current?.deleteProfile(id);
+		},
+		clearData: (profile: string) => {
+			void controller.current?.clearData(profile);
+		},
+		openExternal: () => {
+			void controller.current?.openExternal();
 		},
 		allowAndOpen: (url: string) => {
 			void controller.current?.allowAndOpen(url);

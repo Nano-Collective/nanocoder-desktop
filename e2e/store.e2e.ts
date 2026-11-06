@@ -271,7 +271,7 @@ test('the built main process persists settings and UI state under userData', asy
 			readOnly: true,
 		});
 		try {
-			expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(4);
+			expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(5);
 			expect(db.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal');
 		} finally {
 			db.close();
@@ -363,6 +363,9 @@ test('the store bridge refuses secret/content patches and runtime paths without 
 					patch: {nanocoderOverridePath: value},
 				} as never),
 				desktop.updateSettings({patch: {defaultMode: 'yolo'}} as never),
+				desktop.updateSettings({
+					patch: {browserProfiles: [], browserAssignments: {}},
+				} as never),
 				desktop.updateUiState({patch: {draft: value}} as never),
 				desktop.updateUiState({patch: {toolOutput: value}} as never),
 			]);

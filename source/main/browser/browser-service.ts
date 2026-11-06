@@ -1,6 +1,13 @@
 import path from 'node:path';
 import {checkPage, pageOrigin, pageSecurity} from '@/main/browser/origin';
-import {browserPartition, browserWebPreferences} from '@/main/browser/profile';
+import {
+	type BrowserProfileRef,
+	browserPartition,
+	browserWebPreferences,
+	parseProfileKey,
+	profileKey,
+} from '@/main/browser/profile';
+import type {BrowserProfiles} from '@/main/browser/profiles';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {
 	BROWSER_BOUNDS_LIMIT,
@@ -8,6 +15,7 @@ import {
 	type BrowserBounds,
 	type BrowserDownload,
 	type BrowserEvent,
+	type BrowserProfileList,
 	type BrowserRequests,
 	type BrowserSnapshot,
 } from '@/shared/browser';
@@ -93,6 +101,8 @@ export class BrowserService {
 	private blockedCount = 0;
 	private downloadCount = 0;
 	private view: BrowserViewHandle | undefined;
+	private viewPartition: string | null = null;
+	private viewProfile: BrowserProfileRef | null = null;
 	private bounds: BrowserBounds | null | undefined;
 	private state: State = closedState('', 0);
 
@@ -102,6 +112,12 @@ export class BrowserService {
 			emit(event: BrowserEvent): void;
 			publicSites(): boolean;
 			downloadsPath(): string;
+			profiles: Pick<
+				BrowserProfiles,
+				'list' | 'resolve' | 'create' | 'assign' | 'delete'
+			>;
+			clearData(partition: string): Promise<void>;
+			openExternal(url: string): Promise<boolean>;
 			createView(
 				launch: BrowserViewLaunch,
 				hooks: BrowserViewHooks,
@@ -270,11 +286,77 @@ export class BrowserService {
 
 	closeView({projectId}: BrowserRequests['close']): BrowserSnapshot {
 		this.check(projectId);
-		++this.generation;
-		this.destroyView();
-		this.state = closedState(projectId, this.state.sequence);
-		this.publish();
+		this.resetView(projectId);
 		return this.snapshot();
+	}
+
+	profiles({projectId}: BrowserRequests['profiles']): BrowserProfileList {
+		this.check(projectId);
+		return this.profileList(projectId);
+	}
+
+	setProfile({
+		projectId,
+		profile,
+	}: BrowserRequests['setProfile']): BrowserSnapshot {
+		this.check(projectId);
+		const choice = parseProfileKey(profile);
+		if (!choice) throw new IpcFailure('VALIDATION', 'Unknown browser profile');
+		const current = this.options.profiles.resolve(projectId);
+		if (profileKey(current) === profileKey(choice)) return this.snapshot();
+		this.options.profiles.assign(projectId, choice);
+		this.resetView(projectId);
+		return this.snapshot();
+	}
+
+	createProfile({
+		projectId,
+		name,
+	}: BrowserRequests['createProfile']): BrowserProfileList {
+		this.check(projectId);
+		this.options.profiles.create(name);
+		return this.profileList(projectId);
+	}
+
+	async deleteProfile({
+		projectId,
+		id,
+	}: BrowserRequests['deleteProfile']): Promise<BrowserProfileList> {
+		this.check(projectId);
+		this.options.profiles.delete(id);
+		const partition = browserPartition(null, {kind: 'named', id});
+		if (this.viewPartition === partition) this.resetView(projectId);
+		await this.options.clearData(partition);
+		return this.profileList(projectId);
+	}
+
+	async clearData({
+		projectId,
+		profile,
+	}: BrowserRequests['clearData']): Promise<BrowserSnapshot> {
+		this.check(projectId);
+		const choice = parseProfileKey(profile);
+		if (!choice) throw new IpcFailure('VALIDATION', 'Unknown browser profile');
+		if (
+			choice.kind === 'named' &&
+			!this.options.profiles.list().some(entry => entry.id === choice.id)
+		)
+			throw new IpcFailure('NOT_FOUND', 'That browser profile does not exist');
+		const partition = browserPartition(projectId, choice);
+		if (this.viewPartition === partition) this.resetView(projectId);
+		await this.options.clearData(partition);
+		return this.snapshot();
+	}
+
+	async openExternal({
+		projectId,
+	}: BrowserRequests['openExternal']): Promise<{opened: boolean}> {
+		this.check(projectId);
+		const {url} = this.state;
+		if (url === null) throw new IpcFailure('UNAVAILABLE', 'Open a page first');
+		if (!checkPage(url, {publicSites: true}).allowed)
+			throw new IpcFailure('DENIED', 'Only http and https pages open outside');
+		return {opened: await this.options.openExternal(url)};
 	}
 
 	close(): Promise<void> {
@@ -408,22 +490,45 @@ export class BrowserService {
 		};
 	}
 
+	private profileList(projectId: string): BrowserProfileList {
+		return {
+			profiles: this.options.profiles.list(),
+			current: profileKey(this.options.profiles.resolve(projectId)),
+		};
+	}
+
+	private resetView(projectId: string): void {
+		++this.generation;
+		this.destroyView();
+		this.state = closedState(projectId, this.state.sequence);
+		this.publish();
+	}
+
 	private ensureView(projectId: string): BrowserViewHandle {
 		if (this.view) return this.view;
-		const partition = browserPartition(projectId);
+		const profile = this.options.profiles.resolve(projectId);
+		const partition = browserPartition(projectId, profile);
 		const view = this.options.createView(
 			{partition, preferences: browserWebPreferences(partition)},
 			this.hooks(this.generation),
 		);
 		if (this.bounds !== undefined) view.setBounds(this.bounds);
 		this.view = view;
+		this.viewPartition = partition;
+		this.viewProfile = profile;
 		return view;
 	}
 
 	private destroyView(): void {
 		const view = this.view;
+		const partition = this.viewPartition;
+		const incognito = this.viewProfile?.kind === 'incognito';
 		this.view = undefined;
+		this.viewPartition = null;
+		this.viewProfile = null;
 		view?.destroy();
+		if (view && incognito && partition)
+			void this.options.clearData(partition).catch(() => {});
 	}
 
 	private stale(generation: number, openId: number): boolean {

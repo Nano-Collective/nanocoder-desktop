@@ -6,6 +6,7 @@ import {
 	type BrowserViewHooks,
 } from '@/main/browser/browser-service';
 import {browserPartition} from '@/main/browser/profile';
+import {BrowserProfiles, type ProfileData} from '@/main/browser/profiles';
 import type {BrowserBounds, BrowserEvent} from '@/shared/browser';
 
 const first = '4f6c1f0e-3a55-4a0b-9d1e-0a2b3c4d5e6f';
@@ -29,7 +30,20 @@ function fixture(
 ) {
 	const events: BrowserEvent[] = [];
 	const views: FakeView[] = [];
-	const settings = {publicSites: options.publicSites ?? false};
+	const settings = {
+		publicSites: options.publicSites ?? false,
+		approveExternal: true,
+	};
+	const profileData: ProfileData = {profiles: [], assignments: {}};
+	const cleared: string[] = [];
+	const external: string[] = [];
+	const profiles = new BrowserProfiles({
+		get: () => structuredClone(profileData),
+		set: next => {
+			profileData.profiles = next.profiles;
+			profileData.assignments = next.assignments;
+		},
+	});
 	const history: {back: string | null; forward: string | null} = {
 		back: null,
 		forward: null,
@@ -43,6 +57,14 @@ function fixture(
 		emit: event => events.push(event),
 		publicSites: () => settings.publicSites,
 		downloadsPath: () => '/home/user/Downloads',
+		profiles,
+		clearData: async partition => {
+			cleared.push(partition);
+		},
+		openExternal: async url => {
+			external.push(url);
+			return settings.approveExternal;
+		},
 		createView: ({partition, preferences}, hooks) => {
 			if (options.failCreate) throw new Error('no window at /secret/path');
 			const settled: Array<{
@@ -89,6 +111,9 @@ function fixture(
 		views,
 		settings,
 		history,
+		profiles,
+		cleared,
+		external,
 		hold: () => {
 			holdLoads = true;
 		},
@@ -807,4 +832,164 @@ test('BRW-06 only the last five downloads are kept and a project switch forgets 
 	f.views[0].hooks.download(stale.item);
 	t.is(stale.state.cancelled, 1);
 	t.deepEqual(f.service.get({projectId: second}).downloads, []);
+});
+
+test('BRW-05 a page opens in the partition of the profile the project uses', async t => {
+	const f = fixture(t);
+	const made = f.profiles.create('Docs');
+	f.service.activate(first);
+	f.profiles.assign(first, {kind: 'default'});
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	t.is(f.views[0].partition, 'persist:browser-default');
+	f.service.activate(first);
+	f.profiles.assign(first, {kind: 'named', id: made.id});
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	t.is(f.views[1].partition, `persist:browser-profile-${made.id}`);
+	f.service.activate(first);
+	f.profiles.assign(first, {kind: 'incognito'});
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	t.is(f.views[2].partition, `browser-incognito-${first}`);
+});
+
+test('BRW-05 choosing another profile closes the page, uses the new partition next, and refuses unknown choices', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	const none = f.service.setProfile({projectId: first, profile: 'project'});
+	t.is(none.status, 'ready');
+	t.is(f.views[0].destroyed, 0);
+	const snapshot = f.service.setProfile({projectId: first, profile: 'default'});
+	t.is(snapshot.status, 'closed');
+	t.is(f.views[0].destroyed, 1);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	t.is(f.views[1].partition, 'persist:browser-default');
+	t.is(
+		code(
+			t.throws(() => f.service.setProfile({projectId: first, profile: 'x'})),
+		),
+		'VALIDATION',
+	);
+	t.is(
+		code(
+			t.throws(() =>
+				f.service.setProfile({
+					projectId: first,
+					profile: '0c7b2a54-1d6e-4f8a-9b3c-5e2d1a0f9c88',
+				}),
+			),
+		),
+		'NOT_FOUND',
+	);
+	t.is(
+		code(
+			t.throws(() =>
+				f.service.setProfile({projectId: second, profile: 'default'}),
+			),
+		),
+		'DENIED',
+	);
+});
+
+test("BRW-05 the profile list reports the project's current choice", t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	const made = f.service.createProfile({projectId: first, name: 'Docs'});
+	t.deepEqual(
+		made.profiles.map(entry => entry.name),
+		['Docs'],
+	);
+	t.is(made.current, 'project');
+	f.service.setProfile({projectId: first, profile: made.profiles[0].id});
+	t.is(f.service.profiles({projectId: first}).current, made.profiles[0].id);
+});
+
+test('BRW-05 leaving an incognito page wipes its partition', async t => {
+	const f = fixture(t);
+	f.profiles.assign(first, {kind: 'incognito'});
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	t.deepEqual(f.cleared, []);
+	f.service.closeView({projectId: first});
+	t.deepEqual(f.cleared, [`browser-incognito-${first}`]);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	f.service.activate(second);
+	t.is(f.cleared.length, 2);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	await f.service.close();
+	t.is(f.cleared.length, 3);
+});
+
+test('BRW-08 clearing data wipes only that profile and closes the page that is using it', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	const other = await f.service.clearData({
+		projectId: first,
+		profile: 'default',
+	});
+	t.deepEqual(f.cleared, ['persist:browser-default']);
+	t.is(other.status, 'ready');
+	t.is(f.views[0].destroyed, 0);
+	const own = await f.service.clearData({projectId: first, profile: 'project'});
+	t.deepEqual(f.cleared, [
+		'persist:browser-default',
+		`persist:browser-${first}`,
+	]);
+	t.is(own.status, 'closed');
+	t.is(f.views[0].destroyed, 1);
+	t.is(
+		code(
+			await t.throwsAsync(
+				f.service.clearData({projectId: first, profile: 'nonsense'}),
+			),
+		),
+		'VALIDATION',
+	);
+	t.is(
+		code(
+			await t.throwsAsync(
+				f.service.clearData({
+					projectId: first,
+					profile: '0c7b2a54-1d6e-4f8a-9b3c-5e2d1a0f9c88',
+				}),
+			),
+		),
+		'NOT_FOUND',
+	);
+});
+
+test('BRW-08 removing a profile wipes its data, sends its projects home and closes a page that was using it', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	const made = f.service.createProfile({projectId: first, name: 'Docs'});
+	const id = made.profiles[0].id;
+	f.service.setProfile({projectId: first, profile: id});
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	const after = await f.service.deleteProfile({projectId: first, id});
+	t.deepEqual(after.profiles, []);
+	t.is(after.current, 'project');
+	t.deepEqual(f.cleared, [`persist:browser-profile-${id}`]);
+	t.is(f.views[0].destroyed, 1);
+	t.is(f.service.get({projectId: first}).status, 'closed');
+});
+
+test('BRW-09 SEC-16 opening externally uses the address the browser itself holds, only for web pages, and honours a refusal', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	t.is(
+		code(await t.throwsAsync(f.service.openExternal({projectId: first}))),
+		'UNAVAILABLE',
+	);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/a?b=1'});
+	t.deepEqual(await f.service.openExternal({projectId: first}), {opened: true});
+	t.deepEqual(f.external, ['http://localhost:3000/a?b=1']);
+	f.settings.approveExternal = false;
+	t.deepEqual(await f.service.openExternal({projectId: first}), {
+		opened: false,
+	});
+	t.is(
+		code(await t.throwsAsync(f.service.openExternal({projectId: second}))),
+		'DENIED',
+	);
 });

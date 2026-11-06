@@ -1,12 +1,39 @@
 import type {WebPreferences} from 'electron';
 
-const PROJECT_ID =
-	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function browserPartition(projectId: string): string {
-	if (!PROJECT_ID.test(projectId))
+export type BrowserProfileRef =
+	| {kind: 'project'}
+	| {kind: 'default'}
+	| {kind: 'incognito'}
+	| {kind: 'named'; id: string};
+
+export function profileKey(profile: BrowserProfileRef): string {
+	return profile.kind === 'named' ? profile.id.toLowerCase() : profile.kind;
+}
+
+export function parseProfileKey(value: string): BrowserProfileRef | null {
+	if (value === 'project' || value === 'default' || value === 'incognito')
+		return {kind: value};
+	return UUID.test(value) ? {kind: 'named', id: value.toLowerCase()} : null;
+}
+
+export function browserPartition(
+	projectId: string | null,
+	profile: BrowserProfileRef = {kind: 'project'},
+): string {
+	if (profile.kind === 'default') return 'persist:browser-default';
+	if (profile.kind === 'named') {
+		if (!UUID.test(profile.id))
+			throw new TypeError('A named browser profile needs its id');
+		return `persist:browser-profile-${profile.id.toLowerCase()}`;
+	}
+	if (projectId === null || !UUID.test(projectId))
 		throw new TypeError('A browser profile needs a project id');
-	return `persist:browser-${projectId.toLowerCase()}`;
+	const project = projectId.toLowerCase();
+	return profile.kind === 'incognito'
+		? `browser-incognito-${project}`
+		: `persist:browser-${project}`;
 }
 
 export function browserWebPreferences(

@@ -4,12 +4,14 @@ import {metadataSql} from '@/main/store/migrations/001-metadata';
 import {uiStateSql} from '@/main/store/migrations/002-ui-state';
 import {manualThreadTitlesSql} from '@/main/store/migrations/003-manual-thread-titles';
 import {threadExecutionIdentitiesSql} from '@/main/store/migrations/004-thread-execution-identities';
+import {browserProfilesSql} from '@/main/store/migrations/005-browser-profiles';
 
 export const migrations = [
 	{version: 1, sql: metadataSql},
 	{version: 2, sql: uiStateSql},
 	{version: 3, sql: manualThreadTitlesSql},
 	{version: 4, sql: threadExecutionIdentitiesSql},
+	{version: 5, sql: browserProfilesSql},
 ] as const;
 
 export function transaction<T>(

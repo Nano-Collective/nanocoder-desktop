@@ -13,9 +13,12 @@ import {z} from 'zod';
 import {createActivityNotifier} from '@/main/activity-notifier';
 import {BrowserService} from '@/main/browser/browser-service';
 import {
+	clearBrowserPartition,
 	createElectronViewFactory,
+	createSystemOpener,
 	isBrowserSession,
 } from '@/main/browser/electron-view';
+import {BrowserProfiles} from '@/main/browser/profiles';
 import {createWorkspaceControls} from '@/main/controls/workspace-controls';
 import {confirmYolo} from '@/main/controls/yolo-consent';
 import {resolveAttachments} from '@/main/files/attachments';
@@ -371,6 +374,23 @@ export function registerIpcHandlers(
 			emit: sendBrowserEvent,
 			publicSites: () => store.getSettings().publicBrowsingEnabled,
 			downloadsPath: () => app.getPath('downloads'),
+			profiles: new BrowserProfiles({
+				get: () => {
+					const settings = store.getSettings();
+					return {
+						profiles: settings.browserProfiles,
+						assignments: settings.browserAssignments,
+					};
+				},
+				set: data => {
+					store.updateSettings({
+						browserProfiles: data.profiles,
+						browserAssignments: data.assignments,
+					});
+				},
+			}),
+			clearData: clearBrowserPartition,
+			openExternal: createSystemOpener(appWindow),
 			createView: createElectronViewFactory(appWindow),
 		});
 	}

@@ -7,6 +7,7 @@ import type {
 	BrowserApi,
 	BrowserBounds,
 	BrowserEvent,
+	BrowserProfileList,
 	BrowserSnapshot,
 } from '@/shared/browser';
 import type {DesktopSettings, IpcResult} from '@/shared/ipc';
@@ -52,12 +53,14 @@ function fixture(
 		get?: BrowserApi['get'];
 		open?: BrowserApi['open'];
 		navigate?: BrowserApi['navigate'];
+		setProfile?: BrowserApi['setProfile'];
 		publicSites?: boolean;
 	} = {},
 ) {
 	const calls: string[] = [];
 	const boundsSent: Array<BrowserBounds | null> = [];
 	const settings = {publicBrowsingEnabled: overrides.publicSites ?? false};
+	const list: BrowserProfileList = {profiles: [], current: 'project'};
 	let listener!: (event: BrowserEvent) => void;
 	let unsubscribed = 0;
 	const bridge = {
@@ -80,6 +83,33 @@ function fixture(
 				return ok(null);
 			},
 			close: async ({projectId}) => ok(snapshot(projectId, 5)),
+			profiles: async () => ok({...list, profiles: [...list.profiles]}),
+			setProfile:
+				overrides.setProfile ??
+				(async ({projectId, profile}) => {
+					calls.push(`profile ${profile}`);
+					list.current = profile;
+					return ok(snapshot(projectId, 6));
+				}),
+			createProfile: async ({name}) => {
+				calls.push(`create ${name}`);
+				list.profiles.push({id: `id-${name}`, name});
+				return ok({...list, profiles: [...list.profiles]});
+			},
+			deleteProfile: async ({id}) => {
+				calls.push(`delete ${id}`);
+				list.profiles = list.profiles.filter(entry => entry.id !== id);
+				list.current = 'project';
+				return ok({...list, profiles: [...list.profiles]});
+			},
+			clearData: async ({projectId, profile}) => {
+				calls.push(`clear ${profile}`);
+				return ok(snapshot(projectId, 7));
+			},
+			openExternal: async () => {
+				calls.push('external');
+				return ok({opened: true});
+			},
 			onEvent: next => {
 				listener = next;
 				return () => {
@@ -234,4 +264,47 @@ test('BRW-01 the last viewport is sent again for the next project, so its page i
 	t.is(f.boundsSent.length, 2);
 	await f.controller.select(null);
 	t.is(f.boundsSent.length, 2);
+});
+
+test('BRW-05 the profile list loads with the project and follows each change the user makes', async t => {
+	const f = fixture();
+	await f.controller.select('one');
+	t.deepEqual(f.controller.getState().profiles, {
+		profiles: [],
+		current: 'project',
+	});
+	t.true(await f.controller.createProfile('Docs'));
+	t.deepEqual(f.controller.getState().profiles?.profiles, [
+		{id: 'id-Docs', name: 'Docs'},
+	]);
+	t.true(await f.controller.setProfile('id-Docs'));
+	t.is(f.controller.getState().profiles?.current, 'id-Docs');
+	t.true(await f.controller.deleteProfile('id-Docs'));
+	t.deepEqual(f.controller.getState().profiles, {
+		profiles: [],
+		current: 'project',
+	});
+	t.deepEqual(f.calls, ['create Docs', 'profile id-Docs', 'delete id-Docs']);
+});
+
+test('BRW-08 clearing a profile and opening externally go to the bridge for the project, and need a project', async t => {
+	const f = fixture();
+	t.false(await f.controller.clearData('default'));
+	t.false(await f.controller.openExternal());
+	await f.controller.select('one');
+	t.true(await f.controller.clearData('default'));
+	t.true(await f.controller.openExternal());
+	t.deepEqual(f.calls, ['clear default', 'external']);
+});
+
+test('BRW-05 a refused profile change shows the reason and keeps the previous choice', async t => {
+	const f = fixture({
+		setProfile: async () => failure('That browser profile does not exist'),
+	});
+	await f.controller.select('one');
+	t.false(
+		await f.controller.setProfile('0c7b2a54-1d6e-4f8a-9b3c-5e2d1a0f9c88'),
+	);
+	t.is(f.controller.getState().error, 'That browser profile does not exist');
+	t.is(f.controller.getState().profiles?.current, 'project');
 });
