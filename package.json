@@ -1,6 +1,6 @@
 {
 	"name": "@nanocollective/nanocoder-desktop",
-	"version": "0.0.0",
+	"version": "0.1.0-alpha.0",
 	"private": true,
 	"description": "A local-first desktop workspace around Nanocoder: durable project chats, file browsing, Git review, a terminal and an isolated browser the agent can use.",
 	"keywords": [
