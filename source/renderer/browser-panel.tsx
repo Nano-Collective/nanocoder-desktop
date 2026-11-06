@@ -95,7 +95,7 @@ export function BrowserPanel({
 	const viewport = React.useRef<HTMLDivElement>(null);
 	const address = React.useRef<HTMLInputElement>(null);
 	const [draft, setDraft] = React.useState<string | null>(null);
-	const [dismissed, setDismissed] = React.useState<string | null>(null);
+	const [dismissed, setDismissed] = React.useState<number | null>(null);
 	useViewportBounds(viewport, !suspended, onBounds);
 	const shownUrl = snapshot?.url ?? null;
 	React.useEffect(() => {
@@ -105,7 +105,7 @@ export function BrowserPanel({
 	const open = snapshot !== null && snapshot.status !== 'closed';
 	const busy = snapshot?.status === 'loading';
 	const blocked =
-		snapshot?.blocked && snapshot.blocked.url !== dismissed
+		snapshot?.blocked && snapshot.blocked.id !== dismissed
 			? snapshot.blocked
 			: null;
 	const security = snapshot?.security ? SECURITY[snapshot.security] : null;
@@ -202,7 +202,7 @@ export function BrowserPanel({
 								<Button onClick={() => onAllowAndOpen(blocked.url)}>
 									turn on public sites and open it
 								</Button>
-								<Button onClick={() => setDismissed(blocked.url)}>
+								<Button onClick={() => setDismissed(blocked.id)}>
 									stay on localhost
 								</Button>
 							</div>
@@ -211,7 +211,7 @@ export function BrowserPanel({
 						<>
 							<p>only http and https pages open here.</p>
 							<div className="browser-notice-actions">
-								<Button onClick={() => setDismissed(blocked.url)}>
+								<Button onClick={() => setDismissed(blocked.id)}>
 									dismiss
 								</Button>
 							</div>

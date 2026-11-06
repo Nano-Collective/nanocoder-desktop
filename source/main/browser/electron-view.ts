@@ -95,6 +95,11 @@ export function createElectronViewFactory(
 			},
 			goBack: () => contents.navigationHistory.goBack(),
 			goForward: () => contents.navigationHistory.goForward(),
+			peek: action => {
+				const history = contents.navigationHistory;
+				const index = history.getActiveIndex() + (action === 'back' ? -1 : 1);
+				return history.getEntryAtIndex(index)?.url ?? null;
+			},
 			reload: () => contents.reload(),
 			stop: () => contents.stop(),
 			setBounds: bounds => {

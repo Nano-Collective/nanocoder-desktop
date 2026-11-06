@@ -63,6 +63,13 @@ function call<K extends keyof BrowserRequests>(
 test.beforeEach(async () => {
 	server = createServer((request, response) => {
 		if (request.url === '/slow') return;
+		if (request.url === '/link') {
+			response.writeHead(200, {'Content-Type': 'text/html'});
+			response.end(
+				`<!doctype html><title>link</title><a id="l" href="${publicUrl('/x')}">go</a>`,
+			);
+			return;
+		}
 		if (request.url === '/redirect') {
 			response.writeHead(302, {Location: publicUrl('/landing')});
 			response.end();
@@ -492,4 +499,71 @@ test('BRW-01 after switching project with the browser tab open the next page is 
 				: false;
 		})
 		.toBe(true);
+});
+
+test('BRW-03 reload of a public page is refused once public browsing is turned off', async () => {
+	await publicBrowsing(true);
+	await call('open', {projectId, url: publicUrl('/a')});
+	await publicBrowsing(false);
+	expect(await call('navigate', {projectId, action: 'reload'})).toMatchObject({
+		ok: false,
+		error: {code: 'DENIED'},
+	});
+	expect(await call('get', {projectId})).toMatchObject({
+		ok: true,
+		value: {blocked: {reason: 'public-off'}},
+	});
+});
+
+test('BRW-01 opening the project that is already open keeps the next page placed and visible', async () => {
+	await openBrowserTab();
+	const reopened = await page.evaluate(
+		id =>
+			(window as unknown as {desktop: DesktopApi}).desktop.openProject({
+				projectId: id,
+			}),
+		projectId,
+	);
+	expect(reopened).toMatchObject({ok: true});
+	const result = await call('open', {projectId, url: `${origin}/a`});
+	expect(result).toMatchObject({ok: true, value: {status: 'ready'}});
+	const region = page.getByRole('region', {name: 'web page'});
+	await expect
+		.poll(async () => {
+			const box = await region.boundingBox();
+			const view = await viewBounds();
+			return box && view
+				? view.visible &&
+						view.x === Math.round(box.x) &&
+						view.y === Math.round(box.y) &&
+						view.width === Math.round(box.width) &&
+						view.height === Math.round(box.height)
+				: false;
+		})
+		.toBe(true);
+});
+
+test('BRW-03 the same blocked link clicked again after staying on localhost asks again', async () => {
+	await openBrowserTab();
+	await page
+		.getByRole('textbox', {name: 'address'})
+		.fill(`127.0.0.1:${port}/link`);
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	await expect.poll(loadingStatus).toBe('ready');
+	const click = () =>
+		app.evaluate(({webContents}, prefix) => {
+			const contents = webContents
+				.getAllWebContents()
+				.find(candidate => candidate.getURL().startsWith(prefix));
+			return contents?.executeJavaScript(
+				"document.getElementById('l').click()",
+			);
+		}, `${origin}/link`);
+	const question = page.getByRole('alert').filter({hasText: 'public site'});
+	await click();
+	await expect(question).toBeVisible();
+	await page.getByRole('button', {name: 'stay on localhost'}).click();
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await click();
+	await expect(question).toBeVisible();
 });

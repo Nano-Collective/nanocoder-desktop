@@ -31,7 +31,7 @@ export interface BrowserSnapshot {
 	canGoBack: boolean;
 	canGoForward: boolean;
 	// The last address the policy refused, so the panel can explain and offer the setting.
-	blocked: {url: string; reason: BrowserBlockReason} | null;
+	blocked: {url: string; reason: BrowserBlockReason; id: number} | null;
 	reason: string | null;
 }
 

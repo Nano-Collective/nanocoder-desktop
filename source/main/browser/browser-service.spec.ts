@@ -28,6 +28,10 @@ function fixture(
 	const events: BrowserEvent[] = [];
 	const views: FakeView[] = [];
 	const settings = {publicSites: options.publicSites ?? false};
+	const history: {back: string | null; forward: string | null} = {
+		back: null,
+		forward: null,
+	};
 	let holdLoads = false;
 	const service = new BrowserService({
 		project: id =>
@@ -65,6 +69,7 @@ function fixture(
 				},
 				goBack: () => view.calls.push('back'),
 				goForward: () => view.calls.push('forward'),
+				peek: action => history[action],
 				reload: () => view.calls.push('reload'),
 				stop: () => view.calls.push('stop'),
 				setBounds: bounds => view.bounds.push(bounds),
@@ -80,6 +85,7 @@ function fixture(
 		events,
 		views,
 		settings,
+		history,
 		hold: () => {
 			holdLoads = true;
 		},
@@ -113,7 +119,7 @@ test('BRW-03 a public URL is refused until public browsing is on, and the refusa
 	);
 	t.is(code(error), 'DENIED');
 	t.is(f.views.length, 0);
-	t.deepEqual(f.service.get({projectId: first}).blocked, {
+	t.like(f.service.get({projectId: first}).blocked, {
 		url: 'https://example.com/a',
 		reason: 'public-off',
 	});
@@ -180,7 +186,7 @@ test('BRW-03 a redirect or link from localhost to a public site stops and is rep
 	t.is(code(error), 'DENIED');
 	const snapshot = f.service.get({projectId: first});
 	t.is(snapshot.status, 'failed');
-	t.deepEqual(snapshot.blocked, {
+	t.like(snapshot.blocked, {
 		url: 'https://example.com/landing',
 		reason: 'public-off',
 	});
@@ -560,4 +566,85 @@ test('BRW-03 a load that was cancelled because a redirect was blocked still repo
 	const snapshot = f.service.get({projectId: first});
 	t.is(snapshot.status, 'failed');
 	t.is(snapshot.blocked?.reason, 'public-off');
+});
+
+test('BRW-03 reload of a public page is refused once public browsing is turned off', async t => {
+	const f = fixture(t, {publicSites: true});
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'https://example.com/a'});
+	f.settings.publicSites = false;
+	const error = t.throws(() =>
+		f.service.navigate({projectId: first, action: 'reload'}),
+	);
+	t.is(code(error), 'DENIED');
+	t.deepEqual(f.views[0].calls, []);
+	t.like(f.service.get({projectId: first}).blocked, {
+		url: 'https://example.com/a',
+		reason: 'public-off',
+	});
+	f.settings.publicSites = true;
+	f.service.navigate({projectId: first, action: 'reload'});
+	t.deepEqual(f.views[0].calls, ['reload']);
+});
+
+test('BRW-03 back and forward check the page they would return to against the live setting', async t => {
+	const f = fixture(t, {publicSites: true});
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	f.history.back = 'https://example.com/earlier';
+	f.history.forward = 'http://localhost:3000/later';
+	f.settings.publicSites = false;
+	const back = t.throws(() =>
+		f.service.navigate({projectId: first, action: 'back'}),
+	);
+	t.is(code(back), 'DENIED');
+	f.service.navigate({projectId: first, action: 'forward'});
+	t.deepEqual(f.views[0].calls, ['forward']);
+	f.history.back = null;
+	f.service.navigate({projectId: first, action: 'back'});
+	t.deepEqual(f.views[0].calls, ['forward', 'back']);
+});
+
+test('BRW-03 a public page that commits while public browsing is off is not adopted as the page', async t => {
+	const f = fixture(t, {publicSites: true});
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	f.settings.publicSites = false;
+	f.views[0].hooks.navigated({
+		url: 'https://example.com/back-again',
+		title: 'Public',
+		canGoBack: true,
+		canGoForward: false,
+	});
+	const snapshot = f.service.get({projectId: first});
+	t.is(snapshot.url, 'http://localhost:3000/');
+	t.is(snapshot.security, 'local');
+	t.is(snapshot.blocked?.reason, 'public-off');
+	t.deepEqual(f.views[0].calls, ['stop']);
+});
+
+test('BRW-03 every refusal is its own occurrence, even for the same address', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	f.views[0].hooks.allow('https://example.com/x');
+	const one = f.service.get({projectId: first}).blocked;
+	f.views[0].hooks.allow('https://example.com/x');
+	const two = f.service.get({projectId: first}).blocked;
+	t.is(one?.url, two?.url);
+	t.not(one?.id, two?.id);
+});
+
+test('BRW-01 the last viewport survives opening the same or another project, so the next page is placed', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	const bounds = {x: 4, y: 5, width: 320, height: 240};
+	f.service.setBounds({projectId: first, bounds});
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	t.deepEqual(f.views[1].bounds, [bounds]);
+	f.service.activate(second);
+	await f.service.open({projectId: second, url: 'http://localhost:3000/'});
+	t.deepEqual(f.views[2].bounds, [bounds]);
 });

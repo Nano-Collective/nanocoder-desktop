@@ -30,6 +30,7 @@ export interface BrowserViewHandle {
 	load(url: string): Promise<'loaded' | 'aborted'>;
 	goBack(): void;
 	goForward(): void;
+	peek(action: 'back' | 'forward'): string | null;
 	reload(): void;
 	stop(): void;
 	setBounds(bounds: BrowserBounds | null): void;
@@ -62,6 +63,7 @@ export class BrowserService {
 	private openSeq = 0;
 	private blockedOpen = 0;
 	private committedOpen = 0;
+	private blockedCount = 0;
 	private view: BrowserViewHandle | undefined;
 	private bounds: BrowserBounds | null | undefined;
 	private state: State = closedState('', 0);
@@ -82,7 +84,6 @@ export class BrowserService {
 		this.activeId = projectId;
 		++this.generation;
 		this.destroyView();
-		this.bounds = undefined;
 		this.state = closedState(projectId ?? '', this.state.sequence);
 		this.publish();
 	}
@@ -100,11 +101,7 @@ export class BrowserService {
 		if (!verdict.allowed) {
 			if (verdict.reason === 'invalid')
 				throw new IpcFailure('VALIDATION', 'That address is not valid');
-			this.state = {
-				...this.state,
-				blocked: {url: bounded(request.url, URL_LIMIT), reason: verdict.reason},
-			};
-			this.publish();
+			this.block(request.url, verdict.reason);
 			throw new IpcFailure(
 				'DENIED',
 				verdict.reason === 'public-off'
@@ -153,6 +150,18 @@ export class BrowserService {
 		return this.snapshot();
 	}
 
+	private block(url: string, reason: 'public-off' | 'scheme'): void {
+		this.state = {
+			...this.state,
+			blocked: {
+				url: bounded(url, URL_LIMIT),
+				reason,
+				id: ++this.blockedCount,
+			},
+		};
+		this.publish();
+	}
+
 	private failOpen(openId: number): IpcFailure {
 		const blocked = this.blockedOpen === openId;
 		this.state = {
@@ -194,6 +203,26 @@ export class BrowserService {
 		this.check(projectId);
 		const view = this.view;
 		if (!view) throw new IpcFailure('UNAVAILABLE', 'Open a page first');
+		const target =
+			action === 'reload'
+				? this.state.url
+				: action === 'back' || action === 'forward'
+					? view.peek(action)
+					: null;
+		if (target !== null) {
+			const verdict = checkPage(target, {
+				publicSites: this.options.publicSites(),
+			});
+			if (!verdict.allowed && verdict.reason !== 'invalid') {
+				this.block(target, verdict.reason);
+				throw new IpcFailure(
+					'DENIED',
+					verdict.reason === 'public-off'
+						? 'Public sites are off. Turn them on to open this page.'
+						: 'Only http and https pages open here',
+				);
+			}
+		}
 		if (action === 'back') view.goBack();
 		else if (action === 'forward') view.goForward();
 		else if (action === 'reload') view.reload();
@@ -237,17 +266,22 @@ export class BrowserService {
 				if (verdict.allowed) return true;
 				if (verdict.reason !== 'invalid') {
 					this.blockedOpen = this.openSeq;
-					this.state = {
-						...this.state,
-						blocked: {url: bounded(url, URL_LIMIT), reason: verdict.reason},
-					};
-					this.publish();
+					this.block(url, verdict.reason);
 				}
 				return false;
 			},
 			navigated: page => {
-				if (!live() || !checkPage(page.url, {publicSites: true}).allowed)
+				if (!live()) return;
+				const verdict = checkPage(page.url, {
+					publicSites: this.options.publicSites(),
+				});
+				if (!verdict.allowed) {
+					if (verdict.reason === 'public-off') {
+						this.block(page.url, verdict.reason);
+						this.view?.stop();
+					}
 					return;
+				}
 				this.committedOpen = this.openSeq;
 				this.state = {
 					...this.state,
