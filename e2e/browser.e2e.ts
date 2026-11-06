@@ -334,6 +334,18 @@ test('BRW-03 staying on localhost dismisses the question and keeps the setting o
 	).not.toBeChecked();
 });
 
+const viewMatchesRegion = async () => {
+	const box = await page.getByRole('region', {name: 'web page'}).boundingBox();
+	const view = await viewBounds();
+	return box && view
+		? view.visible &&
+				view.x === Math.round(box.x) &&
+				view.y === Math.round(box.y) &&
+				view.width === Math.round(box.width) &&
+				view.height === Math.round(box.height)
+		: false;
+};
+
 for (const width of [1240, 1020, 840]) {
 	test(`BRW-01 the native view follows the panel at ${width}px`, async () => {
 		await app.evaluate(({BrowserWindow}, size) => {
@@ -347,36 +359,7 @@ for (const width of [1240, 1020, 840]) {
 		await expect(
 			page.getByRole('status').filter({hasText: 'local'}),
 		).toBeVisible();
-		const region = page.getByRole('region', {name: 'web page'});
-		await expect
-			.poll(async () => {
-				const box = await region.boundingBox();
-				const view = await viewBounds();
-				return box && view
-					? {
-							x: view.x,
-							y: view.y,
-							width: view.width,
-							height: view.height,
-							visible: view.visible,
-							expected: {
-								x: Math.round(box.x),
-								y: Math.round(box.y),
-								width: Math.round(box.width),
-								height: Math.round(box.height),
-							},
-						}
-					: null;
-			})
-			.toMatchObject({visible: true});
-		const box = await region.boundingBox();
-		const view = await viewBounds();
-		expect(view).toMatchObject({
-			x: Math.round(box?.x ?? -1),
-			y: Math.round(box?.y ?? -1),
-			width: Math.round(box?.width ?? -1),
-			height: Math.round(box?.height ?? -1),
-		});
+		await expect.poll(viewMatchesRegion).toBe(true);
 	});
 }
 
