@@ -88,9 +88,18 @@ Every result returned to Nanocoder is wrapped so the model and the reader can te
 
 The browser is the third tab of the right workbench. `BRW-03` is the user's own setting, `publicBrowsingEnabled`, read at every decision, so turning it off refuses at once. A typed address, a redirect and a clicked link all go through the same check in main; the renderer only normalises what the user typed (`localhost:5173` gets `http://`, a bare site gets `https://`). A refused address is remembered in the snapshot so the panel can explain it: for a public site it asks, and "turn on public sites and open it" saves the setting and opens that address, while "stay on localhost" only dismisses the question. The per-site prompt for agent visits in `DEC-50` is separate and arrives with phases 3.8 and 3.9. Because the native view draws above the page, the panel reports its viewport rectangle and the view hides while any dialog is open. A toast can still be covered by the view.
 
+### Phase 3.5 behaviour
+
+- **Denied by default (`BRW-07`, `SEC-10`).** Every permission request and check is refused without a prompt, so camera, microphone, location and notifications never ask. A popup is denied and leaves a notice in the panel. A link or redirect to a non-web scheme (`mailto:` and the like) is refused by the origin policy and never reaches the operating system. The File System Access pickers (`showOpenFilePicker`, `showSaveFilePicker`, `showDirectoryPicker`) are removed from the view.
+- **Uploads, a known limit.** Electron has no hook for the native chooser behind `<input type="file">`, and a preload is not allowed (`SEC-12`). A page can therefore still open that operating system dialog, but it only receives a file the user picked there. Agent-driven uploads do not exist (see the typed operations) and stay deferred.
+- **Downloads (`BRW-06`).** A download follows the same origin policy as a page, including `blob:` addresses, and a refused one is cancelled before anything is saved. The file name is made safe, and the operating system's save dialog opens at the downloads folder, so the user confirms the destination every time. The last five downloads show in the panel with their state.
+- **Profiles (`BRW-05`, `DEC-49`).** Each project starts on its own persistent profile. The panel can switch it to the shared Default, a named profile or incognito, which is an in-memory partition wiped when its page closes. Switching closes the current page. Named profiles are created and removed from the panel, which stands in for Settings until one exists.
+- **Clearing data (`BRW-08`).** Clearing a profile asks first, then removes its cookies, storage and cache and closes any page using it. Removing a named profile does the same and sends its projects back to their own profile. Removing a project leaves its profile alone.
+- **Open outside (`BRW-09`, `SEC-16`).** The address is taken from the browser's own state, never from the renderer, only `http:` and `https:` are accepted, and a native question shows the exact address with Cancel as the default.
+
 ## Explicit deferrals
 
-Annotations (`BRW-19`), multiple tabs, browser extensions, raw CDP, arbitrary JavaScript, file uploads, unrestricted computer use.
+Annotations (`BRW-19`), multiple tabs, browser extensions, raw CDP, arbitrary JavaScript, file uploads by the agent, blocking the plain file chooser (no Electron hook), a Settings screen for profiles (managed from the browser tab until then), unrestricted computer use.
 
 ## Edge cases and failure modes
 

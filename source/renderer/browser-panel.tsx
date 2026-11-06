@@ -2,7 +2,9 @@ import * as React from 'react';
 import {Button} from '@/renderer/ui';
 import type {
 	BrowserBounds,
+	BrowserDownload,
 	BrowserNavigation,
+	BrowserProfileList,
 	BrowserSnapshot,
 } from '@/shared/browser';
 
@@ -10,6 +12,7 @@ export interface BrowserPanelProps {
 	projectName: string;
 	snapshot: BrowserSnapshot | null;
 	publicSites: boolean;
+	profiles: BrowserProfileList | null;
 	loading: boolean;
 	pending: boolean;
 	error: string | null;
@@ -19,6 +22,11 @@ export interface BrowserPanelProps {
 	onBounds(bounds: BrowserBounds | null): void;
 	onPublicSites(enabled: boolean): void;
 	onAllowAndOpen(url: string): void;
+	onProfile(profile: string): void;
+	onCreateProfile(name: string): Promise<boolean>;
+	onDeleteProfile(id: string): void;
+	onClearData(profile: string): void;
+	onOpenExternal(): void;
 }
 
 const SECURITY = {
@@ -26,6 +34,26 @@ const SECURITY = {
 	secure: {glyph: '●', word: 'secure', tone: 'ok'},
 	insecure: {glyph: '▲', word: 'not secure', tone: 'warn'},
 } as const;
+
+function downloadText(download: BrowserDownload): string {
+	if (download.state === 'asking') return 'choose where to save it';
+	if (download.state === 'progress')
+		return download.total > 0
+			? `${Math.min(100, Math.round((download.received / download.total) * 100))}%`
+			: 'saving';
+	if (download.state === 'done') return 'saved';
+	return download.state === 'cancelled' ? 'cancelled' : 'failed';
+}
+
+function profileLabel(
+	current: string,
+	profiles: BrowserProfileList | null,
+): string {
+	if (current === 'project') return "this project's own profile";
+	if (current === 'default') return 'the shared default profile';
+	if (current === 'incognito') return 'incognito';
+	return `the ${profiles?.profiles.find(entry => entry.id === current)?.name ?? 'named'} profile`;
+}
 
 function hostOf(url: string): string {
 	try {
@@ -82,6 +110,7 @@ export function BrowserPanel({
 	projectName,
 	snapshot,
 	publicSites,
+	profiles,
 	loading,
 	pending,
 	error,
@@ -91,11 +120,22 @@ export function BrowserPanel({
 	onBounds,
 	onPublicSites,
 	onAllowAndOpen,
+	onProfile,
+	onCreateProfile,
+	onDeleteProfile,
+	onClearData,
+	onOpenExternal,
 }: BrowserPanelProps): React.ReactElement {
 	const viewport = React.useRef<HTMLDivElement>(null);
 	const address = React.useRef<HTMLInputElement>(null);
 	const [draft, setDraft] = React.useState<string | null>(null);
 	const [dismissed, setDismissed] = React.useState<number | null>(null);
+	const [confirming, setConfirming] = React.useState<'clear' | 'remove' | null>(
+		null,
+	);
+	const [newName, setNewName] = React.useState('');
+	const current = profiles?.current ?? 'project';
+	const named = profiles?.profiles.some(entry => entry.id === current) ?? false;
 	useViewportBounds(viewport, !suspended, onBounds);
 	const shownUrl = snapshot?.url ?? null;
 	React.useEffect(() => {
@@ -190,6 +230,100 @@ export function BrowserPanel({
 					allow public sites
 				</label>
 			</div>
+			<div className="browser-profile">
+				<label>
+					profile{' '}
+					<select
+						aria-label="browser profile"
+						value={current}
+						disabled={!profiles || pending}
+						onChange={event => {
+							setConfirming(null);
+							onProfile(event.target.value);
+						}}
+					>
+						<option value="project">this project's own</option>
+						<option value="default">shared default</option>
+						{profiles?.profiles.map(entry => (
+							<option key={entry.id} value={entry.id}>
+								{entry.name}
+							</option>
+						))}
+						<option value="incognito">incognito, not saved</option>
+					</select>
+				</label>
+				<Button
+					title="open this page in your system browser"
+					disabled={!open || !snapshot?.url}
+					onClick={onOpenExternal}
+				>
+					open in system browser
+				</Button>
+			</div>
+			<details className="browser-manage">
+				<summary>manage profiles and data</summary>
+				<form
+					className="browser-manage-row"
+					onSubmit={event => {
+						event.preventDefault();
+						void onCreateProfile(newName).then(done => {
+							if (done) setNewName('');
+						});
+					}}
+				>
+					<input
+						className="browser-address"
+						aria-label="new profile name"
+						placeholder="new profile name"
+						maxLength={40}
+						value={newName}
+						onChange={event => setNewName(event.target.value)}
+					/>
+					<Button type="submit" disabled={newName.trim() === '' || pending}>
+						add profile
+					</Button>
+				</form>
+				{confirming ? (
+					<div className="browser-manage-row" role="alert">
+						<span>
+							{confirming === 'clear'
+								? `clear cookies, sign-ins and site data for ${profileLabel(current, profiles)}? this cannot be undone.`
+								: `remove ${profileLabel(current, profiles)} and its data? projects using it go back to their own profile.`}
+						</span>
+						<Button
+							onClick={() => {
+								if (confirming === 'clear') onClearData(current);
+								else onDeleteProfile(current);
+								setConfirming(null);
+							}}
+						>
+							{confirming === 'clear' ? 'yes, clear it' : 'yes, remove it'}
+						</Button>
+						<Button onClick={() => setConfirming(null)}>keep it</Button>
+					</div>
+				) : (
+					<div className="browser-manage-row">
+						<Button onClick={() => setConfirming('clear')} disabled={!profiles}>
+							clear data for this profile
+						</Button>
+						{named && (
+							<Button onClick={() => setConfirming('remove')}>
+								remove this profile
+							</Button>
+						)}
+					</div>
+				)}
+			</details>
+			{snapshot && snapshot.downloads.length > 0 && (
+				<ul className="browser-downloads" aria-label="downloads">
+					{snapshot.downloads.map(download => (
+						<li key={download.id}>
+							<span className="browser-download-name">{download.name}</span>{' '}
+							<span>{downloadText(download)}</span>
+						</li>
+					))}
+				</ul>
+			)}
 			{blocked && (
 				<div className="browser-notice" role="alert">
 					{blocked.reason === 'public-off' ? (
@@ -204,6 +338,18 @@ export function BrowserPanel({
 								</Button>
 								<Button onClick={() => setDismissed(blocked.id)}>
 									stay on localhost
+								</Button>
+							</div>
+						</>
+					) : blocked.reason === 'popup' ? (
+						<>
+							<p>
+								a page tried to open a new window. it was blocked, so nothing
+								else opened.
+							</p>
+							<div className="browser-notice-actions">
+								<Button onClick={() => setDismissed(blocked.id)}>
+									dismiss
 								</Button>
 							</div>
 						</>

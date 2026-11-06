@@ -15,6 +15,12 @@ const methods = {
 	navigate: 'navigate',
 	setBounds: 'setBounds',
 	close: 'closeView',
+	profiles: 'profiles',
+	setProfile: 'setProfile',
+	createProfile: 'createProfile',
+	deleteProfile: 'deleteProfile',
+	clearData: 'clearData',
+	openExternal: 'openExternal',
 } as const satisfies Record<keyof BrowserRequests, keyof BrowserService>;
 
 export function registerBrowserHandlers(
@@ -40,6 +46,18 @@ export function registerBrowserHandlers(
 				.nullable(),
 		}),
 		close: z.strictObject(project),
+		profiles: z.strictObject(project),
+		setProfile: z.strictObject({
+			...project,
+			profile: z.string().min(1).max(40),
+		}),
+		createProfile: z.strictObject({
+			...project,
+			name: z.string().min(1).max(40),
+		}),
+		deleteProfile: z.strictObject({...project, id: z.uuid()}),
+		clearData: z.strictObject({...project, profile: z.string().min(1).max(40)}),
+		openExternal: z.strictObject(project),
 	};
 	const register = <K extends keyof BrowserRequests>(key: K) => {
 		registerHandler(

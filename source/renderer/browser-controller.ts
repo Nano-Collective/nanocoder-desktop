@@ -2,6 +2,7 @@ import type {
 	BrowserApi,
 	BrowserBounds,
 	BrowserNavigation,
+	BrowserProfileList,
 	BrowserSnapshot,
 } from '@/shared/browser';
 import {addressToUrl} from '@/shared/browser-address';
@@ -21,6 +22,7 @@ export interface BrowserState {
 	projectId: string | null;
 	snapshot: BrowserSnapshot | null;
 	publicSites: boolean;
+	profiles: BrowserProfileList | null;
 	loading: boolean;
 	pending: boolean;
 	error: string | null;
@@ -43,6 +45,7 @@ export class BrowserController {
 		projectId: null,
 		snapshot: null,
 		publicSites: false,
+		profiles: null,
 		loading: false,
 		pending: false,
 		error: null,
@@ -73,19 +76,22 @@ export class BrowserController {
 		this.update({
 			projectId,
 			snapshot: null,
+			profiles: null,
 			loading: projectId !== null,
 			pending: false,
 			error: null,
 		});
 		if (!projectId) return;
 		try {
-			const [snapshot, settings] = await Promise.all([
+			const [snapshot, settings, profiles] = await Promise.all([
 				this.bridge.browser.get({projectId}),
 				this.bridge.getSettings({}).catch(() => undefined),
+				this.bridge.browser.profiles({projectId}).catch(() => undefined),
 			]);
 			if (!this.current(epoch)) return;
 			if (settings?.ok)
 				this.update({publicSites: settings.value.publicBrowsingEnabled});
+			if (profiles?.ok) this.update({profiles: profiles.value});
 			if (snapshot.ok) this.apply(snapshot.value);
 			else this.update({error: snapshot.error.message});
 			if (this.wantedBounds !== undefined) this.setBounds(this.wantedBounds);
@@ -109,6 +115,51 @@ export class BrowserController {
 		return this.request(projectId =>
 			this.bridge.browser.navigate({projectId, action}),
 		);
+	}
+
+	async setProfile(profile: string): Promise<boolean> {
+		const changed = await this.request(projectId =>
+			this.bridge.browser.setProfile({projectId, profile}),
+		);
+		if (changed) await this.refreshProfiles();
+		return changed;
+	}
+
+	createProfile(name: string): Promise<boolean> {
+		return this.profileRequest(projectId =>
+			this.bridge.browser.createProfile({projectId, name}),
+		);
+	}
+
+	deleteProfile(id: string): Promise<boolean> {
+		return this.profileRequest(projectId =>
+			this.bridge.browser.deleteProfile({projectId, id}),
+		);
+	}
+
+	clearData(profile: string): Promise<boolean> {
+		return this.request(projectId =>
+			this.bridge.browser.clearData({projectId, profile}),
+		);
+	}
+
+	async openExternal(): Promise<boolean> {
+		const {projectId} = this.state;
+		if (!projectId || this.disposed) return false;
+		const epoch = this.epoch;
+		try {
+			const result = await this.bridge.browser.openExternal({projectId});
+			if (!this.current(epoch)) return false;
+			if (!result.ok) {
+				this.update({error: result.error.message});
+				return false;
+			}
+			return result.value.opened;
+		} catch {
+			if (this.current(epoch))
+				this.update({error: 'The page could not be opened outside'});
+			return false;
+		}
 	}
 
 	async setPublicSites(enabled: boolean): Promise<boolean> {
@@ -166,6 +217,42 @@ export class BrowserController {
 				return false;
 			}
 			this.apply(result.value);
+			return true;
+		} catch {
+			if (this.current(epoch))
+				this.update({error: 'The browser request failed'});
+			return false;
+		} finally {
+			if (this.current(epoch)) this.update({pending: false});
+		}
+	}
+
+	private async refreshProfiles(): Promise<void> {
+		const {projectId} = this.state;
+		if (!projectId) return;
+		const epoch = this.epoch;
+		try {
+			const result = await this.bridge.browser.profiles({projectId});
+			if (this.current(epoch) && result.ok)
+				this.update({profiles: result.value});
+		} catch {}
+	}
+
+	private async profileRequest(
+		send: (projectId: string) => Promise<IpcResult<BrowserProfileList>>,
+	): Promise<boolean> {
+		const {projectId} = this.state;
+		if (!projectId || this.disposed) return false;
+		const epoch = this.epoch;
+		this.update({pending: true, error: null});
+		try {
+			const result = await send(projectId);
+			if (!this.current(epoch)) return false;
+			if (!result.ok) {
+				this.update({error: result.error.message});
+				return false;
+			}
+			this.update({profiles: result.value});
 			return true;
 		} catch {
 			if (this.current(epoch))

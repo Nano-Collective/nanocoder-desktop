@@ -26,6 +26,12 @@ function fixture() {
 		navigate: count,
 		setBounds: count,
 		closeView: count,
+		profiles: count,
+		setProfile: count,
+		createProfile: count,
+		deleteProfile: count,
+		clearData: count,
+		openExternal: count,
 	} as unknown as BrowserService;
 	registerBrowserHandlers(
 		(channel, schema, handler, allowedOrigins) => {
@@ -117,6 +123,12 @@ test('SEC-02 every browser handler refuses foreign origins and child frames', as
 		open: {projectId, url: 'http://localhost:3000/'},
 		navigate: {projectId, action: 'reload'},
 		setBounds: {projectId, bounds},
+		profiles: {projectId},
+		setProfile: {projectId, profile: 'default'},
+		createProfile: {projectId, name: 'Docs'},
+		deleteProfile: {projectId, id: '0c7b2a54-1d6e-4f8a-9b3c-5e2d1a0f9c88'},
+		clearData: {projectId, profile: 'default'},
+		openExternal: {projectId},
 		close: {projectId},
 	} as const;
 	for (const key of Object.keys(payloads) as Array<keyof typeof payloads>)
@@ -162,4 +174,41 @@ test('SEC-02 unexpected browser errors return a generic failure without their me
 		missing?.ok ? null : missing?.error.message,
 		'The browser is unavailable',
 	);
+});
+
+test('SEC-16 SEC-02 profile, data and external calls refuse extra fields, so an address can never be supplied', async t => {
+	const f = fixture();
+	const id = '0c7b2a54-1d6e-4f8a-9b3c-5e2d1a0f9c88';
+	const bad: Array<[keyof typeof BROWSER_CHANNELS, unknown]> = [
+		['openExternal', {projectId, url: 'https://evil.example/'}],
+		['openExternal', {projectId, command: 'open'}],
+		['profiles', {projectId, partition: 'persist:x'}],
+		['setProfile', {projectId, profile: ''}],
+		['setProfile', {projectId, profile: 'x'.repeat(41)}],
+		['setProfile', {projectId, profile: 'default', path: '/x'}],
+		['createProfile', {projectId, name: ''}],
+		['createProfile', {projectId, name: 'x'.repeat(41)}],
+		['createProfile', {projectId, name: 'ok', id}],
+		['deleteProfile', {projectId, id: 'not-a-uuid'}],
+		['deleteProfile', {projectId, id, partition: 'persist:browser-default'}],
+		['clearData', {projectId, profile: ''}],
+		['clearData', {projectId, profile: 'default', all: true}],
+		['clearData', {projectId, partition: 'persist:browser-default'}],
+	];
+	for (const [key, payload] of bad) {
+		const result = await f.call(key, payload);
+		t.false(result.ok, `${key} ${JSON.stringify(payload)}`);
+		if (!result.ok) t.is(result.error.code, 'VALIDATION');
+	}
+	t.is(f.calls(), 0);
+	for (const [key, payload] of [
+		['openExternal', {projectId}],
+		['profiles', {projectId}],
+		['setProfile', {projectId, profile: id}],
+		['createProfile', {projectId, name: 'Docs'}],
+		['deleteProfile', {projectId, id}],
+		['clearData', {projectId, profile: 'incognito'}],
+	] as const)
+		t.true((await f.call(key, payload)).ok, key);
+	t.is(f.calls(), 6);
 });

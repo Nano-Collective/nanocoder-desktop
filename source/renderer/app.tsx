@@ -851,6 +851,7 @@ export function App() {
 												}
 												snapshot={browser.snapshot}
 												publicSites={browser.publicSites}
+												profiles={browser.profiles}
 												loading={browser.loading}
 												pending={browser.pending}
 												error={browser.error}
@@ -860,6 +861,11 @@ export function App() {
 												onBounds={browser.setBounds}
 												onPublicSites={browser.setPublicSites}
 												onAllowAndOpen={browser.allowAndOpen}
+												onProfile={browser.setProfile}
+												onCreateProfile={browser.createProfile}
+												onDeleteProfile={browser.deleteProfile}
+												onClearData={browser.clearData}
+												onOpenExternal={browser.openExternal}
 											/>
 										}
 									/>

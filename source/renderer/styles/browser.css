@@ -102,3 +102,47 @@
 	font-size: var(--typography-caption-font-size);
 	text-align: center;
 }
+
+.browser-profile,
+.browser-manage-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 8px;
+	font-size: var(--typography-caption-font-size);
+}
+
+.browser-profile select {
+	min-height: 26px;
+	border: 1px solid var(--colors-stroke);
+	border-radius: var(--rounded-md);
+	background: var(--colors-surface);
+	color: var(--colors-on-surface);
+	font: inherit;
+}
+
+.browser-manage {
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-caption-font-size);
+}
+
+.browser-manage summary {
+	cursor: pointer;
+}
+
+.browser-manage-row {
+	margin-top: 6px;
+}
+
+.browser-downloads {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-caption-font-size);
+}
+
+.browser-download-name {
+	color: var(--colors-on-surface);
+	overflow-wrap: anywhere;
+}

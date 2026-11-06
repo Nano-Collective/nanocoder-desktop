@@ -1,16 +1,51 @@
+import path from 'node:path';
 import {checkPage, pageOrigin, pageSecurity} from '@/main/browser/origin';
-import {browserPartition, browserWebPreferences} from '@/main/browser/profile';
+import {
+	type BrowserProfileRef,
+	browserPartition,
+	browserWebPreferences,
+	parseProfileKey,
+	profileKey,
+} from '@/main/browser/profile';
+import type {BrowserProfiles} from '@/main/browser/profiles';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {
 	BROWSER_BOUNDS_LIMIT,
+	type BrowserBlockReason,
 	type BrowserBounds,
+	type BrowserDownload,
 	type BrowserEvent,
+	type BrowserProfileList,
 	type BrowserRequests,
 	type BrowserSnapshot,
 } from '@/shared/browser';
 
 const TITLE_LIMIT = 200;
 const URL_LIMIT = 2_048;
+const DOWNLOAD_LIMIT = 5;
+const FILE_NAME_LIMIT = 120;
+
+export interface BrowserDownloadItem {
+	url: string;
+	filename: string;
+	totalBytes: number;
+	setDestination(options: {defaultPath: string; title: string}): void;
+	cancel(): void;
+	onProgress(listener: (received: number, total: number) => void): void;
+	onDone(
+		listener: (state: 'completed' | 'cancelled' | 'interrupted') => void,
+	): void;
+}
+
+function safeFileName(raw: string): string {
+	const cleaned = raw.replace(/[\u0000-\u001f\u007f]/g, '');
+	const base = (cleaned.split(/[\\/]/).pop() ?? '')
+		.trim()
+		.replace(/[. ]+$/, '');
+	if (base === '') return 'download';
+	const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(base);
+	return `${reserved ? '_' : ''}${base}`.slice(0, FILE_NAME_LIMIT);
+}
 
 export interface BrowserPage {
 	url: string;
@@ -24,6 +59,8 @@ export interface BrowserViewHooks {
 	navigated(page: BrowserPage): void;
 	loading(loading: boolean): void;
 	failed(): void;
+	popup(url: string): void;
+	download(item: BrowserDownloadItem): void;
 }
 
 export interface BrowserViewHandle {
@@ -53,6 +90,7 @@ const closedState = (projectId: string, sequence: number): State => ({
 	canGoBack: false,
 	canGoForward: false,
 	blocked: null,
+	downloads: [],
 	reason: null,
 });
 
@@ -64,7 +102,10 @@ export class BrowserService {
 	private blockedOpen = 0;
 	private committedOpen = 0;
 	private blockedCount = 0;
+	private downloadCount = 0;
 	private view: BrowserViewHandle | undefined;
+	private viewPartition: string | null = null;
+	private viewProfile: BrowserProfileRef | null = null;
 	private bounds: BrowserBounds | null | undefined;
 	private state: State = closedState('', 0);
 
@@ -73,6 +114,13 @@ export class BrowserService {
 			project(id: string): {id: string; displayName: string} | undefined;
 			emit(event: BrowserEvent): void;
 			publicSites(): boolean;
+			downloadsPath(): string;
+			profiles: Pick<
+				BrowserProfiles,
+				'list' | 'resolve' | 'create' | 'assign' | 'delete'
+			>;
+			clearData(partition: string): Promise<void>;
+			openExternal(url: string): Promise<boolean>;
 			createView(
 				launch: BrowserViewLaunch,
 				hooks: BrowserViewHooks,
@@ -150,7 +198,7 @@ export class BrowserService {
 		return this.snapshot();
 	}
 
-	private block(url: string, reason: 'public-off' | 'scheme'): void {
+	private block(url: string, reason: BrowserBlockReason): void {
 		this.state = {
 			...this.state,
 			blocked: {
@@ -241,11 +289,77 @@ export class BrowserService {
 
 	closeView({projectId}: BrowserRequests['close']): BrowserSnapshot {
 		this.check(projectId);
-		++this.generation;
-		this.destroyView();
-		this.state = closedState(projectId, this.state.sequence);
-		this.publish();
+		this.resetView(projectId);
 		return this.snapshot();
+	}
+
+	profiles({projectId}: BrowserRequests['profiles']): BrowserProfileList {
+		this.check(projectId);
+		return this.profileList(projectId);
+	}
+
+	setProfile({
+		projectId,
+		profile,
+	}: BrowserRequests['setProfile']): BrowserSnapshot {
+		this.check(projectId);
+		const choice = parseProfileKey(profile);
+		if (!choice) throw new IpcFailure('VALIDATION', 'Unknown browser profile');
+		const current = this.options.profiles.resolve(projectId);
+		if (profileKey(current) === profileKey(choice)) return this.snapshot();
+		this.options.profiles.assign(projectId, choice);
+		this.resetView(projectId);
+		return this.snapshot();
+	}
+
+	createProfile({
+		projectId,
+		name,
+	}: BrowserRequests['createProfile']): BrowserProfileList {
+		this.check(projectId);
+		this.options.profiles.create(name);
+		return this.profileList(projectId);
+	}
+
+	async deleteProfile({
+		projectId,
+		id,
+	}: BrowserRequests['deleteProfile']): Promise<BrowserProfileList> {
+		this.check(projectId);
+		this.options.profiles.delete(id);
+		const partition = browserPartition(null, {kind: 'named', id});
+		if (this.viewPartition === partition) this.resetView(projectId);
+		await this.options.clearData(partition);
+		return this.profileList(projectId);
+	}
+
+	async clearData({
+		projectId,
+		profile,
+	}: BrowserRequests['clearData']): Promise<BrowserSnapshot> {
+		this.check(projectId);
+		const choice = parseProfileKey(profile);
+		if (!choice) throw new IpcFailure('VALIDATION', 'Unknown browser profile');
+		if (
+			choice.kind === 'named' &&
+			!this.options.profiles.list().some(entry => entry.id === choice.id)
+		)
+			throw new IpcFailure('NOT_FOUND', 'That browser profile does not exist');
+		const partition = browserPartition(projectId, choice);
+		if (this.viewPartition === partition) this.resetView(projectId);
+		await this.options.clearData(partition);
+		return this.snapshot();
+	}
+
+	async openExternal({
+		projectId,
+	}: BrowserRequests['openExternal']): Promise<{opened: boolean}> {
+		this.check(projectId);
+		const {url} = this.state;
+		if (url === null) throw new IpcFailure('UNAVAILABLE', 'Open a page first');
+		if (!checkPage(url, {publicSites: true}).allowed)
+			throw new IpcFailure('DENIED', 'Only http and https pages open outside');
+		return {opened: await this.options.openExternal(url)};
 	}
 
 	close(): Promise<void> {
@@ -302,6 +416,71 @@ export class BrowserService {
 				else return;
 				this.publish();
 			},
+			download: item => {
+				if (!live()) {
+					item.cancel();
+					return;
+				}
+				const target = item.url.startsWith('blob:')
+					? item.url.slice('blob:'.length)
+					: item.url;
+				const verdict = checkPage(target, {
+					publicSites: this.options.publicSites(),
+				});
+				if (!verdict.allowed) {
+					item.cancel();
+					if (verdict.reason !== 'invalid')
+						this.block(item.url, verdict.reason);
+					return;
+				}
+				const id = ++this.downloadCount;
+				const name = safeFileName(item.filename);
+				const entry: BrowserDownload = {
+					id,
+					name,
+					state: 'asking',
+					received: 0,
+					total: Math.max(0, item.totalBytes),
+				};
+				this.state = {
+					...this.state,
+					downloads: [...this.state.downloads, entry].slice(-DOWNLOAD_LIMIT),
+				};
+				this.publish();
+				item.setDestination({
+					defaultPath: path.join(this.options.downloadsPath(), name),
+					title: 'Save download',
+				});
+				const update = (patch: Partial<BrowserDownload>) => {
+					if (!live()) return;
+					if (!this.state.downloads.some(candidate => candidate.id === id))
+						return;
+					this.state = {
+						...this.state,
+						downloads: this.state.downloads.map(candidate =>
+							candidate.id === id ? {...candidate, ...patch} : candidate,
+						),
+					};
+					this.publish();
+				};
+				item.onProgress((received, total) =>
+					update({state: 'progress', received, total: Math.max(0, total)}),
+				);
+				item.onDone(state =>
+					update({
+						state:
+							state === 'completed'
+								? 'done'
+								: state === 'cancelled'
+									? 'cancelled'
+									: 'failed',
+					}),
+				);
+			},
+			popup: url => {
+				if (!live()) return;
+				this.block(url, 'popup');
+			},
 			failed: () => {
 				if (!live()) return;
 				this.state = {
@@ -314,22 +493,45 @@ export class BrowserService {
 		};
 	}
 
+	private profileList(projectId: string): BrowserProfileList {
+		return {
+			profiles: this.options.profiles.list(),
+			current: profileKey(this.options.profiles.resolve(projectId)),
+		};
+	}
+
+	private resetView(projectId: string): void {
+		++this.generation;
+		this.destroyView();
+		this.state = closedState(projectId, this.state.sequence);
+		this.publish();
+	}
+
 	private ensureView(projectId: string): BrowserViewHandle {
 		if (this.view) return this.view;
-		const partition = browserPartition(projectId);
+		const profile = this.options.profiles.resolve(projectId);
+		const partition = browserPartition(projectId, profile);
 		const view = this.options.createView(
 			{partition, preferences: browserWebPreferences(partition)},
 			this.hooks(this.generation),
 		);
 		if (this.bounds !== undefined) view.setBounds(this.bounds);
 		this.view = view;
+		this.viewPartition = partition;
+		this.viewProfile = profile;
 		return view;
 	}
 
 	private destroyView(): void {
 		const view = this.view;
+		const partition = this.viewPartition;
+		const incognito = this.viewProfile?.kind === 'incognito';
 		this.view = undefined;
+		this.viewPartition = null;
+		this.viewProfile = null;
 		view?.destroy();
+		if (view && incognito && partition)
+			void this.options.clearData(partition).catch(() => {});
 	}
 
 	private stale(generation: number, openId: number): boolean {

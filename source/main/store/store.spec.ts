@@ -550,18 +550,18 @@ test('title metadata refuses cross-project targets and non-allowlisted fields (C
 	t.false(store.threads.getTitleManuallySet(owner.id, saved.id));
 });
 
-test('CHAT-08 current schema independently pins version four, migration ids and the exact metadata tables', async t => {
+test('CHAT-08 current schema independently pins version five, migration ids and the exact metadata tables', async t => {
 	const f = fixture(t);
 	(await f.open()).close();
 	const db = f.driver.open(f.filename);
 	t.teardown(() => db.close());
-	t.is(db.prepare('PRAGMA user_version').get()?.user_version, 4);
+	t.is(db.prepare('PRAGMA user_version').get()?.user_version, 5);
 	t.deepEqual(
 		db
 			.prepare('SELECT version FROM schema_migration ORDER BY version')
 			.all()
 			.map(row => row.version),
-		[1, 2, 3, 4],
+		[1, 2, 3, 4, 5],
 	);
 	t.deepEqual(
 		db
@@ -842,6 +842,8 @@ test('settings and bounded UI state persist across close and reopen', async t =>
 		editor: 'system',
 		nanocoderOverridePath: null,
 		theme: 'dark',
+		browserProfiles: [],
+		browserAssignments: {},
 	});
 	const settings = store.updateSettings({
 		publicBrowsingEnabled: true,
@@ -1488,4 +1490,85 @@ test('foreign keys cascade metadata for turns, agents, terminal and browser', as
 	]) {
 		t.is(db.prepare(`SELECT count(*) AS n FROM ${table}`).get()?.n, 0);
 	}
+});
+
+test('BRW-05 browser profiles and each project assignment persist, and refuse malformed or dangling data', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const profile = {id: randomUUID(), name: 'Work sites'};
+	const project = randomUUID();
+	const saved = store.updateSettings({
+		browserProfiles: [profile],
+		browserAssignments: {[project]: profile.id, [randomUUID()]: 'incognito'},
+	});
+	store.close();
+	const next = await f.open();
+	t.deepEqual(next.getSettings().browserProfiles, [profile]);
+	t.deepEqual(next.getSettings().browserAssignments, saved.browserAssignments);
+	const refused = (patch: Record<string, unknown>) =>
+		t.throws(() => next.updateSettings(patch as never), {
+			code: 'VALIDATION',
+		});
+	refused({browserProfiles: [{id: 'nope', name: 'x'}]});
+	refused({browserProfiles: [{id: randomUUID(), name: ''}]});
+	refused({browserProfiles: [{id: randomUUID(), name: 'x'.repeat(41)}]});
+	refused({browserProfiles: [{id: randomUUID(), name: 'bad\nname'}]});
+	refused({browserProfiles: [{id: randomUUID(), name: 'ok', extra: 1}]});
+	refused({
+		browserProfiles: [
+			{id: randomUUID(), name: 'Same'},
+			{id: randomUUID(), name: 'same'},
+		],
+	});
+	refused({
+		browserProfiles: Array.from({length: 21}, (_, i) => ({
+			id: randomUUID(),
+			name: `p${i}`,
+		})),
+	});
+	refused({browserAssignments: {'not-a-project': 'default'}});
+	refused({browserAssignments: {[project]: 'shared'}});
+	refused({browserAssignments: {[project]: randomUUID()}});
+	refused({
+		browserAssignments: Object.fromEntries(
+			Array.from({length: 501}, () => [randomUUID(), 'default']),
+		),
+	});
+	t.deepEqual(next.getSettings().browserProfiles, [profile]);
+});
+
+test('BRW-05 a version four database keeps its settings when the setting table learns the browser profile keys', async t => {
+	const f = fixture(t);
+	const database = f.driver.open(f.filename);
+	try {
+		for (const migration of migrations.slice(0, 4))
+			transaction(database, () => {
+				database.exec(migration.sql);
+				database
+					.prepare('INSERT INTO schema_migration VALUES (?, ?)')
+					.run(migration.version, '2026-10-29T12:00:00.000Z');
+				database.exec(`PRAGMA user_version = ${migration.version}`);
+			});
+		database
+			.prepare('INSERT INTO setting VALUES (?, ?)')
+			.run('theme', '"light"');
+		database
+			.prepare('INSERT INTO setting VALUES (?, ?)')
+			.run('publicBrowsingEnabled', 'true');
+	} finally {
+		database.close();
+	}
+	const store = await f.open();
+	t.like(store.getSettings(), {
+		theme: 'light',
+		publicBrowsingEnabled: true,
+		browserProfiles: [],
+		browserAssignments: {},
+	});
+	const profile = {id: randomUUID(), name: 'Docs'};
+	t.deepEqual(
+		store.updateSettings({browserProfiles: [profile]}).browserProfiles,
+		[profile],
+	);
+	t.true(readdirSync(f.root).some(name => name.includes('.backup')));
 });

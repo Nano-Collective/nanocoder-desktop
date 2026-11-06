@@ -252,11 +252,17 @@ export interface DesktopSettings {
 	editor: 'system' | 'code' | 'cursor' | 'zed';
 	nanocoderOverridePath: string | null;
 	theme: 'dark' | 'light' | 'system';
+	// Main-only: profiles are created and assigned through the browser calls.
+	browserProfiles: Array<{id: string; name: string}>;
+	browserAssignments: Record<string, string>;
 }
 
 // Runtime paths are chosen in main, not supplied by a renderer.
 export type SettingsPatch = Partial<
-	Omit<DesktopSettings, 'nanocoderOverridePath'>
+	Omit<
+		DesktopSettings,
+		'nanocoderOverridePath' | 'browserProfiles' | 'browserAssignments'
+	>
 >;
 
 export interface UiState {

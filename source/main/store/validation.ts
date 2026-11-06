@@ -37,9 +37,49 @@ export const settingsPatch = z.strictObject({
 	theme: z.enum(['dark', 'light', 'system']).optional(),
 });
 
-export const settingsSchema = settingsPatch.required().extend({
-	nanocoderOverridePath: absolutePath.nullable(),
-});
+const profileName = z
+	.string()
+	.trim()
+	.min(1)
+	.max(40)
+	.refine(value => !/[\u0000-\u001f\u007f]/.test(value));
+const browserProfiles = z
+	.array(z.strictObject({id: z.uuid(), name: profileName}))
+	.max(20)
+	.refine(
+		list =>
+			new Set(list.map(entry => entry.id)).size === list.length &&
+			new Set(list.map(entry => entry.name.toLowerCase())).size === list.length,
+	);
+const browserAssignments = z
+	.record(
+		z.uuid(),
+		z.union([
+			z.literal('project'),
+			z.literal('default'),
+			z.literal('incognito'),
+			z.uuid(),
+		]),
+	)
+	.refine(record => Object.keys(record).length <= 500);
+
+export const settingsSchema = settingsPatch
+	.required()
+	.extend({
+		nanocoderOverridePath: absolutePath.nullable(),
+		browserProfiles,
+		browserAssignments,
+	})
+	.refine(settings => {
+		const known = new Set(settings.browserProfiles.map(entry => entry.id));
+		return Object.values(settings.browserAssignments).every(
+			value =>
+				value === 'project' ||
+				value === 'default' ||
+				value === 'incognito' ||
+				known.has(value),
+		);
+	});
 
 export const uiPatch = z.strictObject({
 	window: z
