@@ -27,7 +27,7 @@ export interface BrowserViewHooks {
 }
 
 export interface BrowserViewHandle {
-	load(url: string): Promise<void>;
+	load(url: string): Promise<'loaded' | 'aborted'>;
 	goBack(): void;
 	goForward(): void;
 	reload(): void;
@@ -61,6 +61,7 @@ export class BrowserService {
 	private generation = 0;
 	private openSeq = 0;
 	private blockedOpen = 0;
+	private committedOpen = 0;
 	private view: BrowserViewHandle | undefined;
 	private bounds: BrowserBounds | null | undefined;
 	private state: State = closedState('', 0);
@@ -113,6 +114,7 @@ export class BrowserService {
 		}
 		const generation = this.generation;
 		const openId = ++this.openSeq;
+		const previous = this.state;
 		let view: BrowserViewHandle;
 		try {
 			view = this.ensureView(request.projectId);
@@ -134,25 +136,56 @@ export class BrowserService {
 			reason: null,
 		};
 		this.publish();
+		let outcome: 'loaded' | 'aborted';
 		try {
-			await view.load(request.url);
+			outcome = await view.load(request.url);
 		} catch {
 			if (this.stale(generation, openId)) throw this.changed();
-			const blocked = this.blockedOpen === openId;
-			this.state = {
-				...this.state,
-				status: 'failed',
-				reason: blocked
-					? 'The page tried to open a site that is not allowed'
-					: 'The page could not load',
-			};
-			this.publish();
-			throw blocked
-				? new IpcFailure('DENIED', 'The page tried to open a blocked site')
-				: new IpcFailure('UNAVAILABLE', 'The page could not load');
+			throw this.failOpen(openId);
 		}
 		if (this.stale(generation, openId)) throw this.changed();
+		if (outcome === 'aborted') {
+			if (this.blockedOpen === openId) throw this.failOpen(openId);
+			return this.cancelOpen(openId, previous);
+		}
 		this.state = {...this.state, status: 'ready', reason: null};
+		this.publish();
+		return this.snapshot();
+	}
+
+	private failOpen(openId: number): IpcFailure {
+		const blocked = this.blockedOpen === openId;
+		this.state = {
+			...this.state,
+			status: 'failed',
+			reason: blocked
+				? 'The page tried to open a site that is not allowed'
+				: 'The page could not load',
+		};
+		this.publish();
+		return blocked
+			? new IpcFailure('DENIED', 'The page tried to open a blocked site')
+			: new IpcFailure('UNAVAILABLE', 'The page could not load');
+	}
+
+	private cancelOpen(openId: number, previous: State): BrowserSnapshot {
+		if (this.committedOpen === openId)
+			this.state = {...this.state, status: 'ready', reason: null};
+		else
+			this.state = {
+				...this.state,
+				url: previous.url,
+				title: previous.title,
+				canGoBack: previous.canGoBack,
+				canGoForward: previous.canGoForward,
+				status:
+					previous.url === null
+						? 'closed'
+						: previous.status === 'loading'
+							? 'ready'
+							: previous.status,
+				reason: null,
+			};
 		this.publish();
 		return this.snapshot();
 	}
@@ -215,6 +248,7 @@ export class BrowserService {
 			navigated: page => {
 				if (!live() || !checkPage(page.url, {publicSites: true}).allowed)
 					return;
+				this.committedOpen = this.openSeq;
 				this.state = {
 					...this.state,
 					url: bounded(page.url, URL_LIMIT),

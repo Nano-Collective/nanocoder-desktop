@@ -50,37 +50,49 @@ export function createElectronViewFactory(
 		contents.on('did-fail-load', (_event, code, _text, _url, isMainFrame) => {
 			if (isMainFrame && code !== ERR_ABORTED) hooks.failed();
 		});
+		let retire: (() => void) | undefined;
 		view.setVisible(false);
 		window.contentView.addChildView(view);
 		return {
-			load: url =>
-				new Promise<void>((resolve, reject) => {
+			load: url => {
+				retire?.();
+				return new Promise<'loaded' | 'aborted'>((resolve, reject) => {
 					const cleanup = () => {
+						retire = undefined;
 						contents.removeListener('did-finish-load', finished);
 						contents.removeListener('did-fail-load', failed);
+						contents.removeListener('did-stop-loading', stopped);
 					};
 					const finished = () => {
 						cleanup();
-						resolve();
+						resolve('loaded');
+					};
+					const stopped = () => {
+						cleanup();
+						resolve('aborted');
 					};
 					const failed = (
 						_event: unknown,
-						_code: number,
+						code: number,
 						_description: string,
 						_url: string,
 						isMainFrame: boolean,
 					) => {
-						if (!isMainFrame) return;
+						if (!isMainFrame || code === ERR_ABORTED) return;
 						cleanup();
 						reject(new Error('load failed'));
 					};
+					retire = stopped;
 					contents.on('did-finish-load', finished);
 					contents.on('did-fail-load', failed);
+					contents.on('did-stop-loading', stopped);
 					contents.loadURL(url).catch(() => {
+						if (retire !== stopped) return;
 						cleanup();
 						reject(new Error('load failed'));
 					});
-				}),
+				});
+			},
 			goBack: () => contents.navigationHistory.goBack(),
 			goForward: () => contents.navigationHistory.goForward(),
 			reload: () => contents.reload(),

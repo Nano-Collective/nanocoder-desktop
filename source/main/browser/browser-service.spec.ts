@@ -17,6 +17,7 @@ interface FakeView {
 	bounds: Array<BrowserBounds | null>;
 	destroyed: number;
 	finish(): void;
+	abort(): void;
 	fail(): void;
 }
 
@@ -37,7 +38,10 @@ function fixture(
 		publicSites: () => settings.publicSites,
 		createView: ({partition, preferences}, hooks) => {
 			if (options.failCreate) throw new Error('no window at /secret/path');
-			const settled: Array<{resolve(): void; reject(error: Error): void}> = [];
+			const settled: Array<{
+				resolve(outcome: 'loaded' | 'aborted'): void;
+				reject(error: Error): void;
+			}> = [];
 			const view: FakeView = {
 				partition: preferences.partition,
 				hooks,
@@ -45,7 +49,8 @@ function fixture(
 				calls: [],
 				bounds: [],
 				destroyed: 0,
-				finish: () => settled.shift()?.resolve(),
+				finish: () => settled.shift()?.resolve('loaded'),
+				abort: () => settled.shift()?.resolve('aborted'),
 				fail: () => settled.shift()?.reject(new Error('net::ERR_FAILED')),
 			};
 			t.is(partition, preferences.partition);
@@ -53,8 +58,8 @@ function fixture(
 			return {
 				load: url => {
 					view.loads.push(url);
-					if (!holdLoads) return Promise.resolve();
-					return new Promise<void>((resolve, reject) =>
+					if (!holdLoads) return Promise.resolve('loaded' as const);
+					return new Promise<'loaded' | 'aborted'>((resolve, reject) =>
 						settled.push({resolve, reject}),
 					);
 				},
@@ -473,4 +478,86 @@ test('BRW-04 the address of an error page is never shown as the page', async t =
 	t.is(snapshot.url, 'http://localhost:3000/');
 	t.is(snapshot.title, null);
 	t.false(snapshot.canGoBack);
+});
+
+test('BRW-02 stopping a load keeps the page that was showing and reports no failure', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/a'});
+	f.views[0].hooks.navigated({
+		url: 'http://localhost:3000/a',
+		title: 'A',
+		canGoBack: false,
+		canGoForward: false,
+	});
+	f.hold();
+	const pending = f.service.open({
+		projectId: first,
+		url: 'http://localhost:3000/slow',
+	});
+	await Promise.resolve();
+	f.views[0].hooks.loading(true);
+	f.views[0].hooks.loading(false);
+	f.views[0].abort();
+	const snapshot = await pending;
+	t.is(snapshot.status, 'ready');
+	t.is(snapshot.url, 'http://localhost:3000/a');
+	t.is(snapshot.title, 'A');
+	t.is(snapshot.reason, null);
+});
+
+test('BRW-02 stopping the first load leaves nothing open rather than a failure', async t => {
+	const f = fixture(t);
+	f.hold();
+	f.service.activate(first);
+	const pending = f.service.open({
+		projectId: first,
+		url: 'http://localhost:3000/slow',
+	});
+	await Promise.resolve();
+	f.views[0].abort();
+	const snapshot = await pending;
+	t.is(snapshot.status, 'closed');
+	t.is(snapshot.url, null);
+	t.is(snapshot.reason, null);
+});
+
+test('BRW-02 stopping after the page committed keeps that page', async t => {
+	const f = fixture(t);
+	f.hold();
+	f.service.activate(first);
+	const pending = f.service.open({
+		projectId: first,
+		url: 'http://localhost:3000/slow',
+	});
+	await Promise.resolve();
+	f.views[0].hooks.navigated({
+		url: 'http://localhost:3000/slow',
+		title: 'Slow',
+		canGoBack: false,
+		canGoForward: false,
+	});
+	f.views[0].abort();
+	const snapshot = await pending;
+	t.is(snapshot.status, 'ready');
+	t.is(snapshot.url, 'http://localhost:3000/slow');
+	t.is(snapshot.title, 'Slow');
+});
+
+test('BRW-03 a load that was cancelled because a redirect was blocked still reports the block', async t => {
+	const f = fixture(t);
+	f.hold();
+	f.service.activate(first);
+	const pending = f.service.open({
+		projectId: first,
+		url: 'http://localhost:3000/go',
+	});
+	await Promise.resolve();
+	t.false(f.views[0].hooks.allow('https://example.com/landing'));
+	f.views[0].abort();
+	const error = await t.throwsAsync(pending);
+	t.is(code(error), 'DENIED');
+	const snapshot = f.service.get({projectId: first});
+	t.is(snapshot.status, 'failed');
+	t.is(snapshot.blocked?.reason, 'public-off');
 });

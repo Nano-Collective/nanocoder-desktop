@@ -168,7 +168,7 @@ This is Electron's own security guidance mapped onto the plan. It is guidance, n
 
 | # | Electron guidance | How the plan applies it |
 |---|---|---|
-| 1 | Only load secure content | App UI from a custom protocol; browser view allows `http:` only for localhost (`SEC-15`, `BRW-03`). |
+| 1 | Only load secure content | App UI from a custom protocol; the browser view opens `http:` and `https:` only under the origin policy: localhost always, other sites only while public browsing is on, and its panel shows whether a page is secure (`SEC-15`, `BRW-03`, `BRW-04`). |
 | 2 | Do not enable Node.js integration for remote content | No Node in any renderer (`SEC-01`, `SEC-12`). |
 | 3 | Enable context isolation in all renderers | `SEC-01`. |
 | 4 | Enable process sandboxing | `SEC-01`, `SEC-12`. |
@@ -180,7 +180,7 @@ This is Electron's own security guidance mapped onto the plan. It is guidance, n
 | 10 | Do not use `enableBlinkFeatures` | `SEC-01`. |
 | 11 | `<webview>`: do not use `allowpopups` | Not applicable: the plan uses `WebContentsView`, not `<webview>`. Popups are denied (`SEC-10`). |
 | 12 | `<webview>`: verify options and params | Not applicable for the same reason. |
-| 13 | Disable or limit navigation | App UI cannot navigate away; the browser view navigates only under origin policy (`SEC-15`, `BRW-03`). |
+| 13 | Disable or limit navigation | App UI cannot navigate away; the browser view applies the same origin policy to typed addresses, redirects and clicked links, so a redirect from localhost to a public site stops while public browsing is off (`SEC-15`, `BRW-03`). |
 | 14 | Disable or limit creation of new windows | Denied in app UI and browser view (`SEC-15`, `SEC-10`). |
 | 15 | Do not use `shell.openExternal` with untrusted content | `SEC-16`. |
 | 16 | Use a current version of Electron | `SEC-14`, `SEC-18`. |

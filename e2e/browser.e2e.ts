@@ -62,6 +62,7 @@ function call<K extends keyof BrowserRequests>(
 
 test.beforeEach(async () => {
 	server = createServer((request, response) => {
+		if (request.url === '/slow') return;
 		if (request.url === '/redirect') {
 			response.writeHead(302, {Location: publicUrl('/landing')});
 			response.end();
@@ -131,6 +132,7 @@ test.beforeEach(async () => {
 
 test.afterEach(async () => {
 	await app.close().catch(() => {});
+	server.closeAllConnections();
 	await new Promise<void>(resolve => server.close(() => resolve()));
 	rmSync(work, {recursive: true, force: true});
 });
@@ -404,4 +406,90 @@ test('BRW-01 closing the view removes it', async () => {
 		origin,
 	);
 	expect(remaining).toBe(0);
+});
+
+const loadingStatus = async () => {
+	const result = await call('get', {projectId});
+	return result.ok ? result.value?.status : null;
+};
+
+test('BRW-02 stop cancels a slow load and keeps the page that was showing', async () => {
+	await call('open', {projectId, url: `${origin}/a`});
+	const slow = call('open', {projectId, url: `${origin}/slow`});
+	await expect.poll(loadingStatus).toBe('loading');
+	await call('navigate', {projectId, action: 'stop'});
+	expect(await slow).toMatchObject({
+		ok: true,
+		value: {status: 'ready', url: `${origin}/a`, reason: null},
+	});
+});
+
+test('BRW-02 a second address supersedes a slow load and loads without being reported as failed', async () => {
+	const slow = call('open', {projectId, url: `${origin}/slow`});
+	await expect.poll(loadingStatus).toBe('loading');
+	const fast = await call('open', {projectId, url: `${origin}/b`});
+	expect(fast).toMatchObject({
+		ok: true,
+		value: {status: 'ready', url: `${origin}/b`},
+	});
+	expect(await slow).toMatchObject({ok: false, error: {code: 'DENIED'}});
+	expect(await call('get', {projectId})).toMatchObject({
+		ok: true,
+		value: {status: 'ready', url: `${origin}/b`, reason: null},
+	});
+});
+
+test('BRW-03 a refused address entered again after staying on localhost asks again', async () => {
+	await openBrowserTab();
+	const address = page.getByRole('textbox', {name: 'address'});
+	await address.fill(publicUrl('/a'));
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	await page.getByRole('button', {name: 'stay on localhost'}).click();
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await address.fill(publicUrl('/a'));
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	await expect(
+		page.getByRole('alert').filter({hasText: 'public site'}),
+	).toBeVisible();
+});
+
+test('BRW-01 after switching project with the browser tab open the next page is placed and visible', async () => {
+	await openBrowserTab();
+	const second = path.join(work, 'project-two');
+	mkdirSync(second);
+	await app.evaluate(({dialog}, root) => {
+		dialog.showOpenDialog = (async () => ({
+			canceled: false,
+			filePaths: [root],
+		})) as typeof dialog.showOpenDialog;
+	}, second);
+	const next = await page.evaluate(async () => {
+		const desktop = (window as unknown as {desktop: DesktopApi}).desktop;
+		const added = await desktop.addProject({});
+		if (!added.ok || added.value.status !== 'selected') return null;
+		const opened = await desktop.openProject({
+			projectId: added.value.project.id,
+		});
+		return opened.ok ? added.value.project.id : null;
+	});
+	expect(next).not.toBeNull();
+	const result = await call('open', {
+		projectId: next as string,
+		url: `${origin}/a`,
+	});
+	expect(result).toMatchObject({ok: true, value: {status: 'ready'}});
+	const region = page.getByRole('region', {name: 'web page'});
+	await expect
+		.poll(async () => {
+			const box = await region.boundingBox();
+			const view = await viewBounds();
+			return box && view
+				? view.visible &&
+						view.x === Math.round(box.x) &&
+						view.y === Math.round(box.y) &&
+						view.width === Math.round(box.width) &&
+						view.height === Math.round(box.height)
+				: false;
+		})
+		.toBe(true);
 });

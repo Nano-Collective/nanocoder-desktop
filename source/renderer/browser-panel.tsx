@@ -111,6 +111,7 @@ export function BrowserPanel({
 	const security = snapshot?.security ? SECURITY[snapshot.security] : null;
 	const submit = async (event: React.FormEvent) => {
 		event.preventDefault();
+		setDismissed(null);
 		const input = draft ?? snapshot?.url ?? '';
 		if (await onOpen(input)) setDraft(null);
 	};

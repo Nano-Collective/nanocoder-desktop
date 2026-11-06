@@ -191,20 +191,23 @@ test('BRW-03 turning public sites off is saved without opening anything', async 
 	t.false(f.controller.getState().publicSites);
 });
 
-test('BRW-02 bounds are sent once per change, nothing is sent without a project, and a switch resends', async t => {
+test('BRW-02 bounds are sent once per change, wait for a project, and a switch resends', async t => {
 	const f = fixture();
-	f.controller.setBounds({x: 1, y: 2, width: 3, height: 4});
+	const early = {x: 1, y: 2, width: 3, height: 4};
+	f.controller.setBounds(early);
+	t.deepEqual(f.boundsSent, []);
 	await f.controller.select('one');
+	t.deepEqual(f.boundsSent, [early]);
 	const bounds = {x: 1, y: 2, width: 300, height: 200};
 	f.controller.setBounds(bounds);
 	f.controller.setBounds({...bounds});
 	f.controller.setBounds(null);
 	await Promise.resolve();
-	t.deepEqual(f.boundsSent, [bounds, null]);
+	t.deepEqual(f.boundsSent, [early, bounds, null]);
 	await f.controller.select('two');
 	f.controller.setBounds(null);
 	await Promise.resolve();
-	t.is(f.boundsSent.length, 3);
+	t.deepEqual(f.boundsSent, [early, bounds, null, null]);
 });
 
 test('BRW-01 disposing stops listening and ignores later answers', async t => {
@@ -217,4 +220,17 @@ test('BRW-01 disposing stops listening and ignores later answers', async t => {
 	t.is(f.unsubscribed(), 1);
 	t.is(f.controller.getState().snapshot, null);
 	t.false(await f.controller.open('localhost:3000'));
+});
+
+test('BRW-01 the last viewport is sent again for the next project, so its page is placed without a resize', async t => {
+	const f = fixture();
+	await f.controller.select('one');
+	const bounds = {x: 4, y: 5, width: 320, height: 240};
+	f.controller.setBounds(bounds);
+	await f.controller.select('two');
+	t.deepEqual(f.boundsSent, [bounds, bounds]);
+	f.controller.setBounds({...bounds});
+	t.is(f.boundsSent.length, 2);
+	await f.controller.select(null);
+	t.is(f.boundsSent.length, 2);
 });

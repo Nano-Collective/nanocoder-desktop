@@ -50,6 +50,7 @@ export class BrowserController {
 	private epoch = 0;
 	private disposed = false;
 	private sentBounds: BrowserBounds | null | undefined;
+	private wantedBounds: BrowserBounds | null | undefined;
 	private readonly unsubscribe: () => void;
 
 	constructor(
@@ -87,6 +88,7 @@ export class BrowserController {
 				this.update({publicSites: settings.value.publicBrowsingEnabled});
 			if (snapshot.ok) this.apply(snapshot.value);
 			else this.update({error: snapshot.error.message});
+			if (this.wantedBounds !== undefined) this.setBounds(this.wantedBounds);
 		} catch {
 			if (this.current(epoch))
 				this.update({error: 'The browser could not be loaded'});
@@ -134,6 +136,7 @@ export class BrowserController {
 	}
 
 	setBounds(bounds: BrowserBounds | null): void {
+		this.wantedBounds = bounds;
 		const {projectId} = this.state;
 		if (!projectId || this.disposed) return;
 		if (this.sentBounds !== undefined && sameBounds(this.sentBounds, bounds))
