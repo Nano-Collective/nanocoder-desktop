@@ -293,6 +293,17 @@ export class BrowserService {
 		return this.snapshot();
 	}
 
+	currentPage({
+		projectId,
+	}: {
+		projectId: string;
+	}): {url: string; title: string} | null {
+		this.check(projectId);
+		const {url, title, status} = this.state;
+		if (url === null || status === 'closed' || status === 'failed') return null;
+		return {url, title: title ?? ''};
+	}
+
 	profiles({projectId}: BrowserRequests['profiles']): BrowserProfileList {
 		this.check(projectId);
 		return this.profileList(projectId);

@@ -27,6 +27,8 @@ export interface BrowserPanelProps {
 	onDeleteProfile(id: string): void;
 	onClearData(profile: string): void;
 	onOpenExternal(): void;
+	attachReason: string | null;
+	onSendToChat(url: string): void;
 }
 
 const SECURITY = {
@@ -125,6 +127,8 @@ export function BrowserPanel({
 	onDeleteProfile,
 	onClearData,
 	onOpenExternal,
+	attachReason,
+	onSendToChat,
 }: BrowserPanelProps): React.ReactElement {
 	const viewport = React.useRef<HTMLDivElement>(null);
 	const address = React.useRef<HTMLInputElement>(null);
@@ -252,6 +256,16 @@ export function BrowserPanel({
 						<option value="incognito">incognito, not saved</option>
 					</select>
 				</label>
+				<Button
+					title={
+						attachReason ??
+						'add this page address and title to your next message'
+					}
+					disabled={!open || !snapshot?.url || attachReason !== null}
+					onClick={() => snapshot?.url && onSendToChat(snapshot.url)}
+				>
+					send page to chat
+				</Button>
 				<Button
 					title="open this page in your system browser"
 					disabled={!open || !snapshot?.url}

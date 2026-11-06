@@ -16,6 +16,13 @@ export const attachmentKey = (projectId: string, threadId: string): string =>
 
 export function labelFor(item: PromptAttachment): string {
 	if (item.kind === 'file') return item.path;
+	if (item.kind === 'browser-page') {
+		try {
+			return `page ${new URL(item.url).host}`;
+		} catch {
+			return 'page';
+		}
+	}
 	return item.startLine === item.endLine
 		? `${item.path}:${item.startLine} (comment)`
 		: `${item.path}:${item.startLine}-${item.endLine} (comment)`;
@@ -35,6 +42,12 @@ export function addAttachment(
 	item: PromptAttachment,
 ): AttachmentStore {
 	const current = store[key] ?? [];
+	if (item.kind === 'browser-page') {
+		const others = current.filter(other => other.kind !== 'browser-page');
+		return others.length >= MAX_ATTACHMENTS
+			? store
+			: {...store, [key]: [...others, item]};
+	}
 	if (current.length >= MAX_ATTACHMENTS) return store;
 	if (
 		item.kind === 'file' &&

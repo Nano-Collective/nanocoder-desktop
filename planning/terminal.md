@@ -129,7 +129,7 @@ accepted answer reports unknown, never approved. The projection ignores
 replay, caps commands at 4,096 code units and cannot read, write or execute
 in the user's terminal. Missing upstream command data leaves it empty.
 
-`TERM-05` URL handling belongs to phase 3.6, not this host.
+`TERM-05` URL handling lives in the renderer, not this host: phase 3.6 finds localhost addresses in the output and opens them in the browser (see [`features/browser.md`](features/browser.md)). The host never sees or acts on an address.
 
 ## Verification and limits
 

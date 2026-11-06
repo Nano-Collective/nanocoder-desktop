@@ -3,6 +3,7 @@ import * as React from 'react';
 import {terminalFocusLease} from '@/renderer/terminal-focus';
 import {TerminalOutput} from '@/renderer/terminal-output';
 import {mirrorTerminalStyles} from '@/renderer/terminal-styles';
+import {findLocalUrls} from '@/shared/local-url';
 
 export interface TerminalHandle {
 	focus(): void;
@@ -32,6 +33,7 @@ export function TerminalView(props: {
 	onResize(cols: number, rows: number): void;
 	onExit(): void;
 	onFailure(): void;
+	onOpenUrl?(url: string): void;
 }) {
 	const host = React.useRef<HTMLDivElement>(null);
 	const instance = React.useRef<Terminal | null>(null);
@@ -66,6 +68,7 @@ export function TerminalView(props: {
 		let resize: ResizeObserver | undefined;
 		let theme: MutationObserver | undefined;
 		let subscription: {dispose(): void} | undefined;
+		let links: {dispose(): void} | undefined;
 		let output: TerminalOutput | undefined;
 		let unmirror: (() => void) | undefined;
 		const initialise = async () => {
@@ -125,6 +128,22 @@ export function TerminalView(props: {
 			style();
 			terminal.open(element);
 			unmirror = mirrorTerminalStyles(element);
+			links = terminal.registerLinkProvider({
+				provideLinks(line, done) {
+					const text =
+						terminal.buffer.active.getLine(line - 1)?.translateToString(true) ??
+						'';
+					const found = findLocalUrls(text).map(match => ({
+						range: {
+							start: {x: match.start + 1, y: line},
+							end: {x: match.end, y: line},
+						},
+						text: match.url,
+						activate: () => latest.current.onOpenUrl?.(match.url),
+					}));
+					done(found.length > 0 ? found : undefined);
+				},
+			});
 			terminal.textarea?.setAttribute('aria-label', 'your terminal input');
 			terminal.textarea?.setAttribute('aria-describedby', 'terminal-help');
 			terminal.textarea?.setAttribute('aria-keyshortcuts', 'Control+Shift+Tab');
@@ -204,6 +223,7 @@ export function TerminalView(props: {
 			cancelAnimationFrame(frame);
 			resize?.disconnect();
 			theme?.disconnect();
+			links?.dispose();
 			subscription?.dispose();
 			output?.dispose();
 			unmirror?.();

@@ -3,6 +3,7 @@ import type {TerminalAction} from '@/renderer/terminal-controller';
 import {terminalFocusLease} from '@/renderer/terminal-focus';
 import {type TerminalHandle, TerminalView} from '@/renderer/terminal-view';
 import {Button} from '@/renderer/ui';
+import {latestLocalUrl} from '@/shared/local-url';
 import type {TerminalSnapshot} from '@/shared/terminal';
 
 const approvalLabels = {
@@ -24,6 +25,7 @@ export function TerminalPanel({
 	onData,
 	onResize,
 	onClose,
+	onOpenUrl,
 }: {
 	snapshot: TerminalSnapshot | null;
 	pending: boolean;
@@ -35,6 +37,7 @@ export function TerminalPanel({
 	onData(data: string): void;
 	onResize(cols: number, rows: number): void;
 	onClose(): void;
+	onOpenUrl(url: string): void;
 }) {
 	const view = React.useRef<TerminalHandle>(null);
 	const returnFocus = React.useRef<HTMLButtonElement>(null);
@@ -43,6 +46,10 @@ export function TerminalPanel({
 	const running = snapshot?.status === 'running';
 	const busy = pending || loading || snapshot?.status === 'starting';
 	const command = snapshot?.agentCommand;
+	const serverUrl = React.useMemo(
+		() => latestLocalUrl(snapshot?.output ?? ''),
+		[snapshot?.output],
+	);
 	const status = snapshot?.status ?? (loading ? 'loading' : 'unavailable');
 	const run = async (action: TerminalAction, target: HTMLButtonElement) => {
 		const focus = terminalFocusLease(document, target);
@@ -74,6 +81,14 @@ export function TerminalPanel({
 						: ''}
 				</span>
 				<div className="terminal-actions">
+					{serverUrl && (
+						<Button
+							title={`open ${serverUrl} in the browser`}
+							onClick={() => onOpenUrl(serverUrl)}
+						>
+							open {new URL(serverUrl).host} in the browser
+						</Button>
+					)}
 					{!running && (
 						<Button
 							disabled={busy || !!disabledReason || !snapshot}
@@ -162,6 +177,7 @@ export function TerminalPanel({
 					onResize={onResize}
 					onExit={() => returnFocus.current?.focus()}
 					onFailure={() => setViewFailed(true)}
+					onOpenUrl={onOpenUrl}
 				/>
 			</div>
 			<footer className="terminal-help">

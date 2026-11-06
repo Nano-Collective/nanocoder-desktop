@@ -1002,3 +1002,26 @@ test('BRW-09 SEC-16 opening externally uses the address the browser itself holds
 		'DENIED',
 	);
 });
+
+test('BRW-10 the current page is reported from the browser state for the active project only', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	t.is(f.service.currentPage({projectId: first}), null);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/a'});
+	f.views[0].hooks.navigated({
+		url: 'http://localhost:3000/a',
+		title: 'Page A',
+		canGoBack: false,
+		canGoForward: false,
+	});
+	t.deepEqual(f.service.currentPage({projectId: first}), {
+		url: 'http://localhost:3000/a',
+		title: 'Page A',
+	});
+	t.is(
+		code(t.throws(() => f.service.currentPage({projectId: second}))),
+		'DENIED',
+	);
+	f.service.closeView({projectId: first});
+	t.is(f.service.currentPage({projectId: first}), null);
+});

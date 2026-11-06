@@ -640,13 +640,13 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 **Build**
 
-- [ ] Localhost URLs from terminal output and chat open in the in-app browser (`TERM-05`)
-- [ ] Send the current URL and title to the chat (`BRW-10`)
+- [x] Localhost URLs from terminal output and chat open in the in-app browser (`TERM-05`)
+- [x] Send the current URL and title to the chat (`BRW-10`)
 
 **Results we want**
 
-- [ ] Starting a dev server and opening its URL takes one action
-- [ ] The URL and title arrive in the next prompt
+- [x] Starting a dev server and opening its URL takes one action
+- [x] The URL and title arrive in the next prompt
 
 ### Phase 3.7: Nanocoder `mcpServers` support
 

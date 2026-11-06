@@ -542,6 +542,7 @@ test('CHAT-16 attachments are bounded, strict and carry no authority', async t =
 		[{kind: 'file', path: 'a.ts'}],
 		[comment],
 		[{kind: 'file', path: 'a.ts'}, comment],
+		[{kind: 'browser-page', url: 'http://localhost:5173/'}],
 		[],
 	])
 		t.true(
@@ -555,6 +556,11 @@ test('CHAT-16 attachments are bounded, strict and carry no authority', async t =
 		[{kind: 'file', path: 'a.ts', trusted: true}],
 		[{kind: 'file', path: 'a.ts', uri: 'file:///etc/passwd'}],
 		[{kind: 'url', path: 'a.ts'}],
+		[{kind: 'browser-page'}],
+		[{kind: 'browser-page', url: ''}],
+		[{kind: 'browser-page', url: `http://localhost/${'a'.repeat(2_100)}`}],
+		[{kind: 'browser-page', url: 'http://localhost:5173/', title: 'Forged'}],
+		[{kind: 'browser-page', url: 'http://localhost:5173/', path: 'a.ts'}],
 		[{...comment, startLine: 0}],
 		[{...comment, startLine: 5, endLine: 4}],
 		[{...comment, endLine: 3 + 2_001}],

@@ -1,7 +1,7 @@
 import test from 'ava';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {AgentMarkdown} from '@/renderer/agent-markdown';
+import {AgentMarkdown, LocalUrlContext} from '@/renderer/agent-markdown';
 
 const render = (text: string) =>
 	renderToStaticMarkup(createElement(AgentMarkdown, {text}));
@@ -123,4 +123,50 @@ test('links are inert text for all schemes until main owns external navigation (
 		t.notRegex(html, /<a\b|\shref=|\sonclick=|role="link"/);
 		t.false(html.includes(target));
 	}
+});
+
+const renderWithOpener = (text: string) =>
+	renderToStaticMarkup(
+		createElement(
+			LocalUrlContext.Provider,
+			{value: () => {}},
+			createElement(AgentMarkdown, {text}),
+		),
+	);
+
+test('TERM-05 a localhost link opens the in-app browser through a button, never through an address on the element', t => {
+	for (const text of [
+		'run it at http://localhost:5173/app now',
+		'run it at [the dev server](http://127.0.0.1:3000/x)',
+		'<http://localhost:8080>',
+	]) {
+		const html = renderWithOpener(text);
+		t.regex(html, /<button\b[^>]*class="stream-local-link"/, text);
+		t.notRegex(html, /<a\b|\shref=|\sonclick=|role="link"/, text);
+	}
+	const html = renderWithOpener('[the dev server](http://127.0.0.1:3000/x)');
+	t.true(html.includes('the dev server'));
+	t.true(html.includes('127.0.0.1:3000'));
+	t.regex(html, /title="open http:\/\/127\.0\.0\.1:3000\/x in the browser"/);
+});
+
+test('TERM-05 every other link stays inert even when a browser opener is present', t => {
+	for (const text of [
+		'see https://example.com/a',
+		'[bank](https://localhost.evil.com/login)',
+		'[x](javascript:alert%281%29)',
+		'[local file](file:///etc/passwd)',
+		'[disguised](http://evil.com/?next=http://localhost:3000/)',
+		'see www.example.com',
+	]) {
+		const html = renderWithOpener(text);
+		t.notRegex(html, /<button\b|<a\b|\shref=|\sonclick=/, text);
+		t.regex(html, /stream-markdown-link/, text);
+	}
+});
+
+test('TERM-05 without a browser opener even a localhost link is inert', t => {
+	const html = render('run it at http://localhost:5173/app now');
+	t.notRegex(html, /<button\b|<a\b|\shref=/);
+	t.true(html.includes('<span class="stream-markdown-link">'));
 });

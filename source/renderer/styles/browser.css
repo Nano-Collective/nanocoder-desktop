@@ -146,3 +146,18 @@
 	color: var(--colors-on-surface);
 	overflow-wrap: anywhere;
 }
+
+.stream-local-link {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--colors-primary);
+	font: inherit;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.stream-link-target {
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-caption-font-size);
+}
