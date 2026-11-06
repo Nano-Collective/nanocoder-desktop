@@ -84,6 +84,10 @@ Every result returned to Nanocoder is wrapped so the model and the reader can te
 4. A redirect is checked against the same rules before it is followed.
 5. The user's own navigation follows rules 1 to 4 except the mode check.
 
+### Phase 3.4 behaviour
+
+The browser is the third tab of the right workbench. `BRW-03` is the user's own setting, `publicBrowsingEnabled`, read at every decision, so turning it off refuses at once. A typed address, a redirect and a clicked link all go through the same check in main; the renderer only normalises what the user typed (`localhost:5173` gets `http://`, a bare site gets `https://`). A refused address is remembered in the snapshot so the panel can explain it: for a public site it asks, and "turn on public sites and open it" saves the setting and opens that address, while "stay on localhost" only dismisses the question. The per-site prompt for agent visits in `DEC-50` is separate and arrives with phases 3.8 and 3.9. Because the native view draws above the page, the panel reports its viewport rectangle and the view hides while any dialog is open. A toast can still be covered by the view.
+
 ## Explicit deferrals
 
 Annotations (`BRW-19`), multiple tabs, browser extensions, raw CDP, arbitrary JavaScript, file uploads, unrestricted computer use.

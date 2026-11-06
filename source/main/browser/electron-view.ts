@@ -6,12 +6,13 @@ import {
 } from 'electron';
 import type {
 	BrowserViewHandle,
+	BrowserViewHooks,
 	BrowserViewLaunch,
 } from '@/main/browser/browser-service';
-import {isLoopbackPage} from '@/main/browser/origin';
 import {denyBrowserPermissions} from '@/main/browser/profile';
 
 const browserSessions = new WeakSet<Session>();
+const ERR_ABORTED = -3;
 
 export function isBrowserSession(candidate: Session): boolean {
 	return browserSessions.has(candidate);
@@ -19,8 +20,8 @@ export function isBrowserSession(candidate: Session): boolean {
 
 export function createElectronViewFactory(
 	host: () => BrowserWindow | undefined,
-): (launch: BrowserViewLaunch) => BrowserViewHandle {
-	return launch => {
+): (launch: BrowserViewLaunch, hooks: BrowserViewHooks) => BrowserViewHandle {
+	return (launch, hooks) => {
 		const window = host();
 		if (!window) throw new Error('No window');
 		const partition = session.fromPartition(launch.partition);
@@ -29,11 +30,26 @@ export function createElectronViewFactory(
 		const view = new WebContentsView({webPreferences: launch.preferences});
 		const contents = view.webContents;
 		contents.setWindowOpenHandler(() => ({action: 'deny'}));
-		const keepOnLoopback = (event: {preventDefault(): void}, url: string) => {
-			if (!isLoopbackPage(url)) event.preventDefault();
+		const guard = (event: {preventDefault(): void}, url: string) => {
+			if (!hooks.allow(url)) event.preventDefault();
 		};
-		contents.on('will-navigate', keepOnLoopback);
-		contents.on('will-redirect', keepOnLoopback);
+		contents.on('will-navigate', guard);
+		contents.on('will-redirect', guard);
+		const page = () =>
+			hooks.navigated({
+				url: contents.getURL(),
+				title: contents.getTitle(),
+				canGoBack: contents.navigationHistory.canGoBack(),
+				canGoForward: contents.navigationHistory.canGoForward(),
+			});
+		contents.on('did-navigate', page);
+		contents.on('did-navigate-in-page', page);
+		contents.on('page-title-updated', page);
+		contents.on('did-start-loading', () => hooks.loading(true));
+		contents.on('did-stop-loading', () => hooks.loading(false));
+		contents.on('did-fail-load', (_event, code, _text, _url, isMainFrame) => {
+			if (isMainFrame && code !== ERR_ABORTED) hooks.failed();
+		});
 		view.setVisible(false);
 		window.contentView.addChildView(view);
 		return {
@@ -65,6 +81,10 @@ export function createElectronViewFactory(
 						reject(new Error('load failed'));
 					});
 				}),
+			goBack: () => contents.navigationHistory.goBack(),
+			goForward: () => contents.navigationHistory.goForward(),
+			reload: () => contents.reload(),
+			stop: () => contents.stop(),
 			setBounds: bounds => {
 				if (bounds) view.setBounds(bounds);
 				view.setVisible(bounds !== null);

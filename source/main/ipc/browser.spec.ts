@@ -23,6 +23,7 @@ function fixture() {
 	const service = {
 		get: count,
 		open: count,
+		navigate: count,
 		setBounds: count,
 		closeView: count,
 	} as unknown as BrowserService;
@@ -92,12 +93,21 @@ test('SEC-02/SEC-12 browser schemas refuse extra fields, scripts, preloads and m
 		const result = await f.call('setBounds', {projectId, bounds: value});
 		t.false(result.ok);
 	}
+	for (const action of ['goto', 'devtools', '', 'RELOAD', 1, null]) {
+		const result = await f.call('navigate', {projectId, action});
+		t.false(result.ok, String(action));
+	}
+	t.false(
+		(await f.call('navigate', {projectId, action: 'reload', url: 'x'})).ok,
+	);
 	t.false((await f.call('get', {projectId: 'not-a-uuid'})).ok);
 	t.is(f.calls(), 0);
 	t.true((await f.call('open', {projectId, url: 'http://localhost:3000/'})).ok);
 	t.true((await f.call('setBounds', {projectId, bounds})).ok);
 	t.true((await f.call('setBounds', {projectId, bounds: null})).ok);
-	t.is(f.calls(), 3);
+	for (const action of ['back', 'forward', 'reload', 'stop'])
+		t.true((await f.call('navigate', {projectId, action})).ok, action);
+	t.is(f.calls(), 7);
 });
 
 test('SEC-02 every browser handler refuses foreign origins and child frames', async t => {
@@ -105,6 +115,7 @@ test('SEC-02 every browser handler refuses foreign origins and child frames', as
 	const payloads = {
 		get: {projectId},
 		open: {projectId, url: 'http://localhost:3000/'},
+		navigate: {projectId, action: 'reload'},
 		setBounds: {projectId, bounds},
 		close: {projectId},
 	} as const;

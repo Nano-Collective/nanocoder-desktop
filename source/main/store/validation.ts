@@ -54,7 +54,7 @@ export const uiPatch = z.strictObject({
 	activeProjectId: id.nullable().optional(),
 	activeThreadId: id.nullable().optional(),
 	openThreadIds: z.array(id).max(100).optional(),
-	inspector: z.enum(['files', 'review']).nullable().optional(),
+	inspector: z.enum(['files', 'review', 'browser']).nullable().optional(),
 	bottomPanel: z.enum(['terminal', 'browser']).nullable().optional(),
 });
 

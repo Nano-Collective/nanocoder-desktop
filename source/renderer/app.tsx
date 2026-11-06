@@ -12,6 +12,7 @@ import {
 	removeAttachment,
 } from '@/renderer/attachments';
 import {BackgroundProjects} from '@/renderer/background-projects';
+import {BrowserPanel} from '@/renderer/browser-panel';
 import {Composer} from '@/renderer/composer';
 import {ConversationStream} from '@/renderer/conversation-stream';
 import {
@@ -53,8 +54,10 @@ import {
 } from '@/renderer/thread-recovery-notice';
 import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, StatusBadge} from '@/renderer/ui';
+import {useBrowser} from '@/renderer/use-browser';
 import {useDiagnosticReview} from '@/renderer/use-diagnostic-review';
 import {useFiles} from '@/renderer/use-files';
+import {useModalOpen} from '@/renderer/use-modal-open';
 import {
 	useBackgroundAnnouncements,
 	useProjectActivity,
@@ -194,12 +197,18 @@ export function App() {
 	const [inspector, setInspector] = useState<WorkbenchTab | null>(null);
 	const inspectorLoaded = useRef(false);
 	const filesTrigger = useRef<HTMLButtonElement>(null);
-	const inspectorOpen =
+	const browserTrigger = useRef<HTMLButtonElement>(null);
+	const browserTabOpen = inspector === 'browser' && projectId !== null;
+	const filesTabOpen =
 		inspector !== null &&
+		inspector !== 'browser' &&
 		projectId !== null &&
 		currentProject?.trusted === true;
-	const files = useFiles(projectId, inspectorOpen);
-	const reviewPanel = useReview(projectId, inspectorOpen);
+	const inspectorOpen = browserTabOpen || filesTabOpen;
+	const files = useFiles(projectId, filesTabOpen);
+	const reviewPanel = useReview(projectId, filesTabOpen);
+	const browser = useBrowser(projectId);
+	const modalOpen = useModalOpen();
 	const [attachments, setAttachments] = useState<AttachmentStore>({});
 	const attachKey =
 		projectId && thread ? attachmentKey(projectId, thread.id) : null;
@@ -414,8 +423,9 @@ export function App() {
 			: Promise.resolve('open a project first');
 	const showPanel = (tab: WorkbenchTab) => setInspector(tab);
 	const hidePanel = () => {
+		const was = inspector;
 		setInspector(null);
-		filesTrigger.current?.focus();
+		(was === 'browser' ? browserTrigger : filesTrigger).current?.focus();
 	};
 	useEffect(() => {
 		void window.desktop.getUiState({}).then(result => {
@@ -671,6 +681,16 @@ export function App() {
 					run: () =>
 						inspectorOpen && inspector === tab ? hidePanel() : showPanel(tab),
 				})),
+				{
+					id: 'panel-browser',
+					label: browserTabOpen
+						? 'hide the in-app browser'
+						: 'show the in-app browser',
+					glyph: '◫',
+					keywords: 'preview localhost web page url address',
+					disabledReason: projectId ? undefined : 'open a project first',
+					run: () => (browserTabOpen ? hidePanel() : showPanel('browser')),
+				},
 				...projectPalette({
 					...projectControls,
 					pending: connecting || projectControls.pending,
@@ -746,12 +766,30 @@ export function App() {
 							<Button
 								ref={filesTrigger}
 								aria-label="open project files"
-								aria-expanded={inspectorOpen}
+								aria-expanded={filesTabOpen}
 								onClick={() =>
-									inspectorOpen ? hidePanel() : showPanel(inspector ?? 'files')
+									filesTabOpen
+										? hidePanel()
+										: showPanel(
+												inspector && inspector !== 'browser'
+													? inspector
+													: 'files',
+											)
 								}
 							>
 								files
+							</Button>
+						)}
+						{projectId && (
+							<Button
+								ref={browserTrigger}
+								aria-label="open browser"
+								aria-expanded={browserTabOpen}
+								onClick={() =>
+									browserTabOpen ? hidePanel() : showPanel('browser')
+								}
+							>
+								◫ browser
 							</Button>
 						)}
 						{projectId && (
@@ -793,7 +831,7 @@ export function App() {
 				workbench={
 					inspectorOpen && inspector
 						? {
-								title: 'files and review',
+								title: inspector === 'browser' ? 'browser' : 'files and review',
 								onClose: hidePanel,
 								children: (
 									<Workbench
@@ -806,6 +844,24 @@ export function App() {
 										onComment={attach}
 										onOpenEditor={openInEditor}
 										onReveal={reveal}
+										browser={
+											<BrowserPanel
+												projectName={
+													currentProject?.displayName ?? 'selected project'
+												}
+												snapshot={browser.snapshot}
+												publicSites={browser.publicSites}
+												loading={browser.loading}
+												pending={browser.pending}
+												error={browser.error}
+												suspended={modalOpen}
+												onOpen={browser.open}
+												onNavigate={browser.navigate}
+												onBounds={browser.setBounds}
+												onPublicSites={browser.setPublicSites}
+												onAllowAndOpen={browser.allowAndOpen}
+											/>
+										}
 									/>
 								),
 							}

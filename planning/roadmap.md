@@ -612,14 +612,14 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 **Build**
 
-- [ ] Address bar, back, forward, reload and stop (`BRW-02`)
-- [ ] Origin and loading state exposed (`BRW-04`)
-- [ ] Localhost by default, public sites behind a setting (`BRW-03`)
+- [x] Address bar, back, forward, reload and stop (`BRW-02`)
+- [x] Origin and loading state exposed (`BRW-04`)
+- [x] Localhost by default, public sites behind a setting (`BRW-03`)
 
 **Results we want**
 
-- [ ] A public URL is refused until the setting is on
-- [ ] A redirect from localhost to a public site stops and asks while the setting is off
+- [x] A public URL is refused until the setting is on
+- [x] A redirect from localhost to a public site stops and asks while the setting is off
 
 ### Phase 3.5: browser defaults and settings
 

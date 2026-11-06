@@ -38,6 +38,10 @@ let page: Page;
 let projectId: string;
 let server: Server;
 let origin: string;
+let port: number;
+
+const PUBLIC_HOST = 'public-site.test';
+const publicUrl = (suffix = '/') => `http://${PUBLIC_HOST}:${port}${suffix}`;
 
 function call<K extends keyof BrowserRequests>(
 	key: K,
@@ -59,7 +63,7 @@ function call<K extends keyof BrowserRequests>(
 test.beforeEach(async () => {
 	server = createServer((request, response) => {
 		if (request.url === '/redirect') {
-			response.writeHead(302, {Location: 'http://example.com/'});
+			response.writeHead(302, {Location: publicUrl('/landing')});
 			response.end();
 			return;
 		}
@@ -67,7 +71,8 @@ test.beforeEach(async () => {
 		response.end(probe);
 	});
 	await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-	origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+	port = (server.address() as AddressInfo).port;
+	origin = `http://127.0.0.1:${port}`;
 	work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-browser-')));
 	mkdirSync(path.join(work, 'project'));
 	mkdirSync(path.join(work, 'nanocoder/dist'), {recursive: true});
@@ -88,7 +93,11 @@ test.beforeEach(async () => {
 		path.join(work, 'nanocoder/dist/cli.js'),
 	);
 	app = await electron.launch({
-		args: ['.', `--user-data-dir=${path.join(work, 'profile')}`],
+		args: [
+			'.',
+			`--user-data-dir=${path.join(work, 'profile')}`,
+			`--host-resolver-rules=MAP ${PUBLIC_HOST} 127.0.0.1`,
+		],
 		env: qaEnvironment(process.env, {
 			cliPath: path.join(work, 'nanocoder/dist/cli.js'),
 			nodePath: process.execPath,
@@ -177,10 +186,19 @@ test('BRW-03 a public address is refused and no view appears', async () => {
 	expect(views).toBe(0);
 });
 
-test('BRW-03 a redirect from localhost to a public site stops', async () => {
-	const result = await call('open', {projectId, url: `${origin}/redirect`});
-	expect(result).toMatchObject({ok: false});
-	const hosts = await app.evaluate(({webContents}) =>
+async function publicBrowsing(enabled: boolean) {
+	const saved = await page.evaluate(
+		enabled =>
+			(window as unknown as {desktop: DesktopApi}).desktop.updateSettings({
+				patch: {publicBrowsingEnabled: enabled},
+			}),
+		enabled,
+	);
+	expect(saved).toMatchObject({ok: true});
+}
+
+const pageHosts = () =>
+	app.evaluate(({webContents}) =>
 		webContents.getAllWebContents().map(contents => {
 			try {
 				return new URL(contents.getURL()).hostname;
@@ -189,7 +207,189 @@ test('BRW-03 a redirect from localhost to a public site stops', async () => {
 			}
 		}),
 	);
-	expect(hosts).not.toContain('example.com');
+
+test('BRW-03 a redirect from localhost to a public site stops and is reported while public browsing is off', async () => {
+	const result = await call('open', {projectId, url: `${origin}/redirect`});
+	expect(result).toMatchObject({ok: false, error: {code: 'DENIED'}});
+	const snapshot = await call('get', {projectId});
+	expect(snapshot).toMatchObject({
+		ok: true,
+		value: {
+			status: 'failed',
+			blocked: {reason: 'public-off', url: publicUrl('/landing')},
+		},
+	});
+	expect(await pageHosts()).not.toContain(PUBLIC_HOST);
+});
+
+test('BRW-03 the same redirect is followed once public browsing is on', async () => {
+	await publicBrowsing(true);
+	const result = await call('open', {projectId, url: `${origin}/redirect`});
+	expect(result).toMatchObject({
+		ok: true,
+		value: {
+			status: 'ready',
+			origin: `http://${PUBLIC_HOST}:${port}`,
+			security: 'insecure',
+			blocked: null,
+		},
+	});
+});
+
+test('BRW-03 a public address is refused until the setting is on', async () => {
+	const refused = await call('open', {projectId, url: publicUrl('/a')});
+	expect(refused).toMatchObject({ok: false, error: {code: 'DENIED'}});
+	await publicBrowsing(true);
+	const opened = await call('open', {projectId, url: publicUrl('/a')});
+	expect(opened).toMatchObject({ok: true, value: {status: 'ready'}});
+});
+
+test('BRW-02 back, forward and reload move through the pages that were opened', async () => {
+	await call('open', {projectId, url: `${origin}/a`});
+	await call('open', {projectId, url: `${origin}/b`});
+	await call('navigate', {projectId, action: 'back'});
+	await expect
+		.poll(async () => {
+			const result = await call('get', {projectId});
+			return result.ok ? result.value?.url : null;
+		})
+		.toBe(`${origin}/a`);
+	const back = await call('get', {projectId});
+	expect(back).toMatchObject({
+		ok: true,
+		value: {canGoForward: true, canGoBack: false},
+	});
+	await call('navigate', {projectId, action: 'forward'});
+	await expect
+		.poll(async () => {
+			const result = await call('get', {projectId});
+			return result.ok ? result.value?.url : null;
+		})
+		.toBe(`${origin}/b`);
+	expect(await call('navigate', {projectId, action: 'reload'})).toMatchObject({
+		ok: true,
+	});
+});
+
+const viewBounds = () =>
+	app.evaluate(({BrowserWindow}) => {
+		const window = BrowserWindow.getAllWindows()[0];
+		const view = window.contentView.children[0] as
+			| {getBounds(): Electron.Rectangle; getVisible(): boolean}
+			| undefined;
+		return view ? {...view.getBounds(), visible: view.getVisible()} : null;
+	});
+
+async function openBrowserTab() {
+	await page.getByRole('button', {name: 'open browser', exact: true}).click();
+	await expect(page.getByRole('textbox', {name: 'address'})).toBeVisible();
+}
+
+test('BRW-02/BRW-04 the address bar opens a page and shows its origin and security', async () => {
+	await openBrowserTab();
+	await page
+		.getByRole('textbox', {name: 'address'})
+		.fill(`127.0.0.1:${port}/a`);
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	const status = page.getByRole('status').filter({hasText: 'local'});
+	await expect(status).toContainText(origin);
+	await expect(page.getByRole('button', {name: 'reload'})).toBeEnabled();
+});
+
+test('BRW-03 a public address in the bar stops, asks, and opens after the user turns the setting on', async () => {
+	await openBrowserTab();
+	await page.getByRole('textbox', {name: 'address'}).fill(publicUrl('/a'));
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	const notice = page.getByRole('alert').filter({hasText: 'public site'});
+	await expect(notice).toContainText(`${PUBLIC_HOST}:${port}`);
+	expect(await viewBounds()).toBeNull();
+	await notice
+		.getByRole('button', {name: 'turn on public sites and open it'})
+		.click();
+	await expect(
+		page.getByRole('checkbox', {name: 'allow public sites'}),
+	).toBeChecked();
+	await expect(
+		page.getByRole('status').filter({hasText: 'not secure'}),
+	).toContainText(`${PUBLIC_HOST}:${port}`);
+});
+
+test('BRW-03 staying on localhost dismisses the question and keeps the setting off', async () => {
+	await openBrowserTab();
+	await page.getByRole('textbox', {name: 'address'}).fill(publicUrl('/a'));
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	await page.getByRole('button', {name: 'stay on localhost'}).click();
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await expect(
+		page.getByRole('checkbox', {name: 'allow public sites'}),
+	).not.toBeChecked();
+});
+
+for (const width of [1240, 1020, 840]) {
+	test(`BRW-01 the native view follows the panel at ${width}px`, async () => {
+		await app.evaluate(({BrowserWindow}, size) => {
+			BrowserWindow.getAllWindows()[0].setContentSize(size, 800);
+		}, width);
+		await openBrowserTab();
+		await page
+			.getByRole('textbox', {name: 'address'})
+			.fill(`127.0.0.1:${port}/a`);
+		await page.getByRole('button', {name: 'go', exact: true}).click();
+		await expect(
+			page.getByRole('status').filter({hasText: 'local'}),
+		).toBeVisible();
+		const region = page.getByRole('region', {name: 'web page'});
+		await expect
+			.poll(async () => {
+				const box = await region.boundingBox();
+				const view = await viewBounds();
+				return box && view
+					? {
+							x: view.x,
+							y: view.y,
+							width: view.width,
+							height: view.height,
+							visible: view.visible,
+							expected: {
+								x: Math.round(box.x),
+								y: Math.round(box.y),
+								width: Math.round(box.width),
+								height: Math.round(box.height),
+							},
+						}
+					: null;
+			})
+			.toMatchObject({visible: true});
+		const box = await region.boundingBox();
+		const view = await viewBounds();
+		expect(view).toMatchObject({
+			x: Math.round(box?.x ?? -1),
+			y: Math.round(box?.y ?? -1),
+			width: Math.round(box?.width ?? -1),
+			height: Math.round(box?.height ?? -1),
+		});
+	});
+}
+
+test('BRW-01 the native view steps aside for an open dialog and returns after it closes', async () => {
+	await openBrowserTab();
+	await page
+		.getByRole('textbox', {name: 'address'})
+		.fill(`127.0.0.1:${port}/a`);
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	await expect.poll(async () => (await viewBounds())?.visible).toBe(true);
+	await page.evaluate(() => {
+		const dialog = document.createElement('dialog');
+		dialog.id = 'test-modal';
+		dialog.textContent = 'modal';
+		document.body.appendChild(dialog);
+		dialog.showModal();
+	});
+	await expect.poll(async () => (await viewBounds())?.visible).toBe(false);
+	await page.evaluate(() => {
+		(document.getElementById('test-modal') as HTMLDialogElement).close();
+	});
+	await expect.poll(async () => (await viewBounds())?.visible).toBe(true);
 });
 
 test('BRW-01 closing the view removes it', async () => {
