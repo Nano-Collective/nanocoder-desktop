@@ -31,7 +31,7 @@ let host: string;
 test.beforeEach(async () => {
 	server = createServer((request, response) => {
 		response.writeHead(200, {'Content-Type': 'text/html'});
-		response.end(`<!doctype html><title>A page</title>${request.url}`);
+		response.end('<!doctype html><title>A page</title>a page');
 	});
 	await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
 	const port = (server.address() as AddressInfo).port;
@@ -151,6 +151,7 @@ test('TERM-05 the address in the terminal output is itself a link that opens the
 		.getByText(`${origin}/dev`, {exact: false})
 		.last();
 	await expect(link).toBeVisible();
+	await expect.poll(async () => (await link.boundingBox()) !== null).toBe(true);
 	const box = await link.boundingBox();
 	if (!box) throw new Error('The terminal address has no box');
 	const x = box.x + box.width / 2;

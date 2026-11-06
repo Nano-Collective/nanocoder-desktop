@@ -1,9 +1,9 @@
 import type {Terminal} from '@xterm/xterm';
 import * as React from 'react';
 import {terminalFocusLease} from '@/renderer/terminal-focus';
+import {terminalLinks} from '@/renderer/terminal-links';
 import {TerminalOutput} from '@/renderer/terminal-output';
 import {mirrorTerminalStyles} from '@/renderer/terminal-styles';
-import {findLocalUrls} from '@/shared/local-url';
 
 export interface TerminalHandle {
 	focus(): void;
@@ -130,16 +130,17 @@ export function TerminalView(props: {
 			unmirror = mirrorTerminalStyles(element);
 			links = terminal.registerLinkProvider({
 				provideLinks(line, done) {
-					const text =
-						terminal.buffer.active.getLine(line - 1)?.translateToString(true) ??
-						'';
-					const found = findLocalUrls(text).map(match => ({
+					const buffer = terminal.buffer.active;
+					const found = terminalLinks(
+						buffer.getLine(line - 1),
+						buffer.getLine(line),
+					).map(link => ({
 						range: {
-							start: {x: match.start + 1, y: line},
-							end: {x: match.end, y: line},
+							start: {x: link.startX, y: line},
+							end: {x: link.endX, y: line},
 						},
-						text: match.url,
-						activate: () => latest.current.onOpenUrl?.(match.url),
+						text: link.url,
+						activate: () => latest.current.onOpenUrl?.(link.url),
 					}));
 					done(found.length > 0 ? found : undefined);
 				},

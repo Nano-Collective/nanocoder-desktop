@@ -261,7 +261,11 @@ export function BrowserPanel({
 						attachReason ??
 						'add this page address and title to your next message'
 					}
-					disabled={!open || !snapshot?.url || attachReason !== null}
+					disabled={
+						snapshot?.status !== 'ready' ||
+						!snapshot.url ||
+						attachReason !== null
+					}
 					onClick={() => snapshot?.url && onSendToChat(snapshot.url)}
 				>
 					send page to chat
