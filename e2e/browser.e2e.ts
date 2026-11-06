@@ -610,6 +610,14 @@ test('BRW-07 SEC-10 camera, location, notifications, popups and the file system 
 				r.media = await navigator.mediaDevices
 					.getUserMedia({video: true})
 					.then(() => 'granted', error => error.name);
+				r.states = await Promise.all(
+					['camera', 'microphone', 'geolocation', 'notifications'].map(
+						name =>
+							navigator.permissions
+								.query({name})
+								.then(result => result.state),
+					),
+				);
 				r.pickers = [
 					typeof window.showOpenFilePicker,
 					typeof window.showSaveFilePicker,
@@ -623,8 +631,9 @@ test('BRW-07 SEC-10 camera, location, notifications, popups and the file system 
 		popup: true,
 		notification: 'denied',
 		geolocation: 'code1',
-		media: 'NotAllowedError',
+		states: ['denied', 'denied', 'denied', 'denied'],
 	});
+	expect(['NotAllowedError', 'NotFoundError']).toContain(verdicts.media);
 	expect(verdicts.pickers).toEqual(['undefined', 'undefined', 'undefined']);
 	expect(await call('get', {projectId})).toMatchObject({
 		ok: true,

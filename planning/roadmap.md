@@ -625,7 +625,7 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 **Build**
 
-- [x] Deny permissions, popups, external protocols and uploads (`BRW-07`, `SEC-10`). The File System Access pickers are removed from the view; the plain file chooser has no Electron hook and stays an operating system dialog the user drives, see [`features/browser.md`](features/browser.md)
+- [x] Deny permissions, popups and external protocols, and remove the File System Access pickers (`BRW-07`, `SEC-10`). The plain `<input type="file">` chooser is not blocked: Electron has no hook for it, so it stays an operating system dialog the user drives (listed under Later)
 - [x] Downloads with destination confirmation (`BRW-06`)
 - [x] Profiles: the shared Default, named profiles and Incognito, managed in Settings (`BRW-05`, `DEC-49`). Managed from the browser tab until a Settings screen exists
 - [x] Clear browser data for each profile (`BRW-08`)
@@ -859,7 +859,7 @@ Needs `OQ-10` answered.
 
 ## Later
 
-Only after evidence ([whitepaper][wp-next]): multiple terminals; full-text thread and filename search; exact per-turn patch attribution (unless `DEC-14` brings it forward); stage, commit and branch actions; worktrees and independent parallel root agents; richer file previews; skills and configuration management UI; remote execution. Also later: browser annotations (`BRW-19`), the subagent run tree (`SUB-08`), "Open in Scriptura" and cross-app chat continuation ([#118][i118]).
+Browser follow-ups: blocking the plain file chooser (`BRW-07`) once Electron offers a hook, and a Settings screen that takes over profile and data management from the browser tab (`BRW-05`, `BRW-08`, `DEC-49`). Only after evidence ([whitepaper][wp-next]): multiple terminals; full-text thread and filename search; exact per-turn patch attribution (unless `DEC-14` brings it forward); stage, commit and branch actions; worktrees and independent parallel root agents; richer file previews; skills and configuration management UI; remote execution. Also later: browser annotations (`BRW-19`), the subagent run tree (`SUB-08`), "Open in Scriptura" and cross-app chat continuation ([#118][i118]).
 
 [lifecycle]: https://docs.nanocollective.org/collective/projects/how-a-project-comes-to-life
 [pr107]: https://github.com/Nano-Collective/docs/pull/107

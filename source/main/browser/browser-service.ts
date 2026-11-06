@@ -39,9 +39,12 @@ export interface BrowserDownloadItem {
 
 function safeFileName(raw: string): string {
 	const cleaned = raw.replace(/[\u0000-\u001f\u007f]/g, '');
-	const base = (cleaned.split(/[\\/]/).pop() ?? '').trim();
-	if (base === '' || base === '.' || base === '..') return 'download';
-	return base.slice(0, FILE_NAME_LIMIT);
+	const base = (cleaned.split(/[\\/]/).pop() ?? '')
+		.trim()
+		.replace(/[. ]+$/, '');
+	if (base === '') return 'download';
+	const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(base);
+	return `${reserved ? '_' : ''}${base}`.slice(0, FILE_NAME_LIMIT);
 }
 
 export interface BrowserPage {

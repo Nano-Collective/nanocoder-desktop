@@ -53,7 +53,7 @@ export function registerBrowserHandlers(
 		}),
 		createProfile: z.strictObject({
 			...project,
-			name: z.string().min(1).max(80),
+			name: z.string().min(1).max(40),
 		}),
 		deleteProfile: z.strictObject({...project, id: z.uuid()}),
 		clearData: z.strictObject({...project, profile: z.string().min(1).max(40)}),

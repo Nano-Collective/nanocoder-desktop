@@ -187,7 +187,7 @@ test('SEC-16 SEC-02 profile, data and external calls refuse extra fields, so an 
 		['setProfile', {projectId, profile: 'x'.repeat(41)}],
 		['setProfile', {projectId, profile: 'default', path: '/x'}],
 		['createProfile', {projectId, name: ''}],
-		['createProfile', {projectId, name: 'x'.repeat(81)}],
+		['createProfile', {projectId, name: 'x'.repeat(41)}],
 		['createProfile', {projectId, name: 'ok', id}],
 		['deleteProfile', {projectId, id: 'not-a-uuid'}],
 		['deleteProfile', {projectId, id, partition: 'persist:browser-default'}],

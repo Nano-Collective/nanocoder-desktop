@@ -90,3 +90,11 @@ test('BRW-05 an assignment to a profile that is missing resolves to the project 
 	const orphan = new BrowserProfiles({get: () => data, set: () => {}});
 	t.deepEqual(orphan.resolve(one), {kind: 'project'});
 });
+
+test('BRW-08 a profile is found by its id whatever the case of the hex digits', t => {
+	const f = fixture();
+	const made = f.profiles.create('Docs');
+	f.profiles.assign(one, {kind: 'named', id: made.id});
+	t.deepEqual(f.profiles.delete(made.id.toUpperCase()), [one]);
+	t.deepEqual(f.profiles.list(), []);
+});

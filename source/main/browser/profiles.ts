@@ -84,7 +84,8 @@ export class BrowserProfiles {
 		this.storage.set({...data, assignments});
 	}
 
-	delete(id: string): string[] {
+	delete(rawId: string): string[] {
+		const id = rawId.toLowerCase();
 		const data = this.storage.get();
 		if (!data.profiles.some(profile => profile.id === id))
 			throw new IpcFailure('NOT_FOUND', 'That browser profile does not exist');

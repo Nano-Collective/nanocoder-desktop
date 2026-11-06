@@ -99,7 +99,7 @@ The browser is the third tab of the right workbench. `BRW-03` is the user's own 
 
 ## Explicit deferrals
 
-Annotations (`BRW-19`), multiple tabs, browser extensions, raw CDP, arbitrary JavaScript, file uploads, unrestricted computer use.
+Annotations (`BRW-19`), multiple tabs, browser extensions, raw CDP, arbitrary JavaScript, file uploads by the agent, blocking the plain file chooser (no Electron hook), a Settings screen for profiles (managed from the browser tab until then), unrestricted computer use.
 
 ## Edge cases and failure modes
 

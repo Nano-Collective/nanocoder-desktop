@@ -780,6 +780,15 @@ test('BRW-06 the offered file name is made safe before it reaches the dialog', a
 		['..', 'download'],
 		['a\u0000b\nc.txt', 'abc.txt'],
 		['x'.repeat(300), 'x'.repeat(120)],
+		['CON', '_CON'],
+		['con.txt', '_con.txt'],
+		['NUL.tar.gz', '_NUL.tar.gz'],
+		['com1', '_com1'],
+		['LPT9.log', '_LPT9.log'],
+		['console.log', 'console.log'],
+		['report.', 'report'],
+		['report. . ', 'report'],
+		['...', 'download'],
 	];
 	for (const [raw, safe] of cases) {
 		const d = download('http://localhost:3000/f', raw);
