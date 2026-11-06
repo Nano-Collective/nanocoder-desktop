@@ -97,6 +97,12 @@ The browser is the third tab of the right workbench. `BRW-03` is the user's own 
 - **Clearing data (`BRW-08`).** Clearing a profile asks first, then removes its cookies, storage and cache and closes any page using it. Removing a named profile does the same and sends its projects back to their own profile. Removing a project leaves its profile alone.
 - **Open outside (`BRW-09`, `SEC-16`).** The address is taken from the browser's own state, never from the renderer, only `http:` and `https:` are accepted, and a native question shows the exact address with Cancel as the default.
 
+### Phase 3.6 behaviour
+
+- **Localhost links (`TERM-05`).** `source/shared/local-url.ts` finds `http`, `https` and bare `host:port` addresses for `localhost`, `127.x.x.x` and `[::1]`. It trims trailing punctuation, ignores colour codes, refuses credentials and look-alike hosts such as `localhost.evil.com`, and does not offer an address that sits inside another URL. In the terminal each such address is a link, and the toolbar shows a button for the newest one so opening a dev server is one action and works from the keyboard. In chat only a link that is entirely one localhost address becomes a button; its target host is shown beside the text, and every other link stays inert. Opening goes through the same origin policy as a typed address, so main still decides. A terminal address that wraps over two lines is not linked.
+- **Other addresses.** `TERM-05` also asks for other addresses to open outside the app after a confirmation. Only the current page of the browser can do that today (`BRW-09`); other addresses in terminal output or chat stay plain text.
+- **Send the page to chat (`BRW-10`).** The attachment names the page by address only. Main takes the title and address from the browser's own state when the prompt is sent, refuses it if that page is no longer the one that was attached, keeps the title to one bounded line, and labels the block as page data, not instructions (`BRW-15`). It rides with one prompt and is not stored (`CHAT-16`).
+
 ## Explicit deferrals
 
 Annotations (`BRW-19`), multiple tabs, browser extensions, raw CDP, arbitrary JavaScript, file uploads by the agent, blocking the plain file chooser (no Electron hook), a Settings screen for profiles (managed from the browser tab until then), unrestricted computer use.

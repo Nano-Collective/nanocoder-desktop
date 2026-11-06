@@ -1,6 +1,7 @@
 import type {Terminal} from '@xterm/xterm';
 import * as React from 'react';
 import {terminalFocusLease} from '@/renderer/terminal-focus';
+import {terminalLinks} from '@/renderer/terminal-links';
 import {TerminalOutput} from '@/renderer/terminal-output';
 import {mirrorTerminalStyles} from '@/renderer/terminal-styles';
 
@@ -32,6 +33,7 @@ export function TerminalView(props: {
 	onResize(cols: number, rows: number): void;
 	onExit(): void;
 	onFailure(): void;
+	onOpenUrl?(url: string): void;
 }) {
 	const host = React.useRef<HTMLDivElement>(null);
 	const instance = React.useRef<Terminal | null>(null);
@@ -66,6 +68,7 @@ export function TerminalView(props: {
 		let resize: ResizeObserver | undefined;
 		let theme: MutationObserver | undefined;
 		let subscription: {dispose(): void} | undefined;
+		let links: {dispose(): void} | undefined;
 		let output: TerminalOutput | undefined;
 		let unmirror: (() => void) | undefined;
 		const initialise = async () => {
@@ -125,6 +128,23 @@ export function TerminalView(props: {
 			style();
 			terminal.open(element);
 			unmirror = mirrorTerminalStyles(element);
+			links = terminal.registerLinkProvider({
+				provideLinks(line, done) {
+					const buffer = terminal.buffer.active;
+					const found = terminalLinks(
+						buffer.getLine(line - 1),
+						buffer.getLine(line),
+					).map(link => ({
+						range: {
+							start: {x: link.startX, y: line},
+							end: {x: link.endX, y: line},
+						},
+						text: link.url,
+						activate: () => latest.current.onOpenUrl?.(link.url),
+					}));
+					done(found.length > 0 ? found : undefined);
+				},
+			});
 			terminal.textarea?.setAttribute('aria-label', 'your terminal input');
 			terminal.textarea?.setAttribute('aria-describedby', 'terminal-help');
 			terminal.textarea?.setAttribute('aria-keyshortcuts', 'Control+Shift+Tab');
@@ -204,6 +224,7 @@ export function TerminalView(props: {
 			cancelAnimationFrame(frame);
 			resize?.disconnect();
 			theme?.disconnect();
+			links?.dispose();
 			subscription?.dispose();
 			output?.dispose();
 			unmirror?.();

@@ -400,6 +400,10 @@ export function App() {
 		setAttachments(current => addAttachment(current, attachKey, item));
 		overlays.current?.notify(`attached ${labelFor(item)} to your next message`);
 	};
+	const openInBrowser = (url: string) => {
+		showPanel('browser');
+		void browser.open(url);
+	};
 	const editorFailure = async (
 		work: Promise<{ok: boolean; error?: {message: string}}>,
 	): Promise<string | null> => {
@@ -821,6 +825,7 @@ export function App() {
 							onAction={terminal.action}
 							onData={terminal.write}
 							onResize={terminal.resize}
+							onOpenUrl={openInBrowser}
 							onClose={() => {
 								setTerminalOpen(false);
 								terminalTrigger.current?.focus();
@@ -866,6 +871,10 @@ export function App() {
 												onDeleteProfile={browser.deleteProfile}
 												onClearData={browser.clearData}
 												onOpenExternal={browser.openExternal}
+												attachReason={attachReason}
+												onSendToChat={url =>
+													attach({kind: 'browser-page', url})
+												}
 											/>
 										}
 									/>
@@ -1065,6 +1074,7 @@ export function App() {
 							) : undefined
 						}
 						running={sending}
+						onOpenLocalUrl={openInBrowser}
 						onStopTurn={cancel}
 						stopping={stopping}
 						stopReason={turn?.ok ? turn.value.stopReason : undefined}

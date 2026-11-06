@@ -89,3 +89,14 @@ test('CHAT-16 clearing after a send forgets only that thread', t => {
 	t.deepEqual(cleared[two], [file('b.ts')]);
 	t.is(clearAttachments(cleared, one), cleared);
 });
+
+test('BRW-10 a page chip names the site and a second page replaces the first', t => {
+	const page = (url: string): PromptAttachment => ({kind: 'browser-page', url});
+	t.is(labelFor(page('http://localhost:5173/app?x=1')), 'page localhost:5173');
+	t.is(labelFor(page('https://example.com/a')), 'page example.com');
+	const key = attachmentKey('p', 't');
+	let store = addAttachment({}, key, file('a.ts'));
+	store = addAttachment(store, key, page('http://localhost:3000/'));
+	store = addAttachment(store, key, page('http://localhost:5173/'));
+	t.deepEqual(store[key], [file('a.ts'), page('http://localhost:5173/')]);
+});

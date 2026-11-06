@@ -425,6 +425,8 @@ export interface DiscoveredSession {
 // never stored (CHAT-16).
 export type PromptAttachment =
 	| {kind: 'file'; path: string}
+	// Main reads the real address and title; this only names the page that was shown.
+	| {kind: 'browser-page'; url: string}
 	| {
 			kind: 'review-comment';
 			path: string;

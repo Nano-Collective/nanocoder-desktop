@@ -1002,3 +1002,67 @@ test('BRW-09 SEC-16 opening externally uses the address the browser itself holds
 		'DENIED',
 	);
 });
+
+test('BRW-10 the current page is reported from the browser state for the active project only', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	t.is(f.service.currentPage({projectId: first}), null);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/a'});
+	f.views[0].hooks.navigated({
+		url: 'http://localhost:3000/a',
+		title: 'Page A',
+		canGoBack: false,
+		canGoForward: false,
+	});
+	t.deepEqual(f.service.currentPage({projectId: first}), {
+		url: 'http://localhost:3000/a',
+		title: 'Page A',
+	});
+	t.is(
+		code(t.throws(() => f.service.currentPage({projectId: second}))),
+		'DENIED',
+	);
+	f.service.closeView({projectId: first});
+	t.is(f.service.currentPage({projectId: first}), null);
+});
+
+test('BRW-10 the page reported to the chat is the committed one with its own title while another page loads', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/a'});
+	f.views[0].hooks.navigated({
+		url: 'http://localhost:3000/a',
+		title: 'Page A',
+		canGoBack: false,
+		canGoForward: false,
+	});
+	f.hold();
+	const pending = f.service.open({
+		projectId: first,
+		url: 'http://localhost:3000/b',
+	});
+	await Promise.resolve();
+	t.deepEqual(f.service.currentPage({projectId: first}), {
+		url: 'http://localhost:3000/a',
+		title: 'Page A',
+	});
+	f.views[0].hooks.navigated({
+		url: 'http://localhost:3000/b',
+		title: 'Page B',
+		canGoBack: true,
+		canGoForward: false,
+	});
+	f.views[0].finish();
+	await pending;
+	t.deepEqual(f.service.currentPage({projectId: first}), {
+		url: 'http://localhost:3000/b',
+		title: 'Page B',
+	});
+});
+
+test('BRW-10 a page that never committed is not offered to the chat', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/a'});
+	t.is(f.service.currentPage({projectId: first}), null);
+});

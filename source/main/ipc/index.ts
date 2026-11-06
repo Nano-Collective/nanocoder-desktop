@@ -609,6 +609,15 @@ export function registerIpcHandlers(
 							project,
 							attachments,
 							embedded,
+							{
+								current: projectId => {
+									try {
+										return browser?.currentPage({projectId}) ?? null;
+									} catch {
+										return null;
+									}
+								},
+							},
 						);
 					},
 					onSessionPrepared: context =>

@@ -106,6 +106,7 @@ export class BrowserService {
 	private view: BrowserViewHandle | undefined;
 	private viewPartition: string | null = null;
 	private viewProfile: BrowserProfileRef | null = null;
+	private committed: {url: string; title: string} | null = null;
 	private bounds: BrowserBounds | null | undefined;
 	private state: State = closedState('', 0);
 
@@ -293,6 +294,15 @@ export class BrowserService {
 		return this.snapshot();
 	}
 
+	currentPage({
+		projectId,
+	}: {
+		projectId: string;
+	}): {url: string; title: string} | null {
+		this.check(projectId);
+		return this.committed ? {...this.committed} : null;
+	}
+
 	profiles({projectId}: BrowserRequests['profiles']): BrowserProfileList {
 		this.check(projectId);
 		return this.profileList(projectId);
@@ -397,6 +407,10 @@ export class BrowserService {
 					return;
 				}
 				this.committedOpen = this.openSeq;
+				this.committed = {
+					url: bounded(page.url, URL_LIMIT),
+					title: bounded(page.title, TITLE_LIMIT),
+				};
 				this.state = {
 					...this.state,
 					url: bounded(page.url, URL_LIMIT),
@@ -527,6 +541,7 @@ export class BrowserService {
 		const partition = this.viewPartition;
 		const incognito = this.viewProfile?.kind === 'incognito';
 		this.view = undefined;
+		this.committed = null;
 		this.viewPartition = null;
 		this.viewProfile = null;
 		view?.destroy();

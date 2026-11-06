@@ -26,6 +26,10 @@ const threadRequest = z.strictObject(thread);
 const relativePath = z.string().min(1).max(4096);
 const attachmentSchema = z.discriminatedUnion('kind', [
 	z.strictObject({kind: z.literal('file'), path: relativePath}),
+	z.strictObject({
+		kind: z.literal('browser-page'),
+		url: z.string().min(1).max(2_048),
+	}),
 	z
 		.strictObject({
 			kind: z.literal('review-comment'),
