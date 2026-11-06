@@ -1,9 +1,12 @@
+import path from 'node:path';
 import {checkPage, pageOrigin, pageSecurity} from '@/main/browser/origin';
 import {browserPartition, browserWebPreferences} from '@/main/browser/profile';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {
 	BROWSER_BOUNDS_LIMIT,
+	type BrowserBlockReason,
 	type BrowserBounds,
+	type BrowserDownload,
 	type BrowserEvent,
 	type BrowserRequests,
 	type BrowserSnapshot,
@@ -11,6 +14,27 @@ import {
 
 const TITLE_LIMIT = 200;
 const URL_LIMIT = 2_048;
+const DOWNLOAD_LIMIT = 5;
+const FILE_NAME_LIMIT = 120;
+
+export interface BrowserDownloadItem {
+	url: string;
+	filename: string;
+	totalBytes: number;
+	setDestination(options: {defaultPath: string; title: string}): void;
+	cancel(): void;
+	onProgress(listener: (received: number, total: number) => void): void;
+	onDone(
+		listener: (state: 'completed' | 'cancelled' | 'interrupted') => void,
+	): void;
+}
+
+function safeFileName(raw: string): string {
+	const cleaned = raw.replace(/[\u0000-\u001f\u007f]/g, '');
+	const base = (cleaned.split(/[\\/]/).pop() ?? '').trim();
+	if (base === '' || base === '.' || base === '..') return 'download';
+	return base.slice(0, FILE_NAME_LIMIT);
+}
 
 export interface BrowserPage {
 	url: string;
@@ -24,6 +48,8 @@ export interface BrowserViewHooks {
 	navigated(page: BrowserPage): void;
 	loading(loading: boolean): void;
 	failed(): void;
+	popup(url: string): void;
+	download(item: BrowserDownloadItem): void;
 }
 
 export interface BrowserViewHandle {
@@ -53,6 +79,7 @@ const closedState = (projectId: string, sequence: number): State => ({
 	canGoBack: false,
 	canGoForward: false,
 	blocked: null,
+	downloads: [],
 	reason: null,
 });
 
@@ -64,6 +91,7 @@ export class BrowserService {
 	private blockedOpen = 0;
 	private committedOpen = 0;
 	private blockedCount = 0;
+	private downloadCount = 0;
 	private view: BrowserViewHandle | undefined;
 	private bounds: BrowserBounds | null | undefined;
 	private state: State = closedState('', 0);
@@ -73,6 +101,7 @@ export class BrowserService {
 			project(id: string): {id: string; displayName: string} | undefined;
 			emit(event: BrowserEvent): void;
 			publicSites(): boolean;
+			downloadsPath(): string;
 			createView(
 				launch: BrowserViewLaunch,
 				hooks: BrowserViewHooks,
@@ -150,7 +179,7 @@ export class BrowserService {
 		return this.snapshot();
 	}
 
-	private block(url: string, reason: 'public-off' | 'scheme'): void {
+	private block(url: string, reason: BrowserBlockReason): void {
 		this.state = {
 			...this.state,
 			blocked: {
@@ -301,6 +330,71 @@ export class BrowserService {
 					this.state = {...this.state, status: 'ready'};
 				else return;
 				this.publish();
+			},
+			download: item => {
+				if (!live()) {
+					item.cancel();
+					return;
+				}
+				const target = item.url.startsWith('blob:')
+					? item.url.slice('blob:'.length)
+					: item.url;
+				const verdict = checkPage(target, {
+					publicSites: this.options.publicSites(),
+				});
+				if (!verdict.allowed) {
+					item.cancel();
+					if (verdict.reason !== 'invalid')
+						this.block(item.url, verdict.reason);
+					return;
+				}
+				const id = ++this.downloadCount;
+				const name = safeFileName(item.filename);
+				const entry: BrowserDownload = {
+					id,
+					name,
+					state: 'asking',
+					received: 0,
+					total: Math.max(0, item.totalBytes),
+				};
+				this.state = {
+					...this.state,
+					downloads: [...this.state.downloads, entry].slice(-DOWNLOAD_LIMIT),
+				};
+				this.publish();
+				item.setDestination({
+					defaultPath: path.join(this.options.downloadsPath(), name),
+					title: 'Save download',
+				});
+				const update = (patch: Partial<BrowserDownload>) => {
+					if (!live()) return;
+					if (!this.state.downloads.some(candidate => candidate.id === id))
+						return;
+					this.state = {
+						...this.state,
+						downloads: this.state.downloads.map(candidate =>
+							candidate.id === id ? {...candidate, ...patch} : candidate,
+						),
+					};
+					this.publish();
+				};
+				item.onProgress((received, total) =>
+					update({state: 'progress', received, total: Math.max(0, total)}),
+				);
+				item.onDone(state =>
+					update({
+						state:
+							state === 'completed'
+								? 'done'
+								: state === 'cancelled'
+									? 'cancelled'
+									: 'failed',
+					}),
+				);
+			},
+			popup: url => {
+				if (!live()) return;
+				this.block(url, 'popup');
 			},
 			failed: () => {
 				if (!live()) return;

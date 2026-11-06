@@ -370,6 +370,7 @@ export function registerIpcHandlers(
 			project: id => store.projects.get(id),
 			emit: sendBrowserEvent,
 			publicSites: () => store.getSettings().publicBrowsingEnabled,
+			downloadsPath: () => app.getPath('downloads'),
 			createView: createElectronViewFactory(appWindow),
 		});
 	}

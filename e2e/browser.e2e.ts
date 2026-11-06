@@ -1,7 +1,9 @@
 import {
 	copyFileSync,
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	realpathSync,
 	rmSync,
 	writeFileSync,
@@ -63,6 +65,28 @@ function call<K extends keyof BrowserRequests>(
 test.beforeEach(async () => {
 	server = createServer((request, response) => {
 		if (request.url === '/slow') return;
+		if (request.url === '/file.txt') {
+			response.writeHead(200, {
+				'Content-Type': 'text/plain',
+				'Content-Disposition': 'attachment; filename="../../report.txt"',
+			});
+			response.end('hello download');
+			return;
+		}
+		if (request.url === '/downloads') {
+			response.writeHead(200, {'Content-Type': 'text/html'});
+			response.end(
+				`<!doctype html><title>downloads</title><a id="ok" href="/file.txt">file</a><a id="pub" download href="${publicUrl('/file.txt')}">public</a>`,
+			);
+			return;
+		}
+		if (request.url === '/mailto') {
+			response.writeHead(200, {'Content-Type': 'text/html'});
+			response.end(
+				'<!doctype html><title>mail</title><a id="m" href="mailto:someone@example.com">mail</a>',
+			);
+			return;
+		}
 		if (request.url === '/link') {
 			response.writeHead(200, {'Content-Type': 'text/html'});
 			response.end(
@@ -549,4 +573,142 @@ test('BRW-03 the same blocked link clicked again after staying on localhost asks
 	await expect(page.getByRole('alert')).toHaveCount(0);
 	await click();
 	await expect(question).toBeVisible();
+});
+
+const runInView = (prefix: string, code: string) =>
+	app.evaluate(
+		({webContents}, args) => {
+			const contents = webContents
+				.getAllWebContents()
+				.find(candidate => candidate.getURL().startsWith(args.prefix));
+			return contents?.executeJavaScript(args.code, true);
+		},
+		{prefix, code},
+	);
+
+test('BRW-07 SEC-10 camera, location, notifications, popups and the file system pickers are denied without asking', async () => {
+	await call('open', {projectId, url: `${origin}/a`});
+	const verdicts = JSON.parse(
+		(await runInView(
+			origin,
+			`(async () => {
+				const r = {};
+				r.popup = window.open('${origin}/b') === null;
+				r.notification = await Notification.requestPermission();
+				r.geolocation = await new Promise(done =>
+					navigator.geolocation.getCurrentPosition(
+						() => done('granted'),
+						error => done('code' + error.code),
+					),
+				);
+				r.media = await navigator.mediaDevices
+					.getUserMedia({video: true})
+					.then(() => 'granted', error => error.name);
+				r.pickers = [
+					typeof window.showOpenFilePicker,
+					typeof window.showSaveFilePicker,
+					typeof window.showDirectoryPicker,
+				];
+				return JSON.stringify(r);
+			})()`,
+		)) as string,
+	);
+	expect(verdicts).toMatchObject({
+		popup: true,
+		notification: 'denied',
+		geolocation: 'code1',
+		media: 'NotAllowedError',
+	});
+	expect(verdicts.pickers).toEqual(['undefined', 'undefined', 'undefined']);
+	expect(await call('get', {projectId})).toMatchObject({
+		ok: true,
+		value: {blocked: {reason: 'popup'}},
+	});
+	const views = await app.evaluate(
+		({webContents}) => webContents.getAllWebContents().length,
+	);
+	expect(views).toBe(2);
+});
+
+test('BRW-07 an external protocol link is refused and never handed to the system', async () => {
+	await app.evaluate(({shell}) => {
+		const state = globalThis as unknown as {external: string[]};
+		state.external = [];
+		shell.openExternal = async url => {
+			state.external.push(url);
+		};
+	});
+	await call('open', {projectId, url: `${origin}/mailto`});
+	await runInView(origin, "document.getElementById('m').click()");
+	await expect
+		.poll(async () => {
+			const result = await call('get', {projectId});
+			return result.ok ? result.value?.blocked?.reason : null;
+		})
+		.toBe('scheme');
+	const handed = await app.evaluate(
+		() => (globalThis as unknown as {external: string[]}).external,
+	);
+	expect(handed).toEqual([]);
+});
+
+const downloadList = async () => {
+	const result = await call('get', {projectId});
+	return result.ok ? (result.value?.downloads ?? []) : [];
+};
+
+test('BRW-06 a download asks where to save, is listed, and finishes where the user chose', async () => {
+	const target = path.join(work, 'chosen', 'report.txt');
+	await call('open', {projectId, url: `${origin}/downloads`});
+	await expect.poll(loadingStatus).toBe('ready');
+	await app.evaluate(
+		({session}, args) => {
+			const state = globalThis as unknown as {asked: unknown};
+			session
+				.fromPartition(args.partition)
+				.on('will-download', (_event, item) => {
+					state.asked = item.getSaveDialogOptions();
+					item.setSavePath(args.target);
+				});
+		},
+		{partition: `persist:browser-${projectId}`, target},
+	);
+	await runInView(origin, "document.getElementById('ok').click()");
+	await expect
+		.poll(async () => (await downloadList()).map(entry => entry.state))
+		.toEqual(['done']);
+	const [listed] = await downloadList();
+	expect(listed.name).toMatch(/report\.txt$/);
+	expect(listed.name).not.toMatch(/[\\/]/);
+	expect(readFileSync(target, 'utf8')).toBe('hello download');
+	const asked = await app.evaluate(
+		() =>
+			(globalThis as unknown as {asked: {defaultPath: string}}).asked
+				.defaultPath,
+	);
+	const downloads = await app.evaluate(({app}) => app.getPath('downloads'));
+	expect(asked).toBe(path.join(downloads, listed.name));
+});
+
+test('BRW-06 BRW-03 a download from a public site is cancelled while public browsing is off', async () => {
+	const target = path.join(work, 'chosen', 'public.txt');
+	await call('open', {projectId, url: `${origin}/downloads`});
+	await expect.poll(loadingStatus).toBe('ready');
+	await app.evaluate(
+		({session}, args) => {
+			session
+				.fromPartition(args.partition)
+				.on('will-download', (_event, item) => item.setSavePath(args.target));
+		},
+		{partition: `persist:browser-${projectId}`, target},
+	);
+	await runInView(origin, "document.getElementById('pub').click()");
+	await expect
+		.poll(async () => {
+			const result = await call('get', {projectId});
+			return result.ok ? result.value?.blocked?.reason : null;
+		})
+		.toBe('public-off');
+	expect(await downloadList()).toEqual([]);
+	expect(existsSync(target)).toBe(false);
 });

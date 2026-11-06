@@ -22,6 +22,7 @@ export function browserWebPreferences(
 		webSecurity: true,
 		webviewTag: false,
 		allowRunningInsecureContent: false,
+		disableBlinkFeatures: 'FileSystemAccess,FileSystemAccessLocal',
 	};
 }
 

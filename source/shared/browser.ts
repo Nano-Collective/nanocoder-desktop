@@ -18,7 +18,7 @@ export interface BrowserBounds {
 	height: number;
 }
 
-export type BrowserBlockReason = 'public-off' | 'scheme';
+export type BrowserBlockReason = 'public-off' | 'scheme' | 'popup';
 
 export interface BrowserSnapshot {
 	projectId: string;
@@ -32,7 +32,16 @@ export interface BrowserSnapshot {
 	canGoForward: boolean;
 	// The last address the policy refused, so the panel can explain and offer the setting.
 	blocked: {url: string; reason: BrowserBlockReason; id: number} | null;
+	downloads: BrowserDownload[];
 	reason: string | null;
+}
+
+export interface BrowserDownload {
+	id: number;
+	name: string;
+	state: 'asking' | 'progress' | 'done' | 'cancelled' | 'failed';
+	received: number;
+	total: number;
 }
 
 export type BrowserNavigation = 'back' | 'forward' | 'reload' | 'stop';

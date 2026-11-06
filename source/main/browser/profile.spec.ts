@@ -46,6 +46,10 @@ test('SEC-12 the view is sandboxed with no Node, no preload and no IPC bridge', 
 	t.false(preferences.webviewTag);
 	t.false(preferences.allowRunningInsecureContent);
 	t.false('preload' in preferences);
+	t.is(
+		preferences.disableBlinkFeatures,
+		'FileSystemAccess,FileSystemAccessLocal',
+	);
 	t.is(preferences.partition, browserPartition(first));
 });
 

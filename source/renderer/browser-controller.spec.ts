@@ -27,6 +27,7 @@ function snapshot(
 		canGoBack: false,
 		canGoForward: false,
 		blocked: null,
+		downloads: [],
 		reason: null,
 		...extra,
 	};

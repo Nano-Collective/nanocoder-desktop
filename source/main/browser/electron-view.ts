@@ -29,7 +29,10 @@ export function createElectronViewFactory(
 		denyBrowserPermissions(partition);
 		const view = new WebContentsView({webPreferences: launch.preferences});
 		const contents = view.webContents;
-		contents.setWindowOpenHandler(() => ({action: 'deny'}));
+		contents.setWindowOpenHandler(details => {
+			hooks.popup(details.url);
+			return {action: 'deny'};
+		});
 		const guard = (event: {preventDefault(): void}, url: string) => {
 			if (!hooks.allow(url)) event.preventDefault();
 		};
@@ -50,6 +53,30 @@ export function createElectronViewFactory(
 		contents.on('did-fail-load', (_event, code, _text, _url, isMainFrame) => {
 			if (isMainFrame && code !== ERR_ABORTED) hooks.failed();
 		});
+		const onDownload = (
+			_event: unknown,
+			item: Electron.DownloadItem,
+			source: Electron.WebContents,
+		) => {
+			if (source !== contents) return;
+			hooks.download({
+				url: item.getURL(),
+				filename: item.getFilename(),
+				totalBytes: item.getTotalBytes(),
+				setDestination: options => item.setSaveDialogOptions(options),
+				cancel: () => item.cancel(),
+				onProgress: listener =>
+					item.on('updated', () =>
+						listener(item.getReceivedBytes(), item.getTotalBytes()),
+					),
+				onDone: listener =>
+					item.once('done', (_done, state) => {
+						if (state === 'completed' || state === 'cancelled') listener(state);
+						else listener('interrupted');
+					}),
+			});
+		};
+		partition.on('will-download', onDownload);
 		let retire: (() => void) | undefined;
 		view.setVisible(false);
 		window.contentView.addChildView(view);
@@ -107,6 +134,7 @@ export function createElectronViewFactory(
 				view.setVisible(bounds !== null);
 			},
 			destroy: () => {
+				partition.removeListener('will-download', onDownload);
 				if (!window.isDestroyed()) window.contentView.removeChildView(view);
 				if (!contents.isDestroyed()) contents.close();
 			},

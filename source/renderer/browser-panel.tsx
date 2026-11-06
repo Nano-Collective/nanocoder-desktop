@@ -207,6 +207,18 @@ export function BrowserPanel({
 								</Button>
 							</div>
 						</>
+					) : blocked.reason === 'popup' ? (
+						<>
+							<p>
+								a page tried to open a new window. it was blocked, so nothing
+								else opened.
+							</p>
+							<div className="browser-notice-actions">
+								<Button onClick={() => setDismissed(blocked.id)}>
+									dismiss
+								</Button>
+							</div>
+						</>
 					) : (
 						<>
 							<p>only http and https pages open here.</p>

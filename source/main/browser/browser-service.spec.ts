@@ -1,4 +1,6 @@
+import path from 'node:path';
 import test, {type ExecutionContext} from 'ava';
+import type {BrowserDownloadItem} from '@/main/browser/browser-service';
 import {
 	BrowserService,
 	type BrowserViewHooks,
@@ -40,6 +42,7 @@ function fixture(
 				: undefined,
 		emit: event => events.push(event),
 		publicSites: () => settings.publicSites,
+		downloadsPath: () => '/home/user/Downloads',
 		createView: ({partition, preferences}, hooks) => {
 			if (options.failCreate) throw new Error('no window at /secret/path');
 			const settled: Array<{
@@ -647,4 +650,161 @@ test('BRW-01 the last viewport survives opening the same or another project, so 
 	f.service.activate(second);
 	await f.service.open({projectId: second, url: 'http://localhost:3000/'});
 	t.deepEqual(f.views[2].bounds, [bounds]);
+});
+
+test('BRW-07 a popup is denied by the view and reported as its own kind of refusal', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	f.views[0].hooks.popup('http://localhost:3000/new-window');
+	const snapshot = f.service.get({projectId: first});
+	t.is(snapshot.status, 'ready');
+	t.like(snapshot.blocked, {
+		url: 'http://localhost:3000/new-window',
+		reason: 'popup',
+	});
+	f.service.activate(second);
+	f.views[0].hooks.popup('http://localhost:3000/late');
+	t.is(f.service.get({projectId: second}).blocked, null);
+});
+
+function download(url: string, filename: string, total = 100) {
+	const state = {
+		cancelled: 0,
+		destination: undefined as {defaultPath: string; title: string} | undefined,
+		progress: undefined as
+			| ((received: number, total: number) => void)
+			| undefined,
+		done: undefined as
+			| ((state: 'completed' | 'cancelled' | 'interrupted') => void)
+			| undefined,
+	};
+	const item: BrowserDownloadItem = {
+		url,
+		filename,
+		totalBytes: total,
+		setDestination: options => {
+			state.destination = options;
+		},
+		cancel: () => {
+			state.cancelled++;
+		},
+		onProgress: listener => {
+			state.progress = listener;
+		},
+		onDone: listener => {
+			state.done = listener;
+		},
+	};
+	return {item, state};
+}
+
+test('BRW-06 a download is listed, asks the system where to save it and follows the item to the end', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	const d = download('http://localhost:3000/report.csv', 'report.csv');
+	f.views[0].hooks.download(d.item);
+	t.is(
+		d.state.destination?.defaultPath,
+		path.join('/home/user/Downloads', 'report.csv'),
+	);
+	t.like(f.service.get({projectId: first}).downloads[0], {
+		name: 'report.csv',
+		state: 'asking',
+		received: 0,
+		total: 100,
+	});
+	d.state.progress?.(40, 100);
+	t.like(f.service.get({projectId: first}).downloads[0], {
+		state: 'progress',
+		received: 40,
+	});
+	d.state.done?.('completed');
+	t.like(f.service.get({projectId: first}).downloads[0], {state: 'done'});
+	t.is(d.state.cancelled, 0);
+});
+
+test('BRW-06 a cancelled or interrupted download is shown as such', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	const a = download('http://localhost:3000/a.bin', 'a.bin');
+	const b = download('http://localhost:3000/b.bin', 'b.bin');
+	f.views[0].hooks.download(a.item);
+	f.views[0].hooks.download(b.item);
+	a.state.done?.('cancelled');
+	b.state.done?.('interrupted');
+	const states = f.service
+		.get({projectId: first})
+		.downloads.map(entry => [entry.name, entry.state]);
+	t.deepEqual(states, [
+		['a.bin', 'cancelled'],
+		['b.bin', 'failed'],
+	]);
+});
+
+test('BRW-06 the offered file name is made safe before it reaches the dialog', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	const cases: Array<[string, string]> = [
+		['../../etc/passwd', 'passwd'],
+		['..\\..\\Windows\\win.ini', 'win.ini'],
+		['   ', 'download'],
+		['..', 'download'],
+		['a\u0000b\nc.txt', 'abc.txt'],
+		['x'.repeat(300), 'x'.repeat(120)],
+	];
+	for (const [raw, safe] of cases) {
+		const d = download('http://localhost:3000/f', raw);
+		f.views[0].hooks.download(d.item);
+		t.is(
+			d.state.destination?.defaultPath,
+			path.join('/home/user/Downloads', safe),
+			JSON.stringify(raw),
+		);
+	}
+});
+
+test('BRW-06 BRW-03 a download from a refused origin is cancelled before anything is saved and says why', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	for (const url of [
+		'https://example.com/a.zip',
+		'blob:https://example.com/1234',
+		'data:text/plain;base64,AAAA',
+		'ftp://localhost/a.zip',
+	]) {
+		const d = download(url, 'a.zip');
+		f.views[0].hooks.download(d.item);
+		t.is(d.state.cancelled, 1, url);
+		t.is(d.state.destination, undefined, url);
+	}
+	t.deepEqual(f.service.get({projectId: first}).downloads, []);
+	t.is(f.service.get({projectId: first}).blocked?.reason, 'scheme');
+	const local = download('blob:http://localhost:3000/abcd', 'made.txt');
+	f.views[0].hooks.download(local.item);
+	t.is(local.state.cancelled, 0);
+	t.is(f.service.get({projectId: first}).downloads.length, 1);
+});
+
+test('BRW-06 only the last five downloads are kept and a project switch forgets them', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	for (let i = 1; i <= 7; i++)
+		f.views[0].hooks.download(
+			download(`http://localhost:3000/${i}`, `f${i}.txt`).item,
+		);
+	t.deepEqual(
+		f.service.get({projectId: first}).downloads.map(entry => entry.name),
+		['f3.txt', 'f4.txt', 'f5.txt', 'f6.txt', 'f7.txt'],
+	);
+	const stale = download('http://localhost:3000/late', 'late.txt');
+	f.service.activate(second);
+	f.views[0].hooks.download(stale.item);
+	t.is(stale.state.cancelled, 1);
+	t.deepEqual(f.service.get({projectId: second}).downloads, []);
 });
