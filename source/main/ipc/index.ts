@@ -369,6 +369,7 @@ export function registerIpcHandlers(
 		browser = new BrowserService({
 			project: id => store.projects.get(id),
 			emit: sendBrowserEvent,
+			publicSites: () => store.getSettings().publicBrowsingEnabled,
 			createView: createElectronViewFactory(appWindow),
 		});
 	}

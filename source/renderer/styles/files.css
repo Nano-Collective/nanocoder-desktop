@@ -53,6 +53,10 @@
 	min-height: 0;
 }
 
+.workbench-panel--browser {
+	flex: 1 1 auto;
+}
+
 .workbench-panel[hidden] {
 	display: none;
 }

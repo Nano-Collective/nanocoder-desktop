@@ -51,7 +51,7 @@ test('the preload bridge exposes typed methods only', async () => {
 		].sort(),
 	);
 	expect(browserKeys.sort()).toEqual(
-		['get', 'open', 'setBounds', 'close', 'onEvent'].sort(),
+		['get', 'open', 'navigate', 'setBounds', 'close', 'onEvent'].sort(),
 	);
 	expect(terminalKeys.sort()).toEqual(
 		[

@@ -12,6 +12,7 @@ import {
 const methods = {
 	get: 'get',
 	open: 'open',
+	navigate: 'navigate',
 	setBounds: 'setBounds',
 	close: 'closeView',
 } as const satisfies Record<keyof BrowserRequests, keyof BrowserService>;
@@ -28,6 +29,10 @@ export function registerBrowserHandlers(
 	} = {
 		get: z.strictObject(project),
 		open: z.strictObject({...project, url: z.string().min(1).max(2_048)}),
+		navigate: z.strictObject({
+			...project,
+			action: z.enum(['back', 'forward', 'reload', 'stop']),
+		}),
 		setBounds: z.strictObject({
 			...project,
 			bounds: z

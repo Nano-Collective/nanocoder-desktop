@@ -270,7 +270,7 @@ export interface UiState {
 	activeProjectId: string | null;
 	activeThreadId: string | null;
 	openThreadIds: string[];
-	inspector: 'files' | 'review' | null;
+	inspector: 'files' | 'review' | 'browser' | null;
 	bottomPanel: 'terminal' | 'browser' | null;
 }
 

@@ -16,6 +16,7 @@ import '@/renderer/styles/files.css';
 import '@/renderer/styles/projects-dialog.css';
 import '@/renderer/styles/runtime-dialogs.css';
 import '@/renderer/styles/terminal.css';
+import '@/renderer/styles/browser.css';
 
 const root = document.getElementById('root');
 if (!root) {

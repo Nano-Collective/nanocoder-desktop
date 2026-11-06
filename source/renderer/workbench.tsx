@@ -7,11 +7,12 @@ import type {useFiles} from '@/renderer/use-files';
 import type {useReview} from '@/renderer/use-review';
 import type {PromptAttachment} from '@/shared/ipc';
 
-export type WorkbenchTab = 'files' | 'review';
+export type WorkbenchTab = 'files' | 'review' | 'browser';
 
 const TABS: Array<{id: WorkbenchTab; label: string}> = [
 	{id: 'files', label: 'files'},
 	{id: 'review', label: 'review'},
+	{id: 'browser', label: 'browser'},
 ];
 
 export interface WorkbenchProps {
@@ -26,6 +27,7 @@ export interface WorkbenchProps {
 	// Resolve to a plain message when the editor or file manager could not be used.
 	onOpenEditor(path: string, line?: number): Promise<string | null>;
 	onReveal(path: string): Promise<string | null>;
+	browser: React.ReactNode;
 }
 
 export function Workbench({
@@ -38,6 +40,7 @@ export function Workbench({
 	onComment,
 	onOpenEditor,
 	onReveal,
+	browser,
 }: WorkbenchProps): React.ReactElement {
 	const [message, setMessage] = React.useState<string | null>(null);
 	const tabs = React.useRef(new Map<WorkbenchTab, HTMLElement>());
@@ -90,15 +93,17 @@ export function Workbench({
 						</button>
 					))}
 				</div>
-				<Button
-					onClick={() => {
-						files.refresh();
-						review.refresh();
-					}}
-					title="list the open folders and the changes again"
-				>
-					refresh
-				</Button>
+				{tab !== 'browser' && (
+					<Button
+						onClick={() => {
+							files.refresh();
+							review.refresh();
+						}}
+						title="list the open folders and the changes again"
+					>
+						refresh
+					</Button>
+				)}
 			</div>
 			{files.state.watch === 'limited' && (
 				<p className="files-hint" role="status">
@@ -173,6 +178,15 @@ export function Workbench({
 						onOpenEditor={(path, line) => void editor(path, line)}
 					/>
 				)}
+			</div>
+			<div
+				role="tabpanel"
+				id="workbench-panel-browser"
+				aria-labelledby="workbench-tab-browser"
+				hidden={tab !== 'browser'}
+				className="workbench-panel workbench-panel--browser"
+			>
+				{tab === 'browser' && browser}
 			</div>
 		</div>
 	);

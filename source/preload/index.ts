@@ -42,6 +42,7 @@ const api: DesktopApi = {
 	browser: {
 		get: request => ipcRenderer.invoke(BROWSER_CHANNELS.get, request),
 		open: request => ipcRenderer.invoke(BROWSER_CHANNELS.open, request),
+		navigate: request => ipcRenderer.invoke(BROWSER_CHANNELS.navigate, request),
 		setBounds: request =>
 			ipcRenderer.invoke(BROWSER_CHANNELS.setBounds, request),
 		close: request => ipcRenderer.invoke(BROWSER_CHANNELS.close, request),

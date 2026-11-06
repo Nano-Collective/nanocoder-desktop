@@ -38,6 +38,10 @@ let page: Page;
 let projectId: string;
 let server: Server;
 let origin: string;
+let port: number;
+
+const PUBLIC_HOST = 'public-site.test';
+const publicUrl = (suffix = '/') => `http://${PUBLIC_HOST}:${port}${suffix}`;
 
 function call<K extends keyof BrowserRequests>(
 	key: K,
@@ -58,8 +62,16 @@ function call<K extends keyof BrowserRequests>(
 
 test.beforeEach(async () => {
 	server = createServer((request, response) => {
+		if (request.url === '/slow') return;
+		if (request.url === '/link') {
+			response.writeHead(200, {'Content-Type': 'text/html'});
+			response.end(
+				`<!doctype html><title>link</title><a id="l" href="${publicUrl('/x')}">go</a>`,
+			);
+			return;
+		}
 		if (request.url === '/redirect') {
-			response.writeHead(302, {Location: 'http://example.com/'});
+			response.writeHead(302, {Location: publicUrl('/landing')});
 			response.end();
 			return;
 		}
@@ -67,7 +79,8 @@ test.beforeEach(async () => {
 		response.end(probe);
 	});
 	await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-	origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+	port = (server.address() as AddressInfo).port;
+	origin = `http://127.0.0.1:${port}`;
 	work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-browser-')));
 	mkdirSync(path.join(work, 'project'));
 	mkdirSync(path.join(work, 'nanocoder/dist'), {recursive: true});
@@ -88,7 +101,11 @@ test.beforeEach(async () => {
 		path.join(work, 'nanocoder/dist/cli.js'),
 	);
 	app = await electron.launch({
-		args: ['.', `--user-data-dir=${path.join(work, 'profile')}`],
+		args: [
+			'.',
+			`--user-data-dir=${path.join(work, 'profile')}`,
+			`--host-resolver-rules=MAP ${PUBLIC_HOST} 127.0.0.1`,
+		],
 		env: qaEnvironment(process.env, {
 			cliPath: path.join(work, 'nanocoder/dist/cli.js'),
 			nodePath: process.execPath,
@@ -122,6 +139,7 @@ test.beforeEach(async () => {
 
 test.afterEach(async () => {
 	await app.close().catch(() => {});
+	server.closeAllConnections();
 	await new Promise<void>(resolve => server.close(() => resolve()));
 	rmSync(work, {recursive: true, force: true});
 });
@@ -177,10 +195,19 @@ test('BRW-03 a public address is refused and no view appears', async () => {
 	expect(views).toBe(0);
 });
 
-test('BRW-03 a redirect from localhost to a public site stops', async () => {
-	const result = await call('open', {projectId, url: `${origin}/redirect`});
-	expect(result).toMatchObject({ok: false});
-	const hosts = await app.evaluate(({webContents}) =>
+async function publicBrowsing(enabled: boolean) {
+	const saved = await page.evaluate(
+		enabled =>
+			(window as unknown as {desktop: DesktopApi}).desktop.updateSettings({
+				patch: {publicBrowsingEnabled: enabled},
+			}),
+		enabled,
+	);
+	expect(saved).toMatchObject({ok: true});
+}
+
+const pageHosts = () =>
+	app.evaluate(({webContents}) =>
 		webContents.getAllWebContents().map(contents => {
 			try {
 				return new URL(contents.getURL()).hostname;
@@ -189,7 +216,172 @@ test('BRW-03 a redirect from localhost to a public site stops', async () => {
 			}
 		}),
 	);
-	expect(hosts).not.toContain('example.com');
+
+test('BRW-03 a redirect from localhost to a public site stops and is reported while public browsing is off', async () => {
+	const result = await call('open', {projectId, url: `${origin}/redirect`});
+	expect(result).toMatchObject({ok: false, error: {code: 'DENIED'}});
+	const snapshot = await call('get', {projectId});
+	expect(snapshot).toMatchObject({
+		ok: true,
+		value: {
+			status: 'failed',
+			blocked: {reason: 'public-off', url: publicUrl('/landing')},
+		},
+	});
+	expect(await pageHosts()).not.toContain(PUBLIC_HOST);
+});
+
+test('BRW-03 the same redirect is followed once public browsing is on', async () => {
+	await publicBrowsing(true);
+	const result = await call('open', {projectId, url: `${origin}/redirect`});
+	expect(result).toMatchObject({
+		ok: true,
+		value: {
+			status: 'ready',
+			origin: `http://${PUBLIC_HOST}:${port}`,
+			security: 'insecure',
+			blocked: null,
+		},
+	});
+});
+
+test('BRW-03 a public address is refused until the setting is on', async () => {
+	const refused = await call('open', {projectId, url: publicUrl('/a')});
+	expect(refused).toMatchObject({ok: false, error: {code: 'DENIED'}});
+	await publicBrowsing(true);
+	const opened = await call('open', {projectId, url: publicUrl('/a')});
+	expect(opened).toMatchObject({ok: true, value: {status: 'ready'}});
+});
+
+test('BRW-02 back, forward and reload move through the pages that were opened', async () => {
+	await call('open', {projectId, url: `${origin}/a`});
+	await call('open', {projectId, url: `${origin}/b`});
+	await call('navigate', {projectId, action: 'back'});
+	await expect
+		.poll(async () => {
+			const result = await call('get', {projectId});
+			return result.ok ? result.value?.url : null;
+		})
+		.toBe(`${origin}/a`);
+	const back = await call('get', {projectId});
+	expect(back).toMatchObject({
+		ok: true,
+		value: {canGoForward: true, canGoBack: false},
+	});
+	await call('navigate', {projectId, action: 'forward'});
+	await expect
+		.poll(async () => {
+			const result = await call('get', {projectId});
+			return result.ok ? result.value?.url : null;
+		})
+		.toBe(`${origin}/b`);
+	expect(await call('navigate', {projectId, action: 'reload'})).toMatchObject({
+		ok: true,
+	});
+});
+
+const viewBounds = () =>
+	app.evaluate(({BrowserWindow}) => {
+		const window = BrowserWindow.getAllWindows()[0];
+		const view = window.contentView.children[0] as
+			| {getBounds(): Electron.Rectangle; getVisible(): boolean}
+			| undefined;
+		return view ? {...view.getBounds(), visible: view.getVisible()} : null;
+	});
+
+async function openBrowserTab() {
+	await page.getByRole('button', {name: 'open browser', exact: true}).click();
+	await expect(page.getByRole('textbox', {name: 'address'})).toBeVisible();
+}
+
+test('BRW-02/BRW-04 the address bar opens a page and shows its origin and security', async () => {
+	await openBrowserTab();
+	await page
+		.getByRole('textbox', {name: 'address'})
+		.fill(`127.0.0.1:${port}/a`);
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	const status = page.getByRole('status').filter({hasText: 'local'});
+	await expect(status).toContainText(origin);
+	await expect(page.getByRole('button', {name: 'reload'})).toBeEnabled();
+});
+
+test('BRW-03 a public address in the bar stops, asks, and opens after the user turns the setting on', async () => {
+	await openBrowserTab();
+	await page.getByRole('textbox', {name: 'address'}).fill(publicUrl('/a'));
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	const notice = page.getByRole('alert').filter({hasText: 'public site'});
+	await expect(notice).toContainText(`${PUBLIC_HOST}:${port}`);
+	expect(await viewBounds()).toBeNull();
+	await notice
+		.getByRole('button', {name: 'turn on public sites and open it'})
+		.click();
+	await expect(
+		page.getByRole('checkbox', {name: 'allow public sites'}),
+	).toBeChecked();
+	await expect(
+		page.getByRole('status').filter({hasText: 'not secure'}),
+	).toContainText(`${PUBLIC_HOST}:${port}`);
+});
+
+test('BRW-03 staying on localhost dismisses the question and keeps the setting off', async () => {
+	await openBrowserTab();
+	await page.getByRole('textbox', {name: 'address'}).fill(publicUrl('/a'));
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	await page.getByRole('button', {name: 'stay on localhost'}).click();
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await expect(
+		page.getByRole('checkbox', {name: 'allow public sites'}),
+	).not.toBeChecked();
+});
+
+const viewMatchesRegion = async () => {
+	const box = await page.getByRole('region', {name: 'web page'}).boundingBox();
+	const view = await viewBounds();
+	return box && view
+		? view.visible &&
+				view.x === Math.round(box.x) &&
+				view.y === Math.round(box.y) &&
+				view.width === Math.round(box.width) &&
+				view.height === Math.round(box.height)
+		: false;
+};
+
+for (const width of [1240, 1020, 840]) {
+	test(`BRW-01 the native view follows the panel at ${width}px`, async () => {
+		await app.evaluate(({BrowserWindow}, size) => {
+			BrowserWindow.getAllWindows()[0].setContentSize(size, 800);
+		}, width);
+		await openBrowserTab();
+		await page
+			.getByRole('textbox', {name: 'address'})
+			.fill(`127.0.0.1:${port}/a`);
+		await page.getByRole('button', {name: 'go', exact: true}).click();
+		await expect(
+			page.getByRole('status').filter({hasText: 'local'}),
+		).toBeVisible();
+		await expect.poll(viewMatchesRegion).toBe(true);
+	});
+}
+
+test('BRW-01 the native view steps aside for an open dialog and returns after it closes', async () => {
+	await openBrowserTab();
+	await page
+		.getByRole('textbox', {name: 'address'})
+		.fill(`127.0.0.1:${port}/a`);
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	await expect.poll(async () => (await viewBounds())?.visible).toBe(true);
+	await page.evaluate(() => {
+		const dialog = document.createElement('dialog');
+		dialog.id = 'test-modal';
+		dialog.textContent = 'modal';
+		document.body.appendChild(dialog);
+		dialog.showModal();
+	});
+	await expect.poll(async () => (await viewBounds())?.visible).toBe(false);
+	await page.evaluate(() => {
+		(document.getElementById('test-modal') as HTMLDialogElement).close();
+	});
+	await expect.poll(async () => (await viewBounds())?.visible).toBe(true);
 });
 
 test('BRW-01 closing the view removes it', async () => {
@@ -204,4 +396,157 @@ test('BRW-01 closing the view removes it', async () => {
 		origin,
 	);
 	expect(remaining).toBe(0);
+});
+
+const loadingStatus = async () => {
+	const result = await call('get', {projectId});
+	return result.ok ? result.value?.status : null;
+};
+
+test('BRW-02 stop cancels a slow load and keeps the page that was showing', async () => {
+	await call('open', {projectId, url: `${origin}/a`});
+	const slow = call('open', {projectId, url: `${origin}/slow`});
+	await expect.poll(loadingStatus).toBe('loading');
+	await call('navigate', {projectId, action: 'stop'});
+	expect(await slow).toMatchObject({
+		ok: true,
+		value: {status: 'ready', url: `${origin}/a`, reason: null},
+	});
+});
+
+test('BRW-02 a second address supersedes a slow load and loads without being reported as failed', async () => {
+	const slow = call('open', {projectId, url: `${origin}/slow`});
+	await expect.poll(loadingStatus).toBe('loading');
+	const fast = await call('open', {projectId, url: `${origin}/b`});
+	expect(fast).toMatchObject({
+		ok: true,
+		value: {status: 'ready', url: `${origin}/b`},
+	});
+	expect(await slow).toMatchObject({ok: false, error: {code: 'DENIED'}});
+	expect(await call('get', {projectId})).toMatchObject({
+		ok: true,
+		value: {status: 'ready', url: `${origin}/b`, reason: null},
+	});
+});
+
+test('BRW-03 a refused address entered again after staying on localhost asks again', async () => {
+	await openBrowserTab();
+	const address = page.getByRole('textbox', {name: 'address'});
+	await address.fill(publicUrl('/a'));
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	await page.getByRole('button', {name: 'stay on localhost'}).click();
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await address.fill(publicUrl('/a'));
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	await expect(
+		page.getByRole('alert').filter({hasText: 'public site'}),
+	).toBeVisible();
+});
+
+test('BRW-01 after switching project with the browser tab open the next page is placed and visible', async () => {
+	await openBrowserTab();
+	const second = path.join(work, 'project-two');
+	mkdirSync(second);
+	await app.evaluate(({dialog}, root) => {
+		dialog.showOpenDialog = (async () => ({
+			canceled: false,
+			filePaths: [root],
+		})) as typeof dialog.showOpenDialog;
+	}, second);
+	const next = await page.evaluate(async () => {
+		const desktop = (window as unknown as {desktop: DesktopApi}).desktop;
+		const added = await desktop.addProject({});
+		if (!added.ok || added.value.status !== 'selected') return null;
+		const opened = await desktop.openProject({
+			projectId: added.value.project.id,
+		});
+		return opened.ok ? added.value.project.id : null;
+	});
+	expect(next).not.toBeNull();
+	const result = await call('open', {
+		projectId: next as string,
+		url: `${origin}/a`,
+	});
+	expect(result).toMatchObject({ok: true, value: {status: 'ready'}});
+	const region = page.getByRole('region', {name: 'web page'});
+	await expect
+		.poll(async () => {
+			const box = await region.boundingBox();
+			const view = await viewBounds();
+			return box && view
+				? view.visible &&
+						view.x === Math.round(box.x) &&
+						view.y === Math.round(box.y) &&
+						view.width === Math.round(box.width) &&
+						view.height === Math.round(box.height)
+				: false;
+		})
+		.toBe(true);
+});
+
+test('BRW-03 reload of a public page is refused once public browsing is turned off', async () => {
+	await publicBrowsing(true);
+	await call('open', {projectId, url: publicUrl('/a')});
+	await publicBrowsing(false);
+	expect(await call('navigate', {projectId, action: 'reload'})).toMatchObject({
+		ok: false,
+		error: {code: 'DENIED'},
+	});
+	expect(await call('get', {projectId})).toMatchObject({
+		ok: true,
+		value: {blocked: {reason: 'public-off'}},
+	});
+});
+
+test('BRW-01 opening the project that is already open keeps the next page placed and visible', async () => {
+	await openBrowserTab();
+	const reopened = await page.evaluate(
+		id =>
+			(window as unknown as {desktop: DesktopApi}).desktop.openProject({
+				projectId: id,
+			}),
+		projectId,
+	);
+	expect(reopened).toMatchObject({ok: true});
+	const result = await call('open', {projectId, url: `${origin}/a`});
+	expect(result).toMatchObject({ok: true, value: {status: 'ready'}});
+	const region = page.getByRole('region', {name: 'web page'});
+	await expect
+		.poll(async () => {
+			const box = await region.boundingBox();
+			const view = await viewBounds();
+			return box && view
+				? view.visible &&
+						view.x === Math.round(box.x) &&
+						view.y === Math.round(box.y) &&
+						view.width === Math.round(box.width) &&
+						view.height === Math.round(box.height)
+				: false;
+		})
+		.toBe(true);
+});
+
+test('BRW-03 the same blocked link clicked again after staying on localhost asks again', async () => {
+	await openBrowserTab();
+	await page
+		.getByRole('textbox', {name: 'address'})
+		.fill(`127.0.0.1:${port}/link`);
+	await page.getByRole('button', {name: 'go', exact: true}).click();
+	await expect.poll(loadingStatus).toBe('ready');
+	const click = () =>
+		app.evaluate(({webContents}, prefix) => {
+			const contents = webContents
+				.getAllWebContents()
+				.find(candidate => candidate.getURL().startsWith(prefix));
+			return contents?.executeJavaScript(
+				"document.getElementById('l').click()",
+			);
+		}, `${origin}/link`);
+	const question = page.getByRole('alert').filter({hasText: 'public site'});
+	await click();
+	await expect(question).toBeVisible();
+	await page.getByRole('button', {name: 'stay on localhost'}).click();
+	await expect(page.getByRole('alert')).toHaveCount(0);
+	await click();
+	await expect(question).toBeVisible();
 });

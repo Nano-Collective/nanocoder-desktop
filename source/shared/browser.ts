@@ -3,6 +3,7 @@ import type {IpcResult} from '@/shared/ipc';
 export const BROWSER_CHANNELS = {
 	get: 'browser:get',
 	open: 'browser:open',
+	navigate: 'browser:navigate',
 	setBounds: 'browser:set-bounds',
 	close: 'browser:close',
 	event: 'browser:event',
@@ -17,19 +18,31 @@ export interface BrowserBounds {
 	height: number;
 }
 
+export type BrowserBlockReason = 'public-off' | 'scheme';
+
 export interface BrowserSnapshot {
 	projectId: string;
 	sequence: number;
 	status: 'closed' | 'loading' | 'ready' | 'failed';
 	url: string | null;
+	title: string | null;
+	origin: string | null;
+	security: 'local' | 'secure' | 'insecure' | null;
+	canGoBack: boolean;
+	canGoForward: boolean;
+	// The last address the policy refused, so the panel can explain and offer the setting.
+	blocked: {url: string; reason: BrowserBlockReason; id: number} | null;
 	reason: string | null;
 }
+
+export type BrowserNavigation = 'back' | 'forward' | 'reload' | 'stop';
 
 export type BrowserEvent = {type: 'snapshot'; snapshot: BrowserSnapshot};
 
 export interface BrowserRequests {
 	get: {projectId: string};
 	open: {projectId: string; url: string};
+	navigate: {projectId: string; action: BrowserNavigation};
 	setBounds: {projectId: string; bounds: BrowserBounds | null};
 	close: {projectId: string};
 }
