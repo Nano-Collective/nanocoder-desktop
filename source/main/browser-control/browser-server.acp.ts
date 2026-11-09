@@ -255,3 +255,59 @@ test('a resumed session gets a fresh secret and can still use the browser tool (
 		await closeAll(h, second);
 	}
 });
+
+test('two desktop sessions in one Nanocoder process each call the tool with their own secret, and revoking one leaves the other working (ACP-22 DEC-47)', async t => {
+	t.timeout(120_000);
+	const h = await harness('two-sessions', [
+		askStatus,
+		{text: 'first done'},
+		askStatus,
+		{text: 'second done'},
+		askStatus,
+		{text: 'second again'},
+	]);
+	const sessions = h.server.forProject('project-a');
+	const leases: Array<{auth: string; release(): void}> = [];
+	const connection = await connectWith(h, {
+		ready: () => true,
+		lease: () => {
+			const lease = sessions.lease();
+			if (lease)
+				leases.push({
+					auth:
+						lease.server.headers.find(h => h.name === 'Authorization')?.value ??
+						'',
+					release: lease.release,
+				});
+			return lease;
+		},
+	});
+	try {
+		const first = await connection.newSession('auto-accept');
+		const second = await connection.newSession('auto-accept');
+		t.is(leases.length, 2);
+		t.not(leases[0].auth, leases[1].auth);
+		await connection.prompt(first.id, 'What page is open?');
+		await connection.prompt(second.id, 'What page is open?');
+		// Title requests sit between the turns, so tool answers are found by content, not position.
+		const answers = () =>
+			h.provider.requests.flatMap(request => {
+				const last = request.messages.at(-1);
+				return last?.role === 'tool' && typeof last.content === 'string'
+					? [last.content]
+					: [];
+			});
+		t.deepEqual(h.asked, ['project-a', 'project-a']);
+		t.is(answers().length, 2);
+		t.true(
+			answers().every(text => text.includes('URL: http://localhost:5173/')),
+		);
+		leases[0].release();
+		await connection.prompt(second.id, 'And now?');
+		t.deepEqual(h.asked, ['project-a', 'project-a', 'project-a']);
+		t.is(answers().length, 3);
+		t.true(answers()[2]?.includes('URL: http://localhost:5173/'));
+	} finally {
+		await closeAll(h, connection);
+	}
+});
