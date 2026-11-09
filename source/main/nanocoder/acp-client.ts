@@ -18,6 +18,10 @@ import {
 	type ExtensionProbes,
 } from '@/main/nanocoder/capabilities';
 import {sessionModeOptions} from '@/main/nanocoder/control-options';
+import {
+	confirmsDisabledTools,
+	disabledToolsMeta,
+} from '@/main/nanocoder/disabled-tools';
 import {type Exit, launchNanocoder, waitForExit} from '@/main/nanocoder/launch';
 import {
 	ProtocolViolation,
@@ -135,6 +139,8 @@ export interface ConnectOptions {
 	probeTimeoutMs?: number;
 	signal?: AbortSignal;
 	mcpServers?: SessionMcpServers;
+	// Read at each session start, so a settings change applies to the next one (BRW-18).
+	disabledTools?: () => readonly string[];
 	onUpdate?: (update: SessionNotification['update']) => void;
 	onSessionUpdate?: (notification: SessionNotification) => void;
 	onTitleChanged?: (change: SessionTitleChange) => void;
@@ -454,12 +460,29 @@ export async function connectNanocoder(
 	});
 	notificationControls = sessionControls;
 
+	const sessionTools = () => [...(options.disabledTools?.() ?? [])];
+	// Asking Nanocoder to turn a tool off counts only once it says so; otherwise the session is refused (DEC-48).
+	const confirmTools = async (
+		sessionId: string,
+		requested: readonly string[],
+		meta: unknown,
+	) => {
+		if (confirmsDisabledTools(requested, meta)) return;
+		await closeQuietly(sessionId);
+		throw new NanocoderFailure(
+			'UNSUPPORTED',
+			"Nanocoder did not confirm that its own browser tool is off for this session. Update Nanocoder, or allow Nanocoder's browser in the browser tab.",
+		);
+	};
+
 	const newSession = async (mode: NanocoderMode): Promise<SessionInfo> => {
 		const lease = browserServers?.lease();
+		const tools = sessionTools();
 		const created = await connection.agent
 			.request(methods.agent.session.new, {
 				cwd: options.root,
 				mcpServers: lease ? [lease.server] : [],
+				...disabledToolsMeta(tools),
 			})
 			.catch(() => {
 				lease?.release();
@@ -469,6 +492,7 @@ export async function connectNanocoder(
 				);
 			});
 		keepLease(created.sessionId, lease);
+		await confirmTools(created.sessionId, tools, created._meta);
 		await applyMode(created.sessionId, mode, created.modes?.availableModes);
 		sessionControls.remember(
 			created.sessionId,
@@ -508,6 +532,7 @@ export async function connectNanocoder(
 		// Nanocoder drops the servers a resumed session had and connects the ones sent now.
 		releaseLease(sessionId);
 		const lease = browserServers?.lease();
+		const tools = sessionTools();
 		let resumed: ResumeSessionResponse;
 		let history: TurnEvent[];
 		try {
@@ -515,6 +540,7 @@ export async function connectNanocoder(
 				sessionId,
 				cwd: options.root,
 				mcpServers: lease ? [lease.server] : [],
+				...disabledToolsMeta(tools),
 			});
 			// Replayed updates are handled in the same turn of the event loop as the answer.
 			await new Promise(resolve => setImmediate(resolve));
@@ -539,6 +565,12 @@ export async function connectNanocoder(
 			if (replay === replayed) replay = undefined;
 		}
 		keepLease(sessionId, lease);
+		try {
+			await confirmTools(sessionId, tools, resumed._meta);
+		} catch (error) {
+			history.length = 0;
+			throw error;
+		}
 		await applyMode(sessionId, mode, resumed.modes?.availableModes);
 		if (disposed) {
 			history.length = 0;

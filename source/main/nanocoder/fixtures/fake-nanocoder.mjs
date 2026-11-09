@@ -70,6 +70,19 @@ function refuse(reason) {
 	process.exitCode = 1;
 }
 
+// Like Nanocoder 1.32.0: the tools a session turned off, of those it knows, are echoed back.
+const disabledEcho = params => {
+	if (mode === 'no-disabled-echo') return {};
+	const requested = params?._meta?.['nanocoder/disabledTools'];
+	return {
+		_meta: {
+			'nanocoder/disabledTools': Array.isArray(requested)
+				? requested.filter(name => name === 'browser')
+				: [],
+		},
+	};
+};
+
 const results = {
 	initialize: () => ({
 		protocolVersion: mode === 'future' ? 2 : 1,
@@ -110,7 +123,13 @@ const results = {
 			isAbsolute(mcpRecord) &&
 			relative(process.cwd(), mcpRecord).startsWith('..')
 		)
-			writeFileSync(mcpRecord, JSON.stringify(params.mcpServers));
+			writeFileSync(
+				mcpRecord,
+				JSON.stringify({
+					mcpServers: params.mcpServers,
+					meta: params._meta ?? null,
+				}),
+			);
 		return {
 			sessionId: scopedSessions
 				? `${sessionPrefix}-${randomUUID()}`
@@ -119,6 +138,7 @@ const results = {
 					: 'fake-session',
 			modes: modeState(),
 			...(mode === 'replay-gates' && {configOptions: replayConfig()}),
+			...disabledEcho(params),
 		};
 	},
 	'session/list': () =>
@@ -189,7 +209,8 @@ function durableDelegations(sessionId, history) {
 }
 
 // Replays an earlier exchange, as Nanocoder does, then answers with the mode state.
-async function resume(id, {sessionId}) {
+async function resume(id, params) {
+	const {sessionId} = params;
 	if (mode === 'die-in-resume') process.exit(3);
 	const knownSession =
 		(mode === 'session-discovery' && sessionId === 'discovered-session') ||
@@ -259,12 +280,19 @@ async function resume(id, {sessionId}) {
 				},
 			});
 		}
-		send({id, result: {modes: modeState(), configOptions: replayConfig()}});
+		send({
+			id,
+			result: {
+				modes: modeState(),
+				configOptions: replayConfig(),
+				...disabledEcho(params),
+			},
+		});
 		return;
 	}
 	if (mode === 'durable-replay') {
 		durableDelegations(sessionId, true);
-		send({id, result: {modes: modeState()}});
+		send({id, result: {modes: modeState(), ...disabledEcho(params)}});
 		return;
 	}
 	const update = body => notify('session/update', {sessionId, update: body});
@@ -311,7 +339,7 @@ async function resume(id, {sessionId}) {
 				sessionUpdate: 'agent_message_chunk',
 				content: {type: 'text', text},
 			});
-		send({id, result: {modes: modeState()}});
+		send({id, result: {modes: modeState(), ...disabledEcho(params)}});
 		return;
 	}
 	update({
@@ -328,7 +356,7 @@ async function resume(id, {sessionId}) {
 		title: 'execute_bash: echo old',
 		status: 'completed',
 	});
-	send({id, result: {modes: modeState()}});
+	send({id, result: {modes: modeState(), ...disabledEcho(params)}});
 }
 
 const waiting = new Map();

@@ -12,6 +12,7 @@ export interface BrowserPanelProps {
 	projectName: string;
 	snapshot: BrowserSnapshot | null;
 	publicSites: boolean;
+	nanocoderBrowser: boolean;
 	profiles: BrowserProfileList | null;
 	loading: boolean;
 	pending: boolean;
@@ -21,6 +22,7 @@ export interface BrowserPanelProps {
 	onNavigate(action: BrowserNavigation): void;
 	onBounds(bounds: BrowserBounds | null): void;
 	onPublicSites(enabled: boolean): void;
+	onNanocoderBrowser(enabled: boolean): void;
 	onAllowAndOpen(url: string): void;
 	onProfile(profile: string): void;
 	onCreateProfile(name: string): Promise<boolean>;
@@ -112,6 +114,7 @@ export function BrowserPanel({
 	projectName,
 	snapshot,
 	publicSites,
+	nanocoderBrowser,
 	profiles,
 	loading,
 	pending,
@@ -121,6 +124,7 @@ export function BrowserPanel({
 	onNavigate,
 	onBounds,
 	onPublicSites,
+	onNanocoderBrowser,
 	onAllowAndOpen,
 	onProfile,
 	onCreateProfile,
@@ -130,6 +134,7 @@ export function BrowserPanel({
 	attachReason,
 	onSendToChat,
 }: BrowserPanelProps): React.ReactElement {
+	const nanocoderNote = React.useId();
 	const viewport = React.useRef<HTMLDivElement>(null);
 	const address = React.useRef<HTMLInputElement>(null);
 	const [draft, setDraft] = React.useState<string | null>(null);
@@ -233,7 +238,23 @@ export function BrowserPanel({
 					/>{' '}
 					allow public sites
 				</label>
+				<label className="browser-public">
+					<input
+						type="checkbox"
+						checked={nanocoderBrowser}
+						aria-describedby={nanocoderBrowser ? nanocoderNote : undefined}
+						onChange={event => onNanocoderBrowser(event.target.checked)}
+					/>{' '}
+					nanocoder's own browser
+				</label>
 			</div>
+			{nanocoderBrowser && (
+				<p id={nanocoderNote} className="browser-notice">
+					nanocoder's own browser is on. it does not follow these settings, can
+					reach public sites, and asks with nanocoder's own approvals. the
+					change applies to chats started or reopened after it.
+				</p>
+			)}
 			<div className="browser-profile">
 				<label>
 					profile{' '}

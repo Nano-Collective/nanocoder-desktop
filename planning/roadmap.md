@@ -702,12 +702,12 @@ Needs `DEC-15` agreed.
 
 **Build**
 
-- [ ] Apply the agreed handling of Nanocoder's built-in `browser` tool (`BRW-18`)
-- [ ] Pages that need the user's regular profile open externally without agent control (`BRW-20`)
+- [x] Apply the agreed handling of Nanocoder's built-in `browser` tool (`BRW-18`): the setting is off by default, every new and resumed session sends `_meta["nanocoder/disabledTools"]` while it is off, and a session Nanocoder does not confirm is refused ([`disabled-tools.ts`](../source/main/nanocoder/disabled-tools.ts), migration `006`)
+- [x] Pages that need the user's regular profile open externally without agent control (`BRW-20`): "open outside" stays a user action with a native confirmation (`BRW-09`), and no agent tool can open a page outside the app
 
 **Results we want**
 
-- [ ] With public browsing off and the Nanocoder browser setting off, the agent cannot reach a public site through any browser tool. With the setting on, Nanocoder's own approvals apply and the docs say so
+- [x] With public browsing off and the Nanocoder browser setting off, the agent cannot reach a public site through any browser tool: the in-app browser's agent control is local only (phase 3.8), and the pinned Nanocoder leaves `browser` out of the model's tools on new and resumed sessions ([`nanocoder-browser.acp.ts`](../source/main/nanocoder/nanocoder-browser.acp.ts)). With the setting on, the browser tab says that Nanocoder's browser does not follow these settings and asks with Nanocoder's own approvals ([browser.md](features/browser.md#phase-310-behaviour))
 - [x] The decision is recorded in [`decisions.md`](decisions.md) (`DEC-48`)
 
 ### Milestone 3 exit

@@ -35,6 +35,7 @@ export const settingsPatch = z.strictObject({
 	defaultMode: defaultMode.optional(),
 	editor: z.enum(['system', 'code', 'cursor', 'zed']).optional(),
 	theme: z.enum(['dark', 'light', 'system']).optional(),
+	nanocoderBrowserEnabled: z.boolean().optional(),
 });
 
 const profileName = z

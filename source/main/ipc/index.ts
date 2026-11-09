@@ -430,6 +430,11 @@ export function registerIpcHandlers(
 				homeDir: homedir(),
 				confirmTrust,
 				mcpServers: projectId => browserServer?.forProject(projectId),
+				// Without a store to say otherwise, Nanocoder's own browser stays off (DEC-48).
+				disabledTools: () =>
+					services.store?.getSettings().nanocoderBrowserEnabled === true
+						? []
+						: ['browser'],
 				activity: projectId =>
 					threads?.activity(projectId) ?? {
 						runningTurn: false,

@@ -255,6 +255,8 @@ export interface DesktopSettings {
 	// Main-only: profiles are created and assigned through the browser calls.
 	browserProfiles: Array<{id: string; name: string}>;
 	browserAssignments: Record<string, string>;
+	// Lets Nanocoder's own browser tool run in desktop sessions (BRW-18).
+	nanocoderBrowserEnabled: boolean;
 }
 
 // Runtime paths are chosen in main, not supplied by a renderer.

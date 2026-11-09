@@ -1039,3 +1039,19 @@ test('ACP-22 without a running browser server the gate stays off with its reason
 		reason: 'The desktop browser server is not running for this project.',
 	});
 });
+
+test('BRW-18 every project process reads the Nanocoder browser setting through the supervisor', async t => {
+	const chosen = project();
+	let seen: ConnectOptions['disabledTools'];
+	const disabledTools = () => ['browser'];
+	const supervisor = make({
+		disabledTools,
+		connect: async options => {
+			seen = options.disabledTools;
+			return connectProject(options);
+		},
+	});
+	t.teardown(() => supervisor.close());
+	await supervisor.ensureProcess(chosen);
+	t.is(seen, disabledTools);
+});

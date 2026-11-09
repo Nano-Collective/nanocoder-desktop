@@ -85,6 +85,8 @@ test.beforeEach(async () => {
 	project = path.join(work, 'project');
 	mkdirSync(project);
 	writeFileSync(path.join(project, '.fake-mcp-http'), '');
+	// A turn that finishes without asking, so a later chat is not held behind it.
+	writeFileSync(path.join(project, '.fake-nanocoder'), 'files');
 	const fakeCli = path.join(work, 'nanocoder/dist/cli.js');
 	mkdirSync(path.dirname(fakeCli), {recursive: true});
 	writeFileSync(
@@ -159,10 +161,14 @@ async function agent(
 	name: string,
 	args: Record<string, unknown> = {},
 ): Promise<{text: string; isError: boolean; result: ToolResult}> {
-	const [entry] = JSON.parse(readFileSync(record(), 'utf8')) as Array<{
-		url: string;
-		headers: Array<{name: string; value: string}>;
-	}>;
+	const {
+		mcpServers: [entry],
+	} = JSON.parse(readFileSync(record(), 'utf8')) as {
+		mcpServers: Array<{
+			url: string;
+			headers: Array<{name: string; value: string}>;
+		}>;
+	};
 	const response = await fetch(entry.url, {
 		method: 'POST',
 		headers: {
@@ -377,4 +383,45 @@ test('BRW-17 the agent cannot act while the browser is off screen, and a stale r
 	const hidden = await agent('desktop_browser_snapshot');
 	expect(hidden.isError).toBe(true);
 	expect(hidden.text).toContain('not on screen');
+});
+
+const recordedMeta = () =>
+	(JSON.parse(readFileSync(record(), 'utf8')) as {meta: unknown}).meta;
+
+test("BRW-18 Nanocoder's own browser is off by default, and the browser tab turns it on for the next chat", async () => {
+	expect(recordedMeta()).toEqual({'nanocoder/disabledTools': ['browser']});
+	const toggle = page.getByRole('checkbox', {name: "nanocoder's own browser"});
+	await expect(toggle).not.toBeChecked();
+	await toggle.click();
+	await expect(toggle).toBeChecked();
+	const note = page.getByText("nanocoder's own browser is on");
+	await expect(note).toBeVisible();
+	await expect(toggle).toHaveAttribute('aria-describedby', /.+/);
+	expect(
+		await page.evaluate(async () => {
+			const desktop = (window as unknown as {desktop: DesktopApi}).desktop;
+			const settings = await desktop.getSettings({});
+			return settings.ok ? settings.value.nanocoderBrowserEnabled : null;
+		}),
+	).toBe(true);
+
+	rmSync(record());
+	await page
+		.getByRole('region', {name: 'project threads'})
+		.getByRole('button', {name: 'new thread', exact: true})
+		.click();
+	const dialog = page.getByRole('dialog', {name: 'new thread', exact: true});
+	await dialog
+		.getByRole('button', {name: 'keep as new thread draft', exact: true})
+		.click();
+	await expect(dialog).toBeHidden();
+	const composer = page.getByRole('textbox', {name: 'message', exact: true});
+	await composer.fill('second chat');
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	await expect.poll(() => existsSync(record())).toBe(true);
+	expect(recordedMeta()).toBeNull();
+
+	await toggle.click();
+	await expect(toggle).not.toBeChecked();
+	await expect(note).toHaveCount(0);
 });

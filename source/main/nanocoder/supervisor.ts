@@ -81,6 +81,7 @@ interface SupervisorOptions {
 	connect?: typeof connectProject;
 	// The desktop's browser server for this project's sessions (ACP-22, DEC-47).
 	mcpServers?: (projectId: string) => SessionMcpServers | undefined;
+	disabledTools?: ConnectOptions['disabledTools'];
 	clock?: SupervisorClock;
 	idleTimeoutMs?: number;
 	activity?: (projectId: string) => ProjectActivity;
@@ -533,6 +534,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				homeDir: this.options.homeDir,
 				stderr: entry.stderr,
 				mcpServers: this.options.mcpServers?.(project.id),
+				disabledTools: this.options.disabledTools,
 				confirmTrust: refusal => this.options.confirmTrust(refusal, root),
 				beforeLaunch: async () => {
 					await validateRoot();

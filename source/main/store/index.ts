@@ -36,6 +36,8 @@ const defaultSettings: DesktopSettings = {
 	theme: 'dark',
 	browserProfiles: [],
 	browserAssignments: {},
+	// Off by default, so desktop sessions have one browser, under the desktop's rules (DEC-48).
+	nanocoderBrowserEnabled: false,
 };
 const defaultUiState: UiState = {
 	window: {width: 1020, height: 720, x: null, y: null, maximised: false},

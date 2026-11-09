@@ -1008,3 +1008,62 @@ test('ACP-22 revokes every secret when Nanocoder exits on its own', async t => {
 	t.deepEqual([...fake.live], []);
 	await connection.close();
 });
+
+const sentMeta = (connection: NanocoderConnection, method: string) =>
+	fakeEvents(connection.stderr.lines())
+		.filter(event => event.method === method)
+		.map(event => (event.params as {_meta?: unknown})._meta);
+
+test("BRW-18 turns Nanocoder's own browser off on new and resumed sessions, read again for each session (DEC-48)", async t => {
+	let tools: string[] = ['browser'];
+	const connection = await connect(fakeProject(), {
+		disabledTools: () => tools,
+	});
+	t.teardown(() => connection.close());
+	await connection.newSession('normal');
+	await connection.resumeSession('fake-session', 'normal');
+	tools = [];
+	await connection.newSession('normal');
+	await connection.resumeSession('fake-session', 'normal');
+	t.deepEqual(sentMeta(connection, 'session/new'), [
+		{'nanocoder/disabledTools': ['browser']},
+		undefined,
+	]);
+	t.deepEqual(sentMeta(connection, 'session/resume'), [
+		{'nanocoder/disabledTools': ['browser']},
+		undefined,
+	]);
+});
+
+test('BRW-18 a session whose browser Nanocoder does not confirm off is refused and closed, before its mode is set (DEC-48)', async t => {
+	const connection = await connect(fakeProject('no-disabled-echo'), {
+		disabledTools: () => ['browser'],
+	});
+	t.teardown(() => connection.close());
+	for (const start of [
+		() => connection.newSession('normal'),
+		() => connection.resumeSession('fake-session', 'normal'),
+	]) {
+		const error = await rejection(start());
+		t.is(error.code, 'UNSUPPORTED');
+		t.is(
+			error.message,
+			"Nanocoder did not confirm that its own browser tool is off for this session. Update Nanocoder, or allow Nanocoder's browser in the browser tab.",
+		);
+	}
+	const methods = fakeEvents(connection.stderr.lines()).map(e => e.method);
+	t.false(methods.includes('session/set_mode'));
+	t.is(methods.filter(method => method === 'session/close').length, 2);
+	await rejection(connection.prompt('fake-session', 'hello'));
+});
+
+test("BRW-18 with Nanocoder's browser allowed, a Nanocoder that echoes nothing still opens sessions", async t => {
+	const connection = await connect(fakeProject('no-disabled-echo'), {
+		disabledTools: () => [],
+	});
+	t.teardown(() => connection.close());
+	t.deepEqual(await connection.newSession('normal'), {
+		id: 'fake-session',
+		mode: 'normal',
+	});
+});

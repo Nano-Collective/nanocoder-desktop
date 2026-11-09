@@ -55,11 +55,15 @@ function fixture(
 		navigate?: BrowserApi['navigate'];
 		setProfile?: BrowserApi['setProfile'];
 		publicSites?: boolean;
+		nanocoderBrowser?: boolean;
 	} = {},
 ) {
 	const calls: string[] = [];
 	const boundsSent: Array<BrowserBounds | null> = [];
-	const settings = {publicBrowsingEnabled: overrides.publicSites ?? false};
+	const settings = {
+		publicBrowsingEnabled: overrides.publicSites ?? false,
+		nanocoderBrowserEnabled: overrides.nanocoderBrowser ?? false,
+	};
 	const list: BrowserProfileList = {profiles: [], current: 'project'};
 	let listener!: (event: BrowserEvent) => void;
 	let unsubscribed = 0;
@@ -307,4 +311,21 @@ test('BRW-05 a refused profile change shows the reason and keeps the previous ch
 	);
 	t.is(f.controller.getState().error, 'That browser profile does not exist');
 	t.is(f.controller.getState().profiles?.current, 'project');
+});
+
+test('BRW-18 the Nanocoder browser setting is read with the project and saved on its own', async t => {
+	const f = fixture({nanocoderBrowser: true});
+	await f.controller.select('one');
+	t.true(f.controller.getState().nanocoderBrowser);
+	t.true(await f.controller.setNanocoderBrowser(false));
+	t.deepEqual(f.calls, ['settings {"nanocoderBrowserEnabled":false}']);
+	t.false(f.controller.getState().nanocoderBrowser);
+	t.false(f.controller.getState().publicSites);
+});
+
+test('BRW-18 the Nanocoder browser starts off until settings say otherwise', async t => {
+	const f = fixture();
+	t.false(f.controller.getState().nanocoderBrowser);
+	await f.controller.select('one');
+	t.false(f.controller.getState().nanocoderBrowser);
 });

@@ -14,7 +14,9 @@ export interface BrowserBridge {
 		request: Record<string, never>,
 	): Promise<IpcResult<DesktopSettings>>;
 	updateSettings(request: {
-		patch: {publicBrowsingEnabled: boolean};
+		patch: Partial<
+			Pick<DesktopSettings, 'publicBrowsingEnabled' | 'nanocoderBrowserEnabled'>
+		>;
 	}): Promise<IpcResult<DesktopSettings>>;
 }
 
@@ -22,6 +24,7 @@ export interface BrowserState {
 	projectId: string | null;
 	snapshot: BrowserSnapshot | null;
 	publicSites: boolean;
+	nanocoderBrowser: boolean;
 	profiles: BrowserProfileList | null;
 	loading: boolean;
 	pending: boolean;
@@ -45,6 +48,7 @@ export class BrowserController {
 		projectId: null,
 		snapshot: null,
 		publicSites: false,
+		nanocoderBrowser: false,
 		profiles: null,
 		loading: false,
 		pending: false,
@@ -90,7 +94,10 @@ export class BrowserController {
 			]);
 			if (!this.current(epoch)) return;
 			if (settings?.ok)
-				this.update({publicSites: settings.value.publicBrowsingEnabled});
+				this.update({
+					publicSites: settings.value.publicBrowsingEnabled,
+					nanocoderBrowser: settings.value.nanocoderBrowserEnabled,
+				});
 			if (profiles?.ok) this.update({profiles: profiles.value});
 			if (snapshot.ok) this.apply(snapshot.value);
 			else this.update({error: snapshot.error.message});
@@ -162,18 +169,29 @@ export class BrowserController {
 		}
 	}
 
-	async setPublicSites(enabled: boolean): Promise<boolean> {
+	setPublicSites(enabled: boolean): Promise<boolean> {
+		return this.saveSetting({publicBrowsingEnabled: enabled});
+	}
+
+	setNanocoderBrowser(enabled: boolean): Promise<boolean> {
+		return this.saveSetting({nanocoderBrowserEnabled: enabled});
+	}
+
+	private async saveSetting(
+		patch: Parameters<BrowserBridge['updateSettings']>[0]['patch'],
+	): Promise<boolean> {
 		if (this.disposed) return false;
 		try {
-			const result = await this.bridge.updateSettings({
-				patch: {publicBrowsingEnabled: enabled},
-			});
+			const result = await this.bridge.updateSettings({patch});
 			if (this.disposed) return false;
 			if (!result.ok) {
 				this.update({error: result.error.message});
 				return false;
 			}
-			this.update({publicSites: result.value.publicBrowsingEnabled});
+			this.update({
+				publicSites: result.value.publicBrowsingEnabled,
+				nanocoderBrowser: result.value.nanocoderBrowserEnabled,
+			});
 			return true;
 		} catch {
 			if (!this.disposed)
