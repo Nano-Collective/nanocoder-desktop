@@ -234,3 +234,15 @@ test('SUB-03 invalid attribution is omitted without dropping an approval', async
 		outcome: {outcome: 'selected', optionId: 'allow'},
 	});
 });
+
+test('BRW-14 a withdrawn request closes its card and answers cancelled, and cannot be answered after', async t => {
+	const {events, broker: b} = broker();
+	const controller = new AbortController();
+	const response = b.request(request, false, controller.signal);
+	controller.abort();
+	t.deepEqual(await response, {outcome: {outcome: 'cancelled'}});
+	t.deepEqual(events.at(-1), {type: 'permission-closed', id: 'permission-1'});
+	t.false(b.answer('permission-1', 'allow'));
+	const late = b.request(request, false, AbortSignal.abort());
+	t.deepEqual(await late, {outcome: {outcome: 'cancelled'}});
+});

@@ -1039,3 +1039,96 @@ test('ACP-22 without a running browser server the gate stays off with its reason
 		reason: 'The desktop browser server is not running for this project.',
 	});
 });
+
+test('BRW-18 every project process reads the Nanocoder browser setting through the supervisor', async t => {
+	const chosen = project();
+	let seen: ConnectOptions['disabledTools'];
+	const disabledTools = () => ['browser'];
+	const supervisor = make({
+		disabledTools,
+		connect: async options => {
+			seen = options.disabledTools;
+			return connectProject(options);
+		},
+	});
+	t.teardown(() => supervisor.close());
+	await supervisor.ensureProcess(chosen);
+	t.is(seen, disabledTools);
+});
+
+const SITE_QUESTION = {
+	title: 'Let the agent use https://example.com in the in-app browser?',
+	options: [
+		{id: 'thread', name: 'allow for this chat', kind: 'allow_once' as const},
+		{id: 'block', name: 'block', kind: 'reject_once' as const},
+	],
+};
+
+test('BRW-13 a desktop question appears in the active turn of its own chat and returns only the offered answer', async t => {
+	const supervisor = make();
+	t.teardown(() => supervisor.close());
+	const chosen = project();
+	await supervisor.ensureProcess(chosen);
+	const {id} = await supervisor.getConnection(chosen.id).newSession('normal');
+	t.is(await supervisor.askDesktop(chosen.id, id, SITE_QUESTION), null);
+	const nanocoderAsks = nextEvent(
+		supervisor,
+		event => event.type === 'turn' && event.events[0].type === 'permission',
+	);
+	const turn = supervisor.prompt(chosen.id, id, 'run');
+	await nanocoderAsks;
+	const desktopAsks = nextEvent(
+		supervisor,
+		event =>
+			event.type === 'turn' &&
+			event.events[0].type === 'permission' &&
+			event.events[0].request.title === SITE_QUESTION.title,
+	);
+	const answer = supervisor.askDesktop(chosen.id, id, SITE_QUESTION);
+	const event = await desktopAsks;
+	if (event.type !== 'turn' || event.events[0].type !== 'permission')
+		throw new Error('Expected permission');
+	const {request} = event.events[0];
+	t.deepEqual(
+		request.options.map(option => option.id),
+		['thread', 'block'],
+	);
+	t.is(
+		await supervisor.askDesktop(chosen.id, 'other-session', SITE_QUESTION),
+		null,
+	);
+	t.false(supervisor.answerPermission(chosen.id, id, request.id, 'always'));
+	t.true(supervisor.answerPermission(chosen.id, id, request.id, 'thread'));
+	t.is(await answer, 'thread');
+	await supervisor.cancel(chosen.id, id);
+	await turn;
+});
+
+test('BRW-14 a desktop question withdrawn by the user, or by cancelling the turn, answers nothing', async t => {
+	const supervisor = make();
+	t.teardown(() => supervisor.close());
+	const chosen = project();
+	await supervisor.ensureProcess(chosen);
+	const {id} = await supervisor.getConnection(chosen.id).newSession('normal');
+	const nanocoderAsks = nextEvent(
+		supervisor,
+		event => event.type === 'turn' && event.events[0].type === 'permission',
+	);
+	const turn = supervisor.prompt(chosen.id, id, 'run');
+	await nanocoderAsks;
+	const controller = new AbortController();
+	const withdrawn = supervisor.askDesktop(
+		chosen.id,
+		id,
+		SITE_QUESTION,
+		controller.signal,
+	);
+	controller.abort();
+	t.is(await withdrawn, null);
+	const pending = supervisor.askDesktop(chosen.id, id, SITE_QUESTION);
+	await supervisor.cancel(chosen.id, id);
+	t.is(await pending, null);
+	await turn;
+	t.is(supervisor.sessionMode(chosen.id, id), 'normal');
+	t.is(supervisor.sessionMode(chosen.id, 'other'), undefined);
+});

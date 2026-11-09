@@ -550,18 +550,18 @@ test('title metadata refuses cross-project targets and non-allowlisted fields (C
 	t.false(store.threads.getTitleManuallySet(owner.id, saved.id));
 });
 
-test('CHAT-08 current schema independently pins version five, migration ids and the exact metadata tables', async t => {
+test('CHAT-08 current schema independently pins version six, migration ids and the exact metadata tables', async t => {
 	const f = fixture(t);
 	(await f.open()).close();
 	const db = f.driver.open(f.filename);
 	t.teardown(() => db.close());
-	t.is(db.prepare('PRAGMA user_version').get()?.user_version, 5);
+	t.is(db.prepare('PRAGMA user_version').get()?.user_version, 6);
 	t.deepEqual(
 		db
 			.prepare('SELECT version FROM schema_migration ORDER BY version')
 			.all()
 			.map(row => row.version),
-		[1, 2, 3, 4, 5],
+		[1, 2, 3, 4, 5, 6],
 	);
 	t.deepEqual(
 		db
@@ -844,6 +844,8 @@ test('settings and bounded UI state persist across close and reopen', async t =>
 		theme: 'dark',
 		browserProfiles: [],
 		browserAssignments: {},
+		nanocoderBrowserEnabled: false,
+		browserAllowedSites: [],
 	});
 	const settings = store.updateSettings({
 		publicBrowsingEnabled: true,
@@ -1571,4 +1573,73 @@ test('BRW-05 a version four database keeps its settings when the setting table l
 		[profile],
 	);
 	t.true(readdirSync(f.root).some(name => name.includes('.backup')));
+});
+
+test('BRW-18 a version five database keeps its settings when the setting table learns the Nanocoder browser key, which starts off', async t => {
+	const f = fixture(t);
+	const database = f.driver.open(f.filename);
+	try {
+		for (const migration of migrations.slice(0, 5))
+			transaction(database, () => {
+				database.exec(migration.sql);
+				database
+					.prepare('INSERT INTO schema_migration VALUES (?, ?)')
+					.run(migration.version, '2026-11-01T12:00:00.000Z');
+				database.exec(`PRAGMA user_version = ${migration.version}`);
+			});
+		database
+			.prepare('INSERT INTO setting VALUES (?, ?)')
+			.run('publicBrowsingEnabled', 'true');
+	} finally {
+		database.close();
+	}
+	const store = await f.open();
+	t.like(store.getSettings(), {
+		publicBrowsingEnabled: true,
+		nanocoderBrowserEnabled: false,
+	});
+	t.true(
+		store.updateSettings({nanocoderBrowserEnabled: true})
+			.nanocoderBrowserEnabled,
+	);
+	store.close();
+	t.true((await f.open()).getSettings().nanocoderBrowserEnabled);
+});
+
+test('BRW-18 the Nanocoder browser setting accepts only a boolean', async t => {
+	const store = await fixture(t).open();
+	for (const value of ['yes', 1, null])
+		t.throws(() =>
+			store.updateSettings({nanocoderBrowserEnabled: value} as never),
+		);
+	t.false(store.getSettings().nanocoderBrowserEnabled);
+});
+
+test('DEC-50 the always-allowed sites are a bounded list of distinct web origins, kept across reopen', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	t.deepEqual(store.getSettings().browserAllowedSites, []);
+	store.updateSettings({
+		browserAllowedSites: [
+			'https://docs.example.com',
+			'http://intranet.test:8080',
+		],
+	});
+	for (const bad of [
+		['https://docs.example.com/path'],
+		['ftp://example.com'],
+		['https://a.example', 'https://a.example'],
+		['not a url'],
+		Array.from({length: 201}, (_, i) => `https://s${i}.example`),
+	])
+		t.throws(
+			() => store.updateSettings({browserAllowedSites: bad}),
+			undefined,
+			JSON.stringify(bad).slice(0, 60),
+		);
+	store.close();
+	t.deepEqual((await f.open()).getSettings().browserAllowedSites, [
+		'https://docs.example.com',
+		'http://intranet.test:8080',
+	]);
 });

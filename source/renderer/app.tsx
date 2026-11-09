@@ -856,6 +856,8 @@ export function App() {
 												}
 												snapshot={browser.snapshot}
 												publicSites={browser.publicSites}
+												nanocoderBrowser={browser.nanocoderBrowser}
+												sites={browser.snapshot?.agent.sites ?? []}
 												profiles={browser.profiles}
 												loading={browser.loading}
 												pending={browser.pending}
@@ -865,6 +867,10 @@ export function App() {
 												onNavigate={browser.navigate}
 												onBounds={browser.setBounds}
 												onPublicSites={browser.setPublicSites}
+												onNanocoderBrowser={browser.setNanocoderBrowser}
+												onAgentPaused={browser.setAgentPaused}
+												onInterruptAgent={browser.interruptAgent}
+												onForgetSite={browser.forgetSite}
 												onAllowAndOpen={browser.allowAndOpen}
 												onProfile={browser.setProfile}
 												onCreateProfile={browser.createProfile}

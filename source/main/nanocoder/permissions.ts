@@ -25,7 +25,9 @@ export class PermissionBroker {
 	request(
 		params: RequestPermissionRequest,
 		question = false,
+		signal?: AbortSignal,
 	): Promise<RequestPermissionResponse> {
+		if (signal?.aborted) return Promise.resolve(CANCELLED);
 		const id = this.nextId();
 		const source = permissionSource(params.toolCall);
 		const info: PermissionRequestInfo = {
@@ -45,6 +47,16 @@ export class PermissionBroker {
 				resolve,
 			});
 			this.emit({type: 'permission', request: info});
+			// A desktop question the user interrupted is withdrawn, never answered for them.
+			signal?.addEventListener(
+				'abort',
+				() => {
+					if (!this.pending.delete(id)) return;
+					resolve(CANCELLED);
+					this.emit({type: 'permission-closed', id});
+				},
+				{once: true},
+			);
 		});
 	}
 

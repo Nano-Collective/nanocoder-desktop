@@ -67,10 +67,20 @@ export function requiresTrustPreflight(version: string | null): boolean {
 // The first release that honours client mcpServers per session (nanocoder#1914).
 export const MCP_SERVERS_MIN_VERSION = '1.32.0';
 
-export function supportsClientMcpServers(version: string | null): boolean {
+function atLeast(version: string | null, minimum: string): boolean {
 	const parsed = version === null ? undefined : release(version);
 	return (
-		parsed !== undefined &&
-		compare(parsed, MCP_SERVERS_MIN_VERSION.split('.').map(Number)) >= 0
+		parsed !== undefined && compare(parsed, minimum.split('.').map(Number)) >= 0
 	);
+}
+
+export function supportsClientMcpServers(version: string | null): boolean {
+	return atLeast(version, MCP_SERVERS_MIN_VERSION);
+}
+
+// The first release that reads and echoes `nanocoder/disabledTools` per session (nanocoder#1915).
+export const DISABLED_TOOLS_MIN_VERSION = '1.32.0';
+
+export function supportsDisabledTools(version: string | null): boolean {
+	return atLeast(version, DISABLED_TOOLS_MIN_VERSION);
 }

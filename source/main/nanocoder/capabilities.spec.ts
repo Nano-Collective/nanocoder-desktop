@@ -80,7 +80,10 @@ test('each disabled feature carries a reason, never a privileged fallback', t =>
 		timeline: false,
 	});
 	t.is(gates.versionPolicy.status, 'untested');
-	for (const gate of Object.values(gates.features)) {
+	// The browser switch depends on the version alone, which 1.32.0 meets.
+	const {nanocoderBrowserOff, ...rest} = gates.features;
+	t.true(nanocoderBrowserOff.enabled);
+	for (const gate of Object.values(rest)) {
 		t.false(gate.enabled);
 		t.truthy(gate.reason);
 	}
@@ -188,4 +191,22 @@ test('agent browser control is on only with HTTP MCP servers, Nanocoder 1.32.0 o
 		capabilityGates('project', agent('1.32.0', true), probes).features
 			.browserControl.enabled,
 	);
+});
+
+test("BRW-18 the switch for Nanocoder's own browser is gated on 1.32.0, with the reason (DEC-48)", t => {
+	const gate = (version: string) =>
+		capabilityGates(
+			'project',
+			describeAgent('/p', {
+				protocolVersion: 1,
+				agentInfo: {name: 'nanocoder', version},
+			}),
+			{rename: false, timeline: false},
+		).features.nanocoderBrowserOff;
+	t.deepEqual(gate('1.32.0'), {enabled: true, reason: null});
+	t.deepEqual(gate('1.31.0'), {
+		enabled: false,
+		reason:
+			"Nanocoder 1.31.0 cannot turn its own browser tool off for a session; that needs 1.32.0. Its browser stays on and does not follow the desktop's browser settings.",
+	});
 });

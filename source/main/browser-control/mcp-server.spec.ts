@@ -45,15 +45,19 @@ function send(
 
 interface Harness {
 	server: BrowserMcpServer;
-	calls: Array<{projectId: string; args: Record<string, unknown>}>;
+	calls: Array<{
+		projectId: string;
+		args: Record<string, unknown>;
+		sessionId?: string | null;
+	}>;
 }
 
 const statusTool = (calls: Harness['calls']): BrowserTool => ({
 	name: 'desktop_browser_status',
 	description: 'Test status tool',
 	readOnly: true,
-	call: (projectId, args) => {
-		calls.push({projectId, args});
+	call: ({projectId, sessionId}, args) => {
+		calls.push({projectId, args, sessionId});
 		return {text: `status for ${projectId}`};
 	},
 });
@@ -168,7 +172,9 @@ test.serial(
 		t.is((await post(leased.url, leased.auth, body)).status, 200);
 		leased.release();
 		t.is((await post(leased.url, leased.auth, body)).status, 401);
-		t.deepEqual(harness.calls, [{projectId: 'project-a', args: {}}]);
+		t.deepEqual(harness.calls, [
+			{projectId: 'project-a', args: {}, sessionId: null},
+		]);
 	},
 );
 
@@ -413,7 +419,9 @@ test.serial(
 			).body,
 		);
 		t.false(absent.result.isError);
-		t.deepEqual(harness.calls, [{projectId: 'project-a', args: {}}]);
+		t.deepEqual(harness.calls, [
+			{projectId: 'project-a', args: {}, sessionId: null},
+		]);
 	},
 );
 
@@ -619,5 +627,24 @@ test.serial(
 			],
 			isError: false,
 		});
+	},
+);
+
+test.serial(
+	'a call carries the session its secret was bound to, and the first binding holds',
+	async t => {
+		const harness = await started();
+		t.teardown(() => harness.server.close());
+		const leased = lease(harness);
+		leased.bind('session-1');
+		leased.bind('session-2');
+		await post(
+			leased.url,
+			leased.auth,
+			rpc('tools/call', {name: 'desktop_browser_status', arguments: {}}),
+		);
+		t.deepEqual(harness.calls, [
+			{projectId: 'project-a', args: {}, sessionId: 'session-1'},
+		]);
 	},
 );

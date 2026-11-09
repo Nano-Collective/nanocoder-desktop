@@ -12,6 +12,8 @@ export interface BrowserPanelProps {
 	projectName: string;
 	snapshot: BrowserSnapshot | null;
 	publicSites: boolean;
+	nanocoderBrowser: boolean;
+	sites: string[];
 	profiles: BrowserProfileList | null;
 	loading: boolean;
 	pending: boolean;
@@ -21,6 +23,10 @@ export interface BrowserPanelProps {
 	onNavigate(action: BrowserNavigation): void;
 	onBounds(bounds: BrowserBounds | null): void;
 	onPublicSites(enabled: boolean): void;
+	onNanocoderBrowser(enabled: boolean): void;
+	onAgentPaused(paused: boolean): void;
+	onInterruptAgent(): void;
+	onForgetSite(origin: string): void;
 	onAllowAndOpen(url: string): void;
 	onProfile(profile: string): void;
 	onCreateProfile(name: string): Promise<boolean>;
@@ -30,6 +36,13 @@ export interface BrowserPanelProps {
 	attachReason: string | null;
 	onSendToChat(url: string): void;
 }
+
+const ACTIVITY_WORDS = {
+	running: 'running',
+	done: 'done',
+	refused: 'refused',
+	interrupted: 'stopped by you',
+} as const;
 
 const SECURITY = {
 	local: {glyph: '●', word: 'local', tone: 'ok'},
@@ -112,6 +125,8 @@ export function BrowserPanel({
 	projectName,
 	snapshot,
 	publicSites,
+	nanocoderBrowser,
+	sites,
 	profiles,
 	loading,
 	pending,
@@ -121,6 +136,10 @@ export function BrowserPanel({
 	onNavigate,
 	onBounds,
 	onPublicSites,
+	onNanocoderBrowser,
+	onAgentPaused,
+	onInterruptAgent,
+	onForgetSite,
 	onAllowAndOpen,
 	onProfile,
 	onCreateProfile,
@@ -130,6 +149,7 @@ export function BrowserPanel({
 	attachReason,
 	onSendToChat,
 }: BrowserPanelProps): React.ReactElement {
+	const nanocoderNote = React.useId();
 	const viewport = React.useRef<HTMLDivElement>(null);
 	const address = React.useRef<HTMLInputElement>(null);
 	const [draft, setDraft] = React.useState<string | null>(null);
@@ -233,7 +253,23 @@ export function BrowserPanel({
 					/>{' '}
 					allow public sites
 				</label>
+				<label className="browser-public">
+					<input
+						type="checkbox"
+						checked={nanocoderBrowser}
+						aria-describedby={nanocoderBrowser ? nanocoderNote : undefined}
+						onChange={event => onNanocoderBrowser(event.target.checked)}
+					/>{' '}
+					nanocoder's own browser
+				</label>
 			</div>
+			{nanocoderBrowser && (
+				<p id={nanocoderNote} className="browser-notice">
+					nanocoder's own browser is on. it does not follow these settings, can
+					reach public sites, and asks with nanocoder's own approvals. the
+					change applies to chats started or reopened after it.
+				</p>
+			)}
 			<div className="browser-profile">
 				<label>
 					profile{' '}
@@ -332,6 +368,63 @@ export function BrowserPanel({
 					</div>
 				)}
 			</details>
+			{snapshot && (
+				<section className="browser-agent" aria-label="agent in the browser">
+					<div className="browser-manage-row">
+						<span role="status">
+							{snapshot.agent.paused
+								? 'agent control paused'
+								: snapshot.agent.busy
+									? 'agent is acting…'
+									: 'agent control on'}
+						</span>
+						{snapshot.agent.busy && !snapshot.agent.paused && (
+							<Button onClick={onInterruptAgent}>stop agent action</Button>
+						)}
+						<Button onClick={() => onAgentPaused(!snapshot.agent.paused)}>
+							{snapshot.agent.paused
+								? 'let the agent continue'
+								: 'take control'}
+						</Button>
+					</div>
+					{snapshot.agent.activity.length > 0 && (
+						<details className="browser-manage">
+							<summary>
+								agent activity ({snapshot.agent.activity.length})
+							</summary>
+							<ol className="browser-downloads" aria-label="agent activity">
+								{snapshot.agent.activity.map(entry => (
+									<li key={entry.id}>
+										<span className="browser-download-name">{entry.text}</span>{' '}
+										<span>· {ACTIVITY_WORDS[entry.outcome]}</span>
+									</li>
+								))}
+							</ol>
+						</details>
+					)}
+					{sites.length > 0 && (
+						<details className="browser-manage">
+							<summary>always allowed sites ({sites.length})</summary>
+							<ul
+								className="browser-downloads"
+								aria-label="always allowed sites"
+							>
+								{sites.map(origin => (
+									<li key={origin} className="browser-manage-row">
+										<span className="browser-download-name">{origin}</span>
+										<Button
+											onClick={() => onForgetSite(origin)}
+											aria-label={`forget ${origin}`}
+										>
+											forget
+										</Button>
+									</li>
+								))}
+							</ul>
+						</details>
+					)}
+				</section>
+			)}
 			{snapshot && snapshot.downloads.length > 0 && (
 				<ul className="browser-downloads" aria-label="downloads">
 					{snapshot.downloads.map(download => (

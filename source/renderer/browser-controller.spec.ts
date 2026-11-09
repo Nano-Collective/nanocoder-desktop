@@ -30,6 +30,7 @@ function snapshot(
 		blocked: null,
 		downloads: [],
 		reason: null,
+		agent: {paused: false, busy: false, activity: [], sites: []},
 		...extra,
 	};
 }
@@ -55,12 +56,18 @@ function fixture(
 		navigate?: BrowserApi['navigate'];
 		setProfile?: BrowserApi['setProfile'];
 		publicSites?: boolean;
+		nanocoderBrowser?: boolean;
 	} = {},
 ) {
 	const calls: string[] = [];
 	const boundsSent: Array<BrowserBounds | null> = [];
-	const settings = {publicBrowsingEnabled: overrides.publicSites ?? false};
+	const settings = {
+		publicBrowsingEnabled: overrides.publicSites ?? false,
+		nanocoderBrowserEnabled: overrides.nanocoderBrowser ?? false,
+	};
 	const list: BrowserProfileList = {profiles: [], current: 'project'};
+	const sites = ['https://docs.example.com', 'https://api.example.com'];
+	let agentSequence = 10;
 	let listener!: (event: BrowserEvent) => void;
 	let unsubscribed = 0;
 	const bridge = {
@@ -109,6 +116,32 @@ function fixture(
 			openExternal: async () => {
 				calls.push('external');
 				return ok({opened: true});
+			},
+			setAgentPaused: async ({projectId, paused}) => {
+				calls.push(`paused ${paused}`);
+				return ok(
+					snapshot(projectId, ++agentSequence, {
+						agent: {paused, busy: false, activity: [], sites: []},
+					}),
+				);
+			},
+			interruptAgent: async ({projectId}) => {
+				calls.push('interrupt');
+				return ok(snapshot(projectId, ++agentSequence));
+			},
+			forgetSite: async ({projectId, origin}) => {
+				calls.push(`forget ${origin}`);
+				sites.splice(sites.indexOf(origin), 1);
+				return ok(
+					snapshot(projectId, ++agentSequence, {
+						agent: {
+							paused: false,
+							busy: false,
+							activity: [],
+							sites: [...sites],
+						},
+					}),
+				);
 			},
 			onEvent: next => {
 				listener = next;
@@ -307,4 +340,50 @@ test('BRW-05 a refused profile change shows the reason and keeps the previous ch
 	);
 	t.is(f.controller.getState().error, 'That browser profile does not exist');
 	t.is(f.controller.getState().profiles?.current, 'project');
+});
+
+test('BRW-18 the Nanocoder browser setting is read with the project and saved on its own', async t => {
+	const f = fixture({nanocoderBrowser: true});
+	await f.controller.select('one');
+	t.true(f.controller.getState().nanocoderBrowser);
+	t.true(await f.controller.setNanocoderBrowser(false));
+	t.deepEqual(f.calls, ['settings {"nanocoderBrowserEnabled":false}']);
+	t.false(f.controller.getState().nanocoderBrowser);
+	t.false(f.controller.getState().publicSites);
+});
+
+test('BRW-18 the Nanocoder browser starts off until settings say otherwise', async t => {
+	const f = fixture();
+	t.false(f.controller.getState().nanocoderBrowser);
+	await f.controller.select('one');
+	t.false(f.controller.getState().nanocoderBrowser);
+});
+
+test('BRW-14 taking control and letting the agent continue go through main and show its answer', async t => {
+	const f = fixture();
+	await f.controller.select('one');
+	t.true(await f.controller.setAgentPaused(true));
+	t.true(f.controller.getState().snapshot?.agent.paused);
+	t.true(await f.controller.setAgentPaused(false));
+	t.false(f.controller.getState().snapshot?.agent.paused);
+	t.true(await f.controller.interruptAgent());
+	t.deepEqual(f.calls, ['paused true', 'paused false', 'interrupt']);
+});
+
+test('DEC-50 forgetting an always-allowed site goes through main and shows its answer', async t => {
+	const f = fixture();
+	await f.controller.select('one');
+	t.true(await f.controller.forgetSite('https://docs.example.com'));
+	t.deepEqual(f.controller.getState().snapshot?.agent.sites, [
+		'https://api.example.com',
+	]);
+	t.deepEqual(f.calls, ['forget https://docs.example.com']);
+});
+
+test('BRW-14 agent controls do nothing without a project', async t => {
+	const f = fixture();
+	t.false(await f.controller.setAgentPaused(true));
+	t.false(await f.controller.interruptAgent());
+	t.false(await f.controller.forgetSite('https://docs.example.com'));
+	t.deepEqual(f.calls, []);
 });

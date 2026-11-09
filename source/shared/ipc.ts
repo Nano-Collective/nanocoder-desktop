@@ -255,13 +255,20 @@ export interface DesktopSettings {
 	// Main-only: profiles are created and assigned through the browser calls.
 	browserProfiles: Array<{id: string; name: string}>;
 	browserAssignments: Record<string, string>;
+	// Lets Nanocoder's own browser tool run in desktop sessions (BRW-18).
+	nanocoderBrowserEnabled: boolean;
+	// Main-only: sites are added only by the user's answer to the agent's question (DEC-50).
+	browserAllowedSites: string[];
 }
 
 // Runtime paths are chosen in main, not supplied by a renderer.
 export type SettingsPatch = Partial<
 	Omit<
 		DesktopSettings,
-		'nanocoderOverridePath' | 'browserProfiles' | 'browserAssignments'
+		| 'nanocoderOverridePath'
+		| 'browserProfiles'
+		| 'browserAssignments'
+		| 'browserAllowedSites'
 	>
 >;
 
@@ -330,6 +337,7 @@ export type FeatureId =
 	| 'timeline'
 	| 'agentChanges'
 	| 'browserControl'
+	| 'nanocoderBrowserOff'
 	| 'subagentTree';
 
 export type VersionPolicyResult =

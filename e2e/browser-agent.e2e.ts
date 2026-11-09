@@ -85,6 +85,11 @@ test.beforeEach(async () => {
 	project = path.join(work, 'project');
 	mkdirSync(project);
 	writeFileSync(path.join(project, '.fake-mcp-http'), '');
+	// Approval tests need a turn that stays open; the rest finish without asking.
+	writeFileSync(
+		path.join(project, '.fake-nanocoder'),
+		test.info().tags.includes('@held-turn') ? 'wait-for-cancel' : 'files',
+	);
 	const fakeCli = path.join(work, 'nanocoder/dist/cli.js');
 	mkdirSync(path.dirname(fakeCli), {recursive: true});
 	writeFileSync(
@@ -102,7 +107,12 @@ test.beforeEach(async () => {
 	);
 	app = await electron.launch({
 		cwd: root,
-		args: [root, `--user-data-dir=${path.join(work, 'profile')}`],
+		args: [
+			root,
+			`--user-data-dir=${path.join(work, 'profile')}`,
+			// A public-looking host that reaches the local fixture, so no test touches the internet.
+			'--host-resolver-rules=MAP public.test 127.0.0.1',
+		],
 		env: {
 			...qaEnvironment(process.env, {
 				cliPath: fakeCli,
@@ -159,10 +169,14 @@ async function agent(
 	name: string,
 	args: Record<string, unknown> = {},
 ): Promise<{text: string; isError: boolean; result: ToolResult}> {
-	const [entry] = JSON.parse(readFileSync(record(), 'utf8')) as Array<{
-		url: string;
-		headers: Array<{name: string; value: string}>;
-	}>;
+	const {
+		mcpServers: [entry],
+	} = JSON.parse(readFileSync(record(), 'utf8')) as {
+		mcpServers: Array<{
+			url: string;
+			headers: Array<{name: string; value: string}>;
+		}>;
+	};
 	const response = await fetch(entry.url, {
 		method: 'POST',
 		headers: {
@@ -325,6 +339,7 @@ test('BRW-13 BRW-16 submits, downloads, password fields, covered targets, data r
 		selector: 'form button',
 	});
 	expect(submit.isError).toBe(true);
+	expect(submit.text).toContain('did not approve');
 	expect(submit.text).toContain('it would submit a form');
 	const download = await agent('desktop_browser_click', {selector: '#dl'});
 	expect(download.text).toContain('it would start a download');
@@ -341,13 +356,13 @@ test('BRW-13 BRW-16 submits, downloads, password fields, covered targets, data r
 	expect(ping.isError).toBe(false);
 	expect(ping.text).toContain('tried to send data');
 	const outside = await agent('desktop_browser_click', {selector: '#out'});
-	expect(outside.text).toContain('tried to leave local addresses');
+	expect(outside.text).toContain('an address the agent may not use');
 	await expect.poll(browserUrl).toBe(`${origin}/`);
 	const open = await agent('desktop_browser_open', {
 		url: 'https://example.com/',
 	});
 	expect(open.isError).toBe(true);
-	expect(open.text).toContain('limited to local addresses');
+	expect(open.text).toContain('Public sites are off in the desktop');
 
 	expect(received.filter(line => !line.startsWith('GET '))).toEqual([]);
 	expect(received).not.toContain('GET /file.txt');
@@ -377,4 +392,157 @@ test('BRW-17 the agent cannot act while the browser is off screen, and a stale r
 	const hidden = await agent('desktop_browser_snapshot');
 	expect(hidden.isError).toBe(true);
 	expect(hidden.text).toContain('not on screen');
+});
+
+const recordedMeta = () =>
+	(JSON.parse(readFileSync(record(), 'utf8')) as {meta: unknown}).meta;
+
+test("BRW-18 Nanocoder's own browser is off by default, and the browser tab turns it on for the next chat", async () => {
+	expect(recordedMeta()).toEqual({'nanocoder/disabledTools': ['browser']});
+	const toggle = page.getByRole('checkbox', {name: "nanocoder's own browser"});
+	await expect(toggle).not.toBeChecked();
+	await toggle.click();
+	await expect(toggle).toBeChecked();
+	const note = page.getByText("nanocoder's own browser is on");
+	await expect(note).toBeVisible();
+	await expect(toggle).toHaveAttribute('aria-describedby', /.+/);
+	expect(
+		await page.evaluate(async () => {
+			const desktop = (window as unknown as {desktop: DesktopApi}).desktop;
+			const settings = await desktop.getSettings({});
+			return settings.ok ? settings.value.nanocoderBrowserEnabled : null;
+		}),
+	).toBe(true);
+
+	rmSync(record());
+	await page
+		.getByRole('region', {name: 'project threads'})
+		.getByRole('button', {name: 'new thread', exact: true})
+		.click();
+	const dialog = page.getByRole('dialog', {name: 'new thread', exact: true});
+	await dialog
+		.getByRole('button', {name: 'keep as new thread draft', exact: true})
+		.click();
+	await expect(dialog).toBeHidden();
+	const composer = page.getByRole('textbox', {name: 'message', exact: true});
+	await composer.fill('second chat');
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	await expect.poll(() => existsSync(record())).toBe(true);
+	expect(recordedMeta()).toBeNull();
+
+	await toggle.click();
+	await expect(toggle).not.toBeChecked();
+	await expect(note).toHaveCount(0);
+});
+
+const card = (text: string) =>
+	page.getByRole('alertdialog').filter({hasText: text});
+
+test('BRW-13 a sensitive click waits for the user in the chat, and only an approved one sends the form', {
+	tag: '@held-turn',
+}, async () => {
+	await openAsAgent(`${origin}/`);
+	const refused = agent('desktop_browser_click', {selector: 'form button'});
+	const question = card('it would submit a form');
+	await expect(question).toBeVisible();
+	await expect(question).toContainText('The agent wants to click');
+	await question.getByRole('button', {name: 'reject', exact: true}).click();
+	expect((await refused).text).toContain('did not approve');
+	expect(received).not.toContain('POST /save');
+
+	const approved = agent('desktop_browser_click', {selector: 'form button'});
+	await question.getByRole('button', {name: 'allow once', exact: true}).click();
+	expect((await approved).isError).toBe(false);
+	await expect.poll(() => received.includes('POST /save')).toBe(true);
+});
+
+test('BRW-13 data the page sends during an agent click is asked about, and typing a password waits for approval', {
+	tag: '@held-turn',
+}, async () => {
+	await openAsAgent(`${origin}/`);
+	const ping = agent('desktop_browser_click', {selector: '#ping'});
+	const send = card('The page wants to send data (POST to');
+	await expect(send).toBeVisible();
+	await send.getByRole('button', {name: 'allow once', exact: true}).click();
+	expect((await ping).isError).toBe(false);
+	await expect.poll(() => received.includes('POST /ping')).toBe(true);
+
+	const typing = agent('desktop_browser_type', {
+		selector: '#pw',
+		text: 'hunter2',
+	});
+	const password = card('it is a password field');
+	await expect(password).toBeVisible();
+	await expect(password).not.toContainText('hunter2');
+	await password.getByRole('button', {name: 'allow once', exact: true}).click();
+	expect((await typing).isError).toBe(false);
+	expect(await inPage("document.getElementById('pw').value")).toBe('hunter2');
+});
+
+test('DEC-50 BRW-16 a public site is asked about once, always-allowed sites are listed and forgotten, and a block holds for the chat', {
+	tag: '@held-turn',
+}, async () => {
+	const port = new URL(origin).port;
+	const site = `http://public.test:${port}`;
+	await openAsAgent(`${origin}/`);
+	const refused = await agent('desktop_browser_open', {url: `${site}/`});
+	expect(refused.text).toContain('Public sites are off in the desktop');
+	await page.getByRole('checkbox', {name: 'allow public sites'}).click();
+	await expect(
+		page.getByRole('checkbox', {name: 'allow public sites'}),
+	).toBeChecked();
+
+	const opening = agent('desktop_browser_open', {url: `${site}/`});
+	const question = card(`Let the agent use ${site} in the in-app browser?`);
+	await expect(question).toBeVisible();
+	await question
+		.getByRole('button', {name: 'always allow', exact: true})
+		.click();
+	expect((await opening).text).toContain(`URL: ${site}/`);
+	const read = await agent('desktop_browser_snapshot');
+	expect(read.isError).toBe(false);
+
+	await page.getByText('always allowed sites (1)').click();
+	await page.getByRole('button', {name: `forget ${site}`}).click();
+	await expect(page.getByText('always allowed sites')).toHaveCount(0);
+
+	const again = agent('desktop_browser_snapshot');
+	await question.getByRole('button', {name: 'block', exact: true}).click();
+	expect((await again).text).toContain(
+		`The user blocked ${site} for this chat`,
+	);
+	const blocked = await agent('desktop_browser_snapshot');
+	expect(blocked.text).toContain('blocked');
+	await expect(question).toHaveCount(0);
+});
+
+test('BRW-14 the user can stop an action, take control and give it back, and each step is listed', {
+	tag: '@held-turn',
+}, async () => {
+	await openAsAgent(`${origin}/`);
+	const waiting = agent('desktop_browser_click', {selector: 'form button'});
+	await expect(card('it would submit a form')).toBeVisible();
+	await page.getByRole('button', {name: 'stop agent action'}).click();
+	expect((await waiting).text).toContain('interrupted');
+	await expect(card('it would submit a form')).toHaveCount(0);
+
+	const reading = agent('desktop_browser_wait', {
+		for: 'text',
+		value: 'never appears',
+		timeoutMs: 20_000,
+	});
+	await expect(page.getByText('agent is acting…')).toBeVisible();
+	await page.getByRole('button', {name: 'take control'}).click();
+	expect((await reading).text).toContain('took control');
+	expect((await agent('desktop_browser_snapshot')).text).toContain(
+		'paused agent control',
+	);
+	await expect(page.getByText('agent control paused')).toBeVisible();
+	await page.getByRole('button', {name: 'let the agent continue'}).click();
+	expect((await agent('desktop_browser_snapshot')).isError).toBe(false);
+
+	await page.getByText(/^agent activity \(\d+\)$/).click();
+	const activity = page.getByRole('list', {name: 'agent activity'});
+	await expect(activity).toContainText('stopped by you');
+	await expect(activity).toContainText('snapshot · done');
 });

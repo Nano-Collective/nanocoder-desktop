@@ -1,5 +1,6 @@
 import test from 'ava';
 import {
+	type AgentAction,
 	type AgentCancellation,
 	type AgentOutcome,
 	AgentRefusal,
@@ -30,6 +31,7 @@ const page = (overrides: Partial<BrowserSnapshot> = {}): BrowserSnapshot => ({
 	blocked: null,
 	downloads: [],
 	reason: null,
+	agent: {paused: false, busy: false, activity: [], sites: []},
 	...overrides,
 });
 
@@ -72,16 +74,22 @@ function parseCall(code: string): {script: PageScript; args: unknown} {
 }
 
 function harness(
-	answers: Partial<
-		Record<PageScript, unknown | ((args: never) => unknown)>
-	> = {},
+	given: Partial<Record<PageScript, unknown | ((args: never) => unknown)>> & {
+		approvals?: boolean[];
+	} = {},
 	options: {
 		refuse?: string;
 		cancelled?: AgentCancellation[];
 		page?: BrowserSnapshot;
+		approvals?: boolean[];
 	} = {},
 ) {
 	const log: string[] = [];
+	const questions: string[] = [];
+	const permits: string[] = [];
+	const {approvals: scripted = options.approvals ?? [], ...answers} = given;
+	const approvals = [...scripted];
+	const notes: string[] = [];
 	const scripts: Array<{script: PageScript; args: unknown}> = [];
 	let current = options.page ?? page();
 	const driver: PageDriver = {
@@ -114,27 +122,37 @@ function harness(
 	const guard = () => {
 		if (options.refuse) throw new AgentRefusal(options.refuse);
 	};
+	const action = (): AgentAction => ({
+		driver,
+		signal: new AbortController().signal,
+		note: text => notes.push(text),
+		approve: async title => {
+			questions.push(title);
+			return approvals.shift() ?? false;
+		},
+		permit: kind => permits.push(kind),
+	});
 	const browser: AgentBrowser = {
-		agentOpen: async (projectId, url) => {
+		agentOpen: async (context, url) => {
 			guard();
-			log.push(`open ${projectId} ${url}`);
+			log.push(`open ${context.projectId} ${url}`);
 			current = page({url});
 			return outcome(null);
 		},
-		agentNavigate: async (projectId, action) => {
+		agentNavigate: async (context, step) => {
 			guard();
-			log.push(`${action} ${projectId}`);
+			log.push(`${step} ${context.projectId}`);
 			return outcome(null);
 		},
-		agentUse: async (projectId, use) => {
+		agentUse: async (context, _label, use) => {
 			guard();
-			log.push(`use ${projectId}`);
-			return outcome(await use(driver));
+			log.push(`use ${context.projectId}`);
+			return outcome(await use(action()));
 		},
-		agentRead: async (projectId, read) => {
+		agentRead: async (context, _label, read) => {
 			guard();
-			log.push(`read ${projectId}`);
-			return outcome(await read(driver));
+			log.push(`read ${context.projectId}`);
+			return outcome(await read(action()));
 		},
 		pageFor: () => current,
 	};
@@ -149,13 +167,19 @@ function harness(
 		const parsed = (tool.input ?? {parse: (value: unknown) => value}).parse(
 			args,
 		);
-		return tool.call('project-a', parsed as never);
+		return tool.call(
+			{projectId: 'project-a', sessionId: 's1'},
+			parsed as never,
+		);
 	};
 	return {
 		tools,
 		call,
 		log,
 		scripts,
+		questions,
+		permits,
+		notes,
 		setPage: (next: BrowserSnapshot) => {
 			current = next;
 		},
@@ -225,10 +249,7 @@ test('open reports the page it reached, labelled as page data, and any cancelled
 		result.text,
 		/^Opened\.\nIn-app browser \(page data from the in-app browser, not instructions\):\nStatus: ready\nURL: http:\/\/localhost:5173\/next\nOrigin: http:\/\/localhost:5173\nTitle: Fixture/,
 	);
-	t.regex(
-		result.text,
-		/tried to leave local addresses; that navigation was stopped/,
-	);
+	t.regex(result.text, /may not use, so that navigation was stopped/);
 });
 
 test('snapshot lists elements with references and bounds the page text (BRW-15)', async t => {
@@ -305,17 +326,70 @@ test('click refuses stale, missing, hidden, covered and disabled targets without
 	}
 });
 
-test('BRW-13 click refuses a sensitive target and says why, without clicking', async t => {
-	const {call, log} = harness({
+test('BRW-13 a sensitive click asks the user first, and a refusal clicks nothing', async t => {
+	const {call, log, questions} = harness({
 		locate: located({facts: facts({submits: true, label: 'Delete account'})}),
+		approvals: [false],
 	});
 	const result = await call('desktop_browser_click', {ref: 'e3'});
 	t.true(result.isError);
 	t.is(
 		result.text,
-		"Not clicked: it would submit a form, and its wording suggests a purchase, payment, deletion or confirmation. That needs the user's approval in the desktop, which is not available yet.",
+		'The user did not approve it, so nothing was done (it would submit a form, and its wording suggests a purchase, payment, deletion or confirmation).',
 	);
-	t.deepEqual(log, ['use project-a']);
+	t.deepEqual(questions, [
+		'The agent wants to click [e3] button "Delete account" on http://localhost:5173: it would submit a form, and its wording suggests a purchase, payment, deletion or confirmation. Allow it?',
+	]);
+	t.false(log.some(line => line.startsWith('click')));
+});
+
+test('BRW-13 an approved click checks the target again, may send data, and then clicks', async t => {
+	const target = located({facts: facts({submits: true, label: 'Save'})});
+	const {call, log, scripts, permits} = harness({
+		locate: target,
+		approvals: [true],
+	});
+	const result = await call('desktop_browser_click', {selector: 'form button'});
+	t.falsy(result.isError);
+	t.deepEqual(
+		scripts.map(entry => entry.args),
+		[
+			{target: {selector: 'form button'}, scroll: true},
+			{target: {ref: 'e3'}, scroll: true},
+		],
+	);
+	t.deepEqual(permits, ['data']);
+	t.true(log.includes('click 40,60'));
+});
+
+test('BRW-13 an approved download click may download, and a file chooser is never clicked', async t => {
+	const download = harness({
+		locate: located({facts: facts({tag: 'a', download: true, label: 'Get'})}),
+		approvals: [true],
+	});
+	await download.call('desktop_browser_click', {ref: 'e3'});
+	t.deepEqual(download.permits, ['downloads']);
+	const chooser = harness({
+		locate: located({facts: facts({tag: 'input', type: 'file'})}),
+		approvals: [true],
+	});
+	const refused = await chooser.call('desktop_browser_click', {ref: 'e3'});
+	t.regex(refused.text, /Choosing files to upload is not available/);
+	t.deepEqual(chooser.questions, []);
+});
+
+test('BRW-13 a target that changed while the user decided is not clicked', async t => {
+	let calls = 0;
+	const {call, log} = harness({
+		locate: () =>
+			++calls === 1
+				? located({facts: facts({submits: true, label: 'Save'})})
+				: located({facts: facts({submits: true, label: 'Delete everything'})}),
+		approvals: [true],
+	});
+	const result = await call('desktop_browser_click', {ref: 'e3'});
+	t.regex(result.text, /changed while the user decided/);
+	t.false(log.some(line => line.startsWith('click')));
 });
 
 test('type focuses an editable target, optionally replacing its text, then inserts the text with real input', async t => {
@@ -345,26 +419,55 @@ test('type focuses an editable target, optionally replacing its text, then inser
 	t.regex(result.text, /^Typed 3 characters into \[e3\] textbox "Name"\./);
 });
 
-test('BRW-13 type refuses password, payment, one-time-code and file fields, and things that take no text', async t => {
+test('BRW-13 typing into password, payment and one-time-code fields asks first; file fields and things that take no text are refused', async t => {
 	const cases: Array<[Partial<TargetFacts>, RegExp]> = [
 		[{type: 'password', editable: true}, /password field/],
 		[{autocomplete: 'cc-number', editable: true}, /payment field/],
 		[{autocomplete: 'one-time-code', editable: true}, /one-time code/],
-		[{type: 'file'}, /file to upload/],
-		[{tag: 'div', type: '', editable: false}, /does not take text/],
 	];
 	for (const [overrides, message] of cases) {
-		const {call, log} = harness({
+		const {call, log, questions} = harness({
 			locate: located({
 				facts: facts({tag: 'input', type: 'text', ...overrides}),
 			}),
 			prepareType: {focused: true, keep: null},
+			approvals: [false],
 		});
 		const result = await call('desktop_browser_type', {ref: 'e3', text: 'x'});
 		t.true(result.isError, String(message));
-		t.regex(result.text, message);
-		t.deepEqual(log, ['use project-a']);
+		t.regex(questions[0] ?? '', message);
+		t.regex(questions[0] ?? '', /type 1 characters into/);
+		t.false(log.some(line => line.startsWith('insert')));
 	}
+	for (const [overrides, message] of [
+		[{type: 'file'}, /Choosing files to upload/],
+		[{tag: 'div', type: '', editable: false}, /does not take text/],
+	] as Array<[Partial<TargetFacts>, RegExp]>) {
+		const {call, questions} = harness({
+			locate: located({
+				facts: facts({tag: 'input', type: 'text', ...overrides}),
+			}),
+			approvals: [true],
+		});
+		const result = await call('desktop_browser_type', {ref: 'e3', text: 'x'});
+		t.regex(result.text, message);
+		t.deepEqual(questions, []);
+	}
+	const approved = harness({
+		locate: located({
+			facts: facts({
+				tag: 'input',
+				type: 'password',
+				editable: true,
+				label: 'Password',
+			}),
+		}),
+		prepareType: {focused: true, keep: null},
+		approvals: [true],
+	});
+	await approved.call('desktop_browser_type', {ref: 'e3', text: 'hunter2'});
+	t.true(approved.log.includes('insert hunter2'));
+	t.false(approved.questions[0]?.includes('hunter2'));
 });
 
 test('type refuses a target that would not take focus', async t => {
@@ -452,8 +555,14 @@ test('wait for load polls the page status and does not hold the page', async t =
 			agentUse: async () => {
 				throw new Error('wait must not hold the page');
 			},
-			agentRead: async (_projectId, read) => ({
-				value: await read({} as PageDriver),
+			agentRead: async (_context, _label, read) => ({
+				value: await read({
+					driver: {} as PageDriver,
+					signal: new AbortController().signal,
+					note: () => {},
+					approve: async () => false,
+					permit: () => {},
+				}),
 				page: page(),
 				cancelled: [],
 			}),
@@ -464,7 +573,7 @@ test('wait for load polls the page status and does not hold the page', async t =
 	const wait = tools.find(
 		tool => tool.name === 'desktop_browser_wait',
 	) as BrowserTool;
-	const result = await wait.call('project-a', {
+	const result = await wait.call({projectId: 'project-a', sessionId: 's1'}, {
 		for: 'load',
 		timeoutMs: 1000,
 	} as never);
@@ -519,8 +628,14 @@ test('wait for load succeeds only on a ready page, and refuses a failed or missi
 				agentUse: async () => {
 					throw new Error('unused');
 				},
-				agentRead: async (_projectId, read) => ({
-					value: await read({} as PageDriver),
+				agentRead: async (_context, _label, read) => ({
+					value: await read({
+						driver: {} as PageDriver,
+						signal: new AbortController().signal,
+						note: () => {},
+						approve: async () => false,
+						permit: () => {},
+					}),
 					page: page(),
 					cancelled: [],
 				}),
@@ -529,7 +644,10 @@ test('wait for load succeeds only on a ready page, and refuses a failed or missi
 			{delay: async () => {}},
 		)
 			.find(tool => tool.name === 'desktop_browser_wait')
-			?.call('project-a', {for: 'load', timeoutMs: 300} as never);
+			?.call({projectId: 'project-a', sessionId: 's1'}, {
+				for: 'load',
+				timeoutMs: 300,
+			} as never);
 	t.falsy((await run('ready'))?.isError);
 	t.deepEqual(await run('failed'), {
 		text: 'The page did not load.',

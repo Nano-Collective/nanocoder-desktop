@@ -8,6 +8,18 @@ try {
 let nextSession = 0;
 let provider = 'a';
 let model = 'old';
+// Like Nanocoder 1.32.0: the tools a session turned off, of those it knows, are echoed back.
+const disabledEcho = params => {
+	const requested = params?._meta?.['nanocoder/disabledTools'];
+	return {
+		_meta: {
+			'nanocoder/disabledTools': Array.isArray(requested)
+				? requested.filter(name => name === 'browser')
+				: [],
+		},
+	};
+};
+
 const send = body =>
 	process.stdout.write(`${JSON.stringify({jsonrpc: '2.0', ...body})}\n`);
 const config = () => [
@@ -90,6 +102,7 @@ createInterface({input: process.stdin}).on('line', line => {
 				sessionId: `session-${++nextSession}`,
 				modes: modes(),
 				configOptions: config(),
+				...disabledEcho(params),
 			},
 		});
 	} else if (
@@ -111,7 +124,14 @@ createInterface({input: process.stdin}).on('line', line => {
 			notifyConfig(params.sessionId);
 			model = 'old';
 		}
-		send({id, result: {modes: modes(), configOptions: config()}});
+		send({
+			id,
+			result: {
+				modes: modes(),
+				configOptions: config(),
+				...disabledEcho(params),
+			},
+		});
 	} else if (method === 'session/set_config_option') {
 		if (params.configId === 'provider') {
 			provider = params.value;
