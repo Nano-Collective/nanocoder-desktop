@@ -1,10 +1,11 @@
 import path from 'node:path';
 import {
-	checkPage,
-	isLoopbackPage,
-	pageOrigin,
-	pageSecurity,
-} from '@/main/browser/origin';
+	type AgentContext,
+	type AgentPolicy,
+	AgentRefusal,
+	localOnlyPolicy,
+} from '@/main/browser/agent-policy';
+import {checkPage, pageOrigin, pageSecurity} from '@/main/browser/origin';
 import {
 	type BrowserProfileRef,
 	browserPartition,
@@ -13,9 +14,11 @@ import {
 	profileKey,
 } from '@/main/browser/profile';
 import type {BrowserProfiles} from '@/main/browser/profiles';
+import type {SiteAccess} from '@/main/browser/site-access';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {
 	BROWSER_BOUNDS_LIMIT,
+	type BrowserAgentActivity,
 	type BrowserBlockReason,
 	type BrowserBounds,
 	type BrowserDownload,
@@ -61,8 +64,8 @@ export interface BrowserPage {
 
 export interface BrowserViewHooks {
 	allow(url: string): boolean;
-	// Whether a request from the page may go ahead; only agent actions restrict it.
-	request(method: string): boolean;
+	// Whether a request from the page may go ahead; only agent actions restrict it, and may ask.
+	request(method: string, url: string): boolean | Promise<boolean>;
 	navigated(page: BrowserPage): void;
 	loading(loading: boolean): void;
 	failed(): void;
@@ -95,8 +98,12 @@ export interface PageDriver {
 	}>;
 }
 
-// A refusal the agent may read: its message names the rule and never carries page detail.
-export class AgentRefusal extends Error {}
+export {AgentRefusal} from '@/main/browser/agent-policy';
+
+export interface BrowserViewLaunch {
+	partition: string;
+	preferences: ReturnType<typeof browserWebPreferences>;
+}
 
 export type AgentCancellation = 'navigation' | 'request' | 'download';
 
@@ -106,16 +113,30 @@ export interface AgentOutcome<T> {
 	cancelled: AgentCancellation[];
 }
 
-const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const LOCAL_ONLY =
-	'Agent control is limited to local addresses (localhost, 127.x.x.x and [::1]) until desktop approvals arrive.';
-
-export interface BrowserViewLaunch {
-	partition: string;
-	preferences: ReturnType<typeof browserWebPreferences>;
+// What a broker step gets while it acts: the page, the user's stop, and the desktop's questions.
+export interface AgentAction {
+	driver: PageDriver;
+	signal: AbortSignal;
+	note(text: string): void;
+	approve(title: string): Promise<boolean>;
+	// After the user approved it, this action may send data or download (BRW-13).
+	permit(kind: 'data' | 'downloads'): void;
 }
 
-type State = Omit<BrowserSnapshot, 'origin' | 'security'>;
+interface RunningAction {
+	context: AgentContext;
+	abort: AbortController;
+	hold: boolean;
+	data: boolean;
+	downloads: boolean;
+	activity: BrowserAgentActivity;
+}
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const ACTIVITY_LIMIT = 20;
+const ACTIVITY_TEXT = 200;
+
+type State = Omit<BrowserSnapshot, 'origin' | 'security' | 'agent'>;
 
 const closedState = (projectId: string, sequence: number): State => ({
 	projectId,
@@ -145,9 +166,12 @@ export class BrowserService {
 	private committed: {url: string; title: string} | null = null;
 	private bounds: BrowserBounds | null | undefined;
 	private state: State = closedState('', 0);
-	private agentHolds = 0;
 	private agentQueue: Promise<unknown> = Promise.resolve();
 	private readonly cancelled = new Set<AgentCancellation>();
+	private action: RunningAction | null = null;
+	private paused = false;
+	private activity: BrowserAgentActivity[] = [];
+	private activityCount = 0;
 
 	constructor(
 		private readonly options: {
@@ -166,8 +190,14 @@ export class BrowserService {
 				hooks: BrowserViewHooks,
 			): BrowserViewHandle;
 			delay?: (ms: number) => Promise<void>;
+			policy?: AgentPolicy;
+			sites?: SiteAccess;
 		},
 	) {}
+
+	private get policy(): AgentPolicy {
+		return this.options.policy ?? localOnlyPolicy;
+	}
 
 	activate(projectId: string | null): void {
 		this.activeId = projectId;
@@ -194,19 +224,11 @@ export class BrowserService {
 		return this.snapshot();
 	}
 
-	agentOpen(projectId: string, url: string): Promise<AgentOutcome<null>> {
-		return this.agent(projectId, false, async () => {
-			const verdict = checkPage(url, {publicSites: false});
-			if (!verdict.allowed)
-				throw new AgentRefusal(
-					verdict.reason === 'invalid'
-						? 'That is not a valid http or https address.'
-						: verdict.reason === 'scheme'
-							? 'Only http and https pages open in the in-app browser.'
-							: LOCAL_ONLY,
-				);
+	agentOpen(context: AgentContext, url: string): Promise<AgentOutcome<null>> {
+		return this.agent(context, `open ${url}`, false, true, async action => {
+			await this.policy.admit(context, url, action.signal);
 			try {
-				await this.open({projectId, url});
+				await this.open({projectId: context.projectId, url});
 			} catch (error) {
 				if (error instanceof IpcFailure) throw new AgentRefusal(error.message);
 				throw error;
@@ -216,70 +238,146 @@ export class BrowserService {
 	}
 
 	agentNavigate(
-		projectId: string,
+		context: AgentContext,
 		action: 'back' | 'reload',
 	): Promise<AgentOutcome<null>> {
-		return this.agent(projectId, true, async () => {
+		return this.agent(context, action, true, true, async running => {
 			const target =
 				action === 'back' ? this.view?.peek('back') : this.state.url;
 			if (!target) throw new AgentRefusal('There is no earlier page.');
-			if (!isLoopbackPage(target)) throw new AgentRefusal(LOCAL_ONLY);
-			this.navigate({projectId, action});
+			await this.policy.admit(context, target, running.signal);
+			this.navigate({projectId: context.projectId, action});
 			return null;
 		});
 	}
 
 	agentUse<T>(
-		projectId: string,
-		use: (driver: PageDriver) => Promise<T>,
+		context: AgentContext,
+		label: string,
+		use: (action: AgentAction) => Promise<T>,
 	): Promise<AgentOutcome<T>> {
-		return this.agent(projectId, true, async () => {
-			const driver = this.view?.driver;
-			if (!driver)
-				throw new AgentRefusal('The in-app browser cannot be driven.');
-			return use(driver);
-		});
+		return this.agent(context, label, true, true, use);
 	}
 
 	// Looking at the page holds nothing, so the user's own requests are never cancelled by it.
 	agentRead<T>(
-		projectId: string,
-		read: (driver: PageDriver) => Promise<T>,
+		context: AgentContext,
+		label: string,
+		read: (action: AgentAction) => Promise<T>,
 	): Promise<AgentOutcome<T>> {
-		return this.agent(
-			projectId,
-			true,
-			async () => {
-				const driver = this.view?.driver;
-				if (!driver)
-					throw new AgentRefusal('The in-app browser cannot be driven.');
-				return read(driver);
-			},
-			false,
-		);
+		return this.agent(context, label, true, false, read);
+	}
+
+	setAgentPaused({
+		projectId,
+		paused,
+	}: BrowserRequests['setAgentPaused']): BrowserSnapshot {
+		this.check(projectId);
+		this.paused = paused;
+		if (paused) this.action?.abort.abort();
+		this.publish();
+		return this.snapshot();
+	}
+
+	forgetSite({
+		projectId,
+		origin,
+	}: BrowserRequests['forgetSite']): BrowserSnapshot {
+		this.check(projectId);
+		this.options.sites?.forget(origin);
+		this.publish();
+		return this.snapshot();
+	}
+
+	interruptAgent({
+		projectId,
+	}: BrowserRequests['interruptAgent']): BrowserSnapshot {
+		this.check(projectId);
+		this.action?.abort.abort();
+		return this.snapshot();
 	}
 
 	private agent<T>(
-		projectId: string,
+		context: AgentContext,
+		label: string,
 		needsPage: boolean,
-		act: () => Promise<T>,
-		hold = true,
+		hold: boolean,
+		act: (action: AgentAction) => Promise<T>,
 	): Promise<AgentOutcome<T>> {
 		const run = this.agentQueue.then(async () => {
-			this.agentCheck(projectId, needsPage);
+			this.agentCheck(context.projectId, needsPage);
 			const generation = this.generation;
+			const running: RunningAction = {
+				context,
+				abort: new AbortController(),
+				hold,
+				data: false,
+				downloads: false,
+				activity: {
+					id: ++this.activityCount,
+					text: bounded(label, ACTIVITY_TEXT),
+					outcome: 'running',
+				},
+			};
 			this.cancelled.clear();
-			if (hold) this.agentHolds++;
+			this.action = running;
+			this.activity = [...this.activity, running.activity].slice(
+				-ACTIVITY_LIMIT,
+			);
+			this.publish();
+			const finish = (outcome: BrowserAgentActivity['outcome']) => {
+				running.activity.outcome = outcome;
+				if (this.action === running) this.action = null;
+				this.publish();
+			};
 			try {
-				const value = await act();
+				if (needsPage && this.state.url !== null)
+					await this.policy.admit(
+						context,
+						this.state.url,
+						running.abort.signal,
+					);
+				const driver = this.view?.driver;
+				if (needsPage && !driver)
+					throw new AgentRefusal('The in-app browser cannot be driven.');
+				const value = await act({
+					driver: driver as PageDriver,
+					signal: running.abort.signal,
+					note: text => {
+						running.activity.text = bounded(text, ACTIVITY_TEXT);
+						this.publish();
+					},
+					approve: title =>
+						this.policy.approve(context, title, running.abort.signal),
+					permit: kind => {
+						if (kind === 'data') running.data = true;
+						else running.downloads = true;
+					},
+				});
 				if (hold) await this.settle(generation);
+				if (running.abort.signal.aborted)
+					throw new AgentRefusal(
+						this.paused
+							? 'The user took control of the browser, so the action stopped.'
+							: 'The user interrupted the action.',
+					);
 				if (generation !== this.generation || this.closed)
 					throw new AgentRefusal(
 						'The in-app browser changed during the action, so its result is unknown.',
 					);
+				finish('done');
 				return {value, page: this.snapshot(), cancelled: [...this.cancelled]};
-			} finally {
-				if (hold) this.agentHolds--;
+			} catch (error) {
+				const stopped = running.abort.signal.aborted;
+				finish(stopped ? 'interrupted' : 'refused');
+				// Whatever the step reported, the user's stop is the reason it ended.
+				if (stopped)
+					throw new AgentRefusal(
+						this.paused
+							? 'The user took control of the browser, so the action stopped.'
+							: 'The user interrupted the action.',
+					);
+				throw error;
 			}
 		});
 		this.agentQueue = run.catch(() => undefined);
@@ -291,6 +389,10 @@ export class BrowserService {
 			throw new AgentRefusal(
 				'The in-app browser is not showing this project. The user can open this project in Nanocoder Desktop to use it.',
 			);
+		if (this.paused)
+			throw new AgentRefusal(
+				'The user has paused agent control of the browser. Ask the user to let you continue.',
+			);
 		// The agent acts only where the user can see it.
 		if (!this.bounds)
 			throw new AgentRefusal(
@@ -301,8 +403,6 @@ export class BrowserService {
 			throw new AgentRefusal(
 				'No page is open in the in-app browser. Use desktop_browser_open first.',
 			);
-		if (!isLoopbackPage(this.state.url))
-			throw new AgentRefusal(`The page is not a local address. ${LOCAL_ONLY}`);
 	}
 
 	// Gives a navigation the action started time to begin, then to finish.
@@ -559,7 +659,8 @@ export class BrowserService {
 		return {
 			allow: url => {
 				if (!live()) return false;
-				if (this.agentHolds > 0 && !isLoopbackPage(url)) {
+				const acting = this.action?.hold ? this.action : null;
+				if (acting && !this.policy.admitted(acting.context, url)) {
 					this.cancelled.add('navigation');
 					return false;
 				}
@@ -609,18 +710,28 @@ export class BrowserService {
 				else return;
 				this.publish();
 			},
-			request: method => {
-				if (this.agentHolds === 0 || SAFE_METHODS.has(method.toUpperCase()))
+			request: (method, url) => {
+				const acting = this.action?.hold ? this.action : null;
+				if (!acting || acting.data || SAFE_METHODS.has(method.toUpperCase()))
 					return true;
-				this.cancelled.add('request');
-				return false;
+				// The page tries to send data while the agent acts: the user decides (BRW-13).
+				return this.policy
+					.approve(
+						acting.context,
+						`The page wants to send data (${bounded(method.toUpperCase(), 10)} to ${pageOrigin(url) ?? 'another address'}) after the agent's action. Allow it?`,
+						acting.abort.signal,
+					)
+					.then(allowed => {
+						if (!allowed) this.cancelled.add('request');
+						return allowed;
+					});
 			},
 			download: item => {
 				if (!live()) {
 					item.cancel();
 					return;
 				}
-				if (this.agentHolds > 0) {
+				if (this.action?.hold && !this.action.downloads) {
 					item.cancel();
 					this.cancelled.add('download');
 					return;
@@ -751,6 +862,12 @@ export class BrowserService {
 			...this.state,
 			origin: url === null ? null : pageOrigin(url),
 			security: url === null ? null : pageSecurity(url),
+			agent: {
+				paused: this.paused,
+				busy: this.action !== null,
+				activity: this.activity.map(entry => ({...entry})),
+				sites: this.options.sites?.list() ?? [],
+			},
 		};
 	}
 

@@ -115,11 +115,14 @@ export function createElectronViewFactory(
 		};
 		partition.on('will-download', onDownload);
 		partition.webRequest.onBeforeRequest((details, callback) => {
-			callback({
-				cancel:
-					details.webContentsId === contents.id &&
-					!hooks.request(details.method),
-			});
+			if (details.webContentsId !== contents.id) {
+				callback({});
+				return;
+			}
+			// An agent action may hold a request until the user answers.
+			Promise.resolve(hooks.request(details.method, details.url))
+				.catch(() => false)
+				.then(allowed => callback({cancel: !allowed}));
 		});
 		let retire: (() => void) | undefined;
 		view.setVisible(false);

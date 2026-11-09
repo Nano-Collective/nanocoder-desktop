@@ -866,6 +866,7 @@ function fakeServers(options: {ready?: boolean} = {}) {
 	let issued = 0;
 	const live = new Set<string>();
 	const released: string[] = [];
+	const bound: Array<[string, string]> = [];
 	const servers: SessionMcpServers = {
 		ready: () => options.ready ?? true,
 		lease: () => {
@@ -879,13 +880,16 @@ function fakeServers(options: {ready?: boolean} = {}) {
 					url: 'http://127.0.0.1:1/mcp',
 					headers: [{name: 'Authorization', value: `Bearer ${secret}`}],
 				},
+				bind: sessionId => {
+					bound.push([secret, sessionId]);
+				},
 				release: () => {
 					if (live.delete(secret)) released.push(secret);
 				},
 			};
 		},
 	};
-	return {servers, live, released, issued: () => issued};
+	return {servers, live, released, bound, issued: () => issued};
 }
 
 const sentServers = (connection: NanocoderConnection, method: string) =>
@@ -899,6 +903,7 @@ test('ACP-22 passes a fresh browser server on session/new, keeps its secret out 
 	t.true(connection.browserServer);
 	await connection.newSession('normal');
 	t.deepEqual([...fake.live], ['secret-1']);
+	t.deepEqual(fake.bound, [['secret-1', 'fake-session']]);
 	await connection.close();
 	// The fake echoes each request to stderr; the ring redacts the secret and the address.
 	t.deepEqual(sentServers(connection, 'session/new'), [
@@ -1066,4 +1071,16 @@ test("BRW-18 with Nanocoder's browser allowed, a Nanocoder that echoes nothing s
 		id: 'fake-session',
 		mode: 'normal',
 	});
+});
+
+test('BRW-16 the live mode of a session is what Nanocoder last confirmed, and unknown sessions have none', async t => {
+	const connection = await connect(fakeProject());
+	t.teardown(() => connection.close());
+	const session = await connection.newSession('normal');
+	t.is(connection.sessionMode?.(session.id), 'normal');
+	await connection.setMode(session.id, 'plan');
+	await waitForFakeMethod(connection, 'session/set_mode');
+	await new Promise(resolve => setImmediate(resolve));
+	t.is(connection.sessionMode?.(session.id), 'plan');
+	t.is(connection.sessionMode?.('other'), undefined);
 });

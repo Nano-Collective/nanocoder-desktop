@@ -25,6 +25,12 @@ export interface BrowserToolResult {
 	image?: {data: string; mimeType: string};
 }
 
+export interface ToolContext {
+	projectId: string;
+	// Null until Nanocoder has named the session the secret was issued for.
+	sessionId: string | null;
+}
+
 export interface BrowserTool {
 	name: string;
 	description: string;
@@ -33,7 +39,7 @@ export interface BrowserTool {
 	input?: z.ZodType;
 	// Called only with arguments that passed `input`.
 	call(
-		projectId: string,
+		context: ToolContext,
 		args: never,
 	): BrowserToolResult | Promise<BrowserToolResult>;
 }
@@ -51,6 +57,7 @@ export interface BrowserMcpServer {
 
 interface Grant {
 	projectId: string;
+	sessionId: string | null;
 	live: boolean;
 }
 
@@ -167,7 +174,10 @@ export function createBrowserMcpServer(options: {
 					.join('; ')}`,
 			);
 		try {
-			const result = await tool.call(grant.projectId, parsed.data as never);
+			const result = await tool.call(
+				{projectId: grant.projectId, sessionId: grant.sessionId},
+				parsed.data as never,
+			);
 			return {
 				content: [
 					{type: 'text', text: result.text},
@@ -290,7 +300,7 @@ export function createBrowserMcpServer(options: {
 		if (!server || closed || port === undefined) return undefined;
 		const secret = randomBytes(32).toString('base64url');
 		const key = digest(secret);
-		const grant: Grant = {projectId, live: true};
+		const grant: Grant = {projectId, sessionId: null, live: true};
 		grants.set(key, grant);
 		return {
 			server: {
@@ -298,6 +308,9 @@ export function createBrowserMcpServer(options: {
 				name: SERVER_NAME,
 				url: `http://127.0.0.1:${port}${PATH}`,
 				headers: [{name: 'Authorization', value: `Bearer ${secret}`}],
+			},
+			bind: sessionId => {
+				grant.sessionId ??= sessionId;
 			},
 			release: () => {
 				grant.live = false;

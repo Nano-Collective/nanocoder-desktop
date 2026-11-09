@@ -681,20 +681,20 @@ Until phase 3.9 brings desktop approvals, agent control stays on local addresses
 
 ### Phase 3.9: approvals and user control
 
-Needs `DEC-15` agreed.
+`DEC-15` is agreed (maintainer decision, 2026-11-09).
 
 **Build**
 
-- [ ] Desktop approvals for sensitive actions (`BRW-13`, `SEC-09`)
-- [ ] Public-site control only in `normal` mode (`BRW-16`, `SEC-11`)
-- [ ] Pause, interrupt and take control (`BRW-14`)
-- [ ] Every action, observation and approval shown in the chat (`BRW-12`)
+- [x] Desktop approvals for sensitive actions (`BRW-13`, `SEC-09`): the desktop's own card in the chat's approval shelf, in every mode, through the same main-only broker as Nanocoder's requests ([`agent-policy.ts`](../source/main/browser/agent-policy.ts))
+- [x] Public-site control only in `normal` mode (`BRW-16`, `SEC-11`): checked at every call against the mode Nanocoder last confirmed, with the per-site question from `DEC-50`
+- [x] Pause, interrupt and take control (`BRW-14`): in the browser tab, and a stop withdraws any question the action was waiting on
+- [x] Every action, observation and approval shown in the chat (`BRW-12`): Nanocoder's tool cards and the approval shelf in the chat, and the agent activity list in the browser tab
 
 **Results we want**
 
-- [ ] A form submission by the agent asks for approval first
-- [ ] Public-site control is paused outside `normal` mode, with the reason shown
-- [ ] The user can take over mid-action and the agent stops
+- [x] A form submission by the agent asks for approval first: [`browser-agent.e2e.ts`](../e2e/browser-agent.e2e.ts), where a rejected submit sends nothing and an approved one reaches the server
+- [x] Public-site control is paused outside `normal` mode, with the reason shown ([`agent-policy.spec.ts`](../source/main/browser/agent-policy.spec.ts))
+- [x] The user can take over mid-action and the agent stops: "take control" stops the running action and refuses every call until the user gives control back
 
 ### Phase 3.10: Nanocoder's own browser and external pages
 

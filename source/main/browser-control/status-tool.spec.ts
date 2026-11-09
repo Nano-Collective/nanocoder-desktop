@@ -15,6 +15,7 @@ const page = (overrides: Partial<BrowserSnapshot> = {}): BrowserSnapshot => ({
 	blocked: null,
 	downloads: [],
 	reason: null,
+	agent: {paused: false, busy: false, activity: [], sites: []},
 	...overrides,
 });
 
@@ -24,7 +25,14 @@ const run = async (snapshot: BrowserSnapshot | null) => {
 		asked.push(projectId);
 		return snapshot;
 	});
-	return {result: await tool.call('project-a', {} as never), asked, tool};
+	return {
+		result: await tool.call(
+			{projectId: 'project-a', sessionId: 's1'},
+			{} as never,
+		),
+		asked,
+		tool,
+	};
 };
 
 test('is a read-only, argument-free tool with a name that cannot clash with the built-in browser tool (ACP-22 DEC-50)', async t => {

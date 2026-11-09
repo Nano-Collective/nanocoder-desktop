@@ -150,6 +150,53 @@ export class BrowserController {
 		);
 	}
 
+	async setAgentPaused(paused: boolean): Promise<boolean> {
+		const {projectId} = this.state;
+		if (!projectId || this.disposed) return false;
+		return this.snapshotCall(
+			() => this.bridge.browser.setAgentPaused({projectId, paused}),
+			'Agent control could not be changed',
+		);
+	}
+
+	async interruptAgent(): Promise<boolean> {
+		const {projectId} = this.state;
+		if (!projectId || this.disposed) return false;
+		return this.snapshotCall(
+			() => this.bridge.browser.interruptAgent({projectId}),
+			'The agent action could not be stopped',
+		);
+	}
+
+	async forgetSite(origin: string): Promise<boolean> {
+		const {projectId} = this.state;
+		if (!projectId || this.disposed) return false;
+		return this.snapshotCall(
+			() => this.bridge.browser.forgetSite({projectId, origin}),
+			'The site could not be forgotten',
+		);
+	}
+
+	private async snapshotCall(
+		call: () => Promise<IpcResult<BrowserSnapshot>>,
+		failure: string,
+	): Promise<boolean> {
+		const epoch = this.epoch;
+		try {
+			const result = await call();
+			if (!this.current(epoch)) return false;
+			if (!result.ok) {
+				this.update({error: result.error.message});
+				return false;
+			}
+			this.apply(result.value);
+			return true;
+		} catch {
+			if (this.current(epoch)) this.update({error: failure});
+			return false;
+		}
+	}
+
 	async openExternal(): Promise<boolean> {
 		const {projectId} = this.state;
 		if (!projectId || this.disposed) return false;

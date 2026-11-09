@@ -161,3 +161,11 @@
 	color: var(--colors-on-surface-muted);
 	font-size: var(--typography-caption-font-size);
 }
+
+.browser-agent {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	color: var(--colors-on-surface-muted);
+	font-size: var(--typography-caption-font-size);
+}

@@ -39,6 +39,15 @@ export function useBrowser(projectId: string | null) {
 		setNanocoderBrowser: (enabled: boolean) => {
 			void controller.current?.setNanocoderBrowser(enabled);
 		},
+		setAgentPaused: (paused: boolean) => {
+			void controller.current?.setAgentPaused(paused);
+		},
+		interruptAgent: () => {
+			void controller.current?.interruptAgent();
+		},
+		forgetSite: (origin: string) => {
+			void controller.current?.forgetSite(origin);
+		},
 		setProfile: (profile: string) => {
 			void controller.current?.setProfile(profile);
 		},

@@ -64,12 +64,33 @@ const browserAssignments = z
 	)
 	.refine(record => Object.keys(record).length <= 500);
 
+// Web origins only, so a saved site is exactly what the agent asked for (DEC-50).
+const webOrigin = z
+	.string()
+	.max(2_048)
+	.refine(value => {
+		try {
+			const url = new URL(value);
+			return (
+				(url.protocol === 'http:' || url.protocol === 'https:') &&
+				url.origin === value
+			);
+		} catch {
+			return false;
+		}
+	});
+const browserAllowedSites = z
+	.array(webOrigin)
+	.max(200)
+	.refine(list => new Set(list).size === list.length);
+
 export const settingsSchema = settingsPatch
 	.required()
 	.extend({
 		nanocoderOverridePath: absolutePath.nullable(),
 		browserProfiles,
 		browserAssignments,
+		browserAllowedSites,
 	})
 	.refine(settings => {
 		const known = new Set(settings.browserProfiles.map(entry => entry.id));

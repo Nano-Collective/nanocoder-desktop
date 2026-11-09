@@ -32,6 +32,9 @@ function fixture() {
 		deleteProfile: count,
 		clearData: count,
 		openExternal: count,
+		setAgentPaused: count,
+		interruptAgent: count,
+		forgetSite: count,
 	} as unknown as BrowserService;
 	registerBrowserHandlers(
 		(channel, schema, handler, allowedOrigins) => {
@@ -211,4 +214,34 @@ test('SEC-16 SEC-02 profile, data and external calls refuse extra fields, so an 
 	] as const)
 		t.true((await f.call(key, payload)).ok, key);
 	t.is(f.calls(), 6);
+});
+
+test('BRW-14 DEC-50 agent controls refuse extra fields, so the renderer can stop or forget but never allow', async t => {
+	const f = fixture();
+	for (const payload of [
+		{projectId, paused: 'yes'},
+		{projectId, paused: 1},
+		{projectId},
+		{projectId, paused: true, approve: true},
+		{projectId, paused: true, sessionId: 's1'},
+	])
+		t.false(
+			(await f.call('setAgentPaused', payload)).ok,
+			JSON.stringify(payload),
+		);
+	for (const payload of [
+		{projectId, origin: 'https://a.example', allow: true},
+		{projectId, origin: ''},
+		{projectId, origin: 7},
+		{projectId, sites: ['https://a.example']},
+	])
+		t.false((await f.call('forgetSite', payload)).ok, JSON.stringify(payload));
+	t.false((await f.call('interruptAgent', {projectId, reason: 'x'})).ok);
+	t.is(f.calls(), 0);
+	t.true((await f.call('setAgentPaused', {projectId, paused: true})).ok);
+	t.true((await f.call('interruptAgent', {projectId})).ok);
+	t.true(
+		(await f.call('forgetSite', {projectId, origin: 'https://a.example'})).ok,
+	);
+	t.is(f.calls(), 3);
 });

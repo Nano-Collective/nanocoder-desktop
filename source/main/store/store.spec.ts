@@ -845,6 +845,7 @@ test('settings and bounded UI state persist across close and reopen', async t =>
 		browserProfiles: [],
 		browserAssignments: {},
 		nanocoderBrowserEnabled: false,
+		browserAllowedSites: [],
 	});
 	const settings = store.updateSettings({
 		publicBrowsingEnabled: true,
@@ -1612,4 +1613,33 @@ test('BRW-18 the Nanocoder browser setting accepts only a boolean', async t => {
 			store.updateSettings({nanocoderBrowserEnabled: value} as never),
 		);
 	t.false(store.getSettings().nanocoderBrowserEnabled);
+});
+
+test('DEC-50 the always-allowed sites are a bounded list of distinct web origins, kept across reopen', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	t.deepEqual(store.getSettings().browserAllowedSites, []);
+	store.updateSettings({
+		browserAllowedSites: [
+			'https://docs.example.com',
+			'http://intranet.test:8080',
+		],
+	});
+	for (const bad of [
+		['https://docs.example.com/path'],
+		['ftp://example.com'],
+		['https://a.example', 'https://a.example'],
+		['not a url'],
+		Array.from({length: 201}, (_, i) => `https://s${i}.example`),
+	])
+		t.throws(
+			() => store.updateSettings({browserAllowedSites: bad}),
+			undefined,
+			JSON.stringify(bad).slice(0, 60),
+		);
+	store.close();
+	t.deepEqual((await f.open()).getSettings().browserAllowedSites, [
+		'https://docs.example.com',
+		'http://intranet.test:8080',
+	]);
 });

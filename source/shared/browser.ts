@@ -12,6 +12,9 @@ export const BROWSER_CHANNELS = {
 	deleteProfile: 'browser:delete-profile',
 	clearData: 'browser:clear-data',
 	openExternal: 'browser:open-external',
+	setAgentPaused: 'browser:set-agent-paused',
+	interruptAgent: 'browser:interrupt-agent',
+	forgetSite: 'browser:forget-site',
 	event: 'browser:event',
 } as const;
 
@@ -40,6 +43,22 @@ export interface BrowserSnapshot {
 	blocked: {url: string; reason: BrowserBlockReason; id: number} | null;
 	downloads: BrowserDownload[];
 	reason: string | null;
+	agent: BrowserAgentState;
+}
+
+// What the agent is doing in the browser, for the user to watch and stop (BRW-12, BRW-14).
+export interface BrowserAgentState {
+	paused: boolean;
+	busy: boolean;
+	activity: BrowserAgentActivity[];
+	// The user's always-allowed sites (DEC-50), the same in every project.
+	sites: string[];
+}
+
+export interface BrowserAgentActivity {
+	id: number;
+	text: string;
+	outcome: 'running' | 'done' | 'refused' | 'interrupted';
 }
 
 export interface BrowserDownload {
@@ -72,6 +91,9 @@ export interface BrowserRequests {
 	deleteProfile: {projectId: string; id: string};
 	clearData: {projectId: string; profile: string};
 	openExternal: {projectId: string};
+	setAgentPaused: {projectId: string; paused: boolean};
+	interruptAgent: {projectId: string};
+	forgetSite: {projectId: string; origin: string};
 }
 
 // Layout reports are frequent, so they return no snapshot.
@@ -87,6 +109,9 @@ export interface BrowserResults {
 	deleteProfile: BrowserProfileList;
 	clearData: BrowserSnapshot;
 	openExternal: {opened: boolean};
+	setAgentPaused: BrowserSnapshot;
+	interruptAgent: BrowserSnapshot;
+	forgetSite: BrowserSnapshot;
 }
 
 export type BrowserApi = {

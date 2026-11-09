@@ -55,6 +55,13 @@ import type {
 export type {SessionOffers} from '@/main/nanocoder/session-controls';
 
 const INITIALIZE_TIMEOUT_MS = 60_000;
+const MODES = new Set<string>([
+	'normal',
+	'auto-accept',
+	'yolo',
+	'plan',
+	'architect',
+]);
 const SHUTDOWN_GRACE_MS = 5_000;
 const NANOCODER_PREFIX = '[nanocoder] ';
 
@@ -80,6 +87,8 @@ export interface NanocoderConnection {
 	readonly exited: Promise<Exit>;
 	// Whether sessions get the desktop's browser server (ACP-22).
 	readonly browserServer?: boolean;
+	// The mode Nanocoder last confirmed for a session; the public-site rule reads it (BRW-16).
+	sessionMode?(sessionId: string): NanocoderMode | undefined;
 	listSessions?(): Promise<unknown>;
 	newSession(mode: NanocoderMode): Promise<SessionInfo>;
 	resumeSession(
@@ -119,6 +128,8 @@ export interface ResumedSession {
 // One per session: the server Nanocoder connects to, and the secret's revocation (DEC-47).
 export interface McpServerLease {
 	server: McpServerHttp & {type: 'http'};
+	// Names the session once Nanocoder has created it, so calls can be traced to their chat.
+	bind(sessionId: string): void;
 	release(): void;
 }
 
@@ -224,6 +235,7 @@ export async function connectNanocoder(
 		replay.bytes = 0;
 	};
 	const readySessions = new Set<string>();
+	const liveModes = new Map<string, NanocoderMode>();
 	const activePrompts = new Set<Promise<unknown>>();
 	let notificationControls:
 		| ReturnType<typeof createSessionControls>
@@ -241,8 +253,12 @@ export async function connectNanocoder(
 	const keepLease = (sessionId: string, lease: McpServerLease | undefined) => {
 		releaseLease(sessionId);
 		if (!lease) return;
-		if (disposed) lease.release();
-		else leases.set(sessionId, lease);
+		if (disposed) {
+			lease.release();
+			return;
+		}
+		lease.bind(sessionId);
+		leases.set(sessionId, lease);
 	};
 	const stream = protocolStream(child.stdout, child.stdin, line => {
 		violated = true;
@@ -276,6 +292,19 @@ export async function connectNanocoder(
 				replay.bytes += bytes;
 				replay.updates.push(params.update);
 			} else {
+				const update = params.update as {
+					sessionUpdate?: unknown;
+					currentModeId?: unknown;
+				};
+				if (
+					update.sessionUpdate === 'current_mode_update' &&
+					typeof update.currentModeId === 'string' &&
+					MODES.has(update.currentModeId)
+				)
+					liveModes.set(
+						params.sessionId,
+						update.currentModeId as NanocoderMode,
+					);
 				options.onUpdate?.(params.update);
 				options.onSessionUpdate?.(params);
 			}
@@ -430,6 +459,7 @@ export async function connectNanocoder(
 						`Nanocoder did not set the ${mode} mode`,
 					);
 				});
+			liveModes.set(sessionId, mode);
 		} catch (error) {
 			await closeQuietly(sessionId);
 			throw error;
@@ -623,6 +653,7 @@ export async function connectNanocoder(
 				);
 			});
 		releaseLease(sessionId);
+		liveModes.delete(sessionId);
 		sessionControls.forget(sessionId);
 	};
 
@@ -765,6 +796,7 @@ export async function connectNanocoder(
 		stderr,
 		exited,
 		browserServer: browserServers !== undefined,
+		sessionMode: sessionId => liveModes.get(sessionId),
 		listSessions,
 		newSession,
 		resumeSession,

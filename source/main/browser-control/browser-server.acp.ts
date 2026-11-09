@@ -46,6 +46,7 @@ const page: BrowserSnapshot = {
 	blocked: null,
 	downloads: [],
 	reason: null,
+	agent: {paused: false, busy: false, activity: [], sites: []},
 };
 
 const toolNames = (request: ChatRequest | undefined): string[] =>

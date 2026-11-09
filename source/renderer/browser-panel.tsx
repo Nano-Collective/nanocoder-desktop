@@ -13,6 +13,7 @@ export interface BrowserPanelProps {
 	snapshot: BrowserSnapshot | null;
 	publicSites: boolean;
 	nanocoderBrowser: boolean;
+	sites: string[];
 	profiles: BrowserProfileList | null;
 	loading: boolean;
 	pending: boolean;
@@ -23,6 +24,9 @@ export interface BrowserPanelProps {
 	onBounds(bounds: BrowserBounds | null): void;
 	onPublicSites(enabled: boolean): void;
 	onNanocoderBrowser(enabled: boolean): void;
+	onAgentPaused(paused: boolean): void;
+	onInterruptAgent(): void;
+	onForgetSite(origin: string): void;
 	onAllowAndOpen(url: string): void;
 	onProfile(profile: string): void;
 	onCreateProfile(name: string): Promise<boolean>;
@@ -32,6 +36,13 @@ export interface BrowserPanelProps {
 	attachReason: string | null;
 	onSendToChat(url: string): void;
 }
+
+const ACTIVITY_WORDS = {
+	running: 'running',
+	done: 'done',
+	refused: 'refused',
+	interrupted: 'stopped by you',
+} as const;
 
 const SECURITY = {
 	local: {glyph: '●', word: 'local', tone: 'ok'},
@@ -115,6 +126,7 @@ export function BrowserPanel({
 	snapshot,
 	publicSites,
 	nanocoderBrowser,
+	sites,
 	profiles,
 	loading,
 	pending,
@@ -125,6 +137,9 @@ export function BrowserPanel({
 	onBounds,
 	onPublicSites,
 	onNanocoderBrowser,
+	onAgentPaused,
+	onInterruptAgent,
+	onForgetSite,
 	onAllowAndOpen,
 	onProfile,
 	onCreateProfile,
@@ -353,6 +368,63 @@ export function BrowserPanel({
 					</div>
 				)}
 			</details>
+			{snapshot && (
+				<section className="browser-agent" aria-label="agent in the browser">
+					<div className="browser-manage-row">
+						<span role="status">
+							{snapshot.agent.paused
+								? 'agent control paused'
+								: snapshot.agent.busy
+									? 'agent is acting…'
+									: 'agent control on'}
+						</span>
+						{snapshot.agent.busy && !snapshot.agent.paused && (
+							<Button onClick={onInterruptAgent}>stop agent action</Button>
+						)}
+						<Button onClick={() => onAgentPaused(!snapshot.agent.paused)}>
+							{snapshot.agent.paused
+								? 'let the agent continue'
+								: 'take control'}
+						</Button>
+					</div>
+					{snapshot.agent.activity.length > 0 && (
+						<details className="browser-manage">
+							<summary>
+								agent activity ({snapshot.agent.activity.length})
+							</summary>
+							<ol className="browser-downloads" aria-label="agent activity">
+								{snapshot.agent.activity.map(entry => (
+									<li key={entry.id}>
+										<span className="browser-download-name">{entry.text}</span>{' '}
+										<span>· {ACTIVITY_WORDS[entry.outcome]}</span>
+									</li>
+								))}
+							</ol>
+						</details>
+					)}
+					{sites.length > 0 && (
+						<details className="browser-manage">
+							<summary>always allowed sites ({sites.length})</summary>
+							<ul
+								className="browser-downloads"
+								aria-label="always allowed sites"
+							>
+								{sites.map(origin => (
+									<li key={origin} className="browser-manage-row">
+										<span className="browser-download-name">{origin}</span>
+										<Button
+											onClick={() => onForgetSite(origin)}
+											aria-label={`forget ${origin}`}
+										>
+											forget
+										</Button>
+									</li>
+								))}
+							</ul>
+						</details>
+					)}
+				</section>
+			)}
 			{snapshot && snapshot.downloads.length > 0 && (
 				<ul className="browser-downloads" aria-label="downloads">
 					{snapshot.downloads.map(download => (

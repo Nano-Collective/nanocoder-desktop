@@ -63,6 +63,9 @@ test('the preload bridge exposes typed methods only', async () => {
 			'deleteProfile',
 			'clearData',
 			'openExternal',
+			'setAgentPaused',
+			'interruptAgent',
+			'forgetSite',
 			'onEvent',
 		].sort(),
 	);

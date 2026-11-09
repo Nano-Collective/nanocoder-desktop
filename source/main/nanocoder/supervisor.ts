@@ -31,6 +31,8 @@ import {canonicalPath, isInside} from '@/main/paths';
 import type {
 	CapabilityGates,
 	DiagnosticsSnapshot,
+	NanocoderMode,
+	PermissionOptionKind,
 	ProjectActivityStatus,
 	ProjectControls,
 	ProjectEvent,
@@ -577,15 +579,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 						entry.activeTurn.cancelled
 					)
 						return Promise.resolve({outcome: {outcome: 'cancelled'}});
-					let broker = entry.permissions.get(request.sessionId);
-					if (!broker) {
-						broker = new PermissionBroker(
-							event => this.turn(entry, request.sessionId, event),
-							() => `permission-${++this.permissionCounter}`,
-						);
-						entry.permissions.set(request.sessionId, broker);
-					}
-					return broker.request(
+					return this.brokerFor(entry, request.sessionId).request(
 						request,
 						entry.activeTurn.questions.matches(request),
 					);
@@ -721,6 +715,67 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 			}
 			settle();
 		}
+	}
+
+	private brokerFor(entry: Entry, sessionId: string): PermissionBroker {
+		let broker = entry.permissions.get(sessionId);
+		if (!broker) {
+			broker = new PermissionBroker(
+				event => this.turn(entry, sessionId, event),
+				() => `permission-${++this.permissionCounter}`,
+			);
+			entry.permissions.set(sessionId, broker);
+		}
+		return broker;
+	}
+
+	// A desktop question (BRW-13, DEC-50) joins the approval shelf of the chat whose turn caused it.
+	async askDesktop(
+		projectId: string,
+		sessionId: string,
+		question: {
+			title: string;
+			options: ReadonlyArray<{
+				id: string;
+				name: string;
+				kind: PermissionOptionKind;
+			}>;
+		},
+		signal?: AbortSignal,
+	): Promise<string | null> {
+		const entry = this.entries.get(projectId);
+		const turn = entry?.activeTurn;
+		if (
+			!entry ||
+			!turn ||
+			turn.sessionId !== sessionId ||
+			turn.cancelled ||
+			entry.abort.signal.aborted
+		)
+			return null;
+		const response = await this.brokerFor(entry, sessionId).request(
+			{
+				sessionId,
+				toolCall: {
+					toolCallId: `desktop-browser-${++this.permissionCounter}`,
+					title: question.title,
+				},
+				options: question.options.map(option => ({
+					optionId: option.id,
+					name: option.name,
+					kind: option.kind,
+				})),
+			},
+			false,
+			signal,
+		);
+		return response.outcome.outcome === 'selected'
+			? response.outcome.optionId
+			: null;
+	}
+
+	sessionMode(projectId: string, sessionId: string): NanocoderMode | undefined {
+		return this.entries.get(projectId)?.connection?.sessionMode?.(sessionId);
 	}
 
 	answerPermission(

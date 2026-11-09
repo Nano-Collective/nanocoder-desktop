@@ -11,6 +11,7 @@ import {
 } from 'electron';
 import {z} from 'zod';
 import {createActivityNotifier} from '@/main/activity-notifier';
+import {createAgentPolicy} from '@/main/browser/agent-policy';
 import {BrowserService} from '@/main/browser/browser-service';
 import {
 	clearBrowserPartition,
@@ -19,6 +20,7 @@ import {
 	isBrowserSession,
 } from '@/main/browser/electron-view';
 import {BrowserProfiles} from '@/main/browser/profiles';
+import {SiteAccess} from '@/main/browser/site-access';
 import {browserBrokerTools} from '@/main/browser-control/broker';
 import {
 	type BrowserMcpServer,
@@ -371,6 +373,12 @@ export function registerIpcHandlers(
 	appOrigins = allowedOrigins;
 	if (services.store) {
 		const store = services.store;
+		const sites = new SiteAccess({
+			get: () => store.getSettings().browserAllowedSites,
+			set: list => {
+				store.updateSettings({browserAllowedSites: list});
+			},
+		});
 		terminal = new TerminalService({
 			project: id => store.projects.get(id),
 			projects: () => store.projects.list(),
@@ -400,6 +408,25 @@ export function registerIpcHandlers(
 			clearData: clearBrowserPartition,
 			openExternal: createSystemOpener(appWindow),
 			createView: createElectronViewFactory(appWindow),
+			sites,
+			// Questions join the approval shelf of the chat whose turn asked; no turn, no answer (DEC-50).
+			policy: createAgentPolicy({
+				publicSites: () => store.getSettings().publicBrowsingEnabled,
+				mode: context =>
+					context.sessionId === null
+						? undefined
+						: supervisor?.sessionMode(context.projectId, context.sessionId),
+				ask: async (context, question, signal) =>
+					context.sessionId === null || !supervisor
+						? null
+						: supervisor.askDesktop(
+								context.projectId,
+								context.sessionId,
+								question,
+								signal,
+							),
+				sites,
+			}),
 		});
 		const pages = browser;
 		browserServer = createBrowserMcpServer({

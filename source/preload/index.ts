@@ -57,6 +57,12 @@ const api: DesktopApi = {
 			ipcRenderer.invoke(BROWSER_CHANNELS.clearData, request),
 		openExternal: request =>
 			ipcRenderer.invoke(BROWSER_CHANNELS.openExternal, request),
+		setAgentPaused: request =>
+			ipcRenderer.invoke(BROWSER_CHANNELS.setAgentPaused, request),
+		interruptAgent: request =>
+			ipcRenderer.invoke(BROWSER_CHANNELS.interruptAgent, request),
+		forgetSite: request =>
+			ipcRenderer.invoke(BROWSER_CHANNELS.forgetSite, request),
 		onEvent: listener => {
 			const handler = (_event: unknown, event: BrowserEvent) => listener(event);
 			ipcRenderer.on(BROWSER_CHANNELS.event, handler);
