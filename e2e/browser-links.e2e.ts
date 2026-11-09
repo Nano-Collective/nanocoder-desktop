@@ -128,6 +128,14 @@ async function startServerInTerminal() {
 	await page.locator('.xterm-helper-textarea').focus();
 	await page.keyboard.type(`echo "Local: ${origin}/dev"`);
 	await page.keyboard.press('Enter');
+	// The typed command shows the address as it is typed; once it appears twice, the output is in.
+	const line = `Local: ${origin}/dev`;
+	await expect
+		.poll(
+			async () =>
+				(await page.locator('.xterm-rows').innerText()).split(line).length - 1,
+		)
+		.toBeGreaterThanOrEqual(2);
 }
 
 test('TERM-05 starting a dev server and opening its address takes one action', async () => {

@@ -670,7 +670,7 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 - [x] Typed operations: open, back, reload, wait, snapshot, screenshot, click, type, scroll (`BRW-11`, `SEC-13`): [`broker.ts`](../source/main/browser-control/broker.ts), with fixed page scripts in an isolated world ([`page-scripts.ts`](../source/main/browser-control/page-scripts.ts)) and real input from main
 - [x] Observations labelled as untrusted page data and size-bounded (`BRW-15`)
-- [x] Control advertised only when the server and view are ready (`BRW-17`): the tools are listed once per session, so each call checks that the project is active, the browser is on screen and a local page is open, with no fallback
+- [x] Control advertised only when the server and view are ready (`BRW-17`): the server is passed to a session only while it runs (phase 3.7). A session's tool list cannot change without an event stream, which the server does not offer, so the view's readiness is enforced on every call instead: each one is refused unless the project is active, the browser is on screen and a local page is open, with no fallback
 
 **Results we want**
 

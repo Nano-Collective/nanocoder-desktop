@@ -24,6 +24,7 @@ import {qaEnvironment} from './qa/environment';
 
 const root = path.resolve(import.meta.dirname, '..');
 let work: string;
+const record = () => path.join(work, 'mcp-servers.json');
 let project: string;
 let app: ElectronApplication;
 let page: Page;
@@ -43,6 +44,9 @@ const FIXTURE = `<!doctype html><title>Agent fixture</title>
 <button id="ping" onclick="fetch('/ping', {method: 'POST', body: 'data'}).catch(() => {})">Ping</button>
 <a id="out" href="https://example.com/">Outside</a>
 <a id="next" href="/next">Next page</a>
+<label>Email <input id="email" type="email" value="ada@"></label>
+<div id="notes" contenteditable="true">Start</div>
+${'<p>Filler paragraph with a few words in it.</p>'.repeat(30)}
 <div style="height: 3000px"></div>
 <p id="bottom">Bottom of the page</p>`;
 
@@ -99,10 +103,13 @@ test.beforeEach(async () => {
 	app = await electron.launch({
 		cwd: root,
 		args: [root, `--user-data-dir=${path.join(work, 'profile')}`],
-		env: qaEnvironment(process.env, {
-			cliPath: fakeCli,
-			nodePath: process.execPath,
-		}),
+		env: {
+			...qaEnvironment(process.env, {
+				cliPath: fakeCli,
+				nodePath: process.execPath,
+			}),
+			NANOCODER_TEST_MCP_RECORD: record(),
+		},
 	});
 	page = await app.firstWindow();
 	await page.setViewportSize({width: 1240, height: 900});
@@ -123,9 +130,7 @@ test.beforeEach(async () => {
 	await expect(composer).toBeEnabled();
 	await composer.fill('hello');
 	await page.getByRole('button', {name: 'send', exact: true}).click();
-	await expect
-		.poll(() => existsSync(path.join(project, '.fake-mcp-servers.json')))
-		.toBe(true);
+	await expect.poll(() => existsSync(record())).toBe(true);
 	await page.getByRole('button', {name: 'open browser', exact: true}).click();
 	await expect(page.getByRole('textbox', {name: 'address'})).toBeVisible();
 });
@@ -154,9 +159,10 @@ async function agent(
 	name: string,
 	args: Record<string, unknown> = {},
 ): Promise<{text: string; isError: boolean; result: ToolResult}> {
-	const [entry] = JSON.parse(
-		readFileSync(path.join(project, '.fake-mcp-servers.json'), 'utf8'),
-	) as Array<{url: string; headers: Array<{name: string; value: string}>}>;
+	const [entry] = JSON.parse(readFileSync(record(), 'utf8')) as Array<{
+		url: string;
+		headers: Array<{name: string; value: string}>;
+	}>;
 	const response = await fetch(entry.url, {
 		method: 'POST',
 		headers: {
@@ -195,9 +201,11 @@ async function openAsAgent(url: string): Promise<string> {
 }
 
 const refOf = (snapshot: string, label: string) => {
-	const match = new RegExp(`\\[(e\\d+)\\] \\w+ "${label}"`).exec(snapshot);
-	if (!match) throw new Error(`No reference for ${label} in:\n${snapshot}`);
-	return match[1];
+	for (const line of snapshot.split('\n')) {
+		const match = /^\[(e\d+)\] \w+ "(.*)"/.exec(line);
+		if (match?.[2] === label) return match[1];
+	}
+	throw new Error(`No reference for ${label} in:\n${snapshot}`);
 };
 
 const inPage = (code: string) =>
@@ -265,6 +273,20 @@ test('BRW-11 the agent opens the local dev server, takes a snapshot, clicks a bu
 		clear: true,
 	});
 	expect(await inPage("document.getElementById('name').value")).toBe('Grace');
+	await agent('desktop_browser_type', {
+		selector: '#email',
+		text: 'example.com',
+	});
+	expect(await inPage("document.getElementById('email').value")).toBe(
+		'ada@example.com',
+	);
+	await agent('desktop_browser_type', {selector: '#notes', text: ' end'});
+	expect(await inPage("document.getElementById('notes').innerText")).toBe(
+		'Start end',
+	);
+	const short = await agent('desktop_browser_snapshot', {maxChars: 500});
+	expect(short.text).toContain('[truncated at 500 characters]');
+	expect(short.text.length).toBeLessThan(1500);
 
 	const scrolled = await agent('desktop_browser_scroll', {
 		direction: 'down',

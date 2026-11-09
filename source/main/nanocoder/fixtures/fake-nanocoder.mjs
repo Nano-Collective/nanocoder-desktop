@@ -7,7 +7,7 @@ import {
 	watch,
 	writeFileSync,
 } from 'node:fs';
-import {join} from 'node:path';
+import {isAbsolute, join, relative} from 'node:path';
 import {createInterface} from 'node:readline';
 import {fileURLToPath} from 'node:url';
 
@@ -21,6 +21,8 @@ const TRUST_REASONS = {
 };
 // Reports HTTP client MCP servers like Nanocoder 1.32.0, beside any mode.
 const mcpHttp = existsSync('.fake-mcp-http');
+// A test-owned absolute path outside the project, so a session secret never lands in a project folder.
+const mcpRecord = process.env.NANOCODER_TEST_MCP_RECORD;
 let nextSession = 0;
 const scopedSessions = process.env.NANOCODER_TEST_SCOPED_SESSIONS === '1';
 const sessionPrefix = `fake-session-${createHash('sha256').update(process.cwd()).digest('hex').slice(0, 12)}`;
@@ -102,11 +104,13 @@ const results = {
 	'session/new': params => {
 		if (mode === 'no-session') return undefined;
 		// The end-to-end browser tests read this to call the desktop's server as the agent would.
-		if (mcpHttp)
-			writeFileSync(
-				'.fake-mcp-servers.json',
-				JSON.stringify(params.mcpServers),
-			);
+		if (
+			mcpHttp &&
+			mcpRecord &&
+			isAbsolute(mcpRecord) &&
+			relative(process.cwd(), mcpRecord).startsWith('..')
+		)
+			writeFileSync(mcpRecord, JSON.stringify(params.mcpServers));
 		return {
 			sessionId: scopedSessions
 				? `${sessionPrefix}-${randomUUID()}`

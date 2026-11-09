@@ -30,7 +30,7 @@ A user-visible preview for a running application or a reference page. The user c
 | BRW-14 | The user can pause agent control, interrupt an action, or take control. | Decided ([whitepaper][wp-browser]) |
 | BRW-15 | Observations are labelled as untrusted page data and size-bounded. | Proposed (awaiting @will-lamerton) ([#108][i108]) |
 | BRW-16 | Agent control of public sites only while the session is in `normal` mode; localhost in every mode. | Proposed (awaiting @will-lamerton) ([#108][i108]) |
-| BRW-17 | Advertise agent browser control only when the adapter and the browser view are both ready; otherwise it is unavailable, with no privileged fallback. | Decided ([whitepaper][wp-arch]) |
+| BRW-17 | Advertise agent browser control only when the adapter and the browser view are both ready; otherwise it is unavailable, with no privileged fallback. | Decided ([whitepaper][wp-arch]). Built as: the server only while it runs (phase 3.7), and a check of the view on every call (phase 3.8), because a session's tool list is fixed |
 | BRW-18 | Nanocoder's built-in `browser` tool stays available beside the in-app browser, under Nanocoder's own approvals. The public-site rules (`BRW-03`, `BRW-16`) cover the in-app browser only, and a desktop setting turns Nanocoder's browser off for a session. | Decided (`DEC-48`); the Nanocoder side is merged and unreleased |
 | BRW-19 | Annotations: select an element or region, record URL, viewport, selector or rectangle and comment, send to chat. User-authored annotations work even with agent control off. | Decided as a follow-up, not v1 ([whitepaper][wp-browser]) |
 | BRW-20 | Pages that need the user's regular profile open externally without agent control. | Decided ([whitepaper][wp-browser-sec]) |
@@ -57,7 +57,7 @@ Decided in outline ([whitepaper, Architecture][wp-arch]). The parameters and bou
 | `snapshot` | `maxChars` | Text and an outline of links, buttons and fields with references such as `[e12]`; 500 to 20,000 characters, 20,000 by default; at most 1,000 references and 20,000 nodes | No |
 | `screenshot` | none | The viewport only, at most 1,280 pixels wide, as JPEG; full-page capture is not offered | No |
 | `click` | `ref` or `selector` (at most 500 characters) | Target must exist, be visible, in view after scrolling, enabled, and not covered by another element | Yes when the target submits a form, follows a download, chooses a file, or matches the sensitive rules |
-| `type` | `ref` or `selector`, `text`, `clear` | Text 1 to 2,000 characters; never presses Enter; only into fields that take text | Yes for password, payment, one-time code and file fields |
+| `type` | `ref` or `selector`, `text`, `clear` | Text 1 to 2,000 characters; never presses Enter; only into text, search, email, URL, phone, number and password inputs, text areas and editable regions; appends at the end unless `clear` | Yes for password, payment, one-time code and file fields |
 | `scroll` | `direction` and `amount`, or `ref` or `selector` | Amount 1 to 10,000 pixels, 600 by default | No |
 
 ### Sensitive actions

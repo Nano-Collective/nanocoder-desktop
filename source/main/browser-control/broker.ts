@@ -94,7 +94,13 @@ const snapshotResult = z.object({
 	refs: z.number().int(),
 	scroll: scrollState,
 });
-const focusResult = z.union([failure, z.object({focused: z.boolean()})]);
+const focusResult = z.union([
+	failure,
+	z.object({
+		focused: z.boolean(),
+		keep: z.string().max(10_000).nullable().optional(),
+	}),
+]);
 const probeResult = z.union([failure, z.object({found: z.boolean()})]);
 const scrollResult = z.union([failure, scrollState]);
 
@@ -155,6 +161,7 @@ function pageBlock(page: BrowserSnapshot): string {
 		`In-app browser (${PAGE_DATA_LABEL}):`,
 		`Status: ${page.status}`,
 		`URL: ${oneLine(page.url ?? '(none)', 2048)}`,
+		`Origin: ${oneLine(page.origin ?? '(none)', 2048)}`,
 		`Title: ${page.title ? oneLine(page.title, 200) : '(none)'}`,
 	].join('\n');
 }
@@ -262,7 +269,14 @@ export function browserBrokerTools(
 				const outcome = await browser.agentRead(projectId, async driver => {
 					for (let attempt = 0; attempt < tries; attempt++) {
 						if (args.for === 'load') {
-							if (browser.pageFor(projectId)?.status !== 'loading') return true;
+							const status = browser.pageFor(projectId)?.status;
+							if (status === 'ready') return true;
+							if (status !== 'loading')
+								throw new AgentRefusal(
+									status === 'failed'
+										? 'The page did not load.'
+										: 'No page is open in the in-app browser.',
+								);
 						} else {
 							const probe = await call(
 								driver,
@@ -395,10 +409,14 @@ export function browserBrokerTools(
 						focusResult,
 					);
 					refused(focus);
-					if (!(focus as {focused: boolean}).focused)
+					const {focused, keep} = focus as {
+						focused: boolean;
+						keep?: string | null;
+					};
+					if (!focused)
 						throw new AgentRefusal(`${describe(found)} could not be focused.`);
 					typed = describe(found);
-					await driver.insertText(args.text);
+					await driver.insertText(`${keep ?? ''}${args.text}`);
 				});
 				return report(
 					`Typed ${args.text.length} characters into ${typed}.`,

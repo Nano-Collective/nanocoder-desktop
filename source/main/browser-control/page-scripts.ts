@@ -61,7 +61,7 @@ const HELPERS = String.raw`
 		if (tag === 'textarea') return !el.readOnly && !el.disabled;
 		if (tag === 'input') {
 			const type = typeOf(el);
-			return ['', 'text', 'search', 'email', 'url', 'tel', 'number', 'password', 'date', 'time', 'datetime-local', 'month', 'week'].includes(type) && !el.readOnly && !el.disabled;
+			return ['', 'text', 'search', 'email', 'url', 'tel', 'number', 'password'].includes(type) && !el.readOnly && !el.disabled;
 		}
 		return el.isContentEditable === true;
 	};
@@ -225,14 +225,20 @@ export const PAGE_SCRIPTS = {
 			const selection = getSelection();
 			selection.removeAllRanges();
 			selection.addRange(range);
-		} else if (args.clear && typeof el.select === 'function') {
-			el.select();
-		} else {
-			try {
-				el.setSelectionRange(el.value.length, el.value.length);
-			} catch {}
+			return {focused: true, keep: null};
 		}
-		return {focused: true};
+		if (args.clear) {
+			el.select();
+			return {focused: true, keep: null};
+		}
+		try {
+			el.setSelectionRange(el.value.length, el.value.length);
+			return {focused: true, keep: null};
+		} catch {
+			// Email and number fields have no caret position, so the whole value is replaced by itself plus the text.
+			el.select();
+			return {focused: true, keep: el.value};
+		}
 	`),
 	probe: script(`
 		if (args.kind === 'selector') {
