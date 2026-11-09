@@ -668,14 +668,16 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 **Build**
 
-- [ ] Typed operations: open, back, reload, wait, snapshot, screenshot, click, type, scroll (`BRW-11`, `SEC-13`)
-- [ ] Observations labelled as untrusted page data and size-bounded (`BRW-15`)
-- [ ] Control advertised only when the server and view are ready (`BRW-17`)
+- [x] Typed operations: open, back, reload, wait, snapshot, screenshot, click, type, scroll (`BRW-11`, `SEC-13`): [`broker.ts`](../source/main/browser-control/broker.ts), with fixed page scripts in an isolated world ([`page-scripts.ts`](../source/main/browser-control/page-scripts.ts)) and real input from main
+- [x] Observations labelled as untrusted page data and size-bounded (`BRW-15`)
+- [x] Control advertised only when the server and view are ready (`BRW-17`): the server is passed to a session only while it runs (phase 3.7). A session's tool list cannot change without an event stream, which the server does not offer, so the view's readiness is enforced on every call instead: each one is refused unless the project is active, the browser is on screen and a local page is open, with no fallback
 
 **Results we want**
 
-- [ ] The agent opens the local dev server, takes a snapshot and clicks a button
-- [ ] No operation can run arbitrary JavaScript or reach the filesystem
+- [x] The agent opens the local dev server, takes a snapshot and clicks a button: [`browser-agent.e2e.ts`](../e2e/browser-agent.e2e.ts), against a real in-app browser
+- [x] No operation can run arbitrary JavaScript or reach the filesystem: there is no script operation, agent values reach the fixed scripts only as JSON data, `file:` and other schemes are refused, and file choosers are refused
+
+Until phase 3.9 brings desktop approvals, agent control stays on local addresses, and sensitive actions (`BRW-13`) are refused with the reason instead of asked about ([browser.md](features/browser.md#phase-38-behaviour)).
 
 ### Phase 3.9: approvals and user control
 

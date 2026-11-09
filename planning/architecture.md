@@ -325,7 +325,7 @@ Subagent tool approvals arrive the same way, with tool call IDs prefixed `subage
 
 ### Browser tool call
 
-This sequence passes the browser server in `mcpServers` on each session and serves it over HTTP (`DEC-47`). It needs the Nanocoder change from [#116][i116], released in 1.32.0. Phase 3.7 built the server, the per-session secrets and one read-only status tool; the broker steps below arrive with phases 3.8 and 3.9.
+This sequence passes the browser server in `mcpServers` on each session and serves it over HTTP (`DEC-47`). It needs the Nanocoder change from [#116][i116], released in 1.32.0. Phase 3.7 built the server, the per-session secrets and one read-only status tool, and phase 3.8 the broker. Until phase 3.9 adds the desktop approval step, the sensitive actions below are refused rather than asked about.
 
 ```mermaid
 sequenceDiagram

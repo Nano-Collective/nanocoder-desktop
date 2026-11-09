@@ -100,7 +100,7 @@ None of these is declared in `initialize`, so the desktop detects them by versio
    | Rename | An accepted version and a safe probe confirming `renameSession`. |
    | Touched files from the timeline | Same rule for `timeline/list`. Otherwise tool call locations remain available. |
    | Agent changes view | A snapshot-read method that does not exist yet (`DEC-14`). Off until it does. |
-   | Agent browser control | Nanocoder reports `mcpCapabilities.http`, its version is 1.32.0 or later (the release with [#116][i116]), and the desktop's browser server is listening. Off otherwise, with the reason. The broker operations follow in phase 3.8. |
+   | Agent browser control | Nanocoder reports `mcpCapabilities.http`, its version is 1.32.0 or later (the release with [#116][i116]), and the desktop's browser server is listening. Off otherwise, with the reason. The broker operations exist from phase 3.8. |
    | Subagent run tree | A child-event projection that does not exist yet (`OQ-03`). Otherwise subagents show as tool cards. |
 
 5. **Report.** The thread list shows which features are on and why any are off (`CHAT-15`).

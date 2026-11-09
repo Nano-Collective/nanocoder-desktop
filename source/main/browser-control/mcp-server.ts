@@ -6,6 +6,7 @@ import {
 	type ServerResponse,
 } from 'node:http';
 import type {AddressInfo} from 'node:net';
+import {z} from 'zod';
 import type {
 	McpServerLease,
 	SessionMcpServers,
@@ -16,26 +17,30 @@ const SERVER_NAME = 'nanocoder-desktop-browser';
 const PATH = '/mcp';
 const LATEST_PROTOCOL = '2025-06-18';
 const PROTOCOLS = new Set(['2024-11-05', '2025-03-26', LATEST_PROTOCOL]);
-const NO_ARGUMENTS = {
-	type: 'object',
-	properties: {},
-	additionalProperties: false,
-} as const;
+const NO_ARGUMENTS = z.strictObject({});
 
 export interface BrowserToolResult {
 	text: string;
 	isError?: boolean;
+	image?: {data: string; mimeType: string};
 }
 
 export interface BrowserTool {
 	name: string;
 	description: string;
 	readOnly: boolean;
-	// Only argument-free tools exist so far; the schema widens with the broker (BRW-11).
+	// Without one, the tool takes no arguments.
+	input?: z.ZodType;
+	// Called only with arguments that passed `input`.
 	call(
 		projectId: string,
-		args: Record<string, never>,
+		args: never,
 	): BrowserToolResult | Promise<BrowserToolResult>;
+}
+
+function jsonSchema(input: z.ZodType): object {
+	const {$schema: _, ...schema} = z.toJSONSchema(input, {io: 'input'});
+	return schema;
 }
 
 export interface BrowserMcpServer {
@@ -104,6 +109,12 @@ export function createBrowserMcpServer(options: {
 	tools: readonly BrowserTool[];
 }): BrowserMcpServer {
 	const tools = new Map(options.tools.map(tool => [tool.name, tool]));
+	const schemas = new Map(
+		options.tools.map(tool => [
+			tool.name,
+			jsonSchema(tool.input ?? NO_ARGUMENTS),
+		]),
+	);
 	// Keyed by the secret's digest, so a lookup never compares secrets byte by byte.
 	const grants = new Map<string, Grant>();
 	let server: Server | undefined;
@@ -142,13 +153,26 @@ export function createBrowserMcpServer(options: {
 			throw new RpcError(-32602, 'tools/call needs a tool name');
 		const tool = tools.get(params.name);
 		if (!tool) throw new RpcError(-32602, `Unknown tool: ${params.name}`);
-		const args = params.arguments ?? {};
-		if (!isRecord(args) || Object.keys(args).length > 0)
-			throw new RpcError(-32602, `${tool.name} takes no arguments`);
+		const parsed = (tool.input ?? NO_ARGUMENTS).safeParse(
+			params.arguments ?? {},
+		);
+		if (!parsed.success)
+			throw new RpcError(
+				-32602,
+				`Invalid arguments for ${tool.name}: ${parsed.error.issues
+					.slice(0, 3)
+					.map(
+						issue => `${issue.path.join('.') || 'arguments'} ${issue.message}`,
+					)
+					.join('; ')}`,
+			);
 		try {
-			const result = await tool.call(grant.projectId, {});
+			const result = await tool.call(grant.projectId, parsed.data as never);
 			return {
-				content: [{type: 'text', text: result.text}],
+				content: [
+					{type: 'text', text: result.text},
+					...(result.image ? [{type: 'image', ...result.image}] : []),
+				],
 				isError: result.isError === true,
 			};
 		} catch {
@@ -183,7 +207,7 @@ export function createBrowserMcpServer(options: {
 					tools: [...tools.values()].map(tool => ({
 						name: tool.name,
 						description: tool.description,
-						inputSchema: NO_ARGUMENTS,
+						inputSchema: schemas.get(tool.name),
 						annotations: {readOnlyHint: tool.readOnly},
 					})),
 				};

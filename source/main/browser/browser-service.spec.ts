@@ -2,6 +2,7 @@ import path from 'node:path';
 import test, {type ExecutionContext} from 'ava';
 import type {BrowserDownloadItem} from '@/main/browser/browser-service';
 import {
+	AgentRefusal,
 	BrowserService,
 	type BrowserViewHooks,
 } from '@/main/browser/browser-service';
@@ -13,6 +14,7 @@ const first = '4f6c1f0e-3a55-4a0b-9d1e-0a2b3c4d5e6f';
 const second = '9b1d2c3e-4f50-4a6b-8c7d-1e2f3a4b5c6d';
 
 interface FakeView {
+	driven: string[];
 	partition: string;
 	hooks: BrowserViewHooks;
 	loads: string[];
@@ -26,7 +28,11 @@ interface FakeView {
 
 function fixture(
 	t: ExecutionContext,
-	options: {failCreate?: boolean; publicSites?: boolean} = {},
+	options: {
+		failCreate?: boolean;
+		publicSites?: boolean;
+		delay?: (ms: number) => Promise<void>;
+	} = {},
 ) {
 	const events: BrowserEvent[] = [];
 	const views: FakeView[] = [];
@@ -56,6 +62,7 @@ function fixture(
 				: undefined,
 		emit: event => events.push(event),
 		publicSites: () => settings.publicSites,
+		delay: options.delay ?? (() => Promise.resolve()),
 		downloadsPath: () => '/home/user/Downloads',
 		profiles,
 		clearData: async partition => {
@@ -72,6 +79,7 @@ function fixture(
 				reject(error: Error): void;
 			}> = [];
 			const view: FakeView = {
+				driven: [],
 				partition: preferences.partition,
 				hooks,
 				loads: [],
@@ -100,6 +108,24 @@ function fixture(
 				setBounds: bounds => view.bounds.push(bounds),
 				destroy: () => {
 					view.destroyed++;
+				},
+				driver: {
+					run: async code => {
+						view.driven.push(`run ${code}`);
+						return {code};
+					},
+					click: async (x, y) => {
+						view.driven.push(`click ${x},${y}`);
+					},
+					insertText: async text => {
+						view.driven.push(`insert ${text}`);
+					},
+					capture: async () => ({
+						data: 'aGk=',
+						mimeType: 'image/jpeg' as const,
+						width: 2,
+						height: 1,
+					}),
 				},
 			};
 		},
@@ -1082,4 +1108,187 @@ test('ACP-22 the page for an agent belongs to the active project only, and to no
 	t.is(f.service.pageFor('unknown'), null);
 	await f.service.close();
 	t.is(f.service.pageFor(first), null);
+});
+
+const shown = {x: 0, y: 0, width: 800, height: 600};
+
+async function agentReady(t: ExecutionContext, url = 'http://localhost:5173/') {
+	const f = fixture(t);
+	f.service.activate(first);
+	f.service.setBounds({projectId: first, bounds: shown});
+	await f.service.open({projectId: first, url});
+	return f;
+}
+
+const refusal = async (promise: Promise<unknown>) => {
+	const error = await promise.then(
+		() => undefined,
+		(caught: unknown) => caught,
+	);
+	if (!(error instanceof AgentRefusal))
+		throw new Error(`Expected an AgentRefusal, got ${String(error)}`);
+	return error.message;
+};
+
+test('BRW-11 the agent acts only on the active project, with the browser on screen and a page open', async t => {
+	const f = fixture(t);
+	const use = () => f.service.agentUse(first, async driver => driver.run('x'));
+	t.regex(await refusal(use()), /not showing this project/);
+	f.service.activate(first);
+	t.regex(await refusal(use()), /not on screen/);
+	f.service.setBounds({projectId: first, bounds: shown});
+	t.regex(await refusal(use()), /No page is open/);
+	await f.service.open({projectId: first, url: 'http://localhost:5173/'});
+	t.is(((await use()).value as {code: string}).code, 'x');
+	t.regex(
+		await refusal(f.service.agentUse(second, async () => 1)),
+		/not showing this project/,
+	);
+	f.service.setBounds({projectId: first, bounds: null});
+	t.regex(await refusal(use()), /not on screen/);
+});
+
+test('BRW-16 the agent opens only local addresses, even with public sites on, and never another scheme', async t => {
+	const f = fixture(t, {publicSites: true});
+	f.service.activate(first);
+	f.service.setBounds({projectId: first, bounds: shown});
+	t.regex(
+		await refusal(f.service.agentOpen(first, 'https://example.com/')),
+		/local addresses/,
+	);
+	t.regex(
+		await refusal(f.service.agentOpen(first, 'file:///etc/passwd')),
+		/Only http and https/,
+	);
+	t.regex(await refusal(f.service.agentOpen(first, 'not a url')), /valid/);
+	t.is(f.views.length, 0);
+	const opened = await f.service.agentOpen(first, 'http://127.0.0.1:3000/a');
+	t.is(opened.page.url, 'http://127.0.0.1:3000/a');
+	t.deepEqual(opened.cancelled, []);
+});
+
+test('BRW-16 the agent does not act on a public page the user opened', async t => {
+	const f = fixture(t, {publicSites: true});
+	f.service.activate(first);
+	f.service.setBounds({projectId: first, bounds: shown});
+	await f.service.open({projectId: first, url: 'https://example.com/'});
+	t.regex(
+		await refusal(f.service.agentUse(first, async () => 1)),
+		/not a local address/,
+	);
+	t.deepEqual(f.views[0].driven, []);
+});
+
+test('BRW-16 during an agent action a page cannot leave localhost, and the user question is not raised', async t => {
+	const f = await agentReady(t);
+	f.settings.publicSites = true;
+	const outcome = await f.service.agentUse(first, async () =>
+		f.views[0].hooks.allow('https://example.com/next'),
+	);
+	t.false(outcome.value);
+	t.deepEqual(outcome.cancelled, ['navigation']);
+	t.is(f.service.get({projectId: first}).blocked, null);
+	t.true(f.views[0].hooks.allow('https://example.com/next'));
+});
+
+test('BRW-13 during an agent action a request that sends data and any download are cancelled', async t => {
+	const f = await agentReady(t);
+	const cancelled: string[] = [];
+	const outcome = await f.service.agentUse(first, async () => {
+		const {hooks} = f.views[0];
+		const verdicts = ['GET', 'HEAD', 'OPTIONS', 'POST', 'PUT', 'DELETE'].map(
+			method => hooks.request(method),
+		);
+		hooks.download({
+			url: 'http://localhost:5173/file.zip',
+			filename: 'file.zip',
+			totalBytes: 10,
+			setDestination: () => cancelled.push('asked'),
+			cancel: () => cancelled.push('cancelled'),
+			onProgress: () => {},
+			onDone: () => {},
+		});
+		return verdicts;
+	});
+	t.deepEqual(outcome.value, [true, true, true, false, false, false]);
+	t.deepEqual(outcome.cancelled.sort(), ['download', 'request']);
+	t.deepEqual(cancelled, ['cancelled']);
+	t.deepEqual(f.service.get({projectId: first}).downloads, []);
+	t.true(f.views[0].hooks.request('POST'));
+});
+
+test('BRW-11 agent actions run one at a time and wait for a navigation they start to settle', async t => {
+	const waits: Array<() => void> = [];
+	const f = fixture(t, {
+		delay: () => new Promise<void>(resolve => waits.push(resolve)),
+	});
+	f.service.activate(first);
+	f.service.setBounds({projectId: first, bounds: shown});
+	await f.service.open({projectId: first, url: 'http://localhost:5173/'});
+	const order: string[] = [];
+	const firstAction = f.service.agentUse(first, async () => {
+		order.push('first');
+		f.views[0].hooks.loading(true);
+	});
+	const secondAction = f.service.agentUse(first, async () => {
+		order.push('second');
+	});
+	await new Promise(resolve => setImmediate(resolve));
+	t.deepEqual(order, ['first']);
+	while (waits.length === 0)
+		await new Promise(resolve => setImmediate(resolve));
+	f.views[0].hooks.loading(false);
+	waits.shift()?.();
+	await firstAction;
+	while (waits.length > 0 || order.length < 2) {
+		waits.shift()?.();
+		await new Promise(resolve => setImmediate(resolve));
+	}
+	await secondAction;
+	t.deepEqual(order, ['first', 'second']);
+});
+
+test('BRW-11 going back or reloading for the agent stays on local addresses', async t => {
+	const f = await agentReady(t);
+	f.history.back = 'https://example.com/';
+	f.settings.publicSites = true;
+	t.regex(
+		await refusal(f.service.agentNavigate(first, 'back')),
+		/local addresses/,
+	);
+	f.history.back = null;
+	t.regex(
+		await refusal(f.service.agentNavigate(first, 'back')),
+		/no earlier page/,
+	);
+	f.history.back = 'http://localhost:5173/earlier';
+	await f.service.agentNavigate(first, 'back');
+	await f.service.agentNavigate(first, 'reload');
+	t.deepEqual(f.views[0].calls, ['back', 'reload']);
+});
+
+test('BRW-11 a project switch during an agent action is refused, not reported as done', async t => {
+	const f = await agentReady(t);
+	t.regex(
+		await refusal(
+			f.service.agentUse(first, async () => {
+				f.service.activate(second);
+			}),
+		),
+		/changed/,
+	);
+});
+
+test('BRW-11 reading the page for the agent holds nothing, so the page and the user can still send data', async t => {
+	const f = await agentReady(t);
+	const outcome = await f.service.agentRead(first, async () =>
+		f.views[0].hooks.request('POST'),
+	);
+	t.true(outcome.value);
+	t.deepEqual(outcome.cancelled, []);
+	f.service.setBounds({projectId: first, bounds: null});
+	t.regex(
+		await refusal(f.service.agentRead(first, async () => 1)),
+		/not on screen/,
+	);
 });
