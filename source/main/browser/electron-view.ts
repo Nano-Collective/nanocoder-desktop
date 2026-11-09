@@ -16,6 +16,9 @@ import {denyBrowserPermissions} from '@/main/browser/profile';
 
 const browserSessions = new WeakSet<Session>();
 const ERR_ABORTED = -3;
+// A world of its own, so page scripts cannot see or replace the broker's helpers (SEC-13).
+const AGENT_WORLD = 1287;
+const SCREENSHOT_WIDTH = 1280;
 
 export async function clearBrowserPartition(partition: string): Promise<void> {
 	const target = session.fromPartition(partition);
@@ -111,6 +114,13 @@ export function createElectronViewFactory(
 			});
 		};
 		partition.on('will-download', onDownload);
+		partition.webRequest.onBeforeRequest((details, callback) => {
+			callback({
+				cancel:
+					details.webContentsId === contents.id &&
+					!hooks.request(details.method),
+			});
+		});
 		let retire: (() => void) | undefined;
 		view.setVisible(false);
 		window.contentView.addChildView(view);
@@ -167,7 +177,36 @@ export function createElectronViewFactory(
 				if (bounds) view.setBounds(bounds);
 				view.setVisible(bounds !== null);
 			},
+			driver: {
+				run: code =>
+					contents.executeJavaScriptInIsolatedWorld(AGENT_WORLD, [{code}]),
+				click: async (x, y) => {
+					contents.sendInputEvent({type: 'mouseMove', x, y});
+					for (const type of ['mouseDown', 'mouseUp'] as const)
+						contents.sendInputEvent({
+							type,
+							x,
+							y,
+							button: 'left',
+							clickCount: 1,
+						});
+				},
+				insertText: text => contents.insertText(text),
+				capture: async () => {
+					let image = await contents.capturePage();
+					if (image.getSize().width > SCREENSHOT_WIDTH)
+						image = image.resize({width: SCREENSHOT_WIDTH, quality: 'good'});
+					const {width, height} = image.getSize();
+					return {
+						data: image.toJPEG(70).toString('base64'),
+						mimeType: 'image/jpeg' as const,
+						width,
+						height,
+					};
+				},
+			},
 			destroy: () => {
+				partition.webRequest.onBeforeRequest(null);
 				partition.removeListener('will-download', onDownload);
 				if (!window.isDestroyed()) window.contentView.removeChildView(view);
 				if (!contents.isDestroyed()) contents.close();

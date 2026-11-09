@@ -99,18 +99,24 @@ const results = {
 		},
 		authMethods: [],
 	}),
-	'session/new': () =>
-		mode === 'no-session'
-			? undefined
-			: {
-					sessionId: scopedSessions
-						? `${sessionPrefix}-${randomUUID()}`
-						: mode === 'multiple-sessions'
-							? `fake-session-${++nextSession}`
-							: 'fake-session',
-					modes: modeState(),
-					...(mode === 'replay-gates' && {configOptions: replayConfig()}),
-				},
+	'session/new': params => {
+		if (mode === 'no-session') return undefined;
+		// The end-to-end browser tests read this to call the desktop's server as the agent would.
+		if (mcpHttp)
+			writeFileSync(
+				'.fake-mcp-servers.json',
+				JSON.stringify(params.mcpServers),
+			);
+		return {
+			sessionId: scopedSessions
+				? `${sessionPrefix}-${randomUUID()}`
+				: mode === 'multiple-sessions'
+					? `fake-session-${++nextSession}`
+					: 'fake-session',
+			modes: modeState(),
+			...(mode === 'replay-gates' && {configOptions: replayConfig()}),
+		};
+	},
 	'session/list': () =>
 		mode === 'list-fails'
 			? undefined

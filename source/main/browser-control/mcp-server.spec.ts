@@ -1,5 +1,6 @@
 import {request as httpRequest} from 'node:http';
 import test from 'ava';
+import {z} from 'zod';
 import {
 	type BrowserMcpServer,
 	type BrowserTool,
@@ -524,3 +525,99 @@ test.serial('a secret released while its call runs gets no answer', async t => {
 	t.is(reply.status, 401);
 	t.false(reply.body.includes('late page data'));
 });
+
+test.serial(
+	'a tool with arguments publishes its schema and gets only arguments that match it',
+	async t => {
+		const seen: unknown[] = [];
+		const harness = await started([
+			{
+				name: 'desktop_browser_open',
+				description: 'Open',
+				readOnly: false,
+				input: z.strictObject({url: z.string().max(20)}),
+				call: (_projectId, args) => {
+					seen.push(args);
+					return {text: 'opened'};
+				},
+			},
+		]);
+		t.teardown(() => harness.server.close());
+		const {url, auth} = lease(harness);
+		const listed = JSON.parse(
+			(await post(url, auth, rpc('tools/list', {}))).body,
+		);
+		t.deepEqual(listed.result.tools[0].inputSchema, {
+			type: 'object',
+			properties: {url: {type: 'string', maxLength: 20}},
+			required: ['url'],
+			additionalProperties: false,
+		});
+		t.deepEqual(listed.result.tools[0].annotations, {readOnlyHint: false});
+		for (const args of [
+			{},
+			{url: 7},
+			{url: 'x'.repeat(21)},
+			{url: 'a', extra: 1},
+		]) {
+			const reply = JSON.parse(
+				(
+					await post(
+						url,
+						auth,
+						rpc('tools/call', {name: 'desktop_browser_open', arguments: args}),
+					)
+				).body,
+			);
+			t.is(reply.error?.code, -32602, JSON.stringify(args));
+			t.regex(
+				reply.error?.message ?? '',
+				/^Invalid arguments for desktop_browser_open/,
+			);
+		}
+		await post(
+			url,
+			auth,
+			rpc('tools/call', {name: 'desktop_browser_open', arguments: {url: 'a'}}),
+		);
+		t.deepEqual(seen, [{url: 'a'}]);
+	},
+);
+
+test.serial(
+	'an image result follows its text label, so a client that reads only the first block still gets the label',
+	async t => {
+		const harness = await started([
+			{
+				name: 'desktop_browser_screenshot',
+				description: 'Shot',
+				readOnly: true,
+				call: () => ({
+					text: 'Screenshot label',
+					image: {data: 'aGk=', mimeType: 'image/jpeg'},
+				}),
+			},
+		]);
+		t.teardown(() => harness.server.close());
+		const {url, auth} = lease(harness);
+		const reply = JSON.parse(
+			(
+				await post(
+					url,
+					auth,
+					rpc('tools/call', {
+						name: 'desktop_browser_screenshot',
+						arguments: {},
+					}),
+				)
+			).body,
+		);
+		t.deepEqual(reply.result, {
+			content: [
+				{type: 'text', text: 'Screenshot label'},
+				{type: 'image', data: 'aGk=', mimeType: 'image/jpeg'},
+			],
+			isError: false,
+		});
+	},
+);

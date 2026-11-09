@@ -19,6 +19,7 @@ import {
 	isBrowserSession,
 } from '@/main/browser/electron-view';
 import {BrowserProfiles} from '@/main/browser/profiles';
+import {browserBrokerTools} from '@/main/browser-control/broker';
 import {
 	type BrowserMcpServer,
 	createBrowserMcpServer,
@@ -403,7 +404,10 @@ export function registerIpcHandlers(
 		const pages = browser;
 		browserServer = createBrowserMcpServer({
 			version: app.getVersion(),
-			tools: [browserStatusTool(projectId => pages.pageFor(projectId))],
+			tools: [
+				browserStatusTool(projectId => pages.pageFor(projectId)),
+				...browserBrokerTools(pages),
+			],
 		});
 		// Until it listens, sessions get no server and the gate says why (BRW-17).
 		void browserServer.start().catch(() => undefined);
