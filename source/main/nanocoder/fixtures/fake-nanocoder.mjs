@@ -19,6 +19,8 @@ const TRUST_REASONS = {
 	untrusted: 'is not trusted',
 	changed: 'changed since you trusted it',
 };
+// Reports HTTP client MCP servers like Nanocoder 1.32.0, beside any mode.
+const mcpHttp = existsSync('.fake-mcp-http');
 let nextSession = 0;
 const scopedSessions = process.env.NANOCODER_TEST_SCOPED_SESSIONS === '1';
 const sessionPrefix = `fake-session-${createHash('sha256').update(process.cwd()).digest('hex').slice(0, 12)}`;
@@ -81,6 +83,7 @@ const results = {
 							...(mode === 'no-delete' ? {} : {delete: {}}),
 							...(mode === 'no-resume' ? {} : {resume: {}}),
 						},
+						...(mcpHttp && {mcpCapabilities: {http: true, sse: false}}),
 					},
 		agentInfo: {
 			name: 'nanocoder',
@@ -88,9 +91,11 @@ const results = {
 			version:
 				mode === 'old-version'
 					? '1.30.0'
-					: mode === 'minimum-version' || mode === 'minimum-no-gates'
-						? '1.32.0'
-						: '9.9.9',
+					: mode === 'version-1.31'
+						? '1.31.0'
+						: mode === 'minimum-version' || mode === 'minimum-no-gates'
+							? '1.32.0'
+							: '9.9.9',
 		},
 		authMethods: [],
 	}),

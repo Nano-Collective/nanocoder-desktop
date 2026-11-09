@@ -1066,3 +1066,20 @@ test('BRW-10 a page that never committed is not offered to the chat', async t =>
 	await f.service.open({projectId: first, url: 'http://localhost:3000/a'});
 	t.is(f.service.currentPage({projectId: first}), null);
 });
+
+test('ACP-22 the page for an agent belongs to the active project only, and to nobody after close', async t => {
+	const f = fixture(t);
+	t.is(f.service.pageFor(first), null);
+	f.service.activate(first);
+	t.like(f.service.pageFor(first), {projectId: first, status: 'closed'});
+	await f.service.open({projectId: first, url: 'http://localhost:5173/'});
+	t.like(f.service.pageFor(first), {
+		status: 'ready',
+		url: 'http://localhost:5173/',
+		origin: 'http://localhost:5173',
+	});
+	t.is(f.service.pageFor(second), null);
+	t.is(f.service.pageFor('unknown'), null);
+	await f.service.close();
+	t.is(f.service.pageFor(first), null);
+});

@@ -19,6 +19,11 @@ import {
 	isBrowserSession,
 } from '@/main/browser/electron-view';
 import {BrowserProfiles} from '@/main/browser/profiles';
+import {
+	type BrowserMcpServer,
+	createBrowserMcpServer,
+} from '@/main/browser-control/mcp-server';
+import {browserStatusTool} from '@/main/browser-control/status-tool';
 import {createWorkspaceControls} from '@/main/controls/workspace-controls';
 import {confirmYolo} from '@/main/controls/yolo-consent';
 import {resolveAttachments} from '@/main/files/attachments';
@@ -85,6 +90,7 @@ let workspaceServices: WorkspaceServices = {};
 let unsubscribeProjectEvents: (() => void) | undefined;
 let terminal: TerminalService | undefined;
 let browser: BrowserService | undefined;
+let browserServer: BrowserMcpServer | undefined;
 let activity: ProjectActivityTracker | undefined;
 const agentCommands = new AgentCommandObserver((projectId, command) =>
 	terminal?.setAgentCommand(projectId, command),
@@ -302,6 +308,7 @@ export function closeNanocoder(): Promise<void> {
 				await Promise.all([
 					terminal?.close(),
 					browser?.close(),
+					browserServer?.close(),
 					rendererCleanup,
 					connecting,
 					threads?.detach(workspaceServices.store?.projects.list() ?? []),
@@ -393,6 +400,13 @@ export function registerIpcHandlers(
 			openExternal: createSystemOpener(appWindow),
 			createView: createElectronViewFactory(appWindow),
 		});
+		const pages = browser;
+		browserServer = createBrowserMcpServer({
+			version: app.getVersion(),
+			tools: [browserStatusTool(projectId => pages.pageFor(projectId))],
+		});
+		// Until it listens, sessions get no server and the gate says why (BRW-17).
+		void browserServer.start().catch(() => undefined);
 	}
 	supervisor = services.supervisor
 		? undefined
@@ -411,6 +425,7 @@ export function registerIpcHandlers(
 				},
 				homeDir: homedir(),
 				confirmTrust,
+				mcpServers: projectId => browserServer?.forProject(projectId),
 				activity: projectId =>
 					threads?.activity(projectId) ?? {
 						runningTurn: false,

@@ -3,7 +3,7 @@
 The isolated, agent-controlled browser: navigation, agent control, approvals, downloads, settings, and annotations as a follow-up.
 
 - Status: Draft
-- Last updated: 2026-11-04
+- Last updated: 2026-11-09
 - Drafted by: @akramcodez
 
 ## Purpose
@@ -24,7 +24,7 @@ A user-visible preview for a running application or a reference page. The user c
 | BRW-08 | Clear browser data from settings, for each profile. Removing a project leaves its profile alone. | Decided ([whitepaper][wp-browser]); per profile in `DEC-49` |
 | BRW-09 | Open the current URL externally. | Decided ([whitepaper][wp-browser]) |
 | BRW-10 | Send the current URL and title to the active chat. | Decided ([whitepaper][wp-browser]) |
-| BRW-11 | The agent can request typed navigation, waiting, page snapshots, screenshots, clicks, text entry and scrolling, through the desktop's MCP server passed in `mcpServers`. | Decided (operations, [whitepaper][wp-arch]); the route is Proposed (awaiting @will-lamerton) ([#116][i116]); route decided in `DEC-47`; the Nanocoder side is merged and unreleased |
+| BRW-11 | The agent can request typed navigation, waiting, page snapshots, screenshots, clicks, text entry and scrolling, through the desktop's MCP server passed in `mcpServers`. | Decided (operations, [whitepaper][wp-arch]); the route is Proposed (awaiting @will-lamerton) ([#116][i116]); route decided in `DEC-47`; the Nanocoder side is released in 1.32.0, and the route is built in phase 3.7 |
 | BRW-12 | Each agent action, observation and pending approval is shown in the chat and the browser activity. | Decided ([whitepaper][wp-browser]) |
 | BRW-13 | Sensitive submissions, purchases, permission changes, deletion and downloads need desktop approval. | Decided ([whitepaper][wp-browser-sec]) |
 | BRW-14 | The user can pause agent control, interrupt an action, or take control. | Decided ([whitepaper][wp-browser]) |
@@ -37,7 +37,7 @@ A user-visible preview for a running application or a reference page. The user c
 
 ## Adapter transport
 
-Decided (`DEC-47`): HTTP on `127.0.0.1` with a secret in the headers for each session, passed in `mcpServers` ([#116][i116], merged in Nanocoder and unreleased). The three ways the desktop's server could reach Nanocoder, of which Nanocoder supports stdio and HTTP:
+Decided (`DEC-47`): HTTP on `127.0.0.1` with a secret in the headers for each session, passed in `mcpServers` ([#116][i116], released in Nanocoder 1.32.0). The three ways the desktop's server could reach Nanocoder, of which Nanocoder supports stdio and HTTP:
 
 | Transport | How | Trade-off |
 |---|---|---|
@@ -102,6 +102,15 @@ The browser is the third tab of the right workbench. `BRW-03` is the user's own 
 - **Localhost links (`TERM-05`).** `source/shared/local-url.ts` finds `http`, `https` and bare `host:port` addresses for `localhost`, `127.x.x.x` and `[::1]`. It trims trailing punctuation, ignores colour codes, refuses credentials and look-alike hosts such as `localhost.evil.com`, and does not offer an address that sits inside another URL. In the terminal each such address is a link, and the toolbar shows a button for the newest one so opening a dev server is one action and works from the keyboard. In chat only a link that is entirely one localhost address becomes a button; its target host is shown beside the text, and every other link stays inert. Opening goes through the same origin policy as a typed address, so main still decides. A terminal address that wraps over two lines is not linked.
 - **Other addresses.** `TERM-05` also asks for other addresses to open outside the app after a confirmation. Only the current page of the browser can do that today (`BRW-09`); other addresses in terminal output or chat stay plain text.
 - **Send the page to chat (`BRW-10`).** The attachment names the page by address only. Main takes the title and address from the browser's own state when the prompt is sent, refuses it if that page is no longer the one that was attached, keeps the title to one bounded line, and labels the block as page data, not instructions (`BRW-15`). It rides with one prompt and is not stored (`CHAT-16`).
+
+### Phase 3.7 behaviour
+
+- **One server in main (`DEC-47`).** [`mcp-server.ts`](../../source/main/browser-control/mcp-server.ts) listens on `127.0.0.1` on a random port once the store is open, and stops on quit. It speaks MCP Streamable HTTP with JSON answers only: `POST /mcp` carries one JSON-RPC message, a notification gets `202`, and there is no event stream, batch or MCP session ID. It answers `initialize`, `ping`, `tools/list` and `tools/call`, and nothing else.
+- **A secret for each session.** Each `session/new` and `session/resume` gets a fresh 256-bit secret, sent only inside that ACP request as `Authorization: Bearer`, never in the environment, so the agent's shell cannot read it. The server keeps only the secret's SHA-256 digest and the project it belongs to. The secret is revoked when its session fails to start or set its mode, is resumed again, is deleted, or when the connection closes or Nanocoder exits, and a call still running when its secret is revoked gets no answer. Nanocoder's stderr ring already redacts a bearer value, so a secret Nanocoder echoed would not reach diagnostics.
+- **Refusals, in order.** A request with any `Origin` header is refused (`403`), so no web page can reach the server, whatever the secret. Then a `Host` other than the exact loopback address and port (`403`, against DNS rebinding), another path (`404`), a missing or unknown secret (`401`), another method (`405`), a type other than JSON (`415`), a body over 64 KiB (`413`) and an MCP protocol version it does not speak (`400`). Malformed JSON, batches and invalid JSON-RPC are refused before any tool runs.
+- **When sessions get it (`BRW-17`).** Only when Nanocoder reports `mcpCapabilities.http`, its version is 1.32.0 or later, and the server is listening; otherwise every session gets an empty `mcpServers` list and the `browserControl` gate gives the reason. The capabilities dialog does not show this gate yet, because its rows follow the approved design.
+- **One read-only tool.** `desktop_browser_status` reports whether the in-app browser has a page for this project, with its status, address, origin and title, labelled as page data from the in-app browser, not instructions (`BRW-15`). The title and address are one bounded line each. It takes no arguments, is marked `readOnlyHint`, and answers only for the project its secret was issued to while that project is the active one. Nanocoder asks before it in `normal` mode like any MCP tool (`DEC-50`). The typed operations, approvals and the per-site prompt arrive with phases 3.8 and 3.9.
+- **Proof against the pinned Nanocoder.** [`browser-server.acp.ts`](../../source/main/browser-control/browser-server.acp.ts) shows that the headers reach Nanocoder's MCP client and the tool runs for its project, that the tool exists only in the session given the server, that a wrong secret leaves the session working without the tool, that a resumed session gets a fresh secret, and that the user's configuration and the project gain no MCP files.
 
 ## Explicit deferrals
 

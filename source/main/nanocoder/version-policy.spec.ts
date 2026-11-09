@@ -1,6 +1,8 @@
 import test from 'ava';
 import {
+	MCP_SERVERS_MIN_VERSION,
 	MIN_NANOCODER_VERSION,
+	supportsClientMcpServers,
 	versionPolicy,
 } from '@/main/nanocoder/version-policy';
 
@@ -55,4 +57,27 @@ test('always accepts the exact main-owned bundled version', t => {
 		reason: null,
 	});
 	t.is(versionPolicy('1.30.0', '1.31.0').status, 'refused');
+});
+
+test('client mcpServers count only from the 1.32.0 release, which first honoured them (ACP-22 DEC-47)', t => {
+	t.is(MCP_SERVERS_MIN_VERSION, '1.32.0');
+	for (const version of [
+		'1.32.0',
+		'1.32.1',
+		'1.33.0',
+		'2.0.0',
+		'1.32.0+build.7',
+	])
+		t.true(supportsClientMcpServers(version), version);
+	for (const version of [
+		null,
+		'1.31.0',
+		'1.31.9',
+		'0.99.0',
+		'1.32.0-rc.1',
+		'v1.32.0',
+		'1.32',
+		'',
+	])
+		t.false(supportsClientMcpServers(version), String(version));
 });
