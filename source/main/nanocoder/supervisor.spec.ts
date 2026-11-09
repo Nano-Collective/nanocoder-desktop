@@ -1007,3 +1007,35 @@ test('a cleanup failure waits for all other project cleanup before rejecting', a
 	await rejection;
 	t.deepEqual(await cb.exited, {code: 0, signal: null});
 });
+
+test('ACP-22 each project process gets the browser server scoped to that project, and the gate reports it', async t => {
+	const chosen = project();
+	writeFileSync(path.join(chosen.canonicalRoot, '.fake-mcp-http'), '');
+	const asked: string[] = [];
+	const supervisor = make({
+		mcpServers: projectId => {
+			asked.push(projectId);
+			return {ready: () => true, lease: () => undefined};
+		},
+	});
+	t.teardown(() => supervisor.close());
+	const state = await supervisor.ensureProcess(chosen);
+	t.deepEqual(asked, [chosen.id]);
+	t.deepEqual(state.gates?.features.browserControl, {
+		enabled: true,
+		reason: null,
+	});
+	t.true(supervisor.getConnection(chosen.id).browserServer);
+});
+
+test('ACP-22 without a running browser server the gate stays off with its reason', async t => {
+	const chosen = project();
+	writeFileSync(path.join(chosen.canonicalRoot, '.fake-mcp-http'), '');
+	const supervisor = make({mcpServers: () => undefined});
+	t.teardown(() => supervisor.close());
+	const state = await supervisor.ensureProcess(chosen);
+	t.deepEqual(state.gates?.features.browserControl, {
+		enabled: false,
+		reason: 'The desktop browser server is not running for this project.',
+	});
+});

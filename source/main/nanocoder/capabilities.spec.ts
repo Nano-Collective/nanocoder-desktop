@@ -156,3 +156,36 @@ test('malformed capability flags never count as offered', t => {
 		list: false,
 	});
 });
+
+test('agent browser control is on only with HTTP MCP servers, Nanocoder 1.32.0 or later and the desktop server attached (ACP-22 BRW-17)', t => {
+	const agent = (version: string, http: boolean) =>
+		describeAgent('/p', {
+			protocolVersion: 1,
+			agentInfo: {name: 'nanocoder', version},
+			agentCapabilities: {mcpCapabilities: {http}},
+		});
+	const probes = {rename: false, timeline: false};
+	const gate = (version: string, http: boolean, attached: boolean) =>
+		capabilityGates('project', agent(version, http), probes, attached).features
+			.browserControl;
+	t.deepEqual(gate('1.32.0', true, true), {enabled: true, reason: null});
+	t.deepEqual(gate('1.32.0', false, true), {
+		enabled: false,
+		reason:
+			'Nanocoder did not report mcpCapabilities.http, which the desktop browser server needs.',
+	});
+	t.deepEqual(gate('1.31.0', true, true), {
+		enabled: false,
+		reason:
+			'Nanocoder 1.31.0 predates client mcpServers support, which arrived in 1.32.0.',
+	});
+	t.deepEqual(gate('1.32.0', true, false), {
+		enabled: false,
+		reason: 'The desktop browser server is not running for this project.',
+	});
+	t.false(gate('1.30.0', true, true).enabled);
+	t.false(
+		capabilityGates('project', agent('1.32.0', true), probes).features
+			.browserControl.enabled,
+	);
+});

@@ -3,7 +3,7 @@
 How the desktop drives `nanocoder --acp`: methods, capability negotiation, supported versions, known Nanocoder quirks, and the Nanocoder changes the plan depends on.
 
 - Status: Draft
-- Last updated: 2026-11-04
+- Last updated: 2026-11-09
 - Drafted by: @akramcodez
 
 ## Baseline
@@ -37,7 +37,7 @@ Nanocoder declares `@agentclientprotocol/sdk` `^1.3.0` and its lockfile resolves
 | ACP-19 | When `session/resume` reports a missing session, move the thread to ViewOnly and explain the likely cause: Nanocoder's retention (by default 30 idle days, or the oldest beyond 100) or a deletion elsewhere, with a pointer to Nanocoder's session settings. The error cannot tell the two apart, so the notice says retention is likely. | Decided (ViewOnly state); explanation decided in `DEC-45` |
 | ACP-20 | Never start a session in a project the user has not trusted. The one exception is a pre-trust probe: until Nanocoder can report trust without starting ACP ([nanocoder#1899][nc1899]), the desktop starts `nanocoder --acp` once to learn the verdict, and it exits on a refusal before opening any session. After the user confirms, record trust in Nanocoder's own store with one short trust launch; no other launch sets a trust override. If Nanocoder refuses at startup, show its reason and the trust prompt again. See [Directory trust](#directory-trust). | Proposed (awaiting @will-lamerton) (`DEC-30`, [#4][i4]) |
 | ACP-21 | Run the shared ACP conformance tests against every Nanocoder version the desktop supports. | Proposed (awaiting @will-lamerton) ([#118][i118]) |
-| ACP-22 | Pass the desktop's browser-control MCP server in `mcpServers` on `session/new` and `session/resume` once Nanocoder honours it, and advertise agent browser control only when that server and the browser view are both ready. | Proposed (awaiting @will-lamerton) ([#116][i116]); transport decided in `DEC-47`; the Nanocoder side is merged and unreleased ([nanocoder#1914](https://github.com/Nano-Collective/nanocoder/pull/1914)) |
+| ACP-22 | Pass the desktop's browser-control MCP server in `mcpServers` on `session/new` and `session/resume` once Nanocoder honours it, and advertise agent browser control only when that server and the browser view are both ready. | Proposed (awaiting @will-lamerton) ([#116][i116]); transport decided in `DEC-47`; the Nanocoder side is released in 1.32.0 ([nanocoder#1914](https://github.com/Nano-Collective/nanocoder/pull/1914)); built in phase 3.7 ([browser.md](features/browser.md#phase-37-behaviour)) |
 | ACP-23 | Shut the project process down after an idle period, closing open sessions first, and resume on next use. A process with a running turn, a pending approval or an open session is never idle-stopped, including when the user has switched to another project (`DEC-46`). | Decided in principle ([whitepaper, Process policy][wp-process]); the period is Suggestion (not discussed) |
 
 ## ACP methods used
@@ -49,8 +49,8 @@ Method names are the wire names from the SDK's method tables. "Status at `8a5f4d
 | Method | Desktop use | Status at `8a5f4d4` |
 |---|---|---|
 | `initialize` | Version and capability negotiation (`ACP-02`). | Handled. Returns the negotiated protocol version, `loadSession: true`, `sessionCapabilities` `close`, `list`, `delete`, `resume`, an empty `providers` object, `agentInfo` and `authMethods: []` ([source][nc-init], [capabilities][nc-caps]). |
-| `session/new` | Start a thread (`ACP-05`). | Handled. Ignores `mcpServers` ([source][nc-new]). Starts the session in `auto-accept` ([source][nc-register]). |
-| `session/resume` | Continue a thread (`ACP-06`). | Handled. Throws `Session not found on disk` for a missing session. Uses the persisted working directory, not the one the client sends, and ignores `mcpServers` ([source][nc-resume]). |
+| `session/new` | Start a thread (`ACP-05`). | Handled. Ignores `mcpServers` before 1.32.0 ([source][nc-new]); from 1.32.0 connects the stdio and HTTP servers sent, for that session only ([nanocoder#1914](https://github.com/Nano-Collective/nanocoder/pull/1914)). Starts the session in `auto-accept` ([source][nc-register]). |
+| `session/resume` | Continue a thread (`ACP-06`). | Handled. Throws `Session not found on disk` for a missing session. Uses the persisted working directory, not the one the client sends, and ignores `mcpServers` before 1.32.0 ([source][nc-resume]); from 1.32.0 it drops the session's earlier servers and connects the ones sent. |
 | `session/load` | Not used for continuation. | Handled, but creates an empty session when the ID is unknown ([source][nc-load]). |
 | `session/list` | Discovery (`ACP-18`). | Handled. Filters by exact `path.normalize` equality on `cwd` ([source][nc-list], [session manager][nc-sm-list]). |
 | `session/close` | Close a thread, idle shutdown (`ACP-08`). | Handled since [nanocoder#1709][nc1709] (merged 2026-10-19). Cancels in-flight work, drops the in-memory session, keeps the file on disk ([source][nc-close]). |
@@ -100,7 +100,7 @@ None of these is declared in `initialize`, so the desktop detects them by versio
    | Rename | An accepted version and a safe probe confirming `renameSession`. |
    | Touched files from the timeline | Same rule for `timeline/list`. Otherwise tool call locations remain available. |
    | Agent changes view | A snapshot-read method that does not exist yet (`DEC-14`). Off until it does. |
-   | Agent browser control | Nanocoder honours `mcpServers` (a version gate once [#116][i116] lands) and the broker and browser view are ready. Off otherwise. |
+   | Agent browser control | Nanocoder reports `mcpCapabilities.http`, its version is 1.32.0 or later (the release with [#116][i116]), and the desktop's browser server is listening. Off otherwise, with the reason. The broker operations follow in phase 3.8. |
    | Subagent run tree | A child-event projection that does not exist yet (`OQ-03`). Otherwise subagents show as tool cards. |
 
 5. **Report.** The thread list shows which features are on and why any are off (`CHAT-15`).
@@ -259,7 +259,7 @@ The UI says what is true: the model control belongs to the project, not the thre
 
 | What | Why | Issue or PR | Owner | Needed by | Status |
 |---|---|---|---|---|---|
-| Honour client `mcpServers` on `session/new`, `session/load` and `session/resume`, with a per-session tool registry | The browser-control tool must exist only in desktop sessions (`ACP-22`, `BRW-11`). MCP servers are loaded once per process today ([source][nc-mcp-init]). | [#116][i116], [nanocoder#1889][nc1889] | @puri-adityakumar (offered on #116) | Before Milestone 3 | Proposed (awaiting @will-lamerton) |
+| Honour client `mcpServers` on `session/new`, `session/load` and `session/resume`, with a per-session tool registry | The browser-control tool must exist only in desktop sessions (`ACP-22`, `BRW-11`). MCP servers are loaded once per process today ([source][nc-mcp-init]). | [#116][i116], [nanocoder#1889][nc1889] | @puri-adityakumar (offered on #116) | Before Milestone 3 | Released in 1.32.0 ([nanocoder#1914](https://github.com/Nano-Collective/nanocoder/pull/1914)); used from phase 3.7 |
 | Implement `session/close` | Advertised but unhandled. | [nanocoder#1709][nc1709] | @will-lamerton | Technical gate | Decided (merged 2026-10-19) |
 | Read pre-edit snapshots over ACP (for example a `timeline/read` method returning the before-image for a checkpoint and path) | The "Agent changes" view (`GIT-09`). | [#109][i109] | Open (approach proposed by @puri-adityakumar) | Milestone 2 if `DEC-14` is accepted for v1, otherwise Later | Proposed (awaiting @will-lamerton) |
 | Subagent event projection: child run IDs, parent link, status, real tool results, per-child cancel, and approval routing keyed by session | `SP-05` asks to observe and stop a child run (`SUB-05` to `SUB-08`). Today subagents appear only as a polled tool card title ([source][nc-agent-poll]). | [nanocoder#1105][nc1105] (results), new issue for the rest | Open | Milestone 1 for the full `SP-05`; v1 can ship the fallback | Open (`OQ-03`) |

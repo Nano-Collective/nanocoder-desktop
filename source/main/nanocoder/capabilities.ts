@@ -1,5 +1,9 @@
 import type {InitializeResponse} from '@agentclientprotocol/sdk';
-import {versionPolicy} from '@/main/nanocoder/version-policy';
+import {
+	MCP_SERVERS_MIN_VERSION,
+	supportsClientMcpServers,
+	versionPolicy,
+} from '@/main/nanocoder/version-policy';
 import type {
 	CapabilityGate,
 	CapabilityGates,
@@ -21,6 +25,7 @@ export function capabilityGates(
 	projectId: string,
 	agent: ConnectedAgent,
 	probes: ExtensionProbes,
+	browserServer = false,
 ): CapabilityGates {
 	const policy = versionPolicy(agent.version);
 	const gate = (offered: boolean, reason: string): CapabilityGate =>
@@ -54,16 +59,34 @@ export function capabilityGates(
 				false,
 				'Nanocoder does not yet offer a verified snapshot-read method.',
 			),
-			browserControl: gate(
-				false,
-				'Client mcpServers support is unverified, and the desktop browser broker and view are not ready.',
-			),
+			browserControl: browserControlGate(agent, browserServer, gate),
 			subagentTree: gate(
 				false,
 				'Nanocoder does not yet offer a verified child-event projection; subagents remain tool cards.',
 			),
 		},
 	};
+}
+
+function browserControlGate(
+	agent: ConnectedAgent,
+	browserServer: boolean,
+	gate: (offered: boolean, reason: string) => CapabilityGate,
+): CapabilityGate {
+	if (!agent.capabilities.mcp.http)
+		return gate(
+			false,
+			'Nanocoder did not report mcpCapabilities.http, which the desktop browser server needs.',
+		);
+	if (!supportsClientMcpServers(agent.version))
+		return gate(
+			false,
+			`Nanocoder ${agent.version ?? 'without a version'} predates client mcpServers support, which arrived in ${MCP_SERVERS_MIN_VERSION}.`,
+		);
+	return gate(
+		browserServer,
+		'The desktop browser server is not running for this project.',
+	);
 }
 
 export function describeAgent(

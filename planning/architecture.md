@@ -3,7 +3,7 @@
 The processes, trust boundaries, IPC contract, process policy, thread state machine and key sequences of Nanocoder Desktop.
 
 - Status: Draft
-- Last updated: 2026-11-04
+- Last updated: 2026-11-09
 - Drafted by: @akramcodez
 
 ## Scope
@@ -325,7 +325,7 @@ Subagent tool approvals arrive the same way, with tool call IDs prefixed `subage
 
 ### Browser tool call
 
-This sequence passes the browser server in `mcpServers` on each session and serves it over HTTP (`DEC-47`). It needs the Nanocoder change from [#116][i116], which is merged and unreleased.
+This sequence passes the browser server in `mcpServers` on each session and serves it over HTTP (`DEC-47`). It needs the Nanocoder change from [#116][i116], released in 1.32.0. Phase 3.7 built the server, the per-session secrets and one read-only status tool; the broker steps below arrive with phases 3.8 and 3.9.
 
 ```mermaid
 sequenceDiagram

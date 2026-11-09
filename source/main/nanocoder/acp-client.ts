@@ -3,6 +3,7 @@ import {
 	type ContentBlock,
 	client,
 	type Implementation,
+	type McpServerHttp,
 	methods,
 	PROTOCOL_VERSION,
 	RequestError,
@@ -35,6 +36,7 @@ import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
 import {type TrustRefusal, trustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
 import {parsePromptMetadata} from '@/main/nanocoder/turn-metadata';
+import {supportsClientMcpServers} from '@/main/nanocoder/version-policy';
 import type {
 	ConnectedAgent,
 	NanocoderMode,
@@ -72,6 +74,8 @@ export interface NanocoderConnection {
 	readonly agent: ConnectedAgent;
 	readonly stderr: StderrRing;
 	readonly exited: Promise<Exit>;
+	// Whether sessions get the desktop's browser server (ACP-22).
+	readonly browserServer?: boolean;
 	listSessions?(): Promise<unknown>;
 	newSession(mode: NanocoderMode): Promise<SessionInfo>;
 	resumeSession(
@@ -108,6 +112,17 @@ export interface ResumedSession {
 	history: TurnEvent[];
 }
 
+// One per session: the server Nanocoder connects to, and the secret's revocation (DEC-47).
+export interface McpServerLease {
+	server: McpServerHttp & {type: 'http'};
+	release(): void;
+}
+
+export interface SessionMcpServers {
+	ready(): boolean;
+	lease(): McpServerLease | undefined;
+}
+
 export interface ConnectOptions {
 	runtime: Pick<NanocoderRuntime, 'nodePath' | 'cliPath'>;
 	root: string;
@@ -119,6 +134,7 @@ export interface ConnectOptions {
 	shutdownGraceMs?: number;
 	probeTimeoutMs?: number;
 	signal?: AbortSignal;
+	mcpServers?: SessionMcpServers;
 	onUpdate?: (update: SessionNotification['update']) => void;
 	onSessionUpdate?: (notification: SessionNotification) => void;
 	onTitleChanged?: (change: SessionTitleChange) => void;
@@ -207,6 +223,21 @@ export async function connectNanocoder(
 		| ReturnType<typeof createSessionControls>
 		| undefined;
 	let canCloseSession = false;
+	const leases = new Map<string, McpServerLease>();
+	const releaseLease = (sessionId: string) => {
+		leases.get(sessionId)?.release();
+		leases.delete(sessionId);
+	};
+	const releaseLeases = () => {
+		for (const lease of leases.values()) lease.release();
+		leases.clear();
+	};
+	const keepLease = (sessionId: string, lease: McpServerLease | undefined) => {
+		releaseLease(sessionId);
+		if (!lease) return;
+		if (disposed) lease.release();
+		else leases.set(sessionId, lease);
+	};
 	const stream = protocolStream(child.stdout, child.stdin, line => {
 		violated = true;
 		stderr.append(`[stdout] ${line}`);
@@ -264,6 +295,7 @@ export async function connectNanocoder(
 		});
 
 	const closeQuietly = async (sessionId: string) => {
+		releaseLease(sessionId);
 		if (!canCloseSession) return;
 		await connection.agent
 			.request(methods.agent.session.close, {sessionId})
@@ -273,6 +305,7 @@ export async function connectNanocoder(
 	let closing: Promise<void> | undefined;
 	const close = (): Promise<void> => {
 		disposed = true;
+		releaseLeases();
 		clearReplay();
 		notificationControls?.dispose();
 		closing ??= (async () => {
@@ -307,6 +340,7 @@ export async function connectNanocoder(
 	void exited.then(() => options.signal?.removeEventListener('abort', abort));
 	void exited.then(() => {
 		disposed = true;
+		releaseLeases();
 		clearReplay();
 		notificationControls?.dispose();
 	});
@@ -362,6 +396,12 @@ export async function connectNanocoder(
 
 	const agent = describeAgent(options.root, response);
 	canCloseSession = agent.capabilities.sessions.close;
+	const browserServers =
+		options.mcpServers?.ready() &&
+		agent.capabilities.mcp.http &&
+		supportsClientMcpServers(agent.version)
+			? options.mcpServers
+			: undefined;
 
 	// A session is handed out only once its mode is set, so nothing can prompt it before (DEC-31).
 	const applyMode = async (
@@ -415,14 +455,20 @@ export async function connectNanocoder(
 	notificationControls = sessionControls;
 
 	const newSession = async (mode: NanocoderMode): Promise<SessionInfo> => {
+		const lease = browserServers?.lease();
 		const created = await connection.agent
-			.request(methods.agent.session.new, {cwd: options.root, mcpServers: []})
+			.request(methods.agent.session.new, {
+				cwd: options.root,
+				mcpServers: lease ? [lease.server] : [],
+			})
 			.catch(() => {
+				lease?.release();
 				throw new NanocoderFailure(
 					'AGENT_UNAVAILABLE',
 					'Nanocoder could not start a session',
 				);
 			});
+		keepLease(created.sessionId, lease);
 		await applyMode(created.sessionId, mode, created.modes?.availableModes);
 		sessionControls.remember(
 			created.sessionId,
@@ -459,13 +505,16 @@ export async function connectNanocoder(
 			failed: false,
 		};
 		replay = replayed;
+		// Nanocoder drops the servers a resumed session had and connects the ones sent now.
+		releaseLease(sessionId);
+		const lease = browserServers?.lease();
 		let resumed: ResumeSessionResponse;
 		let history: TurnEvent[];
 		try {
 			resumed = await connection.agent.request(methods.agent.session.resume, {
 				sessionId,
 				cwd: options.root,
-				mcpServers: [],
+				mcpServers: lease ? [lease.server] : [],
 			});
 			// Replayed updates are handled in the same turn of the event loop as the answer.
 			await new Promise(resolve => setImmediate(resolve));
@@ -475,6 +524,7 @@ export async function connectNanocoder(
 				update => toTurnEvent(update, {history: true}) ?? [],
 			);
 		} catch (error) {
+			lease?.release();
 			if (replayed.failed) {
 				await close();
 				throw new NanocoderFailure(
@@ -488,6 +538,7 @@ export async function connectNanocoder(
 			replayed.bytes = 0;
 			if (replay === replayed) replay = undefined;
 		}
+		keepLease(sessionId, lease);
 		await applyMode(sessionId, mode, resumed.modes?.availableModes);
 		if (disposed) {
 			history.length = 0;
@@ -539,6 +590,7 @@ export async function connectNanocoder(
 					'Nanocoder could not delete the session',
 				);
 			});
+		releaseLease(sessionId);
 		sessionControls.forget(sessionId);
 	};
 
@@ -680,6 +732,7 @@ export async function connectNanocoder(
 		agent,
 		stderr,
 		exited,
+		browserServer: browserServers !== undefined,
 		listSessions,
 		newSession,
 		resumeSession,

@@ -9,6 +9,7 @@ import {
 	NanocoderFailure,
 	type NanocoderTurnResult,
 	type ResumedSession,
+	type SessionMcpServers,
 } from '@/main/nanocoder/acp-client';
 import {capabilityGates, describeAgent} from '@/main/nanocoder/capabilities';
 import {type SupervisorClock, systemClock} from '@/main/nanocoder/clock';
@@ -78,6 +79,8 @@ interface SupervisorOptions {
 	env?: NodeJS.ProcessEnv;
 	homeDir?: string;
 	connect?: typeof connectProject;
+	// The desktop's browser server for this project's sessions (ACP-22, DEC-47).
+	mcpServers?: (projectId: string) => SessionMcpServers | undefined;
 	clock?: SupervisorClock;
 	idleTimeoutMs?: number;
 	activity?: (projectId: string) => ProjectActivity;
@@ -529,6 +532,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				env: this.options.env,
 				homeDir: this.options.homeDir,
 				stderr: entry.stderr,
+				mcpServers: this.options.mcpServers?.(project.id),
 				confirmTrust: refusal => this.options.confirmTrust(refusal, root),
 				beforeLaunch: async () => {
 					await validateRoot();
@@ -602,6 +606,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 					negotiatedPolicy.status === 'refused'
 						? {rename: false, timeline: false}
 						: await untilAborted(result.probeExtensions(), signal),
+					result.browserServer === true,
 				);
 				if (negotiatedPolicy.status === 'refused') {
 					throw new NanocoderFailure('UNSUPPORTED', negotiatedPolicy.reason);

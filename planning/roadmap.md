@@ -3,7 +3,7 @@
 Where Nanocoder Desktop is in the NC process, and the build broken into small phases with checklists, from scaffold to the first public release. No dates: no source gives one.
 
 - Status: Draft
-- Last updated: 2026-11-04
+- Last updated: 2026-11-09
 - Drafted by: @akramcodez
 
 ## How to use this roadmap
@@ -562,7 +562,7 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 **Goal.** One PTY, localhost handling, the isolated agent-controlled browser, browser data and download settings, and URL-to-chat context ([whitepaper][wp-next]).
 
-**Blockers.** A published Nanocoder with `mcpServers` for each session ([#116][i116]), per-session `disabledTools` and `set_mode` mid-turn ([nanocoder#1857][nc1857]), all merged and unreleased until 1.32.0 ([#12](https://github.com/Nano-Collective/nanocoder-desktop/issues/12)); `DEC-15`. `OQ-06`, `OQ-11`, `OQ-13` and `OQ-17` are answered by `DEC-47` to `DEC-50`. **Risks.** `RISK-03`, `RISK-09`, `RISK-10`, `RISK-12`.
+**Blockers.** A published Nanocoder with `mcpServers` for each session ([#116][i116]), per-session `disabledTools` and `set_mode` mid-turn ([nanocoder#1857][nc1857]), all released in Nanocoder 1.32.0 ([#12](https://github.com/Nano-Collective/nanocoder-desktop/issues/12)); `DEC-15` still awaits agreement. `OQ-06`, `OQ-11`, `OQ-13` and `OQ-17` are answered by `DEC-47` to `DEC-50`. **Risks.** `RISK-03`, `RISK-09`, `RISK-10`, `RISK-12`.
 
 ### Phase 3.1: PTY host
 
@@ -650,19 +650,19 @@ Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DE
 
 ### Phase 3.7: Nanocoder `mcpServers` support
 
-`OQ-17` is answered by `DEC-47`: the browser server goes in `mcpServers` on each session. Needs the Nanocoder change from [#116][i116] released (merged, unreleased until 1.32.0).
+`OQ-17` is answered by `DEC-47`: the browser server goes in `mcpServers` on each session. The Nanocoder change from [#116][i116] is released in 1.32.0.
 
 **Build**
 
-- [ ] Confirm the Nanocoder change is released and gate it by version and by `mcpCapabilities.http`
-- [ ] Serve the browser tools over HTTP on `127.0.0.1` with a secret in the headers for each session, and reject requests that carry an `Origin` header (`DEC-47`)
-- [ ] Pass the desktop's browser server in `mcpServers` on new and resumed sessions (`ACP-22`)
-- [ ] Implement the agreed transport
+- [x] Confirm the Nanocoder change is released and gate it by version and by `mcpCapabilities.http`: 1.32.0 is the first release that honours client servers ([`version-policy.ts`](../source/main/nanocoder/version-policy.ts), [`capabilities.ts`](../source/main/nanocoder/capabilities.ts))
+- [x] Serve the browser tools over HTTP on `127.0.0.1` with a secret in the headers for each session, and reject requests that carry an `Origin` header (`DEC-47`): [`mcp-server.ts`](../source/main/browser-control/mcp-server.ts)
+- [x] Pass the desktop's browser server in `mcpServers` on new and resumed sessions (`ACP-22`): [`acp-client.ts`](../source/main/nanocoder/acp-client.ts)
+- [x] Implement the agreed transport: Streamable HTTP with JSON answers only, and one read-only tool, `desktop_browser_status`, until the broker adds the operations in phase 3.8 ([browser.md](features/browser.md#phase-37-behaviour))
 
 **Results we want**
 
-- [ ] The browser tool exists only in desktop sessions, not in the user's CLI sessions
-- [ ] The user's MCP configuration files are untouched
+- [x] The browser tool exists only in desktop sessions, not in the user's CLI sessions: a session given the server lists it and another session in the same process does not, against the pinned Nanocoder ([`browser-server.acp.ts`](../source/main/browser-control/browser-server.acp.ts))
+- [x] The user's MCP configuration files are untouched: the same test checks the configuration folder and the project before and after
 
 ### Phase 3.8: browser-control broker
 

@@ -63,3 +63,14 @@ export function requiresTrustPreflight(version: string | null): boolean {
 	const parsed = version === null ? undefined : release(version);
 	return parsed?.[0] === 1 && parsed[1] === 31;
 }
+
+// The first release that honours client mcpServers per session (nanocoder#1914).
+export const MCP_SERVERS_MIN_VERSION = '1.32.0';
+
+export function supportsClientMcpServers(version: string | null): boolean {
+	const parsed = version === null ? undefined : release(version);
+	return (
+		parsed !== undefined &&
+		compare(parsed, MCP_SERVERS_MIN_VERSION.split('.').map(Number)) >= 0
+	);
+}

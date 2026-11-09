@@ -142,6 +142,18 @@ export class BrowserService {
 		return this.snapshot();
 	}
 
+	// A read for the agent's browser server, which refuses rather than throws.
+	pageFor(projectId: string): BrowserSnapshot | null {
+		if (
+			this.closed ||
+			projectId !== this.activeId ||
+			projectId !== this.state.projectId ||
+			!this.options.project(projectId)
+		)
+			return null;
+		return this.snapshot();
+	}
+
 	async open(request: BrowserRequests['open']): Promise<BrowserSnapshot> {
 		this.check(request.projectId);
 		const verdict = checkPage(request.url, {

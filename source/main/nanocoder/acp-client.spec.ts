@@ -9,6 +9,7 @@ import {
 	type NanocoderConnection,
 	NanocoderFailure,
 	nanocoderMessage,
+	type SessionMcpServers,
 } from '@/main/nanocoder/acp-client';
 import {
 	fakeEvents,
@@ -853,4 +854,157 @@ test('ACP-11 SEC-20 the agent reads a linked project file through the checked ha
 		(advertised?.params as {clientCapabilities: unknown}).clientCapabilities,
 		{fs: {readTextFile: true, writeTextFile: false}, terminal: false},
 	);
+});
+
+function mcpProject(mode?: string): string {
+	const root = fakeProject(mode);
+	writeFileSync(path.join(root, '.fake-mcp-http'), '');
+	return root;
+}
+
+function fakeServers(options: {ready?: boolean} = {}) {
+	let issued = 0;
+	const live = new Set<string>();
+	const released: string[] = [];
+	const servers: SessionMcpServers = {
+		ready: () => options.ready ?? true,
+		lease: () => {
+			if (options.ready === false) return undefined;
+			const secret = `secret-${++issued}`;
+			live.add(secret);
+			return {
+				server: {
+					type: 'http',
+					name: 'nanocoder-desktop-browser',
+					url: 'http://127.0.0.1:1/mcp',
+					headers: [{name: 'Authorization', value: `Bearer ${secret}`}],
+				},
+				release: () => {
+					if (live.delete(secret)) released.push(secret);
+				},
+			};
+		},
+	};
+	return {servers, live, released, issued: () => issued};
+}
+
+const sentServers = (connection: NanocoderConnection, method: string) =>
+	fakeEvents(connection.stderr.lines())
+		.filter(event => event.method === method)
+		.map(event => (event.params as {mcpServers?: unknown}).mcpServers);
+
+test('ACP-22 passes a fresh browser server on session/new, keeps its secret out of diagnostics and revokes it when the session closes', async t => {
+	const fake = fakeServers();
+	const connection = await connect(mcpProject(), {mcpServers: fake.servers});
+	t.true(connection.browserServer);
+	await connection.newSession('normal');
+	t.deepEqual([...fake.live], ['secret-1']);
+	await connection.close();
+	// The fake echoes each request to stderr; the ring redacts the secret and the address.
+	t.deepEqual(sentServers(connection, 'session/new'), [
+		[
+			{
+				type: 'http',
+				name: 'nanocoder-desktop-browser',
+				url: 'http://[redacted]/mcp',
+				headers: [{name: 'Authorization', value: 'Bearer [redacted]'}],
+			},
+		],
+	]);
+	t.false(connection.stderr.lines().join('\n').includes('secret-1'));
+	t.deepEqual(fake.released, ['secret-1']);
+});
+
+test('ACP-22 passes a fresh browser server on session/resume and revokes the one it replaces', async t => {
+	const fake = fakeServers();
+	const connection = await connect(mcpProject(), {mcpServers: fake.servers});
+	t.teardown(() => connection.close());
+	await connection.resumeSession('fake-session', 'normal');
+	await connection.resumeSession('fake-session', 'normal');
+	t.deepEqual(
+		sentServers(connection, 'session/resume').map(servers =>
+			(servers as Array<{name: unknown}>).map(server => server.name),
+		),
+		[['nanocoder-desktop-browser'], ['nanocoder-desktop-browser']],
+	);
+	t.is(fake.issued(), 2);
+	t.deepEqual(fake.released, ['secret-1']);
+	t.deepEqual([...fake.live], ['secret-2']);
+});
+
+test('ACP-22 passes no server, and issues no secret, when Nanocoder does not report HTTP MCP servers', async t => {
+	const fake = fakeServers();
+	const connection = await connect(fakeProject(), {mcpServers: fake.servers});
+	await connection.newSession('normal');
+	await connection.close();
+	t.false(connection.browserServer);
+	t.deepEqual(sentServers(connection, 'session/new'), [[]]);
+	t.is(fake.issued(), 0);
+});
+
+test('ACP-22 passes no server to a Nanocoder older than 1.32.0, even when it reports HTTP', async t => {
+	const fake = fakeServers();
+	const connection = await connect(mcpProject('version-1.31'), {
+		mcpServers: fake.servers,
+	});
+	await connection.newSession('normal');
+	await connection.close();
+	t.false(connection.browserServer);
+	t.deepEqual(sentServers(connection, 'session/new'), [[]]);
+	t.is(fake.issued(), 0);
+});
+
+test('ACP-22 passes no server while the desktop server is not running (BRW-17)', async t => {
+	const fake = fakeServers({ready: false});
+	const connection = await connect(mcpProject(), {mcpServers: fake.servers});
+	await connection.newSession('normal');
+	await connection.close();
+	t.false(connection.browserServer);
+	t.deepEqual(sentServers(connection, 'session/new'), [[]]);
+});
+
+test('ACP-22 revokes the secret when the session cannot start or its mode cannot be set', async t => {
+	for (const mode of ['no-session', 'mode-fails']) {
+		const fake = fakeServers();
+		const connection = await connect(mcpProject(mode), {
+			mcpServers: fake.servers,
+		});
+		await rejection(connection.newSession('normal'));
+		t.deepEqual(fake.released, ['secret-1'], mode);
+		t.deepEqual([...fake.live], [], mode);
+		await connection.close();
+	}
+});
+
+test('ACP-22 revokes the secret when a resume fails', async t => {
+	const fake = fakeServers();
+	const connection = await connect(mcpProject(), {mcpServers: fake.servers});
+	t.teardown(() => connection.close());
+	await rejection(connection.resumeSession('gone-session', 'normal'));
+	t.is(fake.issued(), 1);
+	t.deepEqual([...fake.live], []);
+});
+
+test('ACP-22 revokes the secret when the session is deleted', async t => {
+	const fake = fakeServers();
+	const connection = await connect(mcpProject(), {mcpServers: fake.servers});
+	t.teardown(() => connection.close());
+	const session = await connection.newSession('normal');
+	await connection.deleteSession(session.id);
+	t.deepEqual([...fake.live], []);
+});
+
+test('ACP-22 revokes every secret when Nanocoder exits on its own', async t => {
+	const fake = fakeServers();
+	const connection = await connect(mcpProject('multiple-sessions'), {
+		mcpServers: fake.servers,
+	});
+	await connection.newSession('normal');
+	await connection.newSession('normal');
+	t.is(fake.live.size, 2);
+	const child = fakeEvents(connection.stderr.lines()).find(e => e.started);
+	process.kill(child?.pid as number);
+	await connection.exited;
+	t.deepEqual([...fake.live], []);
+	await connection.close();
 });
