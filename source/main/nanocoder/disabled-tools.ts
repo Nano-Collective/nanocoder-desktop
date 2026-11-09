@@ -14,7 +14,10 @@ export function confirmsDisabledTools(
 	if (requested.length === 0) return true;
 	if (typeof meta !== 'object' || meta === null) return false;
 	const echoed = (meta as Record<string, unknown>)[DISABLED_TOOLS_META];
+	// Every requested tool must be named in the echo: an echo without it may mean it was ignored.
 	return (
-		Array.isArray(echoed) && echoed.every(name => typeof name === 'string')
+		Array.isArray(echoed) &&
+		echoed.every(name => typeof name === 'string') &&
+		requested.every(name => echoed.includes(name))
 	);
 }

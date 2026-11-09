@@ -31,6 +31,7 @@ const gates: CapabilityGates = {
 		timeline: enabled,
 		agentChanges: enabled,
 		browserControl: {enabled: false, reason: 'milestone 3'},
+		nanocoderBrowserOff: enabled,
 		subagentTree: enabled,
 	},
 };

@@ -702,7 +702,7 @@ Until phase 3.9 brings desktop approvals, agent control stays on local addresses
 
 **Build**
 
-- [x] Apply the agreed handling of Nanocoder's built-in `browser` tool (`BRW-18`): the setting is off by default, every new and resumed session sends `_meta["nanocoder/disabledTools"]` while it is off, and a session Nanocoder does not confirm is refused ([`disabled-tools.ts`](../source/main/nanocoder/disabled-tools.ts), migration `006`)
+- [x] Apply the agreed handling of Nanocoder's built-in `browser` tool (`BRW-18`): the setting is off by default, every new and resumed session on Nanocoder 1.32.0 or later sends `_meta["nanocoder/disabledTools"]` while it is off, and a session whose echo does not name `browser` is refused; an older Nanocoder keeps its browser, with the reason in the `nanocoderBrowserOff` gate ([`disabled-tools.ts`](../source/main/nanocoder/disabled-tools.ts), migration `006`)
 - [x] Pages that need the user's regular profile open externally without agent control (`BRW-20`): "open outside" stays a user action with a native confirmation (`BRW-09`), and no agent tool can open a page outside the app
 
 **Results we want**

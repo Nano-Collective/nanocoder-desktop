@@ -40,7 +40,10 @@ import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
 import {type TrustRefusal, trustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
 import {parsePromptMetadata} from '@/main/nanocoder/turn-metadata';
-import {supportsClientMcpServers} from '@/main/nanocoder/version-policy';
+import {
+	supportsClientMcpServers,
+	supportsDisabledTools,
+} from '@/main/nanocoder/version-policy';
 import type {
 	ConnectedAgent,
 	NanocoderMode,
@@ -87,6 +90,8 @@ export interface NanocoderConnection {
 	readonly exited: Promise<Exit>;
 	// Whether sessions get the desktop's browser server (ACP-22).
 	readonly browserServer?: boolean;
+	// Whether this Nanocoder can turn its own browser off per session (BRW-18).
+	readonly browserSwitch?: boolean;
 	// The mode Nanocoder last confirmed for a session; the public-site rule reads it (BRW-16).
 	sessionMode?(sessionId: string): NanocoderMode | undefined;
 	listSessions?(): Promise<unknown>;
@@ -490,7 +495,10 @@ export async function connectNanocoder(
 	});
 	notificationControls = sessionControls;
 
-	const sessionTools = () => [...(options.disabledTools?.() ?? [])];
+	// Before 1.32.0 there is no switch: nothing is sent, and the capability gate says why (DEC-48).
+	const browserSwitch = supportsDisabledTools(agent.version);
+	const sessionTools = () =>
+		browserSwitch ? [...(options.disabledTools?.() ?? [])] : [];
 	// Asking Nanocoder to turn a tool off counts only once it says so; otherwise the session is refused (DEC-48).
 	const confirmTools = async (
 		sessionId: string,
@@ -796,6 +804,7 @@ export async function connectNanocoder(
 		stderr,
 		exited,
 		browserServer: browserServers !== undefined,
+		browserSwitch,
 		sessionMode: sessionId => liveModes.get(sessionId),
 		listSessions,
 		newSession,

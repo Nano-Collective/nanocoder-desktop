@@ -337,6 +337,7 @@ export type FeatureId =
 	| 'timeline'
 	| 'agentChanges'
 	| 'browserControl'
+	| 'nanocoderBrowserOff'
 	| 'subagentTree';
 
 export type VersionPolicyResult =

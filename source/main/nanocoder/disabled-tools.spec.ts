@@ -17,8 +17,10 @@ test('only an echoed list of tool names confirms the request, so anything else f
 	const echo = (value: unknown) => ({'nanocoder/disabledTools': value});
 	t.true(confirmsDisabledTools(['browser'], echo(['browser'])));
 	t.true(confirmsDisabledTools(['browser'], echo(['browser', 'web_search'])));
-	// Nanocoder leaves out a name it has no tool for, so there is nothing left to turn off.
-	t.true(confirmsDisabledTools(['browser'], echo([])));
+	// An echo without the requested name could mean the request was ignored, so it does not count.
+	t.false(confirmsDisabledTools(['browser'], echo([])));
+	t.false(confirmsDisabledTools(['browser'], echo(['web_search'])));
+	t.false(confirmsDisabledTools(['browser', 'web_search'], echo(['browser'])));
 	for (const meta of [
 		undefined,
 		null,

@@ -1084,3 +1084,18 @@ test('BRW-16 the live mode of a session is what Nanocoder last confirmed, and un
 	t.is(connection.sessionMode?.(session.id), 'plan');
 	t.is(connection.sessionMode?.('other'), undefined);
 });
+
+test('BRW-18 a Nanocoder before 1.32.0 is sent no switch and is not refused, and the connection says so (DEC-48)', async t => {
+	const connection = await connect(fakeProject('version-1.31'), {
+		disabledTools: () => ['browser'],
+	});
+	t.teardown(() => connection.close());
+	t.false(connection.browserSwitch);
+	await connection.newSession('normal');
+	t.deepEqual(sentMeta(connection, 'session/new'), [undefined]);
+	const current = await connect(fakeProject(), {
+		disabledTools: () => ['browser'],
+	});
+	t.teardown(() => current.close());
+	t.true(current.browserSwitch);
+});

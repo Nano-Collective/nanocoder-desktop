@@ -1,7 +1,9 @@
 import type {InitializeResponse} from '@agentclientprotocol/sdk';
 import {
+	DISABLED_TOOLS_MIN_VERSION,
 	MCP_SERVERS_MIN_VERSION,
 	supportsClientMcpServers,
+	supportsDisabledTools,
 	versionPolicy,
 } from '@/main/nanocoder/version-policy';
 import type {
@@ -60,6 +62,10 @@ export function capabilityGates(
 				'Nanocoder does not yet offer a verified snapshot-read method.',
 			),
 			browserControl: browserControlGate(agent, browserServer, gate),
+			nanocoderBrowserOff: gate(
+				supportsDisabledTools(agent.version),
+				`Nanocoder ${agent.version ?? 'without a version'} cannot turn its own browser tool off for a session; that needs ${DISABLED_TOOLS_MIN_VERSION}. Its browser stays on and does not follow the desktop's browser settings.`,
+			),
 			subagentTree: gate(
 				false,
 				'Nanocoder does not yet offer a verified child-event projection; subagents remain tool cards.',
