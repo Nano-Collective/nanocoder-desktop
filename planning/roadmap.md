@@ -3,7 +3,7 @@
 Where Nanocoder Desktop is in the NC process, and the build broken into small phases with checklists, from scaffold to the first public release. No dates: no source gives one.
 
 - Status: Draft
-- Last updated: 2026-11-09
+- Last updated: 2026-11-10
 - Drafted by: @akramcodez
 
 ## How to use this roadmap
@@ -712,9 +712,9 @@ Until phase 3.9 brings desktop approvals, agent control stays on local addresses
 
 ### Milestone 3 exit
 
-- [ ] `SP-10` passes on macOS, Windows and Linux
-- [ ] `SP-11` passes on macOS, Windows and Linux
-- [ ] Browser security tests in [`testing-strategy.md`](testing-strategy.md#security-tests) pass
+- [ ] `SP-10` passes on macOS, Windows and Linux. macOS and Linux pass the whole of `terminal.e2e.ts` and `browser-links.e2e.ts`. Windows passes starting a dev server in the terminal and opening its address (`TERM-05`), server tree teardown on stop, project switch and quit (`TERM-07`), a native crash (`TERM-01`) and the agent command strip (`TERM-12`) ([Desktop Checks on `main`](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/42609306086)). Two tests are skipped on Windows because their fixtures are POSIX: the mounted terminal with typing, escapes, restart, clear and focus (`TERM-02`, `TERM-04`, `TERM-06`, `TERM-11`) and the real UTF-8 shell in the project root (`TERM-01`, `TERM-04`). Open until a PowerShell fixture covers them on Windows
+- [x] `SP-11` passes on macOS, Windows and Linux: the nine `browser-agent.e2e.ts` tests and the browser view tests in `browser.e2e.ts` pass on all three, except two `BRW-06` download tests skipped on Windows, ([Desktop Checks on `main`](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/42609306086)), and the ACP tests against Nanocoder 1.32.0 pass on all three ([Desktop Checks on #40](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/42607674993))
+- [x] Browser security tests in [`testing-strategy.md`](testing-strategy.md#browser-security-tests-milestone-3) pass: each row maps to tests that pass on all three platforms, with the plain file chooser as the one documented limit (`BRW-07`)
 
 ## Milestone 4: hardening
 

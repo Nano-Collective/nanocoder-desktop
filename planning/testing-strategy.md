@@ -3,7 +3,7 @@
 How each part of the plan is tested, the measurable targets results are judged against, and the cross-platform CI that runs them.
 
 - Status: Draft
-- Last updated: 2026-10-31
+- Last updated: 2026-11-10
 - Drafted by: @akramcodez
 
 ## Conventions
@@ -165,11 +165,32 @@ Decided in [#10](https://github.com/Nano-Collective/nanocoder-desktop/issues/10)
 | Path traversal and symlink or junction escape through the file service and ACP reads | `SEC-03`, `ACP-11` |
 | Malformed, oversized and wrong-sender IPC | `SEC-02` |
 | App renderer cannot navigate, open windows or reach Node | `SEC-01`, `SEC-15` |
-| Browser view has no preload and no IPC; permission, popup, protocol and upload requests are denied | `SEC-10`, `SEC-12` |
+| Browser view has no preload and no IPC; permission, popup and protocol requests are denied, the file system pickers are removed and the agent cannot choose files (the plain file chooser stays an operating system dialog the user drives, `BRW-07`) | `SEC-10`, `SEC-12` |
 | Git calls never run a pager, external diff, text conversion or `core.fsmonitor` (marker file never created) | `SEC-06` |
 | Launch refuses a runtime inside the project's own `node_modules` | `SEC-05` |
 | Nothing from the ACP stream or stderr reaches disk (scan the app data directory after a turn for the code word) | `DATA-04`, `SEC-07` |
 | `openExternal` is called only for allowed schemes after a user action | `SEC-16` |
+
+### Browser security tests (Milestone 3)
+
+The browser rows above and the agent rules added in phases 3.7 to 3.10, with the tests that cover each. The end-to-end files run on macOS, Windows and Linux in Desktop Checks.
+
+| Rule | Tests | Requirement |
+|---|---|---|
+| No preload, Node or IPC in the browser view; a page cannot reach any desktop API | `profile.spec.ts` (sandboxed view), `browser.e2e.ts` (a test page cannot reach any desktop API) | `SEC-12` |
+| Permissions, popups and the file system pickers are denied without asking | `profile.spec.ts` (every permission denied), `browser-service.spec.ts` (popup), `browser.e2e.ts` (camera, location, notifications, popups, pickers) | `SEC-10`, `BRW-07` |
+| An external protocol link is never handed to the system; `file:`, scripts and malformed addresses never load | `origin.spec.ts`, `browser-service.spec.ts`, `browser.e2e.ts` (external protocol) | `SEC-12`, `BRW-07` |
+| `openExternal` only after the user confirms the exact address, only for web addresses | `external.spec.ts`, `browser-service.spec.ts`, `ipc/browser.spec.ts`, `browser.e2e.ts` | `SEC-16`, `BRW-09` |
+| Browser IPC refuses extra fields, a supplied address, partition or preload | `ipc/browser.spec.ts` | `SEC-02`, `SEC-12`, `SEC-16` |
+| The browser tool server refuses any `Origin` header, a foreign `Host`, a missing, wrong or released secret, oversized, batched and malformed bodies, and answers a revoked secret with nothing | `mcp-server.spec.ts` | `DEC-47`, `ACP-22` |
+| A session's secret reaches Nanocoder, works only for that session and project, and is revoked with the session; the user's MCP configuration is untouched | `acp-client.spec.ts`, `browser-server.acp.ts` (real Nanocoder 1.32.0) | `ACP-22`, `DEC-47` |
+| The agent has typed operations only: no script operation, agent values reach fixed page scripts only as JSON data, and a page cannot see or bend the helpers | `page-scripts.spec.ts`, `broker.spec.ts`, `browser-agent.e2e.ts` (tampered page) | `SEC-13` |
+| Sensitive agent actions need the user's approval, and a refused one sends nothing; data a page sends during an action is held | `broker.spec.ts`, `browser-service.spec.ts`, `browser-agent.e2e.ts` (submit, download, password, script-sent `POST`) | `BRW-13`, `SEC-09` |
+| Agent control of public sites needs the setting, `normal` mode and the user's answer for that site, checked at every call | `agent-policy.spec.ts`, `browser-service.spec.ts`, `browser-agent.e2e.ts` | `BRW-16`, `SEC-11`, `DEC-50` |
+| Pause, take control and stop end the running action and withdraw its question | `browser-service.spec.ts`, `permissions.spec.ts`, `supervisor.spec.ts`, `browser-agent.e2e.ts` | `BRW-14` |
+| Nanocoder's own `browser` tool is off by default, and a session whose echo does not name it is refused | `disabled-tools.spec.ts`, `acp-client.spec.ts`, `nanocoder-browser.acp.ts` (real Nanocoder 1.32.0), `browser-agent.e2e.ts` | `BRW-18`, `DEC-48` |
+
+Known limits, recorded rather than tested away: the plain `<input type="file">` chooser cannot be blocked (Electron has no hook), and two download tests (`BRW-06`) are skipped on Windows because the native save dialog blocks the CI run.
 
 ## Coverage policy
 
