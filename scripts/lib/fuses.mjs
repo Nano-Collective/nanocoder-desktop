@@ -13,7 +13,7 @@ export const FUSE_POLICY = {
 		enabled: false,
 		enforce: false,
 		reason:
-			'Left off for now: on macOS it asks for Keychain access, which wants the signed app of phase 4.4. Revisit there.',
+			"Left at Electron's default, off, on every platform for now: one set of fuses cannot differ by platform, and on macOS turning it on asks for Keychain access, which wants the signed app of phase 4.4. Revisit there, for all three platforms.",
 	},
 	enableNodeOptionsEnvironmentVariable: {
 		index: 2,

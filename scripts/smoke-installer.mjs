@@ -42,7 +42,9 @@ function launch(executable) {
 		throw new Error(
 			`The installed app did not use its bundle: ${JSON.stringify(check)}`,
 		);
-	log(`launched, bundled Nanocoder ${check.version}`);
+	log(
+		`launched, bundled Nanocoder ${check.version}, idle memory ${check.idleMemoryMb} MB`,
+	);
 }
 
 async function gone(target, what) {
@@ -106,8 +108,12 @@ async function darwin() {
 	const macos = path.join(app, 'Contents', 'MacOS');
 	launch(path.join(macos, readdirSync(macos)[0]));
 	rmSync(app, {recursive: true, force: true});
-	await gone(app, 'The app');
-	log('removed by deleting the app, as a user does');
+	if (existsSync(app))
+		throw new Error('The app is still there after deleting it');
+	// The image was detached above; confirm the system no longer lists it.
+	if (execFileSync('hdiutil', ['info'], {encoding: 'utf8'}).includes(mount))
+		throw new Error('The disk image is still mounted');
+	log('removed by deleting the app, as a user does; no image left mounted');
 }
 
 async function windows() {

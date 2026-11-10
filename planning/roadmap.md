@@ -746,7 +746,7 @@ Until phase 3.9 brings desktop approvals, agent control stays on local addresses
 **Results we want**
 
 - [x] Each installer installs, launches and uninstalls cleanly: [`smoke-installer.mjs`](../scripts/smoke-installer.mjs) in CI, on Linux (`.deb`), Windows (NSIS) and macOS arm64 and x64 (`.dmg`). The Linux `.AppImage` and the macOS `.zip` are built but not run by it
-- [x] `PERF-09` and `PERF-10` recorded for each installer: first baselines in [`release-and-distribution.md`](release-and-distribution.md#phase-42-behaviour). Idle memory is taken with no project open, which is lower than `PERF-09` asks for
+- [ ] `PERF-09` and `PERF-10` recorded for each installer: `PERF-10` is recorded for each installer, and idle memory with no project open is recorded as a first baseline ([`release-and-distribution.md`](release-and-distribution.md#phase-42-behaviour)). `PERF-09` asks for one project open and the operating system's own process metrics, so it stays open until the smoke test opens a project and reads them
 - [x] The shipped-build smoke test passes and confirms the fuses are set (`SEC-19`): [`smoke-packaged.mjs`](../scripts/smoke-packaged.mjs) reads them from the packaged app and proves two by behaviour, on all four platform builds
 - [x] A packaged test shows an inherited `NODE_OPTIONS` runs no extra script, and a turn runs on a machine without Node (`SEC-05`, `DEC-38`): the launcher guard from phase 4.1, and now the shipped app itself ignoring it
 

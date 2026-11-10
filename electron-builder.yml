@@ -10,7 +10,6 @@ files:
   - THIRD-PARTY-NOTICES.txt
   - '!e2e/**'
   - '!.qa/**'
-# The pinned Node and Nanocoder a packaged app runs, staged by scripts/prepare-runtime.mjs (REL-02, REL-04).
 # Set at packaging time (SEC-19). scripts/lib/fuses.mjs holds the reasons, and a spec keeps the two in step.
 # Flipping fuses edits the Electron binary, so an unsigned arm64 build needs its ad hoc signature redone to run.
 electronFuses:
@@ -23,6 +22,7 @@ electronFuses:
   onlyLoadAppFromAsar: true
   loadBrowserProcessSpecificV8Snapshot: false
   grantFileProtocolExtraPrivileges: false
+# The pinned Node and Nanocoder a packaged app runs, staged by scripts/prepare-runtime.mjs (REL-02, REL-04).
 extraResources:
   - from: .cache/runtime
     to: runtime

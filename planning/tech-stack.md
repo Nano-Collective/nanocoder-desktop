@@ -73,7 +73,7 @@ Decided in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): 
 | Diff | Parse Git's own unified output | Git stays the only diff source (`GIT-04`) | The later "Agent changes" view uses `git diff --no-index` |
 | Syntax highlighting | CodeMirror 6 (MIT), read-only | Selection, keyboard and screen-reader support built in; handles large files | It renders only the visible part of a document, so screen-reader checks cover file preview and diffs (`A11Y-06`) |
 | End-to-end tests | Playwright (1.64.1, Apache-2.0) | `playwright-core` is already a Nanocoder dependency; can check the accessibility tree | Needs the `nodeCliInspect` fuse on. End-to-end tests run against a test build with that fuse on; the shipped build gets a smoke test that needs no inspector and a check that its fuses are set (`SEC-19`) |
-| Fuses | `@electron/fuses` (2.1.3, MIT) | Needed for `SEC-19` | |
+| Fuses | `@electron/fuses` (1.8.0, MIT) | Needed for `SEC-19`. 1.8.0 is the version `electron-builder` already uses, so no second copy ships in the toolchain; move it with `electron-builder` | |
 | IPC validation | `zod` 4 (MIT) | Already pulled in by the ACP SDK | |
 | Lint spec files | Yes | Security tests should be linted too | Differs from Nanocoder and Nanotune; documented in `CONTRIBUTING.md` |
 

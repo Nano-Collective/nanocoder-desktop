@@ -17,6 +17,7 @@ import {
 	isAllowedOrigin,
 	resolveRendererFile,
 } from '@/main/security';
+import {settledSample} from '@/main/settled-sample';
 import {desktopStoreFactory} from '@/main/store';
 import {createNodeSqliteDriver} from '@/main/store/node-sqlite';
 import {hiddenTestWindows, presentWindow} from '@/main/window-presentation';
@@ -140,13 +141,19 @@ async function finishSmokeTest(): Promise<void> {
 		app.exit(0);
 		return;
 	}
-	// Let the window settle, then take the working set of every Electron process, no project open (PERF-09).
-	await new Promise(resolve => setTimeout(resolve, 3_000));
+	// The working set of every Electron process once it settles, with no project open (PERF-09).
 	const idleMemoryMb = Math.round(
-		app
-			.getAppMetrics()
-			.reduce((total, metric) => total + metric.memory.workingSetSize, 0) /
-			1024,
+		await settledSample({
+			sample: () =>
+				app
+					.getAppMetrics()
+					.reduce((total, metric) => total + metric.memory.workingSetSize, 0) /
+				1024,
+			wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
+			intervalMs: 500,
+			tolerance: 0.05,
+			maxSamples: 20,
+		}),
 	);
 	const workDir = mkdtempSync(path.join(tmpdir(), 'nd-smoke-'));
 	let result: Awaited<ReturnType<typeof checkPackagedRuntime>>;

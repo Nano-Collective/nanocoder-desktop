@@ -1,6 +1,8 @@
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
+import {getCurrentFuseWire} from '@electron/fuses';
 import test from 'ava';
+import electronPath from 'electron';
 import YAML from 'yaml';
 import {FUSE_POLICY, fuseViolations, wireOf} from './fuses.mjs';
 
@@ -95,4 +97,24 @@ test('SEC-19 electron-builder.yml sets exactly the fuses the policy names', t =>
 		...wireOf(FUSE_POLICY),
 		resetAdHocDarwinSignature: true,
 	});
+});
+
+// The decoder is checked against the real library and a real Electron, not only against itself.
+test('SEC-19 the decoder reads the wire @electron/fuses returns from a real, unfused Electron', async t => {
+	const wire = await getCurrentFuseWire(electronPath);
+	t.is(wire.version, '1');
+	// Electron ships these defaults: runAsNode, nodeOptions, nodeCliInspect and file privileges on; the rest off.
+	t.deepEqual(
+		[0, 1, 2, 3, 4, 5, 6, 7].map(index => wire[index]),
+		[49, 48, 49, 49, 48, 48, 48, 49],
+	);
+	// Index 8 is a fuse this library version does not name; the policy does not use it.
+	t.deepEqual(fuseViolations(wire), [
+		'runAsNode is on, and must be off',
+		'enableNodeOptionsEnvironmentVariable is on, and must be off',
+		'enableNodeCliInspectArguments is on, and must be off',
+		'enableEmbeddedAsarIntegrityValidation is off, and must be on',
+		'onlyLoadAppFromAsar is off, and must be on',
+		'grantFileProtocolExtraPrivileges is on, and must be off',
+	]);
 });
