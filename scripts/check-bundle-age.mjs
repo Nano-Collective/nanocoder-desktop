@@ -26,7 +26,7 @@ async function worker() {
 	while (next < names.length) {
 		const name = names[next++];
 		const response = await fetch(
-			`https://registry.npmjs.org/${name.replace('/', '%2F')}`,
+			`https://registry.npmjs.org/${name.replaceAll('/', '%2F')}`,
 		);
 		if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
 		times[name] = (await response.json()).time ?? {};
