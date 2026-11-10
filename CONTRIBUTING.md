@@ -25,7 +25,7 @@ The scaffold (roadmap phases S.1 to S.5) is in place, and the technical gate has
 - Node.js 22 or newer.
 - pnpm 11, through Corepack.
 - Git.
-- Nanocoder. Until the next Nanocoder release, use a build of Nanocoder `main`: published 1.31.0 does not have `session/close`, the ACP trust check or per-session working directories, which the desktop needs. Point the app at it with `NANOCODER_DESKTOP_CLI=/absolute/path/to/nanocoder/dist/cli.js`. `NANOCODER_DESKTOP_NODE` sets the Node.js runtime the same way. Without them, the app finds `nanocoder` and `node` on your `PATH`.
+- Nanocoder 1.32.0 or newer, for `pnpm dev`. Install it globally and the app finds `nanocoder` and `node` on your `PATH`, or point it at one with `NANOCODER_DESKTOP_CLI=/absolute/path/to/nanocoder/dist/cli.js`, and at a Node.js with `NANOCODER_DESKTOP_NODE`. A packaged app does not look at your `PATH`: it runs the Nanocoder and Node.js it ships, unless you set those two variables.
 - On Linux only: Python 3, `make` and a C++ compiler, because `node-pty` has no prebuilt Linux binary and builds from source.
 
 ### Setup steps
@@ -44,7 +44,10 @@ Then:
 pnpm dev          # run the app, rebuilding on change
 pnpm test:e2e     # build, then drive the app with Playwright
 pnpm package:dir  # build an unpacked app for your platform in release/
+node scripts/smoke-packaged.mjs  # start that app and run a turn with its bundled runtime
 ```
+
+`pnpm package:dir` first stages the runtime the app ships: the pinned Node.js (checksum verified) and the pinned Nanocoder with its locked dependencies (`pnpm prepare:runtime`, about 400 MB in `.cache/runtime`). It needs network access and `npm` the first time.
 
 Electron downloads its binary the first time it runs. On Linux without a display, run the end-to-end tests under `xvfb-run`.
 

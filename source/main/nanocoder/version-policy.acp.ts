@@ -10,7 +10,7 @@ import {createTrustPreflight} from '@/main/nanocoder/trust-preflight';
 import {requiresTrustPreflight} from '@/main/nanocoder/version-policy';
 import type {ProjectInfo} from '@/shared/ipc';
 
-test('a real override build opens a project with normal trust consent and an untested warning, after the isolated preflight where its version needs one (ACP-04 ACP-20 PERF-02)', async t => {
+test('a real override build opens a project with normal trust consent and its version policy, after the isolated preflight where its version needs one (ACP-04 ACP-20 PERF-02)', async t => {
 	t.timeout(120_000);
 	const folder = createWorkFolder('nd-min-version-real-profile-');
 	const f = await setupProject(folder.work, 'fixture', [
@@ -72,10 +72,10 @@ test('a real override build opens a project with normal trust consent and an unt
 	};
 	const state = await supervisor.ensureProcess(project);
 	t.is(state.status, 'ready');
-	t.is(state.gates?.versionPolicy.status, 'untested');
-	t.regex(
-		state.gates?.versionPolicy.reason ?? '',
-		/Compatibility is unverified/,
+	// The release CI tests is supported; a build that reports another version warns.
+	t.is(
+		state.gates?.versionPolicy.status,
+		resolved.runtime.version === '1.32.0' ? 'supported' : 'untested',
 	);
 	t.is(confirmations, 1);
 	const connection = supervisor.getConnection(project.id);

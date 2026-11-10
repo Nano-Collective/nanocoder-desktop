@@ -12,6 +12,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import test from 'ava';
 import {
+	bundledRuntimePaths,
 	cliFromShim,
 	pathDirectories,
 	resolveNanocoder,
@@ -665,4 +666,180 @@ test('the actual Node version subprocess is cancelled with its lookup', async t 
 	const result = await pending;
 	t.false(result.ok);
 	if (!result.ok) t.is(result.code, 'UNSUPPORTED');
+});
+
+function makeBundle(version = '1.32.0') {
+	const resources = tempDir();
+	const cli = makePackage(
+		path.join(
+			resources,
+			'runtime',
+			'nanocoder',
+			'node_modules',
+			'@nanocollective',
+			'nanocoder',
+		),
+		{version},
+	);
+	const node = makeFile(
+		path.join(
+			resources,
+			'runtime',
+			'node',
+			process.platform === 'win32' ? 'node.exe' : 'node',
+		),
+	);
+	return {
+		resources,
+		cli,
+		node,
+		bundled: bundledRuntimePaths(resources, process.platform),
+	};
+}
+
+test('REL-02 the bundled runtime lives in one fixed place under the app resources', t => {
+	const {resources, cli, node, bundled} = makeBundle();
+	t.is(bundled.cliPath, cli);
+	t.is(bundled.nodePath, node);
+	t.true(bundled.cliPath.startsWith(path.join(resources, 'runtime')));
+});
+
+test('REL-02 REL-04 a packaged build runs the bundled Nanocoder and Node, and finds nothing on PATH or in the environment', async t => {
+	const {bundled} = makeBundle();
+	const result = await resolveNanocoder({
+		env: {PATH: ''},
+		platform: process.platform,
+		untrustedRoots: [tempDir()],
+		bundled,
+		readNodeVersion: v22,
+	});
+	t.true(result.ok);
+	if (result.ok) {
+		t.is(result.runtime.source, 'bundled');
+		t.is(result.runtime.cliPath, bundled.cliPath);
+		t.is(result.runtime.nodePath, bundled.nodePath);
+		t.is(result.runtime.version, '1.32.0');
+	}
+});
+
+test('REL-02 a packaged build never falls back to a Nanocoder or Node on PATH when its bundle is damaged', async t => {
+	const onPath = tempDir();
+	makePackage(path.join(onPath, 'lib'));
+	makeFile(path.join(onPath, 'bin', 'nanocoder'));
+	makeFile(
+		path.join(
+			onPath,
+			'bin',
+			process.platform === 'win32' ? 'node.exe' : 'node',
+		),
+	);
+	const resources = tempDir();
+	const missingCli = await resolveNanocoder({
+		env: {PATH: path.join(onPath, 'bin')},
+		platform: process.platform,
+		untrustedRoots: [],
+		bundled: bundledRuntimePaths(resources, process.platform),
+		readNodeVersion: v22,
+	});
+	t.false(missingCli.ok);
+	if (!missingCli.ok) {
+		t.is(missingCli.code, 'NOT_FOUND');
+		t.regex(missingCli.message, /bundled Nanocoder is missing/);
+	}
+	const {bundled, node} = makeBundle();
+	rmSync(node);
+	const missingNode = await resolveNanocoder({
+		env: {PATH: path.join(onPath, 'bin')},
+		platform: process.platform,
+		untrustedRoots: [],
+		bundled,
+		readNodeVersion: v22,
+	});
+	t.false(missingNode.ok);
+	if (!missingNode.ok) {
+		t.is(missingNode.code, 'NOT_FOUND');
+		t.regex(missingNode.message, /bundled Node\.js is missing/);
+	}
+});
+
+test('REL-03 an override beats the bundle, a Node override applies on its own, and a bundled Node runs an overridden Nanocoder', async t => {
+	const {bundled} = makeBundle();
+	const dir = tempDir();
+	const other = makePackage(dir, {version: '1.33.0'});
+	const overrideNode = makeFile(path.join(dir, 'runtime', 'node'));
+	const both = await resolveNanocoder({
+		env: {NANOCODER_DESKTOP_CLI: other, NANOCODER_DESKTOP_NODE: overrideNode},
+		platform: process.platform,
+		untrustedRoots: [tempDir()],
+		bundled,
+		readNodeVersion: v22,
+	});
+	t.true(both.ok);
+	if (both.ok) {
+		t.is(both.runtime.source, 'override');
+		t.is(both.runtime.cliPath, other);
+		t.is(both.runtime.nodePath, overrideNode);
+		t.is(both.runtime.version, '1.33.0');
+	}
+	const cliOnly = await resolveNanocoder({
+		env: {NANOCODER_DESKTOP_CLI: other},
+		platform: process.platform,
+		untrustedRoots: [tempDir()],
+		bundled,
+		readNodeVersion: v22,
+	});
+	t.true(cliOnly.ok);
+	if (cliOnly.ok) {
+		t.is(cliOnly.runtime.source, 'override');
+		t.is(cliOnly.runtime.nodePath, bundled.nodePath);
+	}
+	const nodeOnly = await resolveNanocoder({
+		env: {NANOCODER_DESKTOP_NODE: overrideNode},
+		platform: process.platform,
+		untrustedRoots: [tempDir()],
+		bundled,
+		readNodeVersion: v22,
+	});
+	t.true(nodeOnly.ok);
+	if (nodeOnly.ok) {
+		t.is(nodeOnly.runtime.source, 'bundled');
+		t.is(nodeOnly.runtime.cliPath, bundled.cliPath);
+		t.is(nodeOnly.runtime.nodePath, overrideNode);
+	}
+});
+
+test('REL-03 an override below the supported floor is still refused in a packaged build', async t => {
+	const {bundled} = makeBundle();
+	const old = makePackage(tempDir(), {version: '1.30.0'});
+	const result = await resolveNanocoder({
+		env: {NANOCODER_DESKTOP_CLI: old},
+		platform: process.platform,
+		untrustedRoots: [],
+		bundled,
+		readNodeVersion: v22,
+	});
+	t.false(result.ok);
+	if (!result.ok) t.is(result.code, 'UNSUPPORTED');
+});
+
+test('SEC-05 a bundled runtime inside the project folder is refused like any other, and a bundled Node older than 22 is refused', async t => {
+	const {resources, bundled} = makeBundle();
+	const inside = await resolveNanocoder({
+		env: {},
+		platform: process.platform,
+		untrustedRoots: [resources],
+		bundled,
+		readNodeVersion: v22,
+	});
+	t.false(inside.ok);
+	if (!inside.ok) t.is(inside.code, 'DENIED');
+	const old = await resolveNanocoder({
+		env: {},
+		platform: process.platform,
+		untrustedRoots: [tempDir()],
+		bundled,
+		readNodeVersion: async () => 'v20.1.0',
+	});
+	t.false(old.ok);
+	if (!old.ok) t.is(old.code, 'UNSUPPORTED');
 });

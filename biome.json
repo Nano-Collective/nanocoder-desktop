@@ -16,6 +16,7 @@
 			"!playwright-report",
 			"!node_modules",
 			"!pnpm-lock.yaml",
+			"!bundle/nanocoder/package-lock.json",
 			"!.changeset/pre.json"
 		]
 	},

@@ -1,3 +1,5 @@
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {app, BrowserWindow, dialog, net, protocol, session} from 'electron';
@@ -7,6 +9,7 @@ import {createExitPrompt} from '@/main/exit-prompt';
 import {closeNanocoder, registerIpcHandlers, unfinishedWork} from '@/main/ipc';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {createQuitHandler, createWindowRequestHandler} from '@/main/lifecycle';
+import {checkPackagedRuntime} from '@/main/nanocoder/runtime-check';
 import {
 	APP_ORIGIN,
 	APP_SCHEME,
@@ -22,6 +25,9 @@ import {APP_NAME} from '@/shared/app-info';
 const devServerUrl = process.env.ELECTRON_RENDERER_URL;
 // Used by the packaged-app smoke test in CI: start, then exit.
 const smokeTest = process.argv.includes('--smoke-test');
+const smokeResult = process.argv
+	.find(arg => arg.startsWith('--smoke-result='))
+	?.slice('--smoke-result='.length);
 const hiddenWindows = hiddenTestWindows(app.isPackaged, process.argv);
 const rendererRoot = path.join(import.meta.dirname, '../renderer');
 const preloadPath = path.join(import.meta.dirname, '../preload/index.cjs');
@@ -128,6 +134,32 @@ app.on('web-contents-created', (_event, contents) => {
 	});
 });
 
+// A packaged smoke test also proves the shipped Node and Nanocoder run (REL-02, REL-04, SEC-05).
+async function finishSmokeTest(): Promise<void> {
+	if (!app.isPackaged) {
+		app.exit(0);
+		return;
+	}
+	const workDir = mkdtempSync(path.join(tmpdir(), 'nd-smoke-'));
+	let result: Awaited<ReturnType<typeof checkPackagedRuntime>>;
+	try {
+		result = await checkPackagedRuntime({
+			resourcesPath: process.resourcesPath,
+			platform: process.platform,
+			env: process.env,
+			workDir,
+		});
+	} catch {
+		result = {ok: false, reason: 'The runtime check failed'};
+	}
+	rmSync(workDir, {recursive: true, force: true});
+	const text = JSON.stringify(result);
+	if (smokeResult && path.isAbsolute(smokeResult))
+		writeFileSync(smokeResult, text);
+	else process.stdout.write(`${text}\n`);
+	app.exit(result.ok ? 0 : 1);
+}
+
 function createWindow(): void {
 	const window = new BrowserWindow({
 		title: APP_NAME,
@@ -149,7 +181,7 @@ function createWindow(): void {
 	window.once('ready-to-show', () => {
 		if (windowRequests.stopped) return;
 		if (smokeTest) {
-			app.exit(0);
+			void finishSmokeTest();
 			return;
 		}
 		presentWindow(window, hiddenWindows);

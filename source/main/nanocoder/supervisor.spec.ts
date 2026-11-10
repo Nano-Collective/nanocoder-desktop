@@ -1132,3 +1132,22 @@ test('BRW-14 a desktop question withdrawn by the user, or by cancelling the turn
 	t.is(supervisor.sessionMode(chosen.id, id), 'normal');
 	t.is(supervisor.sessionMode(chosen.id, 'other'), undefined);
 });
+
+test('REL-02 a bundled runtime shows as bundled with no untested warning, and an override of the same build still warns', async t => {
+	const bundled = make({
+		resolveRuntime: async () => ({
+			ok: true,
+			runtime: {...runtime, source: 'bundled' as const},
+		}),
+	});
+	t.teardown(() => bundled.close());
+	const first = project();
+	const bundledState = await bundled.ensureProcess(first);
+	t.is(bundledState.gates?.versionPolicy.status, 'bundled');
+	t.is(bundledState.gates?.versionPolicy.reason, null);
+	const overridden = make();
+	t.teardown(() => overridden.close());
+	const second = project();
+	const overrideState = await overridden.ensureProcess(second);
+	t.is(overrideState.gates?.versionPolicy.status, 'untested');
+});

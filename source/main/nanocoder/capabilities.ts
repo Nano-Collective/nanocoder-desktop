@@ -28,8 +28,10 @@ export function capabilityGates(
 	agent: ConnectedAgent,
 	probes: ExtensionProbes,
 	browserServer = false,
+	// The version of the Nanocoder the app ships, when this one is it (REL-02).
+	bundledVersion?: string,
 ): CapabilityGates {
-	const policy = versionPolicy(agent.version);
+	const policy = versionPolicy(agent.version, bundledVersion);
 	const gate = (offered: boolean, reason: string): CapabilityGate =>
 		policy.status === 'refused'
 			? {enabled: false, reason: policy.reason}

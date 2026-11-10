@@ -12,7 +12,11 @@ test('refuses below the provisional minimum and explains the required upgrade', 
 	t.regex(policy.reason ?? '', /minimum 1\.31\.0.*Upgrade/);
 });
 
-test('accepts at and above the minimum, warning honestly about untested releases', t => {
+test('accepts the tested release as supported, and warns honestly about the rest at and above the minimum', t => {
+	for (const version of ['1.32.0', '1.32.0+build.1']) {
+		t.deepEqual(versionPolicy(version).status, 'supported', version);
+		t.is(versionPolicy(version).reason, null);
+	}
 	for (const version of [
 		MIN_NANOCODER_VERSION,
 		'1.31.0',
@@ -20,7 +24,6 @@ test('accepts at and above the minimum, warning honestly about untested releases
 		'1.32.1',
 		'1.33.0',
 		'2.0.0',
-		'1.32.0+build.1',
 	]) {
 		const policy = versionPolicy(version);
 		t.is(policy.status, 'untested');

@@ -595,7 +595,14 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				entry.connection = result;
 				signal.throwIfAborted();
 				entry.state.agent = result.agent;
-				const negotiatedPolicy = versionPolicy(result.agent.version);
+				const bundledVersion =
+					resolved.runtime.source === 'bundled'
+						? resolved.runtime.version
+						: undefined;
+				const negotiatedPolicy = versionPolicy(
+					result.agent.version,
+					bundledVersion,
+				);
 				entry.state.gates = capabilityGates(
 					project.id,
 					result.agent,
@@ -603,6 +610,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 						? {rename: false, timeline: false}
 						: await untilAborted(result.probeExtensions(), signal),
 					result.browserServer === true,
+					bundledVersion,
 				);
 				if (negotiatedPolicy.status === 'refused') {
 					throw new NanocoderFailure('UNSUPPORTED', negotiatedPolicy.reason);

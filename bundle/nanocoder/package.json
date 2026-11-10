@@ -1,0 +1,9 @@
+{
+	"name": "nanocoder-desktop-bundled-nanocoder",
+	"version": "0.0.0",
+	"private": true,
+	"description": "The pinned Nanocoder and its production dependencies, installed into the packaged app (REL-02, REL-11).",
+	"dependencies": {
+		"@nanocollective/nanocoder": "1.32.0"
+	}
+}

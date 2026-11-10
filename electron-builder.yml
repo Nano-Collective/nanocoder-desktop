@@ -10,6 +10,13 @@ files:
   - THIRD-PARTY-NOTICES.txt
   - '!e2e/**'
   - '!.qa/**'
+# The pinned Node and Nanocoder a packaged app runs, staged by scripts/prepare-runtime.mjs (REL-02, REL-04).
+extraResources:
+  - from: .cache/runtime
+    to: runtime
+    filter:
+      - '**/*'
+      - '!.stamp'
 asarUnpack:
   - '**/*.node'
   - '**/node-pty/**'

@@ -2,7 +2,8 @@ import type {VersionPolicyResult} from '@/shared/ipc';
 
 // Provisional override-only development floor; raise to 1.32.0 when released (OQ-02).
 export const MIN_NANOCODER_VERSION = '1.31.0';
-const LAST_TESTED_VERSION = '1.31.0';
+// The release the desktop's integration tests and the bundled build run against (REL-02).
+const LAST_TESTED_VERSION = '1.32.0';
 
 function release(value: string): number[] | undefined {
 	const match =
@@ -53,7 +54,7 @@ export function versionPolicy(
 		return {
 			status: 'untested',
 			version,
-			reason: `Nanocoder ${version} is newer than the tested ${LAST_TESTED_VERSION} development build (2c1bf7bf). Compatibility is unverified; missing features stay disabled.`,
+			reason: `Nanocoder ${version} is newer than the tested ${LAST_TESTED_VERSION} release. Compatibility is unverified; missing features stay disabled.`,
 		};
 	}
 	return {status: 'supported', version, reason: null};

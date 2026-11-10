@@ -73,7 +73,7 @@ export interface NanocoderRuntime {
 	nodeVersion: string;
 	cliPath: string;
 	version: string;
-	source: 'override' | 'path';
+	source: 'override' | 'bundled' | 'path';
 }
 
 export interface AgentCapabilities {

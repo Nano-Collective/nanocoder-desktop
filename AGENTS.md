@@ -72,7 +72,8 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/nanocoder/diagnostics.ts` | Payload-filtered immutable captures, expiry and exact main-owned review/export |
 | `source/main/nanocoder/version-policy.ts` | Provisional minimum version, fail-closed parsing and untested-version warnings (`ACP-04`, `OQ-02`) |
 | `source/main/nanocoder/abort.ts` | Cancels pending lookups and trust confirmations without allowing late launches |
-| `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path |
+| `source/main/nanocoder/runtime.ts` | Finds Nanocoder and a Node.js runtime by absolute path: the bundled ones in a packaged build (never `PATH`), the override variables first, `PATH` only in development |
+| `source/main/nanocoder/runtime-check.ts`, `scripts/prepare-runtime.mjs`, `scripts/lib/bundle.mjs`, `scripts/nanocoder-bundle.json`, `bundle/nanocoder/` | Phase 4.1 bundled runtime: the pinned Node and Nanocoder staged into the app's resources with their pins and the committed lock verified, and the packaged smoke test's start-up check and `NODE_OPTIONS` guard (`REL-02`, `REL-04`, `REL-11`, `SEC-05`) |
 | `source/main/nanocoder/launch.ts` | Starts Nanocoder with an argument array and no shell |
 | `source/main/nanocoder/acp-client.ts` | Starts `nanocoder --acp` in the project root, sends `initialize`, and opens or resumes sessions with their mode set |
 | `source/main/nanocoder/session-title.ts` | Bounded, allowlisted parsing for main-only Nanocoder title notifications |
@@ -159,7 +160,9 @@ pnpm test:all          # the gate: format, types, lint, unit tests, Knip, audit
 pnpm test:ava          # unit tests
 pnpm test:e2e          # build, then Playwright (use xvfb-run on headless Linux)
 pnpm test:acp          # ACP integration tests (*.acp.ts), needs NANOCODER_CLI
+pnpm prepare:runtime   # stage the pinned Node and Nanocoder into .cache/runtime (package and package:dir run it)
 pnpm package:dir       # unpacked app for this platform in release/
+node scripts/smoke-packaged.mjs  # start the packaged app and run a turn with its bundled runtime
 pnpm fetch:node        # download the pinned Node sidecar into .cache/, checked against its pinned SHA-256
 pnpm measure:runtime   # Phase G.6: startup and memory under Electron's Node mode and the sidecar (needs NANOCODER_CLI)
 pnpm format            # apply Biome formatting
@@ -175,7 +178,7 @@ These hold in every change:
 
 - Renderers stay sandboxed with context isolation and no Node. The preload exposes typed functions only.
 - Every IPC handler goes through `registerHandler`, with a `zod` `strictObject` schema. It returns an `IpcResult`; throw `IpcFailure` for a specific error code.
-- Processes start from an absolute path with an argument array and `shell: false`. No `PATH` lookup at launch, and never a binary from the project's own folder.
+- Processes start from an absolute path with an argument array and `shell: false`. No `PATH` lookup at launch, and never a binary from the project's own folder. A packaged app runs the Node and Nanocoder it ships and never searches `PATH`, unless the user sets `NANOCODER_DESKTOP_CLI` or `NANOCODER_DESKTOP_NODE`.
 - Nanocoder's stdout carries ACP only: a line that is not a JSON-RPC frame ends the connection. Its stderr is redacted into a bounded in-memory ring, and only Nanocoder's own `[nanocoder]` message reaches the UI.
 - Nanocoder's directory trust is recorded only by the trust launch right after the user confirms (`DEC-30`). No `--trust-directory`, no `NANOCODER_TRUST_DIRECTORY` on any other launch, and an inherited one is dropped.
 - Permission requests are answered only by the user, from the main process: the renderer sends a request id and an option id, and both are checked against what Nanocoder offered. With no handler, a request is answered as cancelled, never allowed (`ACP-10`).

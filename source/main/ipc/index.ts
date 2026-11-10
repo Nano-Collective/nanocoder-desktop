@@ -42,7 +42,7 @@ import {disposeDesktop} from '@/main/lifecycle';
 import {untilAborted} from '@/main/nanocoder/abort';
 import {NanocoderFailure} from '@/main/nanocoder/acp-client';
 import {DiagnosticsExporter} from '@/main/nanocoder/diagnostics';
-import {resolveNanocoder} from '@/main/nanocoder/runtime';
+import {bundledRuntimePaths, resolveNanocoder} from '@/main/nanocoder/runtime';
 import {createLookup} from '@/main/nanocoder/runtime-lookup';
 import {ProjectSupervisor} from '@/main/nanocoder/supervisor';
 import type {TrustRefusal} from '@/main/nanocoder/trust';
@@ -69,10 +69,16 @@ import {
 import {TERMINAL_CHANNELS, type TerminalEvent} from '@/shared/terminal';
 
 const runtimeDiscovery = new AbortController();
+// A packaged build runs the Node and Nanocoder it ships and never searches PATH (REL-02).
+const bundledRuntime = () =>
+	app.isPackaged
+		? bundledRuntimePaths(process.resourcesPath, process.platform)
+		: undefined;
 const lookupRuntime = createLookup(() =>
 	resolveNanocoder({
 		env: process.env,
 		platform: process.platform,
+		bundled: bundledRuntime(),
 		untrustedRoots:
 			workspaceServices.store?.projects
 				.list()
@@ -446,6 +452,7 @@ export function registerIpcHandlers(
 					resolveNanocoder({
 						env: process.env,
 						platform: process.platform,
+						bundled: bundledRuntime(),
 						untrustedRoots: [root],
 						signal,
 					}),

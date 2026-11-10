@@ -79,7 +79,7 @@ test('each disabled feature carries a reason, never a privileged fallback', t =>
 		rename: false,
 		timeline: false,
 	});
-	t.is(gates.versionPolicy.status, 'untested');
+	t.is(gates.versionPolicy.status, 'supported');
 	// The browser switch depends on the version alone, which 1.32.0 meets.
 	const {nanocoderBrowserOff, ...rest} = gates.features;
 	t.true(nanocoderBrowserOff.enabled);
@@ -209,4 +209,31 @@ test("BRW-18 the switch for Nanocoder's own browser is gated on 1.32.0, with the
 		reason:
 			"Nanocoder 1.31.0 cannot turn its own browser tool off for a session; that needs 1.32.0. Its browser stays on and does not follow the desktop's browser settings.",
 	});
+});
+
+test('REL-02 the exact bundled version carries no untested warning, and any other version still does', t => {
+	const agent = (version: string) =>
+		describeAgent('/p', {
+			protocolVersion: 1,
+			agentInfo: {name: 'nanocoder', version},
+		});
+	const probes = {rename: false, timeline: false};
+	t.deepEqual(
+		capabilityGates('p', agent('1.32.0'), probes, false, '1.32.0')
+			.versionPolicy,
+		{status: 'bundled', version: '1.32.0', reason: null},
+	);
+	t.is(
+		capabilityGates('p', agent('1.33.0'), probes, false, '1.32.0').versionPolicy
+			.status,
+		'untested',
+	);
+	t.is(
+		capabilityGates('p', agent('1.33.0'), probes).versionPolicy.status,
+		'untested',
+	);
+	t.is(
+		capabilityGates('p', agent('1.32.0'), probes).versionPolicy.status,
+		'supported',
+	);
 });
