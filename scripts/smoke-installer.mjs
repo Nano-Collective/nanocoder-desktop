@@ -6,6 +6,7 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	realpathSync,
 	rmSync,
 } from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -60,18 +61,18 @@ async function linux() {
 	let installed = false;
 	try {
 		installed = true;
-		const files = execFileSync('dpkg', ['-L', 'nanocoder-desktop'], {
-			encoding: 'utf8',
-		}).split('\n');
-		const executable = files.find(file => /\/nanocoder-desktop$/.test(file));
-		if (!executable)
-			throw new Error('The package lists no nanocoder-desktop executable');
+		// The package registers this command, which resolves to the installed executable.
+		const command = '/usr/bin/nanocoder-desktop';
+		if (!existsSync(command))
+			throw new Error(`The package did not install ${command}`);
+		const executable = realpathSync(command);
 		const folder = path.dirname(executable);
 		launch(executable);
 		sudo('dpkg', '-r', 'nanocoder-desktop');
 		installed = false;
 		await gone(folder, 'The install folder');
-		log('uninstalled, install folder removed');
+		await gone(command, 'The command');
+		log('uninstalled, install folder and command removed');
 	} finally {
 		if (installed) spawnSync('sudo', ['dpkg', '-r', 'nanocoder-desktop']);
 	}
