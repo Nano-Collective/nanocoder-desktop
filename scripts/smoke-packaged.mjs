@@ -12,7 +12,10 @@ import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createInterface} from 'node:readline';
+import {getCurrentFuseWire} from '@electron/fuses';
+import unfusedElectron from 'electron';
 import {bundledLayout} from './lib/bundle.mjs';
+import {fuseViolations} from './lib/fuses.mjs';
 
 const release = path.resolve('release');
 const root = path.resolve(import.meta.dirname, '..');
@@ -220,12 +223,73 @@ async function runTurn(resources, env, project) {
 	}
 }
 
+// Runs a program that has a marker-writing script waiting in its environment; reports whether the script ran.
+function ranPoison(binary, args, env, marker, work) {
+	rmSync(marker, {force: true});
+	spawnSync(binary, args, {env, cwd: work, stdio: 'ignore', timeout: 60_000});
+	const ran = existsSync(marker);
+	rmSync(marker, {force: true});
+	return ran;
+}
+
+// SEC-19: the shipped app does not honour ELECTRON_RUN_AS_NODE or NODE_OPTIONS, and an Electron
+// without the fuses off does, so the test cannot pass by being unable to tell.
+function checkFuseBehaviour(executable, env, work) {
+	const marker = path.join(work, 'fuse-ran');
+	const script = path.join(work, 'fuse-poison.cjs');
+	writeFileSync(
+		script,
+		`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran');`,
+	);
+	const runAsNode = {...env, ELECTRON_RUN_AS_NODE: '1'};
+	const nodeOptions = {
+		...env,
+		NODE_OPTIONS: `--require ${JSON.stringify(script)}`,
+	};
+	const code = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`;
+	if (!ranPoison(unfusedElectron, ['-e', code], runAsNode, marker, work))
+		throw new Error(
+			'Control failed: an unfused Electron ignored ELECTRON_RUN_AS_NODE',
+		);
+	const app = path.join(work, 'control-app');
+	mkdirSync(app);
+	writeFileSync(
+		path.join(app, 'package.json'),
+		JSON.stringify({name: 'control', main: 'main.js'}),
+	);
+	writeFileSync(path.join(app, 'main.js'), "require('electron').app.exit(0);");
+	const sandbox = process.platform === 'linux' ? ['--no-sandbox'] : [];
+	if (!ranPoison(unfusedElectron, [...sandbox, app], nodeOptions, marker, work))
+		throw new Error('Control failed: an unfused Electron ignored NODE_OPTIONS');
+	const result = path.join(work, 'fuse-run.json');
+	const shipped = ['--smoke-test', `--smoke-result=${result}`];
+	if (ranPoison(executable, ['-e', code, ...shipped], runAsNode, marker, work))
+		throw new Error('The packaged app ran a script from ELECTRON_RUN_AS_NODE');
+	if (ranPoison(executable, shipped, nodeOptions, marker, work))
+		throw new Error('The packaged app ran a script from NODE_OPTIONS');
+}
+
 const executable = findExecutable();
 if (!existsSync(executable)) {
 	console.error(`Packaged app not found: ${executable}`);
 	process.exit(1);
 }
 const resources = resourcesOf(executable);
+const packaged =
+	process.platform === 'darwin'
+		? path.resolve(executable, '..', '..', '..')
+		: executable;
+const fuseProblems = fuseViolations(
+	await getCurrentFuseWire(packaged).catch(() => undefined),
+);
+if (fuseProblems.length > 0) {
+	for (const problem of fuseProblems) console.error(`Fuse: ${problem}`);
+	console.error(
+		'Smoke test failed: the packaged app does not meet the fuse policy',
+	);
+	process.exit(1);
+}
+console.log('Fuses meet the policy');
 const work = mkdtempSync(path.join(tmpdir(), 'nd-smoke-'));
 const home = path.join(work, 'home');
 const project = path.join(work, 'project');
@@ -241,6 +305,10 @@ console.log(
 
 let failed;
 try {
+	checkFuseBehaviour(executable, env, work);
+	console.log(
+		'The packaged app ignores ELECTRON_RUN_AS_NODE and NODE_OPTIONS, and an unfused Electron does not',
+	);
 	console.log(`Launching ${executable}`);
 	const resultFile = path.join(work, 'runtime-check.json');
 	const launched = spawnSync(
@@ -258,6 +326,10 @@ try {
 	}
 	const check = JSON.parse(readFileSync(resultFile, 'utf8'));
 	console.log(`Runtime check: ${JSON.stringify(check)}`);
+	// PERF-09: recorded every release, with no project open.
+	console.log(
+		`Idle memory: ${check.idleMemoryMb} MB across the app's processes`,
+	);
 	if (!check.ok || check.source !== 'bundled')
 		throw new Error('The packaged app did not use its bundled runtime');
 	if (check.version !== pin.version)

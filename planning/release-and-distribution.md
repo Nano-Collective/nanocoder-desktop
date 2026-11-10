@@ -85,6 +85,37 @@ What the sidecar decision adds, from the review in [#2](https://github.com/Nano-
 - **Sizes.** On macOS arm64 the bundle is about 395 MB unpacked: Node 113 MB and Nanocoder's 346 packages about 282 MB. CI prints each installer's size. Pruning the tree (documents, tests, parts of Nanocoder's dependencies that a desktop session never uses) would shrink it, and needs Nanocoder's agreement on which are safe to drop. It is not done.
 - **Not in 4.1.** Fuses and installers are phase 4.2, third-party notices phase 4.3, signing, notarisation and the entitlements the bundled Node needs under the hardened runtime phase 4.4.
 
+## Phase 4.2 behaviour
+
+- **Fuses (`SEC-19`).** `electron-builder.yml` sets them at packaging time, and [`scripts/lib/fuses.mjs`](../scripts/lib/fuses.mjs) holds the policy and the reason for each. A spec keeps the two in step.
+
+  | Fuse | State | Reason |
+  |---|---|---|
+  | `runAsNode` | off | Nothing needs Electron as a Node runtime, because Nanocoder runs under the bundled Node (`DEC-38`). Off stops `ELECTRON_RUN_AS_NODE` turning the app into a script runner. |
+  | `enableNodeOptionsEnvironmentVariable` | off | `NODE_OPTIONS` in the environment cannot make the app load extra code. |
+  | `enableNodeCliInspectArguments` | off | `--inspect` cannot attach a debugger to the shipped app. |
+  | `enableEmbeddedAsarIntegrityValidation` | on | A changed `app.asar` is refused on macOS and Windows. Electron does not validate it on Linux. |
+  | `onlyLoadAppFromAsar` | on | The app cannot be swapped for a folder of files. Native addons stay unpacked beside the asar. |
+  | `grantFileProtocolExtraPrivileges` | off | The app loads its own `app://` scheme and never a `file://` page. |
+  | `enableCookieEncryption` | off, for now | On macOS it asks for Keychain access, which wants the signed app of phase 4.4. Revisit there. |
+  | `loadBrowserProcessSpecificV8Snapshot` | off | No custom snapshot is built. |
+
+  An unsigned arm64 build also needs `resetAdHocDarwinSignature`: flipping fuses edits the Electron binary, which invalidates its ad hoc signature, and macOS then kills the app. A real signing identity (phase 4.4) re-signs it anyway.
+- **The packaged-build test.** `smoke-packaged.mjs` runs on every platform. It reads the fuse wire from the packaged app and fails on any violation, then proves the three that matter by behaviour: the shipped app ignores `ELECTRON_RUN_AS_NODE` and a poisoned `NODE_OPTIONS`, while an unfused Electron runs both, so the test cannot pass because it is unable to tell. `--inspect` is checked by reading the fuse alone.
+- **End-to-end tests.** They drive an unpacked Electron, where the inspector fuse stays on for Playwright (`DEC-38`), so no separate test build is needed. The one end-to-end test that touches the packaged worker forks it from the unpacked Electron and is unaffected.
+- **Installer round trip (`REL-05`).** [`smoke-installer.mjs`](../scripts/smoke-installer.mjs) runs in CI after packaging and changes the machine it runs on. Linux installs the `.deb` with `apt-get install`, as a user does, so its dependencies come with it. A first version used `dpkg -i`, which stopped on two missing libraries, a failure real users avoid with `apt`. It launches the installed app, uninstalls with `dpkg -r` and checks the folder is gone. Windows runs the NSIS installer silently, launches the installed app, runs its uninstaller and checks the folder is gone. macOS mounts the `.dmg`, copies the app out, launches it, deletes it and checks no image is left mounted. Each launch starts the installed app in smoke-test mode, which checks it runs its own bundled runtime.
+- **What is not covered.** Windows and Linux were not tried by hand. The automated runs cover a clean install and uninstall of a fresh machine image, and not upgrading over an older version, which has no older version to upgrade from yet.
+- **`PERF-09` and `PERF-10`, first recording.** Installer sizes come from the CI step that prints them. Idle memory is the summed working set of the app's Electron processes about three seconds after the window is ready, with no project open, taken by the packaged smoke test. It is a first baseline for this release, and a rise of more than 20% against it blocks a release. It does not yet have a project open, which `PERF-09` asks for.
+
+  | Platform | Installers | Idle memory, no project |
+  |---|---|---|
+  | macOS arm64 | `.dmg` 217 MB, `.zip` 221 MB | 421 MB |
+  | macOS x64 | `.dmg` 226 MB, `.zip` 230 MB | 255 MB |
+  | Windows x64 | NSIS `.exe` 203 MB | 312 MB |
+  | Linux x64 | `.deb` 183 MB, `.AppImage` 241 MB | 533 MB |
+
+  From [Desktop Checks on #43](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/42801676157). The memory figures come from hosted runners of different sizes and display setups, so they compare releases on one platform and not platforms with each other.
+
 ## Packaging targets
 
 Packager decided in [#3](https://github.com/Nano-Collective/nanocoder-desktop/issues/3): `electron-builder`. Formats are a Suggestion (not discussed) except the macOS `.zip`:

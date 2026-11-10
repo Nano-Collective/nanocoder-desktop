@@ -739,16 +739,16 @@ Until phase 3.9 brings desktop approvals, agent control stays on local addresses
 
 **Build**
 
-- [ ] Installers for macOS (`.dmg` and `.zip`), Windows and Linux (`REL-05`)
-- [ ] Fuses reviewed and set: `runAsNode`, `nodeOptions` and `nodeCliInspect` off in the shipped build, with reasons for any left on (`SEC-19`)
-- [ ] Installers attached to GitHub Releases (`REL-12`)
+- [x] Installers for macOS (`.dmg` and `.zip`), Windows and Linux (`REL-05`): built in CI on every platform, with the Linux AppImage beside the `.deb`
+- [x] Fuses reviewed and set: `runAsNode`, `nodeOptions` and `nodeCliInspect` off in the shipped build, with reasons for any left on (`SEC-19`): [`fuses.mjs`](../scripts/lib/fuses.mjs) and [`electron-builder.yml`](../electron-builder.yml), with the table in [`release-and-distribution.md`](release-and-distribution.md#phase-42-behaviour)
+- [ ] Installers attached to GitHub Releases (`REL-12`): belongs to the release workflow of phase 4.10
 
 **Results we want**
 
-- [ ] Each installer installs, launches and uninstalls cleanly
-- [ ] `PERF-09` and `PERF-10` recorded for each installer
-- [ ] The shipped-build smoke test passes and confirms the fuses are set (`SEC-19`)
-- [ ] A packaged test shows an inherited `NODE_OPTIONS` runs no extra script, and a turn runs on a machine without Node (`SEC-05`, `DEC-38`)
+- [x] Each installer installs, launches and uninstalls cleanly: [`smoke-installer.mjs`](../scripts/smoke-installer.mjs) in CI, on Linux (`.deb`), Windows (NSIS) and macOS arm64 and x64 (`.dmg`). The Linux `.AppImage` and the macOS `.zip` are built but not run by it
+- [x] `PERF-09` and `PERF-10` recorded for each installer: first baselines in [`release-and-distribution.md`](release-and-distribution.md#phase-42-behaviour). Idle memory is taken with no project open, which is lower than `PERF-09` asks for
+- [x] The shipped-build smoke test passes and confirms the fuses are set (`SEC-19`): [`smoke-packaged.mjs`](../scripts/smoke-packaged.mjs) reads them from the packaged app and proves two by behaviour, on all four platform builds
+- [x] A packaged test shows an inherited `NODE_OPTIONS` runs no extra script, and a turn runs on a machine without Node (`SEC-05`, `DEC-38`): the launcher guard from phase 4.1, and now the shipped app itself ignoring it
 
 ### Phase 4.3: notices and licences
 

@@ -140,6 +140,14 @@ async function finishSmokeTest(): Promise<void> {
 		app.exit(0);
 		return;
 	}
+	// Let the window settle, then take the working set of every Electron process, no project open (PERF-09).
+	await new Promise(resolve => setTimeout(resolve, 3_000));
+	const idleMemoryMb = Math.round(
+		app
+			.getAppMetrics()
+			.reduce((total, metric) => total + metric.memory.workingSetSize, 0) /
+			1024,
+	);
 	const workDir = mkdtempSync(path.join(tmpdir(), 'nd-smoke-'));
 	let result: Awaited<ReturnType<typeof checkPackagedRuntime>>;
 	try {
@@ -153,7 +161,7 @@ async function finishSmokeTest(): Promise<void> {
 		result = {ok: false, reason: 'The runtime check failed'};
 	}
 	rmSync(workDir, {recursive: true, force: true});
-	const text = JSON.stringify(result);
+	const text = JSON.stringify({...result, idleMemoryMb});
 	if (smokeResult && path.isAbsolute(smokeResult))
 		writeFileSync(smokeResult, text);
 	else process.stdout.write(`${text}\n`);
