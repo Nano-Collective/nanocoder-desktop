@@ -57,17 +57,22 @@ function resourcesOf(executable) {
 }
 
 // The environment of a machine with no Node, npm or Nanocoder: only the system's own folders on PATH.
-function bareEnvironment(home) {
+function bareEnvironment() {
 	const env = {...process.env};
 	for (const key of Object.keys(env)) {
 		if (/^(node_|npm_|pnpm_|nanocoder_)/i.test(key)) delete env[key];
 	}
+	// The PATH of a stock Windows or Unix machine, which holds no Node.
+	const system = process.env.SystemRoot ?? 'C:\\Windows';
 	env.PATH =
 		process.platform === 'win32'
-			? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32')
+			? [
+					path.join(system, 'System32'),
+					system,
+					path.join(system, 'System32', 'Wbem'),
+					path.join(system, 'System32', 'WindowsPowerShell', 'v1.0'),
+				].join(path.delimiter)
 			: '/usr/bin:/bin';
-	env.HOME = home;
-	env.USERPROFILE = home;
 	return env;
 }
 
@@ -226,7 +231,7 @@ const home = path.join(work, 'home');
 const project = path.join(work, 'project');
 mkdirSync(home);
 mkdirSync(project);
-const env = bareEnvironment(home);
+const env = bareEnvironment();
 const found = nodeOnPath(env);
 console.log(
 	found
@@ -282,6 +287,8 @@ try {
 			resources,
 			{
 				...env,
+				HOME: home,
+				USERPROFILE: home,
 				NANOCODER_CONFIG_DIR: config,
 				NANOCODER_DATA_DIR: path.join(work, 'data'),
 				// Only this throwaway project, in this test, is trusted.
