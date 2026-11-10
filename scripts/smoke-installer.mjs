@@ -55,7 +55,8 @@ async function gone(target, what) {
 async function linux() {
 	const deb = artefact(/\.deb$/);
 	const sudo = (...args) => execFileSync('sudo', args, {stdio: 'inherit'});
-	sudo('dpkg', '-i', deb);
+	// apt installs the package's dependencies, as it does for a user; dpkg -i alone would not.
+	sudo('apt-get', 'install', '-y', deb);
 	let installed = false;
 	try {
 		installed = true;
