@@ -14,6 +14,7 @@ import {
 	bundledLayout,
 	verifyBundleLock,
 	verifyInstalledNanocoder,
+	verifyNanocoderLicence,
 } from './lib/bundle.mjs';
 
 // Stages the runtime a packaged app runs Nanocoder with: the pinned Node (checksum verified by
@@ -91,5 +92,6 @@ execFileSync(
 	{cwd: nanocoderDir, stdio: 'inherit', shell: process.platform === 'win32'},
 );
 verifyInstalledNanocoder(nanocoderDir, pin);
+verifyNanocoderLicence(nanocoderDir, pin);
 writeFileSync(stampFile, stamp);
 console.log(`Staged Node and ${pin.package} ${pin.version} in ${stage}`);

@@ -24,10 +24,14 @@ function processLabel(state: SupervisorState | null): string {
 	return `○ ${state?.status ?? 'not started'}`;
 }
 
+const SOURCE_LABELS: Record<NanocoderRuntime['source'], string> = {
+	override: 'set by NANOCODER_DESKTOP_CLI',
+	bundled: 'shipped with this app',
+	path: 'found on this machine',
+};
+
 function sourceLabel(runtime: NanocoderRuntime): string {
-	return runtime.source === 'override'
-		? 'set by NANOCODER_DESKTOP_CLI'
-		: 'found on this machine';
+	return SOURCE_LABELS[runtime.source];
 }
 
 export function RuntimeDialogBody({

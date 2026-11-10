@@ -161,6 +161,7 @@ pnpm test:ava          # unit tests
 pnpm test:e2e          # build, then Playwright (use xvfb-run on headless Linux)
 pnpm test:acp          # ACP integration tests (*.acp.ts), needs NANOCODER_CLI
 pnpm prepare:runtime   # stage the pinned Node and Nanocoder into .cache/runtime (package and package:dir run it)
+pnpm check:bundle-age  # report bundled dependency versions younger than the seven day age gate (run when the bundle lock changes)
 pnpm package:dir       # unpacked app for this platform in release/
 node scripts/smoke-packaged.mjs  # start the packaged app and run a turn with its bundled runtime
 pnpm fetch:node        # download the pinned Node sidecar into .cache/, checked against its pinned SHA-256

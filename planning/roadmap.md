@@ -732,7 +732,7 @@ Until phase 3.9 brings desktop approvals, agent control stays on local addresses
 
 **Results we want**
 
-- [ ] A fresh machine with no Nanocoder installed can run a turn: the packaged app runs a whole turn with its own Node and Nanocoder while `PATH` holds no Node ([`smoke-packaged.mjs`](../scripts/smoke-packaged.mjs))
+- [x] A fresh machine with no Nanocoder installed can run a turn: the packaged app runs a whole turn with its own Node and Nanocoder while `PATH` holds no Node, on macOS arm64 and x64, Windows and Linux ([`smoke-packaged.mjs`](../scripts/smoke-packaged.mjs), [Package Smoke](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/42792477489)). Installers: macOS 217 to 223 MB, Windows 203 MB, Linux 183 MB (`.deb`) and 242 MB (`.AppImage`)
 - [x] The override works with a newer Nanocoder and gates missing features: a newer release resolves as an override with an untested warning, one below the floor is refused, and the gates follow what Nanocoder advertises ([`runtime.spec.ts`](../source/main/nanocoder/runtime.spec.ts), [`capabilities.spec.ts`](../source/main/nanocoder/capabilities.spec.ts))
 
 ### Phase 4.2: packaging
