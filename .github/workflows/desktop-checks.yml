@@ -35,7 +35,7 @@ jobs:
         run: |
           if [ -z "$BASE_SHA" ]; then
             echo "packaging=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(electron-builder\.yml|electron\.vite\.config\.ts|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|source/main/|source/preload/|scripts/smoke-packaged\.mjs|\.github/workflows/desktop-checks\.yml)'; then
+          elif git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(electron-builder\.yml|electron\.vite\.config\.ts|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|source/main/|source/preload/|bundle/|scripts/(smoke-packaged|prepare-runtime|fetch-node-sidecar|nanocoder-bundle|node-sidecar)|scripts/lib/|\.github/workflows/desktop-checks\.yml)'; then
             echo "packaging=true" >> "$GITHUB_OUTPUT"
           else
             echo "packaging=false" >> "$GITHUB_OUTPUT"
@@ -164,7 +164,18 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           command -v xvfb-run || (sudo apt-get update && sudo apt-get install -y xvfb)
 
+      # Stages the pinned Node and Nanocoder (checksums verified), then packages them (REL-02, REL-04).
       - run: pnpm package
+
+      # Recorded for the runtime checklist: what the bundled runtime adds to each installer.
+      - name: Record installer sizes
+        shell: bash
+        run: >
+          node -e "const fs=require('fs');
+          for (const f of fs.readdirSync('release')) {
+          const s=fs.statSync('release/'+f);
+          if (s.isFile() && /\.(dmg|zip|exe|AppImage|deb)$/.test(f)) console.log((s.size/1048576).toFixed(0)+' MB '+f);
+          }"
 
       - if: runner.os == 'Linux'
         run: xvfb-run -a node scripts/smoke-packaged.mjs

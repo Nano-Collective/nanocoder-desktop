@@ -3,7 +3,7 @@
 Prototype versus public release, bundling Nanocoder, the runtime, packaging, notices, signing and the release flow.
 
 - Status: Draft
-- Last updated: 2026-10-29
+- Last updated: 2026-11-10
 - Drafted by: @akramcodez
 
 ## Requirements
@@ -39,13 +39,13 @@ Published Nanocoder 1.31.0 lacks `session/close`, the trust check and per-sessio
 
 ## Bundling Nanocoder
 
-Suggestion (not discussed):
+Built in phase 4.1 ([behaviour below](#phase-41-behaviour)). The steps, as first suggested:
 
 1. **Pin.** Record the exact Nanocoder version and the npm tarball's integrity hash in the repository.
 2. **Vendor at build time.** Install that tarball with its own production dependencies into the app's resources, separate from the desktop's `node_modules`, so the two dependency trees cannot conflict.
 3. **Run with the bundled runtime.** Launch `[runtime, resources/nanocoder/dist/cli.js, "--acp"]` (`ACP-01`).
 4. **Bump deliberately.** Changing the bundled version is its own pull request with a changeset, a full conformance run (`ACP-21`) and updated gate fixtures.
-5. **Notices.** Nanocoder's dependency tree goes into the notices (`REL-06`).
+5. **Notices.** Nanocoder's dependency tree goes into the notices (`REL-06`, phase 4.3).
 
 The override (`REL-03`) points the same launcher at a user-chosen `dist/cli.js` and runtime, after the same trust checks (`SEC-05`).
 
@@ -71,6 +71,19 @@ What the sidecar decision adds, from the review in [#2](https://github.com/Nano-
 - **A clean environment.** Electron's fuses do not protect a standalone Node, and `NODE_OPTIONS` can make it run an extra script before Nanocoder starts. A packaged test starts the sidecar with `NODE_OPTIONS` set in the environment and checks that the script does not run (`SEC-05`). The desktop already drops it at launch.
 - **A machine without Node.** Test the packaged app where Node, npm and npx are not installed. The sidecar runs Nanocoder, but MCP servers or hooks that call `node`, `npm` or `npx` may need extra setup. Document what works out of the box.
 - **Size and signing.** The sidecar adds a 36 to 57 MB download per platform (83 to 119 MB unpacked), measured in G.6. Record the installer size it adds, and confirm the macOS entitlements the bundled Node needs under the hardened runtime with the real signing identity: the G.6 test under ad hoc signing was inconclusive.
+
+## Phase 4.1 behaviour
+
+- **What ships (`REL-02`, `REL-04`).** A packaged app carries a `runtime` folder in its resources: `runtime/node/node` (`node.exe` on Windows) with Node's licence beside it, and `runtime/nanocoder` holding the pinned Nanocoder and its locked production dependencies. The app runs Nanocoder only from there, by absolute path with an argument array and no shell, and never searches `PATH`. If the bundle is damaged the app says so and asks for a reinstall; it does not fall back to a Nanocoder or Node on the machine.
+- **The pins (`REL-11`).** [`scripts/nanocoder-bundle.json`](../scripts/nanocoder-bundle.json) names the Nanocoder version and the SHA-512 integrity of its npm tarball. [`bundle/nanocoder`](../bundle/nanocoder/package.json) holds a `package.json` with that exact version and a committed `package-lock.json` that carries an integrity hash and a registry address for every one of its dependencies. [`scripts/node-sidecar.json`](../scripts/node-sidecar.json) pins Node and the SHA-256 of each platform's archive. `pnpm prepare:runtime` ([`prepare-runtime.mjs`](../scripts/prepare-runtime.mjs)) first checks that the lock matches the pin and that every package is hashed and from the registry, then downloads and verifies Node, installs the tree with `npm ci --omit=dev --ignore-scripts`, and checks the installed package is the pinned one. `pnpm package` and `pnpm package:dir` run it first.
+- **Bumping.** Nanocoder: change the version in `bundle/nanocoder/package.json`, regenerate the lock with `npm install --package-lock-only --omit=dev --ignore-scripts --before=<the pinned release's publish time>`, copy the new tarball integrity into `scripts/nanocoder-bundle.json`, run `pnpm check:bundle-age`, move the tested version in `version-policy.ts`, and run the full ACP suite, in one pull request with a changeset. Node: take the new hashes from the release's signed `SHASUMS256.txt` under the rule in the checklist below. The two never move in the same pull request as Electron.
+- **Dependency age.** The desktop's own dependencies wait seven days after release (`minimumReleaseAge` in `pnpm-workspace.yaml`), and npm applies nothing like it to the bundled tree. So the lock is generated with `--before` set to the pinned Nanocoder's publish time, which resolves every dependency as it was when that release shipped, and `pnpm check:bundle-age` reports any locked version younger than seven days. First-party `@nanocollective/` packages are exempt, as `electron` is in the pnpm policy. A first lock made without `--before` had ten transitive versions under the gate, some a day old. With it, the 1.32.0 lock has two (`ip-address` 10.7.6 and `turndown` 7.2.5, published on 4 November, the day Nanocoder 1.32.0 was); they pass the gate from 11 November. The check is run when the lock changes and is not a CI gate, because it needs the registry and moves with the clock.
+- **Licences.** Nanocoder's own licence file stays in its package folder inside the bundle, and the build fails if it is missing or empty. Every dependency keeps its licence file too, because the tree is shipped as installed. The generated notices file waits for phase 4.3.
+- **Override (`REL-03`).** `NANOCODER_DESKTOP_CLI` and `NANOCODER_DESKTOP_NODE` still win over the bundle, in a packaged build too. An override goes through the same checks as any other runtime: not inside the project folder, a Nanocoder at or above the minimum version, Node 22 or newer, and the version policy, so a release newer than the tested one warns and the features it does not advertise stay off. A Settings screen to choose one without environment variables waits for the Settings screen itself.
+- **The tested version.** The version policy now treats the Nanocoder release the integration tests run against, 1.32.0, as supported, and any other version at or above the minimum as untested. A build that is the bundled one shows as bundled, with no warning.
+- **The packaged smoke test.** `node scripts/smoke-packaged.mjs` runs in CI on every platform after packaging. It starts the app with a `PATH` that holds no Node, npm or Nanocoder. The app resolves its bundle, runs the bundled Nanocoder with the bundled Node, and shows its launcher does not pass on a poisoned `NODE_OPTIONS` (`SEC-05`), with a control showing the poison does run when handed to Node directly. The script then runs a whole turn over ACP with the bundled files against a scripted model, and checks the versions against the pins.
+- **Sizes.** On macOS arm64 the bundle is about 395 MB unpacked: Node 113 MB and Nanocoder's 346 packages about 282 MB. CI prints each installer's size. Pruning the tree (documents, tests, parts of Nanocoder's dependencies that a desktop session never uses) would shrink it, and needs Nanocoder's agreement on which are safe to drop. It is not done.
+- **Not in 4.1.** Fuses and installers are phase 4.2, third-party notices phase 4.3, signing, notarisation and the entitlements the bundled Node needs under the hardened runtime phase 4.4.
 
 ## Packaging targets
 

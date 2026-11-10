@@ -18,10 +18,41 @@ export type Resolution =
 	| {ok: true; runtime: NanocoderRuntime}
 	| {ok: false; code: 'NOT_FOUND' | 'DENIED' | 'UNSUPPORTED'; message: string};
 
+// The Node and Nanocoder a packaged app ships, staged by scripts/prepare-runtime.mjs (REL-02, REL-04).
+export interface BundledRuntime {
+	nodePath: string;
+	cliPath: string;
+}
+
+export function bundledRuntimePaths(
+	resourcesPath: string,
+	platform: NodeJS.Platform,
+): BundledRuntime {
+	const runtime = path.join(resourcesPath, 'runtime');
+	return {
+		nodePath: path.join(
+			runtime,
+			'node',
+			platform === 'win32' ? 'node.exe' : 'node',
+		),
+		cliPath: path.join(
+			runtime,
+			'nanocoder',
+			'node_modules',
+			'@nanocollective',
+			'nanocoder',
+			'dist',
+			'cli.js',
+		),
+	};
+}
+
 export interface ResolveOptions {
 	env: NodeJS.ProcessEnv;
 	platform: NodeJS.Platform;
 	untrustedRoots: readonly string[];
+	// Set for a packaged build: the bundle is the default and PATH is never searched (REL-02).
+	bundled?: BundledRuntime;
 	signal?: AbortSignal;
 	readNodeVersion?: (nodePath: string, signal?: AbortSignal) => Promise<string>;
 }
@@ -161,6 +192,8 @@ export async function resolveNanocoder(
 			};
 		}
 		cliPath = locateCli(cliOverride);
+	} else if (options.bundled) {
+		cliPath = locateCli(options.bundled.cliPath);
 	} else {
 		const names =
 			platform === 'win32' ? ['nanocoder.cmd', 'nanocoder'] : ['nanocoder'];
@@ -171,7 +204,10 @@ export async function resolveNanocoder(
 		return {
 			ok: false,
 			code: 'NOT_FOUND',
-			message: 'Nanocoder is not installed or not on PATH',
+			message:
+				options.bundled && !cliOverride
+					? 'The bundled Nanocoder is missing. Reinstall Nanocoder Desktop.'
+					: 'Nanocoder is not installed or not on PATH',
 		};
 	}
 	if (isInside(cliPath, untrustedRoots, platform)) {
@@ -210,12 +246,19 @@ export async function resolveNanocoder(
 			message: 'NANOCODER_DESKTOP_NODE must be an absolute path',
 		};
 	}
-	const nodeFound = nodeOverride ?? findOnPath(exe('node'), dirs, platform);
+	const nodeFound =
+		nodeOverride ??
+		(options.bundled
+			? options.bundled.nodePath
+			: findOnPath(exe('node'), dirs, platform));
 	if (!nodeFound || !isExecutableFile(nodeFound, platform)) {
 		return {
 			ok: false,
 			code: 'NOT_FOUND',
-			message: 'Node.js is not installed or not on PATH',
+			message:
+				options.bundled && !nodeOverride
+					? 'The bundled Node.js is missing. Reinstall Nanocoder Desktop.'
+					: 'Node.js is not installed or not on PATH',
 		};
 	}
 	const nodePath = canonicalPathSync(nodeFound);
@@ -256,7 +299,7 @@ export async function resolveNanocoder(
 			nodeVersion,
 			cliPath,
 			version,
-			source: cliOverride ? 'override' : 'path',
+			source: cliOverride ? 'override' : options.bundled ? 'bundled' : 'path',
 		},
 	};
 }

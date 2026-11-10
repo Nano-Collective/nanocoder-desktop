@@ -726,14 +726,14 @@ Until phase 3.9 brings desktop approvals, agent control stays on local addresses
 
 **Build**
 
-- [ ] Bundle a pinned Node sidecar with its verified checksum, and apply the Node version rule (`REL-04`, `DEC-38`)
-- [ ] Bundle a pinned, tested Nanocoder with its checksum recorded (`REL-02`, `REL-11`)
-- [ ] Advanced override for another Nanocoder (`REL-03`)
+- [x] Bundle a pinned Node sidecar with its verified checksum, and apply the Node version rule (`REL-04`, `DEC-38`): [`node-sidecar.json`](../scripts/node-sidecar.json), staged by [`prepare-runtime.mjs`](../scripts/prepare-runtime.mjs) into the app's resources. The Node 22 floor applies to the bundled Node as to any other
+- [x] Bundle a pinned, tested Nanocoder with its checksum recorded (`REL-02`, `REL-11`): [`nanocoder-bundle.json`](../scripts/nanocoder-bundle.json) and a committed lock in [`bundle/nanocoder`](../bundle/nanocoder/package.json), installed with `npm ci`, and checked against the pin before and after
+- [x] Advanced override for another Nanocoder (`REL-03`): `NANOCODER_DESKTOP_CLI` and `NANOCODER_DESKTOP_NODE` win over the bundle in a packaged build, through the same checks and version policy. Choosing one in a Settings screen waits for that screen
 
 **Results we want**
 
-- [ ] A fresh machine with no Nanocoder installed can run a turn
-- [ ] The override works with a newer Nanocoder and gates missing features
+- [x] A fresh machine with no Nanocoder installed can run a turn: the packaged app runs a whole turn with its own Node and Nanocoder while `PATH` holds no Node, on macOS arm64 and x64, Windows and Linux ([`smoke-packaged.mjs`](../scripts/smoke-packaged.mjs), [Package Smoke](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/42792477489)). Installers: macOS 217 to 223 MB, Windows 203 MB, Linux 183 MB (`.deb`) and 242 MB (`.AppImage`)
+- [x] The override works with a newer Nanocoder and gates missing features: a newer release resolves as an override with an untested warning, one below the floor is refused, and the gates follow what Nanocoder advertises ([`runtime.spec.ts`](../source/main/nanocoder/runtime.spec.ts), [`capabilities.spec.ts`](../source/main/nanocoder/capabilities.spec.ts))
 
 ### Phase 4.2: packaging
 

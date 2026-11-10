@@ -109,7 +109,8 @@ const results = {
 					: mode === 'version-1.31'
 						? '1.31.0'
 						: mode === 'minimum-version' || mode === 'minimum-no-gates'
-							? '1.32.0'
+							? // Accepted but newer than the tested 1.32.0, so it warns.
+								'1.32.1'
 							: '9.9.9',
 		},
 		authMethods: [],

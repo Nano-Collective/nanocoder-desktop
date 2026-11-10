@@ -222,6 +222,20 @@ test('archived rows escape titles and offer unarchive without selection wording'
 	t.true(empty.includes('no archived threads'));
 });
 
+test('REL-02 the runtime source is described truthfully for an override, the shipped bundle and a PATH lookup', t => {
+	const label = (source: 'override' | 'bundled' | 'path') =>
+		renderToStaticMarkup(
+			createElement(RuntimeDialogBody, {
+				...runtimeProps,
+				runtime: {ok: true as const, value: {...runtime, source}},
+			}),
+		);
+	t.true(label('override').includes('set by NANOCODER_DESKTOP_CLI'));
+	t.true(label('bundled').includes('shipped with this app'));
+	t.false(label('bundled').includes('found on this machine'));
+	t.true(label('path').includes('found on this machine'));
+});
+
 test('runtime details name the runtime source and report a failure', t => {
 	const html = renderToStaticMarkup(
 		createElement(RuntimeDialogBody, runtimeProps),
