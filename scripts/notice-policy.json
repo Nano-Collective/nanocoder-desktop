@@ -1,0 +1,19 @@
+{
+	"allowed": [
+		"0BSD",
+		"AFL-2.1",
+		"Apache-2.0",
+		"BSD-2-Clause",
+		"BSD-3-Clause",
+		"BlueOak-1.0.0",
+		"CC0-1.0",
+		"ISC",
+		"MIT",
+		"OFL-1.1",
+		"Unlicense"
+	],
+	"alsoShipped": ["@fontsource/fira-code"],
+	"exceptions": {
+		"cfonts@3.3.1": "GPL-3.0-or-later. A dependency of Nanocoder's ink-big-text, which draws its terminal banner. It ships unmodified, as source, in the bundled Nanocoder, which runs as its own process. Flagged for a maintainer decision: keep it with this note, or have Nanocoder drop it. Until then every build lists it and its licence."
+	}
+}

@@ -41,6 +41,9 @@ const stamp = createHash('sha256')
 	.update(JSON.stringify(pin))
 	.update(lockText)
 	.update(packageText)
+	.update(read(path.join(root, 'scripts', 'generate-notices.mjs')))
+	.update(read(path.join(root, 'scripts', 'lib', 'notices.mjs')))
+	.update(read(path.join(root, 'scripts', 'notice-policy.json')))
 	.update(`${process.platform}-${process.arch}`)
 	.digest('hex');
 const stampFile = path.join(stage, '.stamp');
@@ -48,7 +51,8 @@ if (
 	existsSync(stampFile) &&
 	read(stampFile) === stamp &&
 	existsSync(nodeTarget) &&
-	existsSync(cliTarget)
+	existsSync(cliTarget) &&
+	existsSync(path.join(stage, 'THIRD-PARTY-NOTICES.txt'))
 ) {
 	console.log(`Runtime already staged in ${stage}`);
 	process.exit(0);
@@ -93,5 +97,11 @@ execFileSync(
 );
 verifyInstalledNanocoder(nanocoderDir, pin);
 verifyNanocoderLicence(nanocoderDir, pin);
+// The notices for exactly what was just staged (REL-06); the build fails on a licence outside the policy.
+execFileSync(
+	process.execPath,
+	[path.join(root, 'scripts', 'generate-notices.mjs'), '--runtime'],
+	{cwd: root, stdio: 'inherit'},
+);
 writeFileSync(stampFile, stamp);
 console.log(`Staged Node and ${pin.package} ${pin.version} in ${stage}`);

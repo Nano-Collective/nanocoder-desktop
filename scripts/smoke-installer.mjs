@@ -11,6 +11,8 @@ import {
 } from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {resourcesOf} from './lib/bundle.mjs';
+import {verifyShippedNotices} from './lib/notices.mjs';
 
 // Installs the installer this platform's build made, launches the installed app, uninstalls it, and checks
 // nothing is left behind (REL-05, phase 4.2). It changes the machine it runs on, so it is meant for CI.
@@ -42,7 +44,14 @@ function launch(executable) {
 		throw new Error(
 			`The installed app did not use its bundle: ${JSON.stringify(check)}`,
 		);
-	log(`launched, bundled Nanocoder ${check.version}`);
+	const noticeProblems = verifyShippedNotices(
+		resourcesOf(executable, process.platform),
+	);
+	if (noticeProblems.length > 0)
+		throw new Error(
+			`The installed app lacks its notices: ${noticeProblems.join('; ')}`,
+		);
+	log(`launched, bundled Nanocoder ${check.version}, notices present`);
 }
 
 async function gone(target, what) {
