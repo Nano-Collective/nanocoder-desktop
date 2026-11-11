@@ -35,7 +35,7 @@ jobs:
         run: |
           if [ -z "$BASE_SHA" ]; then
             echo "packaging=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(electron-builder\.yml|electron\.vite\.config\.ts|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|source/main/|source/preload/|bundle/|scripts/(smoke-packaged|smoke-installer|prepare-runtime|fetch-node-sidecar|nanocoder-bundle|node-sidecar)|scripts/lib/|\.github/workflows/desktop-checks\.yml)'; then
+          elif git diff --name-only "$BASE_SHA" HEAD | grep -qE '^(electron-builder\.yml|electron\.vite\.config\.ts|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|source/main/|source/preload/|bundle/|scripts/(smoke-packaged|smoke-installer|prepare-runtime|generate-notices|notice-policy|fetch-node-sidecar|nanocoder-bundle|node-sidecar)|scripts/lib/|\.github/workflows/desktop-checks\.yml)'; then
             echo "packaging=true" >> "$GITHUB_OUTPUT"
           else
             echo "packaging=false" >> "$GITHUB_OUTPUT"
@@ -65,7 +65,7 @@ jobs:
       - run: pnpm test:ava
 
   # Fails when the committed notices no longer match the packages the build bundles, or a package has a
-  # licence outside scripts/notice-policy.json (REL-06). It builds, because the list comes from the bundler.
+  # licence outside scripts/notice-policy.json (REL-06). The script builds first, because the list comes from the bundler.
   notices:
     name: Notices
     if: github.event_name != 'push'

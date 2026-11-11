@@ -51,7 +51,8 @@ if (
 	existsSync(stampFile) &&
 	read(stampFile) === stamp &&
 	existsSync(nodeTarget) &&
-	existsSync(cliTarget)
+	existsSync(cliTarget) &&
+	existsSync(path.join(stage, 'THIRD-PARTY-NOTICES.txt'))
 ) {
 	console.log(`Runtime already staged in ${stage}`);
 	process.exit(0);
