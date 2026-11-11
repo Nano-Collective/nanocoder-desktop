@@ -97,7 +97,7 @@ test('the app killed in the middle of a turn comes back with that thread interru
 	);
 	killed.kill('SIGKILL');
 	await exited;
-	await app?.close().catch(() => {});
+	// Closing a Playwright handle for a process that is already gone can wait forever on Linux and Windows.
 	app = undefined;
 
 	mode('reported-usage');
