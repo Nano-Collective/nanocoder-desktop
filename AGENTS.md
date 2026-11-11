@@ -126,7 +126,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `planning/app-shell.md` | Shell composition, supervisor badge rules and locked multi-width QA |
 | `source/renderer/overlays.tsx`, `source/renderer/overlay-model.ts` | U.12 renderer-only command palette, shortcuts, focus return and clock-injected toast queue |
 | `planning/ui-overlays.md` | Overlay commands, keyboard rules and notification verification |
-| `THIRD-PARTY-NOTICES.txt` | Bundled font OFL 1.1 and Markdown dependency copyright/licence notices |
+| `THIRD-PARTY-NOTICES.txt`, `scripts/generate-notices.mjs`, `scripts/lib/notices.mjs`, `scripts/notice-policy.json` | Phase 4.3 third-party notices: the committed desktop file is generated, never hand-edited, from the packages the build bundles; the runtime's is generated at packaging from the staged tree; the policy lists accepted licences and the one recorded exception; the Notices CI job and the packaged smoke test fail when they are stale or missing (`REL-06`) |
 | `source/main/nanocoder/capabilities.ts` | Records `initialize` capabilities and builds feature gates with reasons; extensions need safe probes |
 | `source/main/nanocoder/fixtures/` | A fake `nanocoder --acp`, a scripted model provider and test helpers, including the setup shared by the `*.acp.ts` tests |
 | `source/shared/ipc.ts` | Channels, error codes and IPC types |
@@ -162,6 +162,8 @@ pnpm test:ava          # unit tests
 pnpm test:e2e          # build, then Playwright (use xvfb-run on headless Linux)
 pnpm test:acp          # ACP integration tests (*.acp.ts), needs NANOCODER_CLI
 pnpm prepare:runtime   # stage the pinned Node and Nanocoder into .cache/runtime (package and package:dir run it)
+pnpm notices:generate # regenerate THIRD-PARTY-NOTICES.txt after the bundled packages change (CI fails when it is stale)
+pnpm notices:check    # the same check CI runs
 pnpm check:bundle-age  # report bundled dependency versions younger than the seven day age gate (run when the bundle lock changes)
 pnpm package:dir       # unpacked app for this platform in release/
 node scripts/smoke-packaged.mjs  # check the packaged app's fuses, start it and run a turn with its bundled runtime

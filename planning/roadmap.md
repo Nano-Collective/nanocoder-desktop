@@ -3,7 +3,7 @@
 Where Nanocoder Desktop is in the NC process, and the build broken into small phases with checklists, from scaffold to the first public release. No dates: no source gives one.
 
 - Status: Draft
-- Last updated: 2026-11-10
+- Last updated: 2026-11-11
 - Drafted by: @akramcodez
 
 ## How to use this roadmap
@@ -754,12 +754,14 @@ Until phase 3.9 brings desktop approvals, agent control stays on local addresses
 
 **Build**
 
-- [ ] Third-party notices generated from the lockfile, including the bundled Nanocoder (`REL-06`)
+- [x] Third-party notices generated from the lockfile, including the bundled Nanocoder (`REL-06`): [`generate-notices.mjs`](../scripts/generate-notices.mjs) builds the desktop's committed notices from the packages its builds bundle, and the runtime's at packaging time from the staged tree, under [`notice-policy.json`](../scripts/notice-policy.json). It lists what the lockfile installs, not the lockfile itself, so a package with no licence file is handled and a package that is not shipped is not listed
 
 **Results we want**
 
-- [ ] Nanocoder's copyright and MIT licence ship in every installer
-- [ ] A CI check fails when notices are out of date
+- [x] Nanocoder's copyright and MIT licence ship in every installer: the runtime notices carry Nanocoder's own licence text, and the packaged smoke test and the installer round trip fail if they do not, on every platform
+- [x] A CI check fails when notices are out of date: the Notices job in Desktop Checks (`pnpm notices:check`), which also fails a licence outside the policy
+
+Open: `cfonts` in Nanocoder's tree is GPL-3.0-or-later (`OQ-26`).
 
 ### Phase 4.4: signing and updates
 

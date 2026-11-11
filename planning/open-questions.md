@@ -3,7 +3,7 @@
 Every question that still needs an answer, who owns it, and which milestone it blocks.
 
 - Status: Draft
-- Last updated: 2026-11-04
+- Last updated: 2026-11-11
 - Drafted by: @akramcodez
 
 ## How to use this list
@@ -37,6 +37,7 @@ From [whitepaper, Open questions][wp-questions].
 | OQ-12 | Does Nanocoder Desktop plan for Scriptura plugin compatibility? | Open, unanswered. Context: Scriptura's AI layer is moving out of its plugin system, and plugin capability and trust scoping is build-time work there ([Scriptura whitepaper][scriptura]). Suggestion (not discussed): answer "not in v1", since Desktop has no plugin system and Nanocoder plugins already load per session. | NC core team, with @jason1015-coder | None in v1 | [#118 comment][i118-plugin] |
 | OQ-21 | Will the build-approval note, with rationale and the reason the review window closed early, be recorded on the whitepaper page? | Open. The page shows only the status change ([approval commit][approval]). [How a project comes to life][lifecycle] makes the note mandatory and asks for a recorded reason when a window is shortened. | @will-lamerton | None technically. Affects the public record. | [Approval commit][approval] |
 | OQ-24 | Should #121 and #122 merge, and in which order? | Proposed (awaiting @will-lamerton): #121 first, then #122 rebased. #121's `session/close` row should now say the fix merged. | @will-lamerton | None technically | [#121][pr121], [#122][pr122] |
+| OQ-26 | May the installers ship `cfonts` 3.3.1, which is `GPL-3.0-or-later`? | Open. It is a dependency of `ink-big-text` in Nanocoder's production tree, which draws the terminal banner. It has shipped in every build since phase 4.1, unmodified and as source, in the bundled Nanocoder that runs as its own process. The notices list it with its full licence, and `scripts/notice-policy.json` holds the one recorded exception, so the build fails on any other copyleft licence. The choices are to keep it with that note, or to ask Nanocoder to drop it. | NC core team | First public release (phase 4.10) | [`release-and-distribution.md`](release-and-distribution.md#phase-43-behaviour) |
 
 ## New questions found while planning
 

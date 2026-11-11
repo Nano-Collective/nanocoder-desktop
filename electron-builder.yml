@@ -24,6 +24,9 @@ electronFuses:
   loadBrowserProcessSpecificV8Snapshot: false
   grantFileProtocolExtraPrivileges: false
 extraResources:
+  # Beside the app where a user can open it, as well as inside the archive (REL-06).
+  - from: THIRD-PARTY-NOTICES.txt
+    to: THIRD-PARTY-NOTICES.txt
   - from: .cache/runtime
     to: runtime
     filter:

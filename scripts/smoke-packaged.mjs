@@ -14,8 +14,9 @@ import path from 'node:path';
 import {createInterface} from 'node:readline';
 import {getCurrentFuseWire} from '@electron/fuses';
 import unfusedElectron from 'electron';
-import {bundledLayout} from './lib/bundle.mjs';
+import {bundledLayout, resourcesOf} from './lib/bundle.mjs';
 import {fuseViolations} from './lib/fuses.mjs';
+import {verifyShippedNotices} from './lib/notices.mjs';
 
 const release = path.resolve('release');
 const root = path.resolve(import.meta.dirname, '..');
@@ -51,12 +52,6 @@ function findExecutable() {
 	}
 	const binDir = path.join(app, 'Contents', 'MacOS');
 	return path.join(binDir, readdirSync(binDir)[0] ?? 'missing');
-}
-
-function resourcesOf(executable) {
-	return process.platform === 'darwin'
-		? path.resolve(executable, '..', '..', 'Resources')
-		: path.join(path.dirname(executable), 'resources');
 }
 
 // The environment of a machine with no Node, npm or Nanocoder: only the system's own folders on PATH.
@@ -274,7 +269,7 @@ if (!existsSync(executable)) {
 	console.error(`Packaged app not found: ${executable}`);
 	process.exit(1);
 }
-const resources = resourcesOf(executable);
+const resources = resourcesOf(executable, process.platform);
 const packaged =
 	process.platform === 'darwin'
 		? path.resolve(executable, '..', '..', '..')
@@ -290,6 +285,15 @@ if (fuseProblems.length > 0) {
 	process.exit(1);
 }
 console.log('Fuses meet the policy');
+const noticeProblems = verifyShippedNotices(resources);
+if (noticeProblems.length > 0) {
+	for (const problem of noticeProblems) console.error(`Notices: ${problem}`);
+	console.error(
+		'Smoke test failed: the packaged app is missing its third-party notices',
+	);
+	process.exit(1);
+}
+console.log('Third-party notices are in the packaged app');
 const work = mkdtempSync(path.join(tmpdir(), 'nd-smoke-'));
 const home = path.join(work, 'home');
 const project = path.join(work, 'project');

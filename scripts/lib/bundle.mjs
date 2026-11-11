@@ -18,6 +18,13 @@ export function bundledLayout(platform) {
 	};
 }
 
+// The resources folder of an app, from the path of its executable.
+export function resourcesOf(executable, platform) {
+	return platform === 'darwin'
+		? path.resolve(executable, '..', '..', 'Resources')
+		: path.join(path.dirname(executable), 'resources');
+}
+
 // Throws unless the lock names exactly the pinned Nanocoder tarball and every package comes from the registry with a hash.
 export function verifyBundleLock(lock, pin) {
 	const packages = lock.packages ?? {};

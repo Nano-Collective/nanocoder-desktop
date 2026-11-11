@@ -36,6 +36,8 @@
 		"tokens:generate": "node scripts/generate-design-tokens.mjs",
 		"prepare:runtime": "node scripts/prepare-runtime.mjs",
 		"check:bundle-age": "node scripts/check-bundle-age.mjs",
+		"notices:generate": "pnpm build && node scripts/generate-notices.mjs",
+		"notices:check": "pnpm build && node scripts/generate-notices.mjs --check",
 		"package": "pnpm build && pnpm prepare:runtime && electron-builder",
 		"package:dir": "pnpm build && pnpm prepare:runtime && electron-builder --dir",
 		"format": "biome check --write .",
