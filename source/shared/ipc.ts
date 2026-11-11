@@ -331,6 +331,8 @@ export interface ProjectControls {
 	configOptions: ProjectConfigSelect[];
 	modelGate: CapabilityGate;
 	modelScope: ModelScope;
+	// The thread whose session the options describe; null while none does (ACP-14).
+	threadId: string | null;
 }
 
 export type FeatureId =

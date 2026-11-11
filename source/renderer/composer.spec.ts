@@ -93,6 +93,7 @@ test('project selects show only confirmed values and escape labels (CHAT-10 ACP-
 			projectId: 'fixture',
 			revision: 'fixture-revision',
 			modelScope: 'project',
+			threadId: null,
 			modelGate: {enabled: true, reason: null},
 			configOptions: [
 				{
@@ -121,6 +122,7 @@ test('composer names this thread, not the project, when Nanocoder keeps model st
 		projectId: 'project',
 		revision: 'revision',
 		modelScope: 'thread' as const,
+		threadId: 'thread',
 		modelGate: {enabled: true, reason: null},
 		configOptions: [
 			{

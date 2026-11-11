@@ -1,5 +1,8 @@
 import test from 'ava';
-import {createProjectControlsController} from '@/renderer/project-controls';
+import {
+	controlsForThread,
+	createProjectControlsController,
+} from '@/renderer/project-controls';
 import type {DesktopApi} from '@/shared/desktop-api';
 import type {
 	DefaultMode,
@@ -21,6 +24,8 @@ function controls(projectId = 'project', value = 'old'): ProjectControls {
 	return {
 		projectId,
 		revision: `revision-${value}`,
+		modelScope: 'project',
+		threadId: null,
 		modelGate: {enabled: true, reason: null},
 		configOptions: [
 			{
@@ -126,6 +131,8 @@ test('explicit project default waits for main, works before model offers and nev
 		controls: {
 			...controls(),
 			configOptions: [],
+			modelScope: 'project',
+			threadId: null,
 			modelGate: {enabled: false, reason: 'available after the first message'},
 		},
 	});
@@ -214,6 +221,8 @@ test('renderer blocks a project turn, unavailable offers, foreign values and dup
 		sequence: 1,
 		controls: {
 			...controls(),
+			modelScope: 'project',
+			threadId: null,
 			modelGate: {enabled: false, reason: 'restart Nanocoder first'},
 		},
 	});
@@ -328,4 +337,18 @@ test('read and mutation failures preserve old values without inventing success o
 	await f.controller.reload();
 	t.is(f.controller.getState().error, 'project controls are unavailable');
 	t.false(f.controller.getState().loading);
+});
+
+test('per-thread controls show only for the thread they describe (ACP-14 CHAT-10)', t => {
+	const own = {...controls(), modelScope: 'thread' as const, threadId: 'a'};
+	t.is(controlsForThread(own, 'a'), own);
+	const other = controlsForThread(own, 'b');
+	t.deepEqual(other?.configOptions, []);
+	t.false(other?.modelGate.enabled);
+	t.is(other?.modelScope, 'thread');
+	t.is(other?.revision, own.revision);
+	t.false(controlsForThread({...own, threadId: null}, 'b')?.modelGate.enabled);
+	const shared = {...controls(), modelScope: 'project' as const, threadId: 'a'};
+	t.is(controlsForThread(shared, 'b'), shared);
+	t.is(controlsForThread(null, 'b'), null);
 });

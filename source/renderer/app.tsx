@@ -27,6 +27,7 @@ import {
 	PaletteButton,
 } from '@/renderer/overlays';
 import {backgroundItems} from '@/renderer/project-activity';
+import {controlsForThread} from '@/renderer/project-controls';
 import {projectPalette} from '@/renderer/project-palette';
 import {ProjectSwitch} from '@/renderer/recent-projects';
 import {
@@ -1002,7 +1003,10 @@ export function App() {
 										: null)
 								}
 								projectName={currentProject?.displayName ?? 'selected project'}
-								projectControls={modelControls.controls}
+								projectControls={controlsForThread(
+									modelControls.controls,
+									workspace.activeThreadId,
+								)}
 								mode={thread.mode}
 								defaultMode={currentProject?.defaultMode ?? 'normal'}
 								modePending={thread.nanocoderSessionId === null}

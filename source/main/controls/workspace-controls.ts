@@ -50,6 +50,7 @@ export function createWorkspaceControls(options: {
 		setThreadMode: modes.setThreadMode,
 		setProjectDefaultMode: modes.setProjectDefaultMode,
 		hooks: {
+			onThreadSelected: controls.selectThread,
 			onSessionPrepared(context: OwnedSessionContext) {
 				modes.onSessionPrepared(context);
 				controls.onSessionPrepared(context);

@@ -63,6 +63,7 @@
 			"browserControl": true,
 			"nanocoderBrowserOff": true,
 			"subagentTree": false
-		}
+		},
+		"assumed": ["rename", "timeline", "browserControl"]
 	}
 }

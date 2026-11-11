@@ -96,6 +96,7 @@ interface ThreadOptions {
 	clock?: Pick<SupervisorClock, 'now'>;
 	onEvent?(event: ProjectEvent): void;
 	onSessionPrepared?(context: OwnedSessionContext): void | Promise<void>;
+	onThreadSelected?(projectId: string, threadId: string): void;
 	beforeFirstPrompt?(context: OwnedSessionContext): void | Promise<void>;
 	resolveLiveMode?(
 		projectId: string,
@@ -788,6 +789,7 @@ export function createThreadService(
 				? ids
 				: [...ids.slice(-99), request.threadId],
 		});
+		options.onThreadSelected?.(request.projectId, request.threadId);
 	};
 	const startingMode = (thread: ThreadInfo, project: ProjectInfo) =>
 		thread.mode === 'yolo' ? project.defaultMode : thread.mode;

@@ -211,3 +211,21 @@ export function createProjectControlsController(options: {
 		},
 	};
 }
+
+// With per-session model state the options belong to one thread, so another thread in view gets none (ACP-14).
+export function controlsForThread(
+	controls: ProjectControls | null,
+	threadId: string | null,
+): ProjectControls | null {
+	if (!controls || controls.modelScope !== 'thread') return controls;
+	if (controls.threadId === threadId) return controls;
+	return {
+		...controls,
+		configOptions: [],
+		modelGate: {
+			enabled: false,
+			reason:
+				'available after the first message: Nanocoder supplies model options after a session exists',
+		},
+	};
+}

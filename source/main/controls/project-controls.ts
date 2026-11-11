@@ -41,6 +41,7 @@ interface OfferState {
 	revision: string;
 	sessions: Map<string, PreparedSession>;
 	activeThreadId: string | null;
+	selectedThreadId: string | null;
 	configOptions: ProjectControls['configOptions'];
 	modelScope: ModelScope;
 	fingerprint: string;
@@ -77,6 +78,7 @@ export function createProjectControls(options: ProjectControlOptions) {
 				revision: randomUUID(),
 				sessions: new Map(),
 				activeThreadId: null,
+				selectedThreadId: null,
 				configOptions: [],
 				modelScope: 'project',
 				fingerprint: '',
@@ -106,13 +108,22 @@ export function createProjectControls(options: ProjectControlOptions) {
 		for (const [id, source] of state.sessions) {
 			if (!eligible(owner, source)) state.sessions.delete(id);
 		}
+		const perSession = [...state.sessions.values()].some(
+			source => source.connection.agent.capabilities?.perSessionModel,
+		);
+		const followed = state.selectedThreadId ?? state.activeThreadId;
 		const previous =
 			state.activeThreadId && state.sessions.get(state.activeThreadId);
 		if (!force && operations.isBusy(projectId) && previous) return state;
 		let active: PreparedSession | undefined;
 		let offers: ReturnType<NanocoderConnection['getSessionOffers']>;
-		const sources = [...state.sessions.values()];
-		if (previous) sources.unshift(previous);
+		// Per-session model state: only the thread in view can supply the options it shows.
+		const sources = perSession
+			? [followed && state.sessions.get(followed)].filter(
+					(source): source is PreparedSession => !!source,
+				)
+			: [...state.sessions.values()];
+		if (previous && !perSession) sources.unshift(previous);
 		for (const source of sources) {
 			const current = source.connection.getSessionOffers(source.session.id);
 			if (current) {
@@ -129,11 +140,10 @@ export function createProjectControls(options: ProjectControlOptions) {
 				? null
 				: active
 					? 'Nanocoder has not supplied supported model options'
-					: (state.reason ?? missingOffers);
-		const modelScope: ModelScope = active?.connection.agent.capabilities
-			?.perSessionModel
-			? 'thread'
-			: 'project';
+					: perSession
+						? missingOffers
+						: (state.reason ?? missingOffers);
+		const modelScope: ModelScope = perSession ? 'thread' : 'project';
 		const fingerprint = JSON.stringify([
 			modelScope,
 			active?.thread.id,
@@ -163,6 +173,7 @@ export function createProjectControls(options: ProjectControlOptions) {
 			revision: state.revision,
 			configOptions: structuredClone(state.configOptions),
 			modelScope: state.modelScope,
+			threadId: state.activeThreadId,
 			modelGate: reason
 				? {enabled: false, reason}
 				: {enabled: true, reason: null},
@@ -212,6 +223,7 @@ export function createProjectControls(options: ProjectControlOptions) {
 		if (!state) return;
 		state.sessions.clear();
 		state.activeThreadId = null;
+		state.selectedThreadId = null;
 		state.configOptions = [];
 		state.modelScope = 'project';
 		state.reason = reason;
@@ -331,6 +343,13 @@ export function createProjectControls(options: ProjectControlOptions) {
 			);
 		},
 		invalidate,
+		selectThread(projectId: string, threadId: string) {
+			const state = states.get(projectId);
+			if (disposed || !state || state.selectedThreadId === threadId) return;
+			state.selectedThreadId = threadId;
+			const revision = state.revision;
+			if (refresh(projectId, true).revision !== revision) publish(projectId);
+		},
 		invalidateThread(projectId: string, threadId: string) {
 			const state = states.get(projectId);
 			if (!state?.sessions.delete(threadId)) return;

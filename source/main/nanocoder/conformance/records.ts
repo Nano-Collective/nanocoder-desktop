@@ -18,13 +18,14 @@ export interface ConformanceRecord {
 	gates: {
 		versionPolicy: ReturnType<typeof versionPolicy>;
 		features: Record<FeatureId, boolean>;
+		assumed: FeatureId[];
 	};
 }
 
 export const recordPath = (version: string) =>
 	path.join(recordsDirectory, `nanocoder-${version}.json`);
 
-// The gates a recorded initialize answer produces, with the extension probes and the browser server taken as healthy.
+// The gates a recorded initialize answer produces. The extension probes and the browser server are not part of the answer, so the gates that depend on them are assumed healthy and listed as such. The version status leaves out the bundled exemption, so a record does not change when the bundle moves.
 export function gatesFor(initialize: InitializeResponse) {
 	const agent = describeAgent('/record', initialize);
 	const gates = capabilityGates(
@@ -38,6 +39,7 @@ export function gatesFor(initialize: InitializeResponse) {
 		features: Object.fromEntries(
 			Object.entries(gates.features).map(([id, gate]) => [id, gate.enabled]),
 		) as Record<FeatureId, boolean>,
+		assumed: ['rename', 'timeline', 'browserControl'] as FeatureId[],
 	};
 }
 

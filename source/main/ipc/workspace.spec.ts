@@ -239,6 +239,7 @@ test('typed project control handlers return the service snapshot unchanged (CHAT
 		projectId,
 		revision: threadId,
 		modelScope: 'thread',
+		threadId,
 		modelGate: {enabled: true, reason: null},
 		configOptions: [
 			{

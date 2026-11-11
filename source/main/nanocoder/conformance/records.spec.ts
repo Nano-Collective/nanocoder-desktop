@@ -9,7 +9,6 @@ import {
 } from '@/main/nanocoder/conformance/records';
 import {
 	LAST_TESTED_VERSION,
-	MIN_NANOCODER_VERSION,
 	versionPolicy,
 } from '@/main/nanocoder/version-policy';
 
@@ -50,7 +49,17 @@ test('every recorded version is one the policy accepts, and none is the unsuppor
 			status === 'bundled' || status === 'supported',
 			`${version} is ${status}`,
 		);
-		t.not(version, MIN_NANOCODER_VERSION);
+		t.not(version, '1.31.0');
+	}
+});
+
+test('every record says which gates rest on assumed inputs rather than the recorded answer (ACP-03)', t => {
+	for (const version of recordedVersions()) {
+		t.deepEqual(readRecord(version)?.gates.assumed, [
+			'rename',
+			'timeline',
+			'browserControl',
+		]);
 	}
 });
 
