@@ -51,11 +51,13 @@ async function discoveryFixture(t: ExecutionContext, mode?: string) {
 	const connection = f.supervisor.getConnection(f.project.id);
 	const drained = deferred<void>();
 	const write = connection.stderr.write;
+	// The last request of each probe is its bare name, and the probes run side by side.
 	const check = () => {
+		const seen = new Set(
+			fakeEvents(connection.stderr.lines()).map(e => e.method),
+		);
 		if (
-			fakeEvents(connection.stderr.lines()).some(
-				e => e.method === 'timeline/list',
-			)
+			['renameSession', 'timeline/list', 'pinSession'].every(m => seen.has(m))
 		)
 			drained.resolve();
 	};

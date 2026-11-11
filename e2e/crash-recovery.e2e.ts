@@ -66,6 +66,8 @@ test.afterEach(async () => {
 	rmSync(work, {recursive: true, force: true, maxRetries: 10, retryDelay: 200});
 });
 
+test.setTimeout(90_000);
+
 test('the app killed in the middle of a turn comes back with that thread interrupted, history intact and the next prompt accepted (ACP-17 DATA-02)', async () => {
 	mode('wait-for-cancel');
 	let page = await launch();
@@ -87,7 +89,14 @@ test('the app killed in the middle of a turn comes back with that thread interru
 	});
 	expect(before).toEqual(['running']);
 
-	app?.process().kill('SIGKILL');
+	// The single-instance lock is held until the killed process has been reaped.
+	const killed = app?.process();
+	if (!killed) throw new Error('The app has no process');
+	const exited = new Promise<void>(resolve =>
+		killed.once('exit', () => resolve()),
+	);
+	killed.kill('SIGKILL');
+	await exited;
 	await app?.close().catch(() => {});
 	app = undefined;
 
