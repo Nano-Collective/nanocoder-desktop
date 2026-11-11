@@ -29,6 +29,8 @@ interface SessionControlOptions {
 		value: string,
 	): Promise<unknown>;
 	failure(code: 'UNSUPPORTED' | 'AGENT_UNAVAILABLE', message: string): Error;
+	// Nanocoder keeps one model per session; without this a change reaches every session in the process (ACP-14).
+	perSessionModel?: boolean;
 }
 
 function own(value: unknown, key: string): unknown {
@@ -46,14 +48,21 @@ export function createSessionControls(options: SessionControlOptions) {
 	const observers = new Set<ConfigOptionsObserver>();
 	let observed = false;
 	let disposed = false;
-	let configOptions: ProjectConfigSelect[] | undefined;
+	const configOptions = new Map<string, ProjectConfigSelect[]>();
+	const perSession = options.perSessionModel === true;
+	const store = (sessionId: string, confirmed: ProjectConfigSelect[]) => {
+		if (!perSession) {
+			for (const id of configOptions.keys()) configOptions.set(id, confirmed);
+		}
+		configOptions.set(sessionId, confirmed);
+	};
 	let uncertain = false;
 	const getSessionOffers = (sessionId: string): SessionOffers | undefined => {
 		const offeredModes = modes.get(sessionId);
 		return !disposed && offeredModes && options.isReady(sessionId)
 			? structuredClone({
 					offeredModes,
-					configOptions: uncertain ? undefined : configOptions,
+					configOptions: uncertain ? undefined : configOptions.get(sessionId),
 				})
 			: undefined;
 	};
@@ -86,10 +95,10 @@ export function createSessionControls(options: SessionControlOptions) {
 		const confirmed = projectConfigOptions(raw);
 		if (
 			!confirmed?.length ||
-			JSON.stringify(confirmed) === JSON.stringify(configOptions)
+			JSON.stringify(confirmed) === JSON.stringify(configOptions.get(sessionId))
 		)
 			return false;
-		configOptions = confirmed;
+		store(sessionId, confirmed);
 		for (const owner of owners) owner.onChange(sessionId);
 		return true;
 	};
@@ -97,7 +106,9 @@ export function createSessionControls(options: SessionControlOptions) {
 		remember(sessionId: string, availableModes: unknown, config: unknown) {
 			if (disposed) return;
 			modes.set(sessionId, sessionModeOptions(availableModes));
-			configOptions = projectConfigOptions(config);
+			const known = projectConfigOptions(config);
+			if (known) configOptions.set(sessionId, known);
+			else configOptions.delete(sessionId);
 		},
 		observeConfigOptions(observer: ConfigOptionsObserver) {
 			observed = true;
@@ -129,10 +140,11 @@ export function createSessionControls(options: SessionControlOptions) {
 			disposed = true;
 			observers.clear();
 			modes.clear();
-			configOptions = undefined;
+			configOptions.clear();
 		},
 		forget(sessionId: string) {
 			modes.delete(sessionId);
+			configOptions.delete(sessionId);
 			options.setReady(sessionId, false);
 		},
 		getSessionOffers,
@@ -177,14 +189,14 @@ export function createSessionControls(options: SessionControlOptions) {
 					await options.setConfigOption(sessionId, id, value),
 				);
 				if (!confirmed) throw new Error('invalid config');
-				configOptions = confirmed;
+				store(sessionId, confirmed);
 				uncertain = false;
 				const offers = getSessionOffers(sessionId);
 				if (!offers) throw new Error('session unavailable');
 				return offers;
 			} catch {
 				uncertain = true;
-				configOptions = undefined;
+				configOptions.clear();
 				throw options.failure(
 					'AGENT_UNAVAILABLE',
 					'Nanocoder did not confirm the model change; restart Nanocoder before sending',

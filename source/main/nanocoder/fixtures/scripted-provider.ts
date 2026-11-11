@@ -6,6 +6,7 @@ export type Reply =
 	| {toolCall: {name: string; arguments: Record<string, unknown>}};
 
 export interface ChatRequest {
+	model?: string;
 	messages: Array<{role: string; content?: unknown}>;
 	tools?: unknown[];
 	stream?: boolean;

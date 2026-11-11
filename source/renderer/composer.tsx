@@ -65,6 +65,10 @@ export function Composer(props: ComposerProps) {
 	const missingOffers =
 		'available after the first message: Nanocoder supplies model options after a session exists';
 	const options = props.projectControls?.configOptions ?? [];
+	const ownModel = props.projectControls?.modelScope === 'thread';
+	const modelTarget = ownModel
+		? `this thread in project ${props.projectName}`
+		: `every thread in project ${props.projectName}`;
 	const modelReason =
 		props.controlReason ??
 		(!props.projectControls?.modelGate.enabled
@@ -99,7 +103,7 @@ export function Composer(props: ComposerProps) {
 	const lead = modelReason ?? modeReason;
 	const note = [
 		lead && `${lead.replace(/\.$/, '')}.`,
-		`model applies to every thread in ${props.projectName}. tools in Nanocoder's alwaysAllow list still run without asking.`,
+		`model applies to ${ownModel ? 'this thread only' : `every thread in ${props.projectName}`}. tools in Nanocoder's alwaysAllow list still run without asking.`,
 	]
 		.filter(Boolean)
 		.join(' ');
@@ -214,7 +218,7 @@ export function Composer(props: ComposerProps) {
 								</span>
 								<select
 									className="composer-inactive-control"
-									aria-label={`${option.id} for every thread in project ${props.projectName}`}
+									aria-label={`${option.id} for ${modelTarget}`}
 									aria-describedby={noteId}
 									value={option.currentValue}
 									disabled={!!modelReason}
@@ -233,7 +237,7 @@ export function Composer(props: ComposerProps) {
 					) : (
 						<Button
 							disabled
-							aria-label={`model and provider for every thread in project ${props.projectName}`}
+							aria-label={`model and provider for ${modelTarget}`}
 							aria-describedby={noteId}
 						>
 							available after the first message

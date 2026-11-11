@@ -25,6 +25,7 @@ function state(
 				sessions: {close: false, delete: false, list: false, resume: false},
 				prompt: {image: false, audio: false, embeddedContext: false},
 				mcp: {http: false, sse: false},
+				perSessionModel: false,
 			},
 		},
 		...patch,

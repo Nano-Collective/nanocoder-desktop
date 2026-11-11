@@ -492,6 +492,7 @@ export async function connectNanocoder(
 				})
 			).configOptions,
 		failure: (code, message) => new NanocoderFailure(code, message),
+		perSessionModel: agent.capabilities.perSessionModel,
 	});
 	notificationControls = sessionControls;
 

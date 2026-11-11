@@ -17,7 +17,7 @@ function deferred<T>() {
 	return {promise, resolve};
 }
 
-function fixture() {
+function fixture(perSessionModel = false) {
 	const project: ProjectInfo = {
 		id: 'project',
 		canonicalRoot: '/fixture',
@@ -92,7 +92,7 @@ function fixture() {
 		failure: (_code, message) => new Error(message),
 	});
 	const connection = {
-		agent: {root: '/fixture'},
+		agent: {root: '/fixture', capabilities: {perSessionModel}},
 		getSessionOffers: () => structuredClone(offers),
 		observeConfigOptions: (
 			observer: Parameters<typeof notifications.observeConfigOptions>[0],
@@ -455,4 +455,30 @@ test('a root check that fails refuses with a fixed message before any config RPC
 		message: 'The project root changed; locate and trust it again',
 	});
 	t.deepEqual(f.calls, []);
+});
+
+test('the model control says whether it changes one thread or the whole project, from what Nanocoder advertises (ACP-14 CHAT-10)', async t => {
+	const shared = fixture();
+	t.is(
+		shared.controls.getProjectControls({projectId: shared.project.id})
+			.modelScope,
+		'project',
+	);
+	await shared.observe();
+	t.is(
+		shared.controls.getProjectControls({projectId: shared.project.id})
+			.modelScope,
+		'project',
+	);
+	const own = fixture(true);
+	t.is(
+		own.controls.getProjectControls({projectId: own.project.id}).modelScope,
+		'project',
+	);
+	await own.observe();
+	t.is(
+		own.controls.getProjectControls({projectId: own.project.id}).modelScope,
+		'thread',
+	);
+	t.is(own.published.at(-1)?.modelScope, 'thread');
 });

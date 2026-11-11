@@ -3,7 +3,7 @@
 How the desktop drives `nanocoder --acp`: methods, capability negotiation, supported versions, known Nanocoder quirks, and the Nanocoder changes the plan depends on.
 
 - Status: Draft
-- Last updated: 2026-11-09
+- Last updated: 2026-11-11
 - Drafted by: @akramcodez
 
 ## Baseline
@@ -29,7 +29,7 @@ Nanocoder declares `@agentclientprotocol/sdk` `^1.3.0` and its lockfile resolves
 | ACP-11 | Answer `fs/read_text_file` only for paths inside the canonical project root, within size limits, through the same checks as the file browser. Offer no write and no terminal capability. | Decided ([whitepaper, Why ACP][wp-why]) |
 | ACP-12 | Parse Nanocoder's vendor data defensively: `_nanocoder/sessionTitleChanged` notifications and `_meta` keys (`nanocoder/usage`, `nanocoder/artifacts`, `nanocoder/response-usage`, `nanocoder/durationMs`, `nanocoder/outcome`). Unknown keys are ignored, malformed ones are logged and dropped. | Decided that they exist ([#122][pr122]); handling is Suggestion (not discussed) |
 | ACP-13 | Set the session mode with `session/set_mode` after every `session/new` and `session/resume`, including after a restart, and only between turns. Check the mode against the session's `availableModes` first; the thread takes no prompt until it succeeds. See [Session mode](#session-mode). | Proposed (awaiting @will-lamerton) (`DEC-31`, [#5][i5]) |
-| ACP-14 | Treat model and provider selection as process-global. Allow a change only when no turn is running in the project's process, and say that it applies to every thread in the project. | Decided that it is process-global ([whitepaper, Open risks][wp-risks]); the guard is Suggestion (not discussed). Nanocoder `main` makes model state per session, so this needs review (phase 4.5) |
+| ACP-14 | Follow Nanocoder's model state. Where it advertises `perSessionModel`, a change reaches one thread's session and the control says so. Otherwise treat model and provider selection as process-global and say that it applies to every thread in the project. Either way, allow a change only when no turn is running in the project's process. | Decided that it was process-global ([whitepaper, Open risks][wp-risks]); the per-session reading is `DEC-51`, Proposed (awaiting @will-lamerton); the guard is Suggestion (not discussed) |
 | ACP-15 | Treat stdout as protocol only. A frame that does not parse ends the connection and fails the process. | Decided ([whitepaper, Architecture][wp-arch]) |
 | ACP-16 | Keep stderr in a bounded, redacted, in-memory ring that is never persisted and leaves the machine only after the user reviews it. | Decided ([whitepaper][wp-arch]) |
 | ACP-17 | Supervise the process: detect exit, keep the exit code and signal, mark running threads Failed, restart with limited backoff, resume the open thread. Never restart automatically when the process exits before `initialize` returns, as it does on a trust refusal. | Decided ([whitepaper, Process policy][wp-process]); backoff policy Suggestion (not discussed); no restart before `initialize` Proposed (awaiting @will-lamerton) (`DEC-30`) |
@@ -122,6 +122,20 @@ Open:
 - **The minimum published version.** No published Nanocoder has `session/close` yet. Version 1.31.0 was published to npm on 2026-09-26 ([npm][npm-nc]), before [nanocoder#1709][nc1709] merged on 2026-10-19, and at `8a5f4d4` the fix is still a pending changeset ([changeset][nc-cs-close]). The directory trust check, per-session `cwd` and the built-in `browser` tool are in the same position ([changesets][nc-cs-dir]). Published 1.31.0 remains unsupported. The next release is the intended published floor; the provisional development-only exception below lets the desktop use the pinned technical-gate build until that release exists.
 - **Runtime.** Nanocoder requires Node 22 or newer ([source][nc-engines]). Electron 45.1.0 embeds Node 24.22.1 ([Electron releases][el-releases]), so Electron's Node mode meets the requirement. Public builds are proposed to use a bundled Node sidecar instead, because that lets the `runAsNode` fuse be turned off (`DEC-38`, `OQ-22`).
 
+### Conformance and recorded versions (phase 4.5)
+
+The supported versions are the bundled release and any other release the policy marks supported. Today that is **1.32.0** only. The provisional 1.31.0 floor has no published build to test: published 1.31.0 is unsupported, and an override build that reports 1.31.x cannot be fetched by CI. So the lowest version the conformance run covers is the bundled 1.32.0, and raising `MIN_NANOCODER_VERSION` to it, as this document says to do now that it is released, is left to the `OQ-02` decision.
+
+Three checks make up the run (`ACP-21`):
+
+- **The shared tests against the bundled build.** The `ACP Conformance, bundled` job stages the runtime the installers ship with `pnpm prepare:runtime` and runs every `*.acp.ts` test against it on Linux, macOS and Windows. The `ACP Integration` job keeps running the same tests against a pinned Nanocoder `main` build, as an early warning for the next release.
+- **A recorded answer per version** (`ACP-04`). [`conformance/nanocoder-<version>.json`](../source/main/nanocoder/conformance/nanocoder-1.32.0.json) holds the real `initialize` answer of that version and the gate results it produces, with the extension probes and the browser server taken as healthy. `conformance.acp.ts` reads the answer off the wire and, with `NANOCODER_CONFORMANCE_STRICT=1` (the bundled job sets it), fails when the version has no record or answers differently. `records.spec.ts` fails when the bundled or last tested version has no record, when a record's gates no longer match its answer, or when a recorded version is not one the policy accepts.
+- **Behaviour the answer cannot show.** `controls.acp.ts` proves per-session model state by what the provider is asked for: after one session changes provider, another session in the same process is still asked for its own model.
+
+To add a version: run `NANOCODER_CLI=<its dist/cli.js> NANOCODER_RECORD_CONFORMANCE=1 pnpm test:acp`, read the diff, commit the new file, and update `LAST_TESTED_VERSION` in `version-policy.ts`.
+
+The gates for `agentChanges` and `subagentTree` stay closed in the 1.32.0 record although 1.32.0 offers `_nanocoder/timeline/read`, `_nanocoder/cancelSubagent` and child run IDs. Opening them belongs to the features that use them, not to this phase.
+
 ### Provisional prototype policy (phase 1.4)
 
 `MIN_NANOCODER_VERSION` in [`version-policy.ts`](../source/main/nanocoder/version-policy.ts) is provisionally **1.31.0**. Only an explicit `NANOCODER_DESKTOP_CLI` override can use 1.31.x, and only after the fail-closed ACP trust preflight below succeeds. This admits a development build that reports 1.31.0, without accepting published npm 1.31.0. CI tests against `2c1bf7bf6a93d2a07401d0720940aafd94577467` (a Nanocoder `main` build of 2026-11-04); it moved there from `fc01e239a80ddb2e09ca174e3c909508832d5340` (2026-10-26), and the quirk rows below describe `fc01e239` unless a row says otherwise. Raise the minimum back to **1.32.0 when released**, verify its required trust check and per-session cwd, and record conformance evidence. This exception is not an agreed public release floor; `DEC-12` remains Proposed and `OQ-02` remains open.
@@ -151,7 +165,7 @@ The six findings from [#122][pr122], checked at both commits, then the quirks th
 | 3 | Titles, usage and artefacts in vendor fields | True | Still true, with more `_meta` keys on replay ([source][nc-replay-meta]) | Defensive parsing (`ACP-12`). |
 | 4 | History survives a restart | True | True, subject to retention (row 10) | `session/resume` (`ACP-06`). |
 | 5 | Session listing matches exact paths only | True | Still true ([source][nc-sm-list]) | Client-side matching (see [Session discovery](#session-discovery-and-identity)). |
-| 6 | Model selection is process-global | True | Still true at `fc01e239`, and provider selection too ([source][nc-config]). Not true on Nanocoder `main`: model state is per session and `resume` restores the model saved with the session ([nanocoder#1919](https://github.com/Nano-Collective/nanocoder/pull/1919), merged, unreleased) | The desktop still labels the control as project-wide. Reviewing `ACP-14` and `CHAT-10` for per-session models is a phase 4.5 item. |
+| 6 | Model selection is process-global | True | Still true at `fc01e239`, and provider selection too ([source][nc-config]). Not true from 1.32.0: model state is per session and `resume` restores the model saved with the session ([nanocoder#1919](https://github.com/Nano-Collective/nanocoder/pull/1919), merged, unreleased) | Released in 1.32.0, which advertises `agentCapabilities._meta.nanocoder.perSessionModel: true`. The desktop reads that flag, keeps each session's offers apart and labels the control for this thread (`ACP-14`, `DEC-51`, phase 4.5). |
 | 7 | A second prompt in the same session | Rejected with "Prompt already in progress" | Queued behind the first ([source][nc-queue]) | The desktop prevents overlap itself (`CHAT-17`). |
 | 8 | `session/load` with an unknown ID | Creates an empty session | Same ([source][nc-load]) | Use `session/resume` (`ACP-06`). |
 | 9 | Initial mode | `auto-accept` | `auto-accept` ([source][nc-register], [docs][nc-acp-modes]) | Set the mode explicitly (`ACP-13`, `DEC-31`). |

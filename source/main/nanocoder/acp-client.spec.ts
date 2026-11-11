@@ -204,6 +204,7 @@ test('records the protocol version, agent version and capabilities', async t => 
 			sessions: {close: true, delete: true, list: true, resume: true},
 			prompt: {image: false, audio: false, embeddedContext: false},
 			mcp: {http: false, sse: false},
+			perSessionModel: false,
 		},
 	});
 	await connection.close();

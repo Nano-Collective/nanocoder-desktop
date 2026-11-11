@@ -39,7 +39,7 @@ function config(provider = 'a', model = 'old') {
 	];
 }
 
-function fixture() {
+function fixture(perSessionModel = false) {
 	const ready = new Set(['one', 'two']);
 	let prompting = false;
 	let transportConfig: (
@@ -70,6 +70,7 @@ function fixture() {
 			return transportConfig(id, key, value);
 		},
 		failure: (code, message) => Object.assign(new Error(message), {code}),
+		perSessionModel,
 	});
 	controls.remember(
 		'one',
@@ -410,4 +411,64 @@ test('a hostile notification frame whose property reads throw is ignored (ACP-14
 		},
 	);
 	t.false(f.controls.receiveConfigNotification(hostile));
+});
+
+test("with per-session model state a change, a notification and a later session leave other sessions' offers alone (ACP-14 CHAT-10)", async t => {
+	const f = fixture(true);
+	f.controls.remember('three', [{id: 'normal'}], config('b', 'confirmed'));
+	f.ready.add('three');
+	f.current.add('three');
+	t.is(
+		f.controls.getSessionOffers('one')?.configOptions?.[1]?.currentValue,
+		'old',
+	);
+	t.is(
+		f.controls.getSessionOffers('three')?.configOptions?.[1]?.currentValue,
+		'confirmed',
+	);
+	const result = await f.controls.setConfigOption('one', 'provider', 'b');
+	t.is(result.configOptions?.[1]?.currentValue, 'confirmed');
+	t.is(
+		f.controls.getSessionOffers('two')?.configOptions?.[0]?.currentValue,
+		'a',
+	);
+	t.is(
+		f.controls.getSessionOffers('two')?.configOptions?.[1]?.currentValue,
+		'old',
+	);
+	t.true(f.controls.updateConfigOptions('two', config('a', 'confirmed')));
+	t.is(
+		f.controls.getSessionOffers('two')?.configOptions?.[1]?.currentValue,
+		'confirmed',
+	);
+	t.is(
+		f.controls.getSessionOffers('three')?.configOptions?.[0]?.currentValue,
+		'b',
+	);
+	t.is(
+		f.controls.getSessionOffers('one')?.configOptions?.[0]?.currentValue,
+		'b',
+	);
+});
+
+test('with per-session model state a forgotten session loses its offers and the rest keep theirs (ACP-14)', t => {
+	const f = fixture(true);
+	f.controls.forget('one');
+	t.is(f.controls.getSessionOffers('one'), undefined);
+	t.is(
+		f.controls.getSessionOffers('two')?.configOptions?.[1]?.currentValue,
+		'old',
+	);
+});
+
+test('without per-session model state a change on one session shows on every session and a later session does not overwrite them (ACP-14)', async t => {
+	const f = fixture(false);
+	f.controls.remember('three', [{id: 'normal'}], config('a', 'old'));
+	f.ready.add('three');
+	await f.controls.setConfigOption('one', 'provider', 'b');
+	for (const id of ['one', 'two', 'three'])
+		t.is(
+			f.controls.getSessionOffers(id)?.configOptions?.[1]?.currentValue,
+			'confirmed',
+		);
 });

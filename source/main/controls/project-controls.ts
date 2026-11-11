@@ -8,6 +8,7 @@ import type {
 } from '@/main/threads/project-operations';
 import {CONFIG_UNCERTAINTY_REASON} from '@/shared/control-reasons';
 import type {
+	ModelScope,
 	ProjectControls,
 	ProjectInfo,
 	SessionInfo,
@@ -41,6 +42,7 @@ interface OfferState {
 	sessions: Map<string, PreparedSession>;
 	activeThreadId: string | null;
 	configOptions: ProjectControls['configOptions'];
+	modelScope: ModelScope;
 	fingerprint: string;
 	reason: string | null;
 }
@@ -76,6 +78,7 @@ export function createProjectControls(options: ProjectControlOptions) {
 				sessions: new Map(),
 				activeThreadId: null,
 				configOptions: [],
+				modelScope: 'project',
 				fingerprint: '',
 				reason: missingOffers,
 			};
@@ -127,7 +130,12 @@ export function createProjectControls(options: ProjectControlOptions) {
 				: active
 					? 'Nanocoder has not supplied supported model options'
 					: (state.reason ?? missingOffers);
+		const modelScope: ModelScope = active?.connection.agent.capabilities
+			?.perSessionModel
+			? 'thread'
+			: 'project';
 		const fingerprint = JSON.stringify([
+			modelScope,
 			active?.thread.id,
 			active?.session.id,
 			offers?.offeredModes,
@@ -139,6 +147,7 @@ export function createProjectControls(options: ProjectControlOptions) {
 			state.revision = randomUUID();
 			state.activeThreadId = active?.thread.id ?? null;
 			state.configOptions = structuredClone(configOptions);
+			state.modelScope = modelScope;
 			state.reason = reason;
 		}
 		return state;
@@ -153,6 +162,7 @@ export function createProjectControls(options: ProjectControlOptions) {
 			projectId,
 			revision: state.revision,
 			configOptions: structuredClone(state.configOptions),
+			modelScope: state.modelScope,
 			modelGate: reason
 				? {enabled: false, reason}
 				: {enabled: true, reason: null},
@@ -203,6 +213,7 @@ export function createProjectControls(options: ProjectControlOptions) {
 		state.sessions.clear();
 		state.activeThreadId = null;
 		state.configOptions = [];
+		state.modelScope = 'project';
 		state.reason = reason;
 		state.fingerprint = '';
 		state.revision = randomUUID();

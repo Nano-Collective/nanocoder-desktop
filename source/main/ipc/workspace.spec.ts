@@ -238,6 +238,7 @@ test('typed project control handlers return the service snapshot unchanged (CHAT
 	const confirmed: ProjectControls = {
 		projectId,
 		revision: threadId,
+		modelScope: 'thread',
 		modelGate: {enabled: true, reason: null},
 		configOptions: [
 			{
