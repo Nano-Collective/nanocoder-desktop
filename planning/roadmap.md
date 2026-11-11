@@ -788,8 +788,8 @@ Needs `OQ-10` answered.
 
 **Results we want**
 
-- [ ] Conformance passes for every supported version
-- [ ] Results recorded for each supported version
+- [x] Conformance passes for every supported version: the bundled 1.32.0, the only supported release, passes the whole `*.acp.ts` suite on Linux, macOS and Windows ([`ACP Conformance, bundled` on the phase 4.5 pull request](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/42995698430))
+- [x] Results recorded for each supported version: `conformance/nanocoder-1.32.0.json`
 
 ### Phase 4.6: crash recovery and retention
 
