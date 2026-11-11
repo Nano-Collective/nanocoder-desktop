@@ -58,12 +58,13 @@
 			"delete": true,
 			"list": true,
 			"rename": true,
+			"pinSession": true,
 			"timeline": true,
 			"agentChanges": false,
 			"browserControl": true,
 			"nanocoderBrowserOff": true,
 			"subagentTree": false
 		},
-		"assumed": ["rename", "timeline", "browserControl"]
+		"assumed": ["rename", "timeline", "pinSession", "browserControl"]
 	}
 }

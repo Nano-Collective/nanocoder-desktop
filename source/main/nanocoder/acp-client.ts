@@ -102,6 +102,7 @@ export interface NanocoderConnection {
 	): Promise<ResumedSession>;
 	deleteSession(sessionId: string): Promise<void>;
 	renameSession(sessionId: string, title: string): Promise<string>;
+	pinSession(sessionId: string, pinned: boolean): Promise<void>;
 	getSessionOffers(sessionId: string): SessionOffers | undefined;
 	observeConfigOptions?(observer: ConfigOptionsObserver): () => void;
 	setMode(sessionId: string, mode: NanocoderMode): Promise<SessionInfo>;
@@ -751,6 +752,38 @@ export async function connectNanocoder(
 			);
 		}
 	};
+	let pinMethod: string | undefined;
+	const pinSession = async (
+		sessionId: string,
+		pinned: boolean,
+	): Promise<void> => {
+		if (!pinMethod)
+			throw new NanocoderFailure(
+				'UNSUPPORTED',
+				'Session pinning is unavailable',
+			);
+		try {
+			const response: unknown = await connection.agent.request(pinMethod, {
+				sessionId,
+				pinned,
+			});
+			if (
+				typeof response !== 'object' ||
+				response === null ||
+				!('pinned' in response) ||
+				response.pinned !== pinned
+			)
+				throw new Error();
+		} catch (error) {
+			throw (
+				missingSession(error) ??
+				new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'Nanocoder could not pin the session',
+				)
+			);
+		}
+	};
 	const probeExtensions = async (): Promise<ExtensionProbes> => {
 		const probe = async (
 			name: string,
@@ -782,7 +815,11 @@ export async function connectNanocoder(
 				'renameSession requires string sessionId and title params',
 			),
 			probe('timeline/list', 'timeline/list requires a string sessionId'),
-		]).then(([rename, timeline]) => ({rename, timeline}));
+			probe(
+				'pinSession',
+				'pinSession requires a string sessionId and a boolean pinned',
+			),
+		]).then(([rename, timeline, pin]) => ({rename, timeline, pin}));
 		try {
 			const result = await Promise.race([
 				probes,
@@ -794,7 +831,12 @@ export async function connectNanocoder(
 				}),
 			]);
 			renameMethod = result?.rename;
-			return {rename: !!result?.rename, timeline: !!result?.timeline};
+			pinMethod = result?.pin;
+			return {
+				rename: !!result?.rename,
+				timeline: !!result?.timeline,
+				pin: !!result?.pin,
+			};
 		} finally {
 			clearTimeout(timer);
 		}
@@ -812,6 +854,7 @@ export async function connectNanocoder(
 		resumeSession,
 		deleteSession,
 		renameSession,
+		pinSession,
 		getSessionOffers: sessionControls.getSessionOffers,
 		observeConfigOptions: sessionControls.observeConfigOptions,
 		setMode: sessionControls.setMode,

@@ -21,6 +21,7 @@ import {
 import {repositories} from '@/main/store/repositories';
 import {threadHistoryRepository} from '@/main/store/thread-execution-identities';
 import {
+	retentionLimitsSchema,
 	settingsSchema,
 	uiPatch,
 	uiSchema,
@@ -80,6 +81,31 @@ function createStore(database: SqlDatabase): DesktopStore {
 		...repositories(database),
 		threadHistory: threadHistoryRepository(database),
 		agentRuns: agentRunRepository(database),
+		retention: {
+			get: () => {
+				const row = database
+					.prepare(
+						'SELECT retention_days, max_sessions FROM nanocoder_retention WHERE id = 1',
+					)
+					.get();
+				return row
+					? {
+							days: Number(row.retention_days),
+							maxSessions: Number(row.max_sessions),
+						}
+					: undefined;
+			},
+			set: limits => {
+				const valid = validate(retentionLimitsSchema, limits);
+				database
+					.prepare(`
+					INSERT INTO nanocoder_retention (id, retention_days, max_sessions) VALUES (1, ?, ?)
+					ON CONFLICT(id) DO UPDATE SET
+						retention_days = excluded.retention_days, max_sessions = excluded.max_sessions
+				`)
+					.run(valid.days, valid.maxSessions);
+			},
+		},
 		getSettings,
 		updateSettings: patch =>
 			transaction(database, () => {

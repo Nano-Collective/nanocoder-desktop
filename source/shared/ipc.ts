@@ -1,4 +1,5 @@
 import type {ProjectsChangedEvent} from '@/shared/project-events';
+import type {RetentionWarnings} from '@/shared/retention';
 
 export type ErrorCode =
 	| 'VALIDATION'
@@ -46,6 +47,7 @@ export const CHANNELS = {
 	getDiagnostics: 'supervisor:get-diagnostics',
 	exportDiagnostics: 'supervisor:export-diagnostics',
 	listThreads: 'threads:list',
+	getRetentionWarnings: 'threads:get-retention-warnings',
 	createThread: 'threads:create',
 	openThread: 'threads:open',
 	getThreadSnapshot: 'threads:get-snapshot',
@@ -82,6 +84,8 @@ export interface AgentCapabilities {
 	prompt: {image: boolean; audio: boolean; embeddedContext: boolean};
 	mcp: {http: boolean; sse: boolean};
 	perSessionModel: boolean;
+	// The limits Nanocoder reported for its saved sessions, or null when it did not (DEC-45).
+	retention: {days: number; maxSessions: number} | null;
 }
 
 export interface ConnectedAgent {
@@ -342,6 +346,7 @@ export type FeatureId =
 	| 'list'
 	| 'rename'
 	| 'timeline'
+	| 'pinSession'
 	| 'agentChanges'
 	| 'browserControl'
 	| 'nanocoderBrowserOff'
@@ -485,6 +490,7 @@ export interface WorkspaceRequests {
 	getDiagnostics: ProjectRequest;
 	exportDiagnostics: ProjectRequest & {snapshotId: string};
 	listThreads: ProjectRequest & {archiveState: 'active' | 'archived'};
+	getRetentionWarnings: Record<string, never>;
 	createThread: ProjectRequest;
 	openThread: ThreadRequest;
 	getThreadSnapshot: ThreadRequest;
@@ -524,6 +530,7 @@ export interface WorkspaceValues {
 	getDiagnostics: DiagnosticsSnapshot;
 	exportDiagnostics: {status: 'exported' | 'cancelled'};
 	listThreads: ThreadInfo[];
+	getRetentionWarnings: RetentionWarnings;
 	createThread: ThreadInfo;
 	openThread: ThreadSnapshot;
 	getThreadSnapshot: ThreadSnapshot;

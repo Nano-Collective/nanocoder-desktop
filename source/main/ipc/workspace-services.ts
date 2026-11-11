@@ -23,6 +23,7 @@ export type ProjectService = ServiceMethods<
 
 export type ThreadService = ServiceMethods<
 	| 'listThreads'
+	| 'getRetentionWarnings'
 	| 'createThread'
 	| 'openThread'
 	| 'getThreadSnapshot'

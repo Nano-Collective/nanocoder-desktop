@@ -58,6 +58,7 @@ test('every record says which gates rest on assumed inputs rather than the recor
 		t.deepEqual(readRecord(version)?.gates.assumed, [
 			'rename',
 			'timeline',
+			'pinSession',
 			'browserControl',
 		]);
 	}

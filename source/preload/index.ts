@@ -98,6 +98,8 @@ const api: DesktopApi = {
 	exportDiagnostics: request =>
 		ipcRenderer.invoke(CHANNELS.exportDiagnostics, request),
 	listThreads: request => ipcRenderer.invoke(CHANNELS.listThreads, request),
+	getRetentionWarnings: request =>
+		ipcRenderer.invoke(CHANNELS.getRetentionWarnings, request),
 	createThread: request => ipcRenderer.invoke(CHANNELS.createThread, request),
 	openThread: request => ipcRenderer.invoke(CHANNELS.openThread, request),
 	getThreadSnapshot: request =>

@@ -82,6 +82,7 @@ const workspaceSchemas: {
 		...project,
 		archiveState: z.enum(['active', 'archived']),
 	}),
+	getRetentionWarnings: empty,
 	createThread: projectRequest,
 	openThread: threadRequest,
 	getThreadSnapshot: threadRequest,
@@ -176,6 +177,8 @@ export function registerWorkspaceHandlers(
 		exportDiagnostics: request =>
 			available(services.diagnostics).exportDiagnostics(request),
 		listThreads: request => available(services.threads).listThreads(request),
+		getRetentionWarnings: request =>
+			available(services.threads).getRetentionWarnings(request),
 		createThread: request => available(services.threads).createThread(request),
 		openThread: request => available(services.threads).openThread(request),
 		getThreadSnapshot: request =>

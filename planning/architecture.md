@@ -222,7 +222,7 @@ Rules:
 
 - **Archive is separate.** Archived is UI metadata on any state, not a lifecycle state (`CHAT-13`).
 - **Replay has a loading phase.** While `session/resume` replays history, the thread is Ready but its composer is disabled until the response arrives. Suggestion (not discussed): name this "Ready (replaying)" in the UI state rather than adding a lifecycle state.
-- **Run state is recorded.** The last known run state is stored in `THREAD.run_state` so a crash is visible on the next launch: a thread recorded as Running when the app starts is shown as Failed until it is resumed (`DATA-02`).
+- **Run state is recorded.** The last known run state is stored in `THREAD.run_state` so a crash is visible on the next launch: a thread recorded as Running or WaitingApproval when the app starts is shown as Interrupted, because the store marks it so as it opens (`DATA-02`). The next prompt resumes the saved session, and history is not lost beyond the turn Nanocoder had not saved yet.
 
 ## Sequences
 
@@ -377,6 +377,18 @@ sequenceDiagram
         S-->>R: Thread ViewOnly
     end
 ```
+
+Each crash path has a test (phase 4.6, `ACP-17`):
+
+| Path | Ends in | Proved by |
+|---|---|---|
+| Nanocoder exits during a turn, a limited number of restarts succeed | Failed, then Ready after `session/resume` | `supervisor-recovery.e2e.ts`, `supervisor-recovery.spec.ts` |
+| Nanocoder keeps crashing | Failed with a reason; no further restart until the user retries | `supervisor-recovery.e2e.ts` crash-loop limits |
+| Nanocoder exits before `initialize` returns, as on a trust refusal | The reason and the trust prompt; never an automatic restart | `supervisor.spec.ts`, `trust.spec.ts` |
+| `session/resume` reports the session is gone | ViewOnly with the retention notice (`ACP-19`) | `thread-service.spec.ts`, `replay-gates.e2e.ts` |
+| The app is killed during a turn | Interrupted on the next launch; the next prompt resumes the session | `crash-recovery.e2e.ts`, `store.spec.ts` |
+| The terminal utility process dies | The terminal is Failed, its process tree is cleaned, main stays up, restart works | `terminal.e2e.ts` (`TERM-01`) |
+| A permission request was pending when the process died | Answered as cancelled; no authority survives | `permissions.spec.ts`, `thread-service.spec.ts` |
 
 Nanocoder saves the session in a `finally` block after each prompt ([source][nc-save]), so a crash mid-turn loses that turn's unsaved output. The replay shows the last saved state, not the partial stream the user saw. Automatic restart is limited (Suggestion (not discussed): at most three attempts with increasing delay, then wait for the user) so a crash loop cannot spin.
 

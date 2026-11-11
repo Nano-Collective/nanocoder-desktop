@@ -24,6 +24,7 @@ test('records what Nanocoder 1.31.0 answers to initialize', t => {
 				prompt: {image: false, audio: false, embeddedContext: false},
 				mcp: {http: false, sse: false},
 				perSessionModel: false,
+				retention: null,
 			},
 		},
 	);
@@ -50,6 +51,7 @@ test('treats anything missing or malformed as not offered', t => {
 			prompt: {image: true, audio: false, embeddedContext: false},
 			mcp: {http: false, sse: false},
 			perSessionModel: false,
+			retention: null,
 		},
 	});
 });
@@ -95,6 +97,7 @@ test('each disabled feature carries a reason, never a privileged fallback', t =>
 	const gates = capabilityGates('project', agent, {
 		rename: false,
 		timeline: false,
+		pin: false,
 	});
 	t.is(gates.versionPolicy.status, 'supported');
 	// The browser switch depends on the version alone, which 1.32.0 meets.
@@ -117,6 +120,7 @@ test('advertised sessions and positively probed extensions enable only those fea
 	const gates = capabilityGates('project', agent, {
 		rename: true,
 		timeline: true,
+		pin: true,
 	});
 	for (const key of [
 		'resume',
@@ -125,6 +129,7 @@ test('advertised sessions and positively probed extensions enable only those fea
 		'list',
 		'rename',
 		'timeline',
+		'pinSession',
 	] as const) {
 		t.deepEqual(gates.features[key], {enabled: true, reason: null});
 	}
@@ -149,6 +154,7 @@ test('refused versions turn every feature off even when advertised or probed', t
 	const gates = capabilityGates('project', agent, {
 		rename: true,
 		timeline: true,
+		pin: true,
 	});
 	t.true(
 		Object.values(gates.features).every(
@@ -184,7 +190,7 @@ test('agent browser control is on only with HTTP MCP servers, Nanocoder 1.32.0 o
 			agentInfo: {name: 'nanocoder', version},
 			agentCapabilities: {mcpCapabilities: {http}},
 		});
-	const probes = {rename: false, timeline: false};
+	const probes = {rename: false, timeline: false, pin: false};
 	const gate = (version: string, http: boolean, attached: boolean) =>
 		capabilityGates('project', agent(version, http), probes, attached).features
 			.browserControl;
@@ -218,7 +224,7 @@ test("BRW-18 the switch for Nanocoder's own browser is gated on 1.32.0, with the
 				protocolVersion: 1,
 				agentInfo: {name: 'nanocoder', version},
 			}),
-			{rename: false, timeline: false},
+			{rename: false, timeline: false, pin: false},
 		).features.nanocoderBrowserOff;
 	t.deepEqual(gate('1.32.0'), {enabled: true, reason: null});
 	t.deepEqual(gate('1.31.0'), {
@@ -234,7 +240,7 @@ test('REL-02 the exact bundled version carries no untested warning, and any othe
 			protocolVersion: 1,
 			agentInfo: {name: 'nanocoder', version},
 		});
-	const probes = {rename: false, timeline: false};
+	const probes = {rename: false, timeline: false, pin: false};
 	t.deepEqual(
 		capabilityGates('p', agent('1.32.0'), probes, false, '1.32.0')
 			.versionPolicy,
@@ -253,4 +259,55 @@ test('REL-02 the exact bundled version carries no untested warning, and any othe
 		capabilityGates('p', agent('1.32.0'), probes).versionPolicy.status,
 		'supported',
 	);
+});
+
+test('reads the retention limits Nanocoder reports, and nothing it could not have meant (DEC-45)', t => {
+	const reported = (value: unknown) =>
+		describeAgent('/p', {
+			protocolVersion: 1,
+			_meta: {'nanocoder/retention': value},
+		} as unknown as Parameters<typeof describeAgent>[1]).capabilities.retention;
+	t.deepEqual(reported({retentionDays: 30, maxSessions: 100}), {
+		days: 30,
+		maxSessions: 100,
+	});
+	t.deepEqual(reported({retentionDays: 90, maxSessions: 500, extra: 'x'}), {
+		days: 90,
+		maxSessions: 500,
+	});
+	for (const bad of [
+		undefined,
+		null,
+		'30',
+		[],
+		{},
+		{retentionDays: 30},
+		{retentionDays: 0, maxSessions: 100},
+		{retentionDays: 30, maxSessions: 0},
+		{retentionDays: 1.5, maxSessions: 100},
+		{retentionDays: '30', maxSessions: 100},
+		{retentionDays: 30, maxSessions: Number.POSITIVE_INFINITY},
+		{retentionDays: 1e9, maxSessions: 100},
+	])
+		t.is(reported(bad), null);
+});
+
+test('session pinning is offered only when the pin probe answered, with a reason otherwise (CHAT-23 ACP-03)', t => {
+	const agent = describeAgent('/p', {
+		protocolVersion: 1,
+		agentInfo: {name: 'nanocoder', version: '1.32.0'},
+	});
+	const off = capabilityGates('project', agent, {
+		rename: true,
+		timeline: true,
+		pin: false,
+	});
+	t.false(off.features.pinSession.enabled);
+	t.truthy(off.features.pinSession.reason);
+	const on = capabilityGates('project', agent, {
+		rename: false,
+		timeline: false,
+		pin: true,
+	});
+	t.deepEqual(on.features.pinSession, {enabled: true, reason: null});
 });

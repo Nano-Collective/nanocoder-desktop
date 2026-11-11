@@ -6632,3 +6632,146 @@ test('opening or creating a thread tells the controls which thread is in view, a
 	);
 	t.is(selected.length, 2);
 });
+
+async function pinFixture(
+	t: ExecutionContext,
+	mode: string | null,
+	stubSessions = true,
+) {
+	const f = await fixture(t, true);
+	if (mode)
+		writeFileSync(path.join(f.project.canonicalRoot, '.fake-nanocoder'), mode);
+	await f.supervisor.ensureProcess(f.project);
+	const connection = f.supervisor.getConnection(f.project.id);
+	const pins: Array<[string, boolean]> = [];
+	let outcome: 'ok' | 'missing' | 'down' = 'ok';
+	connection.pinSession = async (id, pinned) => {
+		pins.push([id, pinned]);
+		if (outcome === 'missing')
+			throw new NanocoderFailure('NOT_FOUND', 'not saved yet');
+		if (outcome === 'down') throw new Error('Nanocoder is down');
+	};
+	if (stubSessions) {
+		connection.getSessionOffers = () => ({
+			offeredModes: ['normal'],
+			configOptions: [],
+		});
+		connection.resumeSession = async id => ({
+			session: {id, mode: 'normal'},
+			history: [],
+		});
+	}
+	const thread = seed(f.project, {nanocoderSessionId: 'saved-session'});
+	f.store.threads.save(thread);
+	return {
+		f,
+		thread,
+		pins,
+		outcome: (next: typeof outcome) => {
+			outcome = next;
+		},
+		open: async () => {
+			const opened = await f.service.openThread({
+				projectId: f.project.id,
+				threadId: thread.id,
+			});
+			await f.service.settlePins();
+			return opened;
+		},
+		unpinned: () => f.store.threads.listUnpinnedSessions().length,
+	};
+}
+
+test('CHAT-23 opening a saved thread pins its session and remembers that it did (DEC-45)', async t => {
+	const p = await pinFixture(t, 'extensions');
+	t.is(p.unpinned(), 1);
+	const opened = await p.open();
+	t.is(opened.thread.runState, 'ready');
+	t.deepEqual(p.pins, [['saved-session', true]]);
+	t.is(p.unpinned(), 0);
+	await p.open();
+	t.is(p.pins.length, 1, 'a pinned session is not pinned again');
+});
+
+test('CHAT-23 a pin that Nanocoder refuses or cannot answer never stops the thread opening, and the thread stays marked unpinned', async t => {
+	for (const outcome of ['missing', 'down'] as const) {
+		const p = await pinFixture(t, 'extensions');
+		p.outcome(outcome);
+		const opened = await p.open();
+		t.is(opened.thread.runState, 'ready');
+		t.is(p.pins.length, 1);
+		t.is(p.unpinned(), 1);
+	}
+});
+
+test('CHAT-23 a Nanocoder that did not confirm the pin extension is never sent a pin', async t => {
+	const p = await pinFixture(t, null);
+	const opened = await p.open();
+	t.is(opened.thread.runState, 'ready');
+	t.deepEqual(p.pins, []);
+	t.is(p.unpinned(), 1);
+});
+
+test('CHAT-23 a finished first turn pins the new session, since Nanocoder saves it only then', async t => {
+	const p = await pinFixture(t, 'pin-extensions', false);
+	const created = await p.f.service.createThread({projectId: p.f.project.id});
+	t.is(p.pins.length, 0);
+	await p.f.service.promptThread({
+		projectId: p.f.project.id,
+		threadId: created.id,
+		text: 'first words',
+	});
+	await p.f.service.settlePins();
+	t.is(p.pins.length, 1);
+	t.is(p.pins[0][1], true);
+	t.is(
+		p.f.store.threads.get(p.f.project.id, created.id)?.nanocoderSessionId,
+		p.pins[0][0],
+	);
+	t.true(p.f.store.threads.getSessionPinned(p.f.project.id, created.id));
+});
+
+test('DEC-45 a missing session names the limits Nanocoder reported, not the defaults', async t => {
+	const {project, service, store} = await fixture(t, true);
+	store.retention.set({days: 90, maxSessions: 250});
+	const thread = seed(project);
+	store.threads.save(thread);
+	const snapshot = await service.openThread({
+		projectId: project.id,
+		threadId: thread.id,
+	});
+	t.is(snapshot.thread.runState, 'view-only');
+	t.regex(snapshot.thread.viewOnlyReason ?? '', /not opened for 90 days/);
+	t.regex(snapshot.thread.viewOnlyReason ?? '', /more than 250/);
+	t.notRegex(snapshot.thread.viewOnlyReason ?? '', /By default/);
+});
+
+test('DEC-45 the limits a Nanocoder reports are kept for the warning and the notice, and a Nanocoder that reports none leaves them alone', async t => {
+	const p = await pinFixture(t, null);
+	const connection = p.f.supervisor.getConnection(p.f.project.id);
+	const report = (retention: {days: number; maxSessions: number} | null) =>
+		Object.defineProperty(connection, 'agent', {
+			configurable: true,
+			value: {
+				...connection.agent,
+				capabilities: {...connection.agent.capabilities, retention},
+			},
+		});
+	const openNew = async (sessionId: string) => {
+		const row = seed(p.f.project, {nanocoderSessionId: sessionId});
+		p.f.store.threads.save(row);
+		await p.f.service.openThread({
+			projectId: p.f.project.id,
+			threadId: row.id,
+		});
+	};
+	t.is(p.f.store.retention.get(), undefined);
+	await openNew('first-session');
+	t.is(p.f.store.retention.get(), undefined);
+	report({days: 45, maxSessions: 200});
+	await openNew('second-session');
+	t.deepEqual(p.f.store.retention.get(), {days: 45, maxSessions: 200});
+	report(null);
+	await openNew('third-session');
+	t.deepEqual(p.f.store.retention.get(), {days: 45, maxSessions: 200});
+});

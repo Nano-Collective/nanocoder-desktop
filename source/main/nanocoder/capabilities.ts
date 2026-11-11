@@ -28,6 +28,32 @@ function nanocoderMeta(meta: unknown): Record<string, unknown> {
 export interface ExtensionProbes {
 	rename: boolean;
 	timeline: boolean;
+	pin: boolean;
+}
+
+function limit(value: unknown, max: number): number | null {
+	return typeof value === 'number' &&
+		Number.isInteger(value) &&
+		value >= 1 &&
+		value <= max
+		? value
+		: null;
+}
+
+function retentionLimits(meta: unknown) {
+	const reported = present(meta)
+		? (meta as Record<string, unknown>)['nanocoder/retention']
+		: undefined;
+	if (!present(reported)) return null;
+	const days = limit(
+		(reported as Record<string, unknown>).retentionDays,
+		36500,
+	);
+	const maxSessions = limit(
+		(reported as Record<string, unknown>).maxSessions,
+		1_000_000,
+	);
+	return days !== null && maxSessions !== null ? {days, maxSessions} : null;
 }
 
 export function capabilityGates(
@@ -61,6 +87,10 @@ export function capabilityGates(
 			rename: gate(
 				probes.rename,
 				'Nanocoder did not confirm the renameSession extension with a safe probe.',
+			),
+			pinSession: gate(
+				probes.pin,
+				'Nanocoder did not confirm the pinSession extension with a safe probe; saved chats stay subject to its retention.',
 			),
 			timeline: gate(
 				probes.timeline,
@@ -133,6 +163,7 @@ export function describeAgent(
 			mcp: {http: mcp.http === true, sse: mcp.sse === true},
 			perSessionModel:
 				nanocoderMeta(capabilities._meta).perSessionModel === true,
+			retention: retentionLimits(response._meta),
 		},
 	};
 }

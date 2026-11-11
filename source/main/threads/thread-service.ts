@@ -28,6 +28,7 @@ import {
 	type MetadataOperationLease,
 	type ProjectOperationLease,
 } from '@/main/threads/project-operations';
+import {retentionWarningsFromStore} from '@/main/threads/retention';
 import {
 	type DiscoveredSessionProof,
 	sessionDiscovery,
@@ -51,9 +52,9 @@ import type {
 	TurnEvent,
 	TurnResult,
 } from '@/shared/ipc';
+import {missingSessionReason} from '@/shared/retention';
 import {
 	REPLAY_FAILURE_REASON,
-	REPLAY_MISSING_REASON,
 	threadReplaySchema,
 } from '@/shared/thread-replay';
 
@@ -131,6 +132,7 @@ type ThreadRuntimeService = AsyncThreadService & {
 	runProjectOperation: ReturnType<
 		typeof createProjectOperations
 	>['runProjectOperation'];
+	settlePins(): Promise<void>;
 	dispose(): void;
 	attachProject(projectId: string): void;
 	activity(projectId: string): ProjectActivity;
@@ -222,6 +224,7 @@ export function createThreadService(
 		Pick<OwnedSessionContext, 'session' | 'source'>
 	>();
 	const prompted = new Map<string, NanocoderConnection>();
+	const pinning = new Set<Promise<void>>();
 	const activeLeases = new Map<
 		string,
 		{lease: ProjectOperationLease; threadId?: string}
@@ -837,6 +840,53 @@ export function createThreadService(
 		source,
 		requestedMode,
 	});
+	// Nanocoder keeps a pinned session out of its retention. This runs after the turn or the resume has
+	// finished, outside its lease, and a failure leaves the thread marked unpinned (CHAT-23).
+	const keepSession = (
+		thread: ThreadInfo,
+		connection: () => NanocoderConnection,
+		sessionId: string,
+	): Promise<void> => {
+		const attempt = async () => {
+			if (
+				disposed ||
+				options.store.threads.getSessionPinned(thread.projectId, thread.id) !==
+					false ||
+				!options.supervisor.getCapabilityGates(thread.projectId).features
+					.pinSession.enabled
+			)
+				return;
+			await connection().pinSession(sessionId, true);
+			if (
+				!disposed &&
+				options.store.threads.get(thread.projectId, thread.id)
+					?.nanocoderSessionId === sessionId
+			)
+				options.store.threads.setSessionPinned(
+					thread.projectId,
+					thread.id,
+					true,
+				);
+		};
+		const done = attempt().catch(() => {});
+		pinning.add(done);
+		void done.finally(() => pinning.delete(done));
+		return done;
+	};
+	// The limits Nanocoder reports feed the early warning and the view-only notice (DEC-45).
+	const rememberRetention = (connection: NanocoderConnection) => {
+		const reported = connection.agent?.capabilities?.retention;
+		if (!reported) return;
+		const known = options.store.retention.get();
+		if (
+			known?.days === reported.days &&
+			known.maxSessions === reported.maxSessions
+		)
+			return;
+		try {
+			options.store.retention.set(reported);
+		} catch {}
+	};
 	const handoffSession = async (
 		lease: ProjectOperationLease,
 		thread: ThreadInfo,
@@ -848,6 +898,7 @@ export function createThreadService(
 		projectOperations.bindConnection(lease, connection);
 		if (!hasReadyOffers(connection, session.id))
 			throw new IpcFailure('AGENT_UNAVAILABLE', 'The session is not ready');
+		rememberRetention(connection);
 		if (options.onSessionPrepared)
 			await projectOperations.runOwnedStep(lease, async () => {
 				await options.onSessionPrepared?.(
@@ -866,6 +917,8 @@ export function createThreadService(
 			source,
 		});
 		prompted.delete(thread.id);
+		if (source === 'resume')
+			void keepSession(thread, () => connection, session.id);
 	};
 	const commitHistory = (
 		thread: ThreadInfo,
@@ -982,7 +1035,7 @@ export function createThreadService(
 		const missing =
 			error instanceof NanocoderFailure && error.code === 'NOT_FOUND';
 		const reason = missing
-			? REPLAY_MISSING_REASON
+			? missingSessionReason(options.store.retention.get())
 			: error instanceof IpcFailure || error instanceof NanocoderFailure
 				? error.message
 				: 'Nanocoder could not resume this thread';
@@ -1211,6 +1264,9 @@ export function createThreadService(
 			liveTurns.clear();
 			replays.clear();
 		},
+		settlePins: async () => {
+			await Promise.all([...pinning]);
+		},
 		dispose: () => {
 			disposed = true;
 			discoveries.clear();
@@ -1226,6 +1282,8 @@ export function createThreadService(
 			liveTurns.clear();
 			replays.clear();
 		},
+		getRetentionWarnings: async () =>
+			retentionWarningsFromStore(options.store, options.now?.() ?? new Date()),
 		listThreads: async ({projectId, archiveState}) => {
 			getProject(projectId);
 			return options.store.threads
@@ -1764,6 +1822,12 @@ export function createThreadService(
 										: 'ready',
 							lastActivityAt: now(),
 						}));
+						if (liveTurns.get(thread.id)?.outcome !== 'failed')
+							void keepSession(
+								current,
+								() => options.supervisor.getConnection(project.id),
+								sessionId,
+							);
 						completed = {stopReason: result.stopReason};
 						return {stopReason: result.stopReason};
 					} catch (error) {

@@ -236,6 +236,41 @@ export function repositories(database: SqlDatabase): {
 				.prepare('DELETE FROM thread WHERE project_id = ? AND id = ?')
 				.run(projectId, threadId);
 		},
+		setSessionPinned: (projectId, threadId, pinned) => {
+			validate(threadTitleTarget, {projectId, threadId});
+			const changed = database
+				.prepare(
+					'UPDATE thread SET session_pinned = ? WHERE project_id = ? AND id = ? AND nanocoder_session_id IS NOT NULL',
+				)
+				.run(Number(pinned === true), projectId, threadId);
+			if (Number(changed.changes) === 0)
+				throw new IpcFailure('NOT_FOUND', 'Thread not found');
+		},
+		getSessionPinned: (projectId, threadId) => {
+			validate(threadTitleTarget, {projectId, threadId});
+			const row = database
+				.prepare(
+					'SELECT session_pinned FROM thread WHERE project_id = ? AND id = ?',
+				)
+				.get(projectId, threadId);
+			return row ? row.session_pinned === 1 : undefined;
+		},
+		listUnpinnedSessions: () =>
+			database
+				.prepare(`
+			SELECT project_id, id, title, last_activity_at FROM thread
+			WHERE nanocoder_session_id IS NOT NULL AND session_pinned = 0
+				AND archive_state = 'active' AND run_state != 'view-only'
+			ORDER BY julianday(last_activity_at), id
+			LIMIT 5000
+		`)
+				.all()
+				.map(row => ({
+					projectId: String(row.project_id),
+					threadId: String(row.id),
+					title: String(row.title),
+					lastActivityAt: String(row.last_activity_at),
+				})),
 	};
 	return {projects, threads};
 }

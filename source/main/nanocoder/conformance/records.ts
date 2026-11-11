@@ -31,7 +31,7 @@ export function gatesFor(initialize: InitializeResponse) {
 	const gates = capabilityGates(
 		'record',
 		agent,
-		{rename: true, timeline: true},
+		{rename: true, timeline: true, pin: true},
 		true,
 	);
 	return {
@@ -39,7 +39,12 @@ export function gatesFor(initialize: InitializeResponse) {
 		features: Object.fromEntries(
 			Object.entries(gates.features).map(([id, gate]) => [id, gate.enabled]),
 		) as Record<FeatureId, boolean>,
-		assumed: ['rename', 'timeline', 'browserControl'] as FeatureId[],
+		assumed: [
+			'rename',
+			'timeline',
+			'pinSession',
+			'browserControl',
+		] as FeatureId[],
 	};
 }
 

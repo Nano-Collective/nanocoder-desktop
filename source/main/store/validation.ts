@@ -155,6 +155,11 @@ export const threadSchema = z.strictObject({
 	viewOnlyReason: z.string().max(1_000).nullable(),
 });
 
+export const retentionLimitsSchema = z.strictObject({
+	days: z.number().int().min(1).max(36500),
+	maxSessions: z.number().int().min(1).max(1_000_000),
+});
+
 export const threadTitleTarget = z.strictObject({projectId: id, threadId: id});
 export const threadTitlePatch = threadTitleTarget.extend({
 	title: z.string().trim().min(1).max(500),
