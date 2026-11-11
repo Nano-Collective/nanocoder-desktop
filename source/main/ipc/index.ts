@@ -680,6 +680,8 @@ export function registerIpcHandlers(
 					},
 					onSessionPrepared: context =>
 						availableControls().hooks.onSessionPrepared(context),
+					onThreadSelected: (projectId, threadId) =>
+						controlRuntime?.hooks.onThreadSelected(projectId, threadId),
 					beforeFirstPrompt: context =>
 						availableControls().hooks.beforeFirstPrompt(context),
 					validateBeforePrepare: (lease, thread, reason) =>

@@ -92,6 +92,8 @@ test('project selects show only confirmed values and escape labels (CHAT-10 ACP-
 		projectControls: {
 			projectId: 'fixture',
 			revision: 'fixture-revision',
+			modelScope: 'project',
+			threadId: null,
 			modelGate: {enabled: true, reason: null},
 			configOptions: [
 				{
@@ -113,6 +115,34 @@ test('project selects show only confirmed values and escape labels (CHAT-10 ACP-
 		),
 	);
 	t.false(html.includes('<confirmed>'));
+});
+
+test('composer names this thread, not the project, when Nanocoder keeps model state per session (ACP-14 CHAT-10)', t => {
+	const controls = {
+		projectId: 'project',
+		revision: 'revision',
+		modelScope: 'thread' as const,
+		threadId: 'thread',
+		modelGate: {enabled: true, reason: null},
+		configOptions: [
+			{
+				id: 'model' as const,
+				name: 'model',
+				currentValue: 'old',
+				options: [{name: 'old', value: 'old'}],
+			},
+		],
+	};
+	const html = render({projectControls: controls});
+	t.true(html.includes('model for this thread in project fixture'));
+	t.true(html.includes('model applies to this thread only.'));
+	t.false(html.includes('every thread'));
+	const shared = render({
+		projectControls: {...controls, modelScope: 'project'},
+	});
+	t.true(shared.includes('model for every thread in project fixture'));
+	t.true(shared.includes('model applies to every thread in fixture.'));
+	t.false(shared.includes('this thread only'));
 });
 
 test('composer context pill and gauge require actual reported context, not draft length (CHAT-19 U.5)', t => {

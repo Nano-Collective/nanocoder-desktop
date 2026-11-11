@@ -8,6 +8,13 @@ try {
 let nextSession = 0;
 let provider = 'a';
 let model = 'old';
+// Like Nanocoder 1.32.0 (nanocoder#1919): each session keeps its own provider and model.
+const perSession = scenario === 'per-session-model';
+const saved = new Map();
+const load = sessionId => {
+	if (!perSession) return;
+	({provider, model} = saved.get(sessionId) ?? {provider: 'a', model: 'old'});
+};
 // Like Nanocoder 1.32.0: the tools a session turned off, of those it knows, are echoed back.
 const disabledEcho = params => {
 	const requested = params?._meta?.['nanocoder/disabledTools'];
@@ -91,15 +98,20 @@ createInterface({input: process.stdin}).on('line', line => {
 			result: {
 				protocolVersion: 1,
 				agentInfo: {name: 'nanocoder', version: '9.9.9'},
-				agentCapabilities: {sessionCapabilities: {resume: {}, close: {}}},
+				agentCapabilities: {
+					sessionCapabilities: {resume: {}, close: {}},
+					...(perSession && {_meta: {nanocoder: {perSessionModel: true}}}),
+				},
 				authMethods: [],
 			},
 		});
 	} else if (method === 'session/new') {
+		const sessionId = `session-${++nextSession}`;
+		load(sessionId);
 		send({
 			id,
 			result: {
-				sessionId: `session-${++nextSession}`,
+				sessionId,
 				modes: modes(),
 				configOptions: config(),
 				...disabledEcho(params),
@@ -119,6 +131,7 @@ createInterface({input: process.stdin}).on('line', line => {
 			},
 		});
 	} else if (method === 'session/resume') {
+		load(params.sessionId);
 		if (scenario === 'config-notify-replay') {
 			model = 'confirmed';
 			notifyConfig(params.sessionId);
@@ -133,10 +146,12 @@ createInterface({input: process.stdin}).on('line', line => {
 			},
 		});
 	} else if (method === 'session/set_config_option') {
+		load(params.sessionId);
 		if (params.configId === 'provider') {
 			provider = params.value;
 			model = 'confirmed';
 		} else model = params.value;
+		if (perSession) saved.set(params.sessionId, {provider, model});
 		if (scenario === 'config-fails') failure(id);
 		else send({id, result: {configOptions: config()}});
 	} else if (

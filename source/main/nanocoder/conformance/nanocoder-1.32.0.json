@@ -1,0 +1,69 @@
+{
+	"version": "1.32.0",
+	"initialize": {
+		"protocolVersion": 1,
+		"agentCapabilities": {
+			"loadSession": true,
+			"mcpCapabilities": {
+				"http": true
+			},
+			"providers": {},
+			"sessionCapabilities": {
+				"close": {},
+				"list": {},
+				"delete": {},
+				"resume": {}
+			},
+			"_meta": {
+				"nanocoder": {
+					"extMethods": [
+						"_nanocoder/renameSession",
+						"_nanocoder/pinSession",
+						"_nanocoder/timeline/list",
+						"_nanocoder/timeline/revert",
+						"_nanocoder/retryTurn",
+						"_nanocoder/timeline/read",
+						"_nanocoder/cancelSubagent"
+					],
+					"extNotifications": [
+						"_nanocoder/sessionTitleChanged",
+						"_nanocoder/subagent"
+					],
+					"perSessionModel": true
+				}
+			}
+		},
+		"agentInfo": {
+			"name": "nanocoder",
+			"title": "Nanocoder",
+			"version": "1.32.0"
+		},
+		"authMethods": [],
+		"_meta": {
+			"nanocoder/retention": {
+				"retentionDays": 30,
+				"maxSessions": 100
+			}
+		}
+	},
+	"gates": {
+		"versionPolicy": {
+			"status": "supported",
+			"version": "1.32.0",
+			"reason": null
+		},
+		"features": {
+			"resume": true,
+			"close": true,
+			"delete": true,
+			"list": true,
+			"rename": true,
+			"timeline": true,
+			"agentChanges": false,
+			"browserControl": true,
+			"nanocoderBrowserOff": true,
+			"subagentTree": false
+		},
+		"assumed": ["rename", "timeline", "browserControl"]
+	}
+}

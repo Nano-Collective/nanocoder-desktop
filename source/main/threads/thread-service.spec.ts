@@ -2332,6 +2332,7 @@ async function fixture(
 	hooks: Pick<
 		Parameters<typeof createThreadService>[0],
 		| 'onSessionPrepared'
+		| 'onThreadSelected'
 		| 'beforeFirstPrompt'
 		| 'resolveLiveMode'
 		| 'validateBeforePrepare'
@@ -6609,4 +6610,25 @@ test('CHAT-14 a thread without Nanocoder history refuses history deletion before
 	);
 	t.false(f.calls.includes('confirm-delete'));
 	t.truthy(f.store.threads.get(f.project.id, thread.id));
+});
+
+test('opening or creating a thread tells the controls which thread is in view, and a thread that is not found tells them nothing (ACP-14 CHAT-10)', async t => {
+	const selected: string[] = [];
+	const f = await fixture(t, false, undefined, false, {
+		onThreadSelected: (projectId, threadId) => {
+			selected.push(`${projectId}:${threadId}`);
+		},
+	});
+	const thread = seed(f.project, {nanocoderSessionId: null});
+	f.store.threads.save(thread);
+	await f.service.openThread({projectId: f.project.id, threadId: thread.id});
+	const created = await f.service.createThread({projectId: f.project.id});
+	t.deepEqual(selected, [
+		`${f.project.id}:${thread.id}`,
+		`${f.project.id}:${created.id}`,
+	]);
+	await t.throwsAsync(
+		f.service.openThread({projectId: f.project.id, threadId: 'missing'}),
+	);
+	t.is(selected.length, 2);
 });

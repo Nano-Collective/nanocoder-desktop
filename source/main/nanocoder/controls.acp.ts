@@ -107,3 +107,54 @@ test('pinned ACP live mode changes acknowledge before readiness, and unknown mod
 		mode: 'normal',
 	});
 });
+
+test('a model change reaches one session when Nanocoder advertises per-session model state, and every session in the process when it does not (ACP-14 CHAT-10)', async t => {
+	t.timeout(120_000);
+	const {root, provider, env} = await setupProject(folder.work, 'scope', [
+		{text: 'first'},
+		{text: 'second'},
+	]);
+	t.teardown(() => provider.close());
+	writeFileSync(
+		path.join(env.NANOCODER_CONFIG_DIR, 'agents.config.json'),
+		JSON.stringify({
+			nanocoder: {
+				providers: [
+					{
+						name: 'Scripted',
+						baseUrl: provider.baseUrl,
+						models: [SCRIPTED_MODEL],
+					},
+					{
+						name: 'Other',
+						baseUrl: provider.baseUrl,
+						models: ['other-fixture-model'],
+					},
+				],
+			},
+		}),
+	);
+	await trustDirectory({runtime, root, env});
+	const connection = await connectNanocoder({runtime, root, env, clientInfo});
+	t.teardown(() => connection.close());
+	const first = await connection.newSession('normal');
+	const second = await connection.newSession('normal');
+	const model = (id: string) =>
+		connection
+			.getSessionOffers(id)
+			?.configOptions?.find(option => option.id === 'model')?.currentValue;
+	await connection.setConfigOption(first.id, 'provider', 'Other');
+	t.is(model(first.id), 'other-fixture-model');
+	const advertised = connection.agent.capabilities.perSessionModel;
+	t.log(JSON.stringify({version: connection.agent.version, advertised}));
+	const askedModel = async (id: string) => {
+		await connection.prompt(id, 'which model');
+		return provider.requests.filter(r => r.tools?.length).at(-1)?.model;
+	};
+	t.is(await askedModel(first.id), 'other-fixture-model');
+	t.is(
+		await askedModel(second.id),
+		advertised ? SCRIPTED_MODEL : 'other-fixture-model',
+	);
+	t.is(model(second.id), advertised ? SCRIPTED_MODEL : 'other-fixture-model');
+});

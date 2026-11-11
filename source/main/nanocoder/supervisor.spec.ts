@@ -106,6 +106,8 @@ test('controls publications share project metadata sequencing and clone their pa
 		projectId: chosen.id,
 		revision: randomUUID(),
 		configOptions: [],
+		modelScope: 'project',
+		threadId: null,
 		modelGate: {enabled: false, reason: 'available after the first message'},
 	};
 	const events: ProjectEvent[] = [];

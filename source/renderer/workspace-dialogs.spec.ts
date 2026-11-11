@@ -64,6 +64,7 @@ const agent: ConnectedAgent = {
 		sessions: {close: false, delete: false, list: true, resume: true},
 		prompt: {image: false, audio: false, embeddedContext: false},
 		mcp: {http: false, sse: false},
+		perSessionModel: false,
 	},
 };
 const projectProps = {

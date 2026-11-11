@@ -17,7 +17,7 @@ function deferred<T>() {
 	return {promise, resolve};
 }
 
-function fixture() {
+function fixture(perSessionModel = false) {
 	const project: ProjectInfo = {
 		id: 'project',
 		canonicalRoot: '/fixture',
@@ -76,6 +76,7 @@ function fixture() {
 		return structuredClone(next);
 	};
 	const ready = new Set<string>();
+	const offersBySession = new Map<string, SessionOffers>();
 	const rawOptions = (model = 'old') =>
 		offers.configOptions?.map(option => ({
 			...option,
@@ -92,8 +93,9 @@ function fixture() {
 		failure: (_code, message) => new Error(message),
 	});
 	const connection = {
-		agent: {root: '/fixture'},
-		getSessionOffers: () => structuredClone(offers),
+		agent: {root: '/fixture', capabilities: {perSessionModel}},
+		getSessionOffers: (sessionId: string) =>
+			structuredClone(offersBySession.get(sessionId) ?? offers),
 		observeConfigOptions: (
 			observer: Parameters<typeof notifications.observeConfigOptions>[0],
 		) =>
@@ -186,6 +188,9 @@ function fixture() {
 		},
 		offers: (next: SessionOffers) => {
 			offers = next;
+		},
+		sessionOffers: (sessionId: string, next: SessionOffers) => {
+			offersBySession.set(sessionId, next);
 		},
 	};
 }
@@ -455,4 +460,110 @@ test('a root check that fails refuses with a fixed message before any config RPC
 		message: 'The project root changed; locate and trust it again',
 	});
 	t.deepEqual(f.calls, []);
+});
+
+test('the model control says whether it changes one thread or the whole project, from what Nanocoder advertises (ACP-14 CHAT-10)', async t => {
+	const shared = fixture();
+	t.is(
+		shared.controls.getProjectControls({projectId: shared.project.id})
+			.modelScope,
+		'project',
+	);
+	await shared.observe();
+	t.is(
+		shared.controls.getProjectControls({projectId: shared.project.id})
+			.modelScope,
+		'project',
+	);
+	const own = fixture(true);
+	t.is(
+		own.controls.getProjectControls({projectId: own.project.id}).modelScope,
+		'project',
+	);
+	await own.observe();
+	t.is(
+		own.controls.getProjectControls({projectId: own.project.id}).modelScope,
+		'thread',
+	);
+	t.is(own.published.at(-1)?.modelScope, 'thread');
+});
+
+function otherThread(f: ReturnType<typeof fixture>): ThreadInfo {
+	const row = {...f.thread, id: 'other', nanocoderSessionId: 'other-session'};
+	f.threads.set(row.id, row);
+	return row;
+}
+
+function modelOf(controls: ProjectControls) {
+	return controls.configOptions.find(option => option.id === 'model')
+		?.currentValue;
+}
+
+function offersWithModel(f: ReturnType<typeof fixture>, model: string) {
+	const next = structuredClone(
+		f.connection.getSessionOffers('session') as SessionOffers,
+	);
+	const select = next.configOptions?.find(option => option.id === 'model');
+	if (select) select.currentValue = model;
+	return next;
+}
+
+test('with per-session model state the controls follow the selected thread, not the last prepared one (ACP-14 CHAT-10)', async t => {
+	const f = fixture(true);
+	const second = otherThread(f);
+	f.sessionOffers('other-session', offersWithModel(f, 'second-model'));
+	await f.observe();
+	await f.observe(second);
+	const read = () => f.controls.getProjectControls({projectId: f.project.id});
+	t.is(read().threadId, 'other');
+	t.is(modelOf(read()), 'second-model');
+	const published = f.published.length;
+	f.controls.selectThread(f.project.id, 'thread');
+	t.is(read().threadId, 'thread');
+	t.is(modelOf(read()), 'old');
+	t.is(read().modelScope, 'thread');
+	t.true(f.published.length > published);
+	t.is(f.published.at(-1)?.threadId, 'thread');
+	await f.controls.setProjectConfigOption(f.request());
+	t.deepEqual(f.calls.at(-1)?.[0], 'session');
+	f.controls.selectThread(f.project.id, 'other');
+	t.is(modelOf(read()), 'second-model');
+});
+
+test('with per-session model state a selected thread with no session has no model options, and a request from the earlier thread is refused (ACP-14 CHAT-10)', async t => {
+	const f = fixture(true);
+	await f.observe();
+	const stale = f.request('b');
+	f.controls.selectThread(f.project.id, 'draft');
+	const controls = f.controls.getProjectControls({projectId: f.project.id});
+	t.is(controls.threadId, null);
+	t.deepEqual(controls.configOptions, []);
+	t.false(controls.modelGate.enabled);
+	t.is(controls.modelScope, 'thread');
+	const error = await t.throwsAsync(f.controls.setProjectConfigOption(stale));
+	t.true(error instanceof IpcFailure);
+	t.deepEqual(f.calls, []);
+});
+
+test('a session prepared for another thread does not move the controls off the selected one (ACP-14)', async t => {
+	const f = fixture(true);
+	const second = otherThread(f);
+	f.sessionOffers('other-session', offersWithModel(f, 'second-model'));
+	await f.observe();
+	f.controls.selectThread(f.project.id, 'thread');
+	await f.observe(second);
+	const controls = f.controls.getProjectControls({projectId: f.project.id});
+	t.is(controls.threadId, 'thread');
+	t.is(modelOf(controls), 'old');
+});
+
+test('without per-session model state selecting a thread leaves the project-wide controls alone (ACP-14)', async t => {
+	const f = fixture(false);
+	await f.observe();
+	const before = f.controls.getProjectControls({projectId: f.project.id});
+	const count = f.published.length;
+	f.controls.selectThread(f.project.id, 'draft');
+	t.deepEqual(f.controls.getProjectControls({projectId: f.project.id}), before);
+	t.is(f.published.length, count);
+	t.true(before.modelGate.enabled);
 });

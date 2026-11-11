@@ -18,6 +18,13 @@ const text = (value: unknown): string | null =>
 const present = (value: unknown): boolean =>
 	typeof value === 'object' && value !== null && !Array.isArray(value);
 
+function nanocoderMeta(meta: unknown): Record<string, unknown> {
+	const nanocoder = present(meta)
+		? (meta as Record<string, unknown>).nanocoder
+		: undefined;
+	return present(nanocoder) ? (nanocoder as Record<string, unknown>) : {};
+}
+
 export interface ExtensionProbes {
 	rename: boolean;
 	timeline: boolean;
@@ -124,6 +131,8 @@ export function describeAgent(
 				embeddedContext: prompt.embeddedContext === true,
 			},
 			mcp: {http: mcp.http === true, sse: mcp.sse === true},
+			perSessionModel:
+				nanocoderMeta(capabilities._meta).perSessionModel === true,
 		},
 	};
 }

@@ -23,6 +23,7 @@ test('records what Nanocoder 1.31.0 answers to initialize', t => {
 				sessions: {close: true, delete: true, list: true, resume: true},
 				prompt: {image: false, audio: false, embeddedContext: false},
 				mcp: {http: false, sse: false},
+				perSessionModel: false,
 			},
 		},
 	);
@@ -48,8 +49,24 @@ test('treats anything missing or malformed as not offered', t => {
 			sessions: {close: false, delete: false, list: false, resume: false},
 			prompt: {image: true, audio: false, embeddedContext: false},
 			mcp: {http: false, sse: false},
+			perSessionModel: false,
 		},
 	});
+});
+
+test('reads per-session model state as offered only when Nanocoder advertises it as exactly true (ACP-14 CHAT-10)', t => {
+	const offered = (nanocoder: unknown) =>
+		describeAgent('/p', {
+			protocolVersion: 1,
+			agentCapabilities: {_meta: {nanocoder}},
+		} as unknown as Parameters<typeof describeAgent>[1]).capabilities
+			.perSessionModel;
+	t.true(offered({perSessionModel: true}));
+	for (const value of [false, 'true', 1, null, {}, undefined])
+		t.false(offered({perSessionModel: value}));
+	t.false(offered(undefined));
+	t.false(offered('nanocoder'));
+	t.false(offered(null));
 });
 
 test('reads HTTP client MCP servers as offered only when it is exactly true (DEC-47)', t => {

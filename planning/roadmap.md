@@ -782,14 +782,14 @@ Needs `OQ-10` answered.
 
 **Build**
 
-- [ ] Shared conformance tests running against the bundled and minimum Nanocoder versions (`ACP-21`)
-- [ ] Gate results recorded per tested version (`ACP-04`)
-- [ ] Review `ACP-14` and `CHAT-10` for Nanocoder's per-session model state, which the desktop's project-wide model control does not yet reflect
+- [x] Shared conformance tests running against the bundled and minimum Nanocoder versions (`ACP-21`): the `ACP Conformance, bundled` job runs every `*.acp.ts` test against the shipped 1.32.0 on all three platforms. The provisional 1.31.0 floor has no published build, so the bundled 1.32.0 is also the lowest version run; raising the floor is `OQ-02`
+- [x] Gate results recorded per tested version (`ACP-04`): `conformance/nanocoder-1.32.0.json`, checked by `records.spec.ts` and, strictly, by `conformance.acp.ts`
+- [x] Review `ACP-14` and `CHAT-10` for Nanocoder's per-session model state, which the desktop's project-wide model control does not yet reflect: offers are kept per session and the control says "this thread" when Nanocoder advertises `perSessionModel` (`DEC-51`, Proposed)
 
 **Results we want**
 
-- [ ] Conformance passes for every supported version
-- [ ] Results recorded for each supported version
+- [x] Conformance passes for every supported version: the bundled 1.32.0, the only supported release, passes the whole `*.acp.ts` suite on Linux, macOS and Windows ([`ACP Conformance, bundled` on the phase 4.5 pull request](https://github.com/Nano-Collective/nanocoder-desktop/actions/runs/42995698430))
+- [x] Results recorded for each supported version: `conformance/nanocoder-1.32.0.json`
 
 ### Phase 4.6: crash recovery and retention
 

@@ -147,6 +147,40 @@ jobs:
           pnpm fetch:node
           pnpm measure:runtime
 
+  # The shared ACP conformance run against the Nanocoder the installers ship, which is the lowest published
+  # version the desktop supports (ACP-21). It also fails when that version has no recorded initialize answer
+  # or the answer changed (ACP-04). The job above runs the same tests against Nanocoder main as an early warning.
+  acp-bundled:
+    name: ACP Conformance, bundled (${{ matrix.os }})
+    if: github.event_name != 'push'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm prepare:runtime
+
+      - name: Run the ACP tests against the bundled Nanocoder
+        shell: bash
+        env:
+          NANOCODER_CONFORMANCE_STRICT: '1'
+        run: |
+          NANOCODER_CLI="$(node scripts/print-bundled-cli.mjs)"
+          export NANOCODER_CLI
+          pnpm test:acp
+
   package-smoke:
     name: Package Smoke (${{ matrix.name }})
     needs: changes

@@ -81,6 +81,7 @@ export interface AgentCapabilities {
 	sessions: {close: boolean; delete: boolean; list: boolean; resume: boolean};
 	prompt: {image: boolean; audio: boolean; embeddedContext: boolean};
 	mcp: {http: boolean; sse: boolean};
+	perSessionModel: boolean;
 }
 
 export interface ConnectedAgent {
@@ -321,11 +322,17 @@ export interface ProjectConfigSelect {
 	options: Array<{name: string; value: string}>;
 }
 
+// What a model change reaches: this thread's session only, or every thread in the project's process (ACP-14).
+export type ModelScope = 'thread' | 'project';
+
 export interface ProjectControls {
 	projectId: string;
 	revision: string;
 	configOptions: ProjectConfigSelect[];
 	modelGate: CapabilityGate;
+	modelScope: ModelScope;
+	// The thread whose session the options describe; null while none does (ACP-14).
+	threadId: string | null;
 }
 
 export type FeatureId =
