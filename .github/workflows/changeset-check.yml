@@ -10,4 +10,4 @@ permissions:
 
 jobs:
   changeset-check:
-    uses: Nano-Collective/.github/.github/workflows/changeset-check.yml@main
+    uses: Nano-Collective/.github/.github/workflows/changeset-check.yml@c64bf21e013bd713a43ee3eae166b97d1fb6ad41

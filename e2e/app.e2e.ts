@@ -261,6 +261,64 @@ test('the renderer cannot reach Node', async () => {
 	expect(reachable).toEqual({require: 'undefined', process: 'undefined'});
 });
 
+test('SEC-01 every web contents runs sandboxed with context isolation and web security, with no Node, experimental or Blink features', async () => {
+	const preferences = await app.evaluate(({webContents}) =>
+		webContents.getAllWebContents().map(contents => {
+			// Present at runtime but missing from Electron's typings.
+			const p =
+				(
+					contents as unknown as {
+						getLastWebPreferences(): Record<string, unknown> | undefined;
+					}
+				).getLastWebPreferences() ?? {};
+			return {
+				sandbox: p.sandbox,
+				contextIsolation: p.contextIsolation,
+				nodeIntegration: p.nodeIntegration,
+				nodeIntegrationInWorker: p.nodeIntegrationInWorker,
+				nodeIntegrationInSubFrames: p.nodeIntegrationInSubFrames,
+				webSecurity: p.webSecurity,
+				allowRunningInsecureContent: p.allowRunningInsecureContent,
+				experimentalFeatures: p.experimentalFeatures,
+				enableBlinkFeatures: p.enableBlinkFeatures,
+				webviewTag: p.webviewTag,
+			};
+		}),
+	);
+	expect(preferences.length).toBeGreaterThan(0);
+	for (const p of preferences) {
+		expect(p.sandbox).toBe(true);
+		expect(p.contextIsolation).toBe(true);
+		expect(p.nodeIntegration).not.toBe(true);
+		expect(p.nodeIntegrationInWorker).not.toBe(true);
+		expect(p.nodeIntegrationInSubFrames).not.toBe(true);
+		expect(p.webSecurity).not.toBe(false);
+		expect(p.allowRunningInsecureContent).not.toBe(true);
+		expect(p.experimentalFeatures).not.toBe(true);
+		expect(p.enableBlinkFeatures || '').toBe('');
+		expect(p.webviewTag).not.toBe(true);
+	}
+});
+
+test('SEC-10 SEC-15 the app UI is denied every permission it could ask for', async () => {
+	const answers = await page.evaluate(async () => ({
+		notifications: await Notification.requestPermission(),
+		geolocation: await new Promise<number | null>(resolve =>
+			navigator.geolocation.getCurrentPosition(
+				() => resolve(null),
+				error => resolve(error.code),
+			),
+		),
+		camera: await navigator.mediaDevices
+			.getUserMedia({video: true})
+			.then(() => 'granted')
+			.catch((error: Error) => error.name),
+	}));
+	expect(answers.notifications).toBe('denied');
+	expect(answers.geolocation).toBe(1);
+	expect(answers.camera).not.toBe('granted');
+});
+
 test('the renderer cannot open windows', async () => {
 	const opened = await page.evaluate(
 		() => window.open('https://example.com/') !== null,

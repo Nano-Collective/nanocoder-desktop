@@ -218,7 +218,7 @@ Related, Open: Scriptura recorded the same Apple Developer account question as b
 | pnpm resolution policy: `minimumReleaseAge: 10080`, `blockExoticSubdeps: true`, `trustPolicy: no-downgrade` | `pnpm-workspace.yaml` | Suggestion (not discussed): used by Nanocoder ([source][nc-workspace]) and prompt-scrub, not by Nanotune, and not in the NC docs |
 | Native build allow-list (`allowBuilds`) | `pnpm-workspace.yaml` | Suggestion (not discussed): only the PTY and SQLite modules (and the bundler) may run install scripts |
 | Electron pinned to an exact version and updated for every security release | `package.json` | Suggestion (not discussed) |
-| Actions pinned by commit SHA | Local workflows | Suggestion (not discussed): Nanocoder's local jobs already do this ([source][nc-prchecks]) |
+| Actions and shared workflows pinned by commit SHA | Local workflows | Suggestion (not discussed): Nanocoder's local jobs already do this ([source][nc-prchecks]). Enforced since phase 4.7 by `scripts/lib/supply-chain.spec.mjs`, with the shared workflows pinned to a commit of the infrastructure repository |
 
 [wp-threat]: https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/content/collective/whitepapers/nanocoder-desktop.md?plain=1#L585-L633
 [wp-arch]: https://github.com/Nano-Collective/docs/blob/3ec3b1c6a21277556a9df3000f4e0f244e35e3bb/content/collective/whitepapers/nanocoder-desktop.md?plain=1#L189-L246
