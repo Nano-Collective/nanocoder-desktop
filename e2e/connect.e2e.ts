@@ -657,7 +657,7 @@ test('a missing cached session stays view-only until the user explicitly starts 
 	await expect(
 		page.getByRole('region', {name: 'view-only thread'}),
 	).toContainText(
-		'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.',
+		"Nanocoder no longer has this chat's history. By default it deletes chats not opened for 30 days, and the oldest once there are more than 100. You can change this in Nanocoder's session settings.",
 	);
 	await expect(page.getByLabel('Message')).toHaveCount(0);
 	const stoppedMissing = await page.evaluate(
