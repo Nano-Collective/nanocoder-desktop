@@ -27,7 +27,7 @@ Each check was shown to fail when it should. The sweep has failing examples (an 
 
 | Finding | Result |
 |---|---|
-| The chat composer, the form around the main input, was exposed as a landmark with no name. It is the most used control in the app | Fixed: it is named "message composer" |
+| The chat composer, the form around the main input, was exposed as a landmark with no name. It is the most used control in the app | Fixed: it is named "composer", and not "message composer", because the text box is labelled "message" and a second label containing that word makes label lookups by "Message" ambiguous |
 | The form for adding a browser profile had no name | Fixed: "new browser profile" |
 | Everything else the sweep covers already had a name, a role and a working keyboard path, with no keyboard trap and no forced tab order | No change |
 
