@@ -1,7 +1,7 @@
 import test from 'ava';
 import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
 
-test('bounds UTF-8 lines and redacts an overlong secret before retaining any chunk', t => {
+test('SEC-08 bounds UTF-8 lines and redacts an overlong secret before retaining any chunk', t => {
 	const ring = new StderrRing({maxBytes: 24});
 	ring.write(`https://${'private'.repeat(800)}@example.com`);
 	ring.write('private-tail\nsafe\n');
@@ -15,7 +15,7 @@ test('bounds UTF-8 lines and redacts an overlong secret before retaining any chu
 	t.true(unicode.truncated);
 });
 
-test('never retains an overlong URL credential whose terminator arrives in a later chunk', t => {
+test('SEC-08 never retains an overlong URL credential whose terminator arrives in a later chunk', t => {
 	const ring = new StderrRing();
 	ring.write(`https://${'private'.repeat(800)}`);
 	t.false(ring.lines().join('\n').includes('private'));
@@ -24,7 +24,7 @@ test('never retains an overlong URL credential whose terminator arrives in a lat
 	t.true(ring.truncated);
 });
 
-test('redacts common unlabelled OAuth access tokens, refresh tokens and JWTs', t => {
+test('SEC-08 redacts common unlabelled OAuth access tokens, refresh tokens and JWTs', t => {
 	for (const token of [
 		`ya29.${'a'.repeat(32)}`,
 		`1//${'b'.repeat(32)}`,

@@ -2,7 +2,7 @@ import test from 'ava';
 import * as diagnostics from '@/main/nanocoder/diagnostics';
 import {FakeClock} from '@/main/nanocoder/fixtures/fake-clock';
 
-test('main reviews the exact captured snapshot before choosing a destination and exporting', async t => {
+test('SEC-08 main reviews the exact captured snapshot before choosing a destination and exporting', async t => {
 	const Exporter = diagnostics.DiagnosticsExporter;
 	if (!Exporter) {
 		t.fail('reviewed diagnostics exporter is not available');
@@ -40,7 +40,7 @@ test('main reviews the exact captured snapshot before choosing a destination and
 	t.deepEqual(calls, ['review', 'choose', 'write']);
 });
 
-test('cancelled, foreign, unknown or expired snapshots never write or bypass native review', async t => {
+test('SEC-08 cancelled, foreign, unknown or expired snapshots never write or bypass native review', async t => {
 	for (const scenario of [
 		'cancel-review',
 		'cancel-save',

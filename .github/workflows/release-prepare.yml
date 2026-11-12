@@ -10,4 +10,4 @@ permissions:
 
 jobs:
   release-prepare:
-    uses: Nano-Collective/.github/.github/workflows/release-prepare.yml@main
+    uses: Nano-Collective/.github/.github/workflows/release-prepare.yml@c64bf21e013bd713a43ee3eae166b97d1fb6ad41

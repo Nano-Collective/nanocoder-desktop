@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   nc-review:
-    uses: Nano-Collective/.github/.github/workflows/nc-review.yml@main
+    uses: Nano-Collective/.github/.github/workflows/nc-review.yml@c64bf21e013bd713a43ee3eae166b97d1fb6ad41
     permissions:
       contents: read
       issues: write

@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   pr-checks:
-    uses: Nano-Collective/.github/.github/workflows/pr-checks.yml@main
+    # Pinned to a commit (SEC-18). Bump it in a pull request when the shared workflow changes.
+    uses: Nano-Collective/.github/.github/workflows/pr-checks.yml@c64bf21e013bd713a43ee3eae166b97d1fb6ad41
     with:
       build-output-dir: out
       validate-changesets: true
