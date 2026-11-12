@@ -1,0 +1,71 @@
+name: Large Project Performance
+
+# Phase 4.8. Run by hand: it times the file and Git services, and a real Nanocoder opening and resuming a session,
+# on a large repository, on all three platforms. Leave the repository empty to measure a generated one.
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: 'A large public repository to measure, as owner/name (empty: a generated one of about 120,000 files)'
+        required: false
+        default: ''
+      ref:
+        description: 'Branch, tag or commit of that repository (empty: its default branch)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: Measure (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - if: inputs.repository != ''
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          path: large-repository
+          fetch-depth: 1
+
+      # The real Nanocoder the installers ship, for the open and resume timings.
+      - run: pnpm prepare:runtime
+
+      - name: Measure
+        shell: bash
+        env:
+          LARGE_REPOSITORY: ${{ inputs.repository }}
+        run: |
+          NANOCODER_CLI="$(node scripts/print-bundled-cli.mjs)"
+          export NANOCODER_CLI
+          mkdir -p perf-report
+          if [ -n "$LARGE_REPOSITORY" ]; then
+            pnpm measure:project --repo large-repository --resume --no-fail --json perf-report/report.json | tee perf-report/report.md
+          else
+            pnpm measure:project --resume --no-fail --json perf-report/report.json | tee perf-report/report.md
+          fi
+          cat perf-report/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: large-project-${{ matrix.os }}
+          retention-days: 30
+          path: perf-report/

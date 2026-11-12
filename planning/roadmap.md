@@ -822,7 +822,7 @@ Needs `OQ-10` answered.
 
 **Build**
 
-- [ ] Measure tree, status, diff and resume on a large real repository
+- [x] Measure tree, status, diff and resume on a large real repository: `pnpm measure:project` runs the real services on a repository, and the first results (the Linux kernel, 97,362 tracked files, and a generated 120,001 file one) are in [`large-project-performance.md`](large-project-performance.md); the manual `Large Project Performance` workflow runs it on all three platforms
 
 **Results we want**
 

@@ -112,7 +112,7 @@ Record the platform, app version, Nanocoder version and result in the release pu
 
 ## Performance targets
 
-Suggestion (not discussed): starting budgets, to be confirmed after the first measurements in phase 4.8. Measured on a reference machine the NC core team agrees (proposed: 4 CPU cores, 8 GB RAM, SSD, the oldest supported OS version per platform).
+Suggestion (not discussed): starting budgets, to be confirmed after the first measurements in phase 4.8. The first measurements are in [`large-project-performance.md`](large-project-performance.md); every budgeted one is far inside its budget on a development machine, and the budgets stand until the team confirms them. Measured on a reference machine the NC core team agrees (proposed: 4 CPU cores, 8 GB RAM, SSD, the oldest supported OS version per platform).
 
 | ID | Target | Measured how |
 |---|---|---|

@@ -58,7 +58,8 @@
 		"prepare": "husky",
 		"postinstall": "electron-builder install-app-deps",
 		"fetch:node": "node scripts/fetch-node-sidecar.mjs",
-		"measure:runtime": "node scripts/measure-runtime.mjs"
+		"measure:runtime": "node scripts/measure-runtime.mjs",
+		"measure:project": "node --import tsx scripts/measure-large-project.mjs"
 	},
 	"lint-staged": {
 		"*.{js,ts,jsx,tsx,json,md}": [
