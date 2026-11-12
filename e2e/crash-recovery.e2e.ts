@@ -1,3 +1,4 @@
+import {spawnSync} from 'node:child_process';
 import {
 	copyFileSync,
 	mkdirSync,
@@ -95,7 +96,10 @@ test('the app killed in the middle of a turn comes back with that thread interru
 	const exited = new Promise<void>(resolve =>
 		killed.once('exit', () => resolve()),
 	);
-	killed.kill('SIGKILL');
+	// Windows does not reap the children of a killed process, and they keep the profile folder busy.
+	if (process.platform === 'win32' && killed.pid)
+		spawnSync('taskkill', ['/pid', String(killed.pid), '/T', '/F']);
+	else killed.kill('SIGKILL');
 	await exited;
 	// Closing a Playwright handle for a process that is already gone can wait forever on Linux and Windows.
 	app = undefined;
