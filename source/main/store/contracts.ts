@@ -56,6 +56,28 @@ export interface ThreadRepository {
 	}): ThreadInfo;
 	save(thread: ThreadInfo): void;
 	remove(projectId: string, threadId: string): void;
+	setSessionPinned(projectId: string, threadId: string, pinned: boolean): void;
+	getSessionPinned(projectId: string, threadId: string): boolean | undefined;
+	listUnpinnedSessions(): ThreadRetentionRow[];
+}
+
+// What the retention warning needs of a thread whose saved session Nanocoder may delete (CHAT-23).
+export interface ThreadRetentionRow {
+	projectId: string;
+	threadId: string;
+	title: string;
+	lastActivityAt: string;
+}
+
+// The limits Nanocoder last reported for its session store (DEC-45).
+export interface RetentionLimits {
+	days: number;
+	maxSessions: number;
+}
+
+export interface RetentionRepository {
+	get(): RetentionLimits | undefined;
+	set(limits: RetentionLimits): void;
 }
 
 export interface DesktopStore {
@@ -67,6 +89,7 @@ export interface DesktopStore {
 	threads: ThreadRepository;
 	threadHistory: ThreadHistoryRepository;
 	agentRuns: AgentRunRepository;
+	retention: RetentionRepository;
 	close(): void;
 }
 

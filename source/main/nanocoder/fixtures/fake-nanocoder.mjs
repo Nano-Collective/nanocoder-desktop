@@ -653,7 +653,11 @@ async function runTurn(id, params) {
 	if (mode === 'files') return filesFixture(id, params);
 	if (mode === 'streaming') return streamFixture(id, sessionId);
 	if (mode === 'subagents') return subagentFixture(id, params);
-	if (mode === 'reported-usage' || mode === 'session-discovery') {
+	if (
+		mode === 'reported-usage' ||
+		mode === 'session-discovery' ||
+		mode === 'pin-extensions'
+	) {
 		say(sessionId, 'Reported usage fixture.');
 		send({
 			id,
@@ -772,6 +776,8 @@ function serve() {
 					'_renameSession',
 					'timeline/list',
 					'_timeline/list',
+					'pinSession',
+					'_pinSession',
 				].includes(method)
 			) {
 				if (mode === 'silent-probes') return;
@@ -785,8 +791,29 @@ function serve() {
 				}
 				const bare = method.replace(/^_/, '');
 				const supported =
-					(mode === 'extensions' && !method.startsWith('_')) ||
+					((mode === 'extensions' || mode === 'pin-extensions') &&
+						!method.startsWith('_')) ||
 					mode === 'prefixed-extensions';
+				if (
+					supported &&
+					bare === 'pinSession' &&
+					typeof params?.sessionId === 'string' &&
+					typeof params?.pinned === 'boolean'
+				) {
+					if (params.sessionId === 'gone-session')
+						send({
+							id,
+							error: {
+								code: -32603,
+								message: 'Internal error',
+								data: {details: 'Session not found on disk: gone-session'},
+							},
+						});
+					else if (params.sessionId === 'wrong-reply')
+						send({id, result: {pinned: !params.pinned}});
+					else send({id, result: {pinned: params.pinned}});
+					return;
+				}
 				if (
 					supported &&
 					bare === 'renameSession' &&
@@ -820,7 +847,9 @@ function serve() {
 									details:
 										bare === 'renameSession'
 											? 'renameSession requires string sessionId and title params'
-											: 'timeline/list requires a string sessionId',
+											: bare === 'pinSession'
+												? 'pinSession requires a string sessionId and a boolean pinned'
+												: 'timeline/list requires a string sessionId',
 								},
 							}
 						: {code: -32601, message: 'Method not found'},

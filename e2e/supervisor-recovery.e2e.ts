@@ -225,7 +225,7 @@ for (const theme of ['dark', 'light'] as const) {
 					theme === 'dark' ? 'rgb(168, 168, 168)' : 'rgb(79, 86, 120)',
 				);
 				await expect(dashed).toContainText(
-					'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.',
+					"Nanocoder no longer has this chat's history. By default it deletes chats not opened for 30 days, and the oldest once there are more than 100. You can change this in Nanocoder's session settings.",
 				);
 				const button = notice.getByRole('button', {
 					name:
@@ -648,7 +648,7 @@ test('failed resume preserves the visible failed turn and cannot accept another 
 	).toHaveCount(0);
 	const notice = page.getByRole('region', {name: 'view-only thread'});
 	await expect(notice).toContainText(
-		'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.',
+		"Nanocoder no longer has this chat's history. By default it deletes chats not opened for 30 days, and the oldest once there are more than 100. You can change this in Nanocoder's session settings.",
 	);
 	await expect(
 		notice.getByRole('button', {

@@ -156,3 +156,29 @@ test('shell accepts a plain thread child without replacing project or stream slo
 	t.true(html.includes('aria-label="project threads"'));
 	t.false(html.includes('thread list not built yet'));
 });
+
+test('CHAT-23 a thread Nanocoder may delete soon says so in its row, its name and its hint, and no other row does', t => {
+	const html = render({
+		threads: [thread, {...thread, id: 'safe', title: 'safe thread'}],
+		retention: {
+			hint: 'Nanocoder deletes chats not opened for 30 days. Open the chat to keep it.',
+			byThread: new Map([
+				[
+					thread.id,
+					{
+						projectId: thread.projectId,
+						threadId: thread.id,
+						title: thread.title,
+						idleDays: 27,
+						daysLeft: 3,
+					},
+				],
+			]),
+		},
+	});
+	t.regex(html, /<span class="thread-retention">deleted in 3 days<\/span>/);
+	t.regex(html, /aria-label="fixture thread · [^"]*, deleted in 3 days"/);
+	t.regex(html, /Open the chat to keep it/);
+	t.is(html.match(/thread-retention/g)?.length, 1);
+	t.notRegex(html, /aria-label="safe thread[^"]*deleted/);
+});

@@ -35,6 +35,10 @@ import {
 	RecoveryTools,
 	TurnFailureNotice,
 } from '@/renderer/recovery-tools';
+import {
+	retentionAnnouncement,
+	retentionHint,
+} from '@/renderer/retention-notice';
 import {stepRetryFocus} from '@/renderer/retry-focus';
 import {SessionImportList} from '@/renderer/session-import-list';
 import {type FooterAcpState, SidebarFooter} from '@/renderer/sidebar-footer';
@@ -65,6 +69,7 @@ import {
 } from '@/renderer/use-project-activity';
 import {useProjectControls} from '@/renderer/use-project-controls';
 import {useProjects} from '@/renderer/use-projects';
+import {useRetentionWarnings} from '@/renderer/use-retention-warnings';
 import {useReview} from '@/renderer/use-review';
 import {useSessionImports} from '@/renderer/use-session-imports';
 import {useTerminal} from '@/renderer/use-terminal';
@@ -260,6 +265,27 @@ export function App() {
 	useBackgroundAnnouncements(background, message =>
 		overlays.current?.notify(message),
 	);
+	const retention = useRetentionWarnings(
+		`${projectId ?? ''}:${workspace.activeThreadId ?? ''}`,
+	);
+	const retentionView = useMemo(
+		() =>
+			retention && retention.threads.length > 0
+				? {
+						hint: retentionHint(retention),
+						byThread: new Map(
+							retention.threads.map(item => [item.threadId, item]),
+						),
+					}
+				: undefined,
+		[retention],
+	);
+	const announcedRetention = useRef('');
+	useEffect(() => {
+		const next = retentionAnnouncement(retention, announcedRetention.current);
+		announcedRetention.current = next.key;
+		if (next.message) overlays.current?.notify(next.message);
+	}, [retention]);
 	const review = useDiagnosticReview(projectId, {
 		capture: id => window.desktop.getDiagnostics({projectId: id}),
 		exportSnapshot: request => window.desktop.exportDiagnostics(request),
@@ -907,6 +933,7 @@ export function App() {
 							importCount={
 								sessionImports.ready ? sessionImports.sessions.length : null
 							}
+							retention={retentionView}
 							newThreadShortcut={newShortcut}
 							onNew={onNew}
 							onOpen={id => {

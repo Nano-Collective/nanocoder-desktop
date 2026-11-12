@@ -523,7 +523,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 						protocolVersion: 1,
 						agentInfo: {name: 'nanocoder', version: resolved.runtime.version},
 					}),
-					{rename: false, timeline: false},
+					{rename: false, timeline: false, pin: false},
 				);
 				throw new NanocoderFailure('UNSUPPORTED', policy.reason);
 			}
@@ -607,7 +607,7 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 					project.id,
 					result.agent,
 					negotiatedPolicy.status === 'refused'
-						? {rename: false, timeline: false}
+						? {rename: false, timeline: false, pin: false}
 						: await untilAborted(result.probeExtensions(), signal),
 					result.browserServer === true,
 					bundledVersion,

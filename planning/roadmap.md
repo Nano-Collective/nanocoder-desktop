@@ -797,8 +797,8 @@ Needs `OQ-10` answered.
 
 **Build**
 
-- [ ] Crash recovery tests for the app, Nanocoder and the PTY (`ACP-17`)
-- [ ] Apply the agreed retention handling: pin the session behind each thread where Nanocoder offers it, the view-only notice names the limits and Nanocoder's settings (`ACP-19`), and the desktop warns before unpinned threads expire in any project (`CHAT-23`)
+- [x] Crash recovery tests for the app, Nanocoder and the PTY (`ACP-17`): every path in [`architecture.md`](architecture.md#crash-recovery) is mapped to a test; the app killed mid-turn is new (`crash-recovery.e2e.ts`)
+- [x] Apply the agreed retention handling: pin the session behind each thread where Nanocoder offers it, the view-only notice names the limits and Nanocoder's settings (`ACP-19`), and the desktop warns before unpinned threads expire in any project (`CHAT-23`)
 
 **Results we want**
 

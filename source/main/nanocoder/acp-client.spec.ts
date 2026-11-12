@@ -205,6 +205,7 @@ test('records the protocol version, agent version and capabilities', async t => 
 			prompt: {image: false, audio: false, embeddedContext: false},
 			mcp: {http: false, sse: false},
 			perSessionModel: false,
+			retention: null,
 		},
 	});
 	await connection.close();
@@ -721,6 +722,7 @@ test('probes extensions with no session ID or title and tries prefixed then bare
 		t.deepEqual(await connection.probeExtensions(), {
 			rename: true,
 			timeline: true,
+			pin: true,
 		});
 		await connection.close();
 		const probes = fakeEvents(connection.stderr.lines()).filter(
@@ -781,6 +783,7 @@ test('unknown extension methods fail closed', async t => {
 	t.deepEqual(await connection.probeExtensions(), {
 		rename: false,
 		timeline: false,
+		pin: false,
 	});
 	await connection.close();
 });
@@ -795,6 +798,7 @@ test('ambiguous, unexpectedly successful and silent probes never enable features
 		t.deepEqual(await connection.probeExtensions(), {
 			rename: false,
 			timeline: false,
+			pin: false,
 		});
 		await connection.close();
 	}
@@ -1099,4 +1103,38 @@ test('BRW-18 a Nanocoder before 1.32.0 is sent no switch and is not refused, and
 	});
 	t.teardown(() => current.close());
 	t.true(current.browserSwitch);
+});
+
+test('CHAT-23 pinning uses only the probed method, names the session and the state, and refuses a reply that disagrees', async t => {
+	const unprobed = await connect(fakeProject('extensions'));
+	await t.throwsAsync(unprobed.pinSession('fake-session', true), {
+		code: 'UNSUPPORTED',
+		message: 'Session pinning is unavailable',
+	});
+	await unprobed.close();
+	const connection = await connect(fakeProject('extensions'));
+	await connection.probeExtensions();
+	await connection.pinSession('fake-session', true);
+	await connection.pinSession('fake-session', false);
+	await t.throwsAsync(connection.pinSession('gone-session', true), {
+		code: 'NOT_FOUND',
+	});
+	await t.throwsAsync(connection.pinSession('wrong-reply', true), {
+		code: 'AGENT_UNAVAILABLE',
+		message: 'Nanocoder could not pin the session',
+	});
+	await connection.close();
+	const sent = fakeEvents(connection.stderr.lines()).filter(
+		e =>
+			e.method === 'pinSession' &&
+			(e.params as {sessionId?: string} | undefined)?.sessionId ===
+				'fake-session',
+	);
+	t.deepEqual(
+		sent.map(e => e.params),
+		[
+			{sessionId: 'fake-session', pinned: true},
+			{sessionId: 'fake-session', pinned: false},
+		],
+	);
 });

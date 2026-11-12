@@ -13,6 +13,7 @@ import {
 	ViewOnlyFooter,
 } from '@/renderer/thread-recovery-notice';
 import type {ThreadInfo} from '@/shared/ipc';
+import {missingSessionReason} from '@/shared/retention';
 import {REPLAY_MISSING_REASON} from '@/shared/thread-replay';
 
 const thread: ThreadInfo = {
@@ -43,7 +44,8 @@ test('CHAT-09 view-only notice explains missing history and retains escaped desk
 	t.true(html.includes('aria-label="view-only thread"'));
 	t.true(html.includes('thread-view-only-notice'));
 	t.true(html.includes('view-only'));
-	t.true(html.includes('Nanocoder could not find this session'));
+	t.true(html.includes('Nanocoder no longer has this chat'));
+	t.true(html.includes('session settings'));
 	t.true(html.includes('＋ new thread in tide'));
 	t.true(html.includes('remove from desktop'));
 	t.true(html.includes('&lt;script&gt;manual fixture&lt;/script&gt;'));
@@ -170,4 +172,19 @@ test('recovery notices forward only their supplied callbacks and never start wor
 	t.deepEqual(calls, []);
 	for (const action of actions(retryable)) action.props.onClick?.();
 	t.deepEqual(calls, ['same-thread retry']);
+});
+
+test('DEC-45 the view-only notice shows the limits Nanocoder reported, not only the defaults', t => {
+	const html = renderToStaticMarkup(
+		createElement(ThreadRecoveryNotice, {
+			...props,
+			thread: {
+				...thread,
+				viewOnlyReason: missingSessionReason({days: 90, maxSessions: 250}),
+			},
+		}),
+	);
+	t.true(html.includes('not opened for 90 days'));
+	t.true(html.includes('more than 250'));
+	t.false(html.includes('By default'));
 });

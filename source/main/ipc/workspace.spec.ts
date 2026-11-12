@@ -63,6 +63,7 @@ const payloads = {
 		requestId: 'request-1',
 		optionId: 'allow',
 	},
+	getRetentionWarnings: {},
 	discoverSessions: project,
 	importSession: {...project, sessionId: 'session-1'},
 } satisfies WorkspaceRequests;

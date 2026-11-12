@@ -1,4 +1,5 @@
 import * as React from 'react';
+import {retentionLabel} from '@/renderer/retention-notice';
 import {
 	compactAge,
 	threadAppearance,
@@ -6,6 +7,7 @@ import {
 } from '@/renderer/thread-rail-model';
 import {Button} from '@/renderer/ui';
 import type {ThreadInfo} from '@/shared/ipc';
+import type {RetentionWarning} from '@/shared/retention';
 
 interface ThreadRailProps {
 	projectId: string | null;
@@ -14,6 +16,7 @@ interface ThreadRailProps {
 	pending: boolean;
 	now: Date;
 	importCount: number | null;
+	retention?: {hint: string; byThread: ReadonlyMap<string, RetentionWarning>};
 	newThreadShortcut?: string;
 	onNew(projectId: string): void;
 	onOpen(threadId: string): void;
@@ -35,6 +38,8 @@ export function ThreadRail(props: ThreadRailProps): React.ReactElement {
 	const row = (thread: ThreadInfo) => {
 		const status = threadAppearance(thread);
 		const selected = thread.id === props.activeThreadId;
+		const risk = props.retention?.byThread.get(thread.id);
+		const riskLabel = risk ? retentionLabel(risk) : null;
 		const age = (
 			<time
 				className="thread-age"
@@ -54,9 +59,9 @@ export function ThreadRail(props: ThreadRailProps): React.ReactElement {
 				<button
 					type="button"
 					className="thread-open"
-					aria-label={`${thread.title} · ${status.label}`}
+					aria-label={`${thread.title} · ${status.label}${riskLabel ? `, ${riskLabel}` : ''}`}
 					aria-current={selected ? 'true' : undefined}
-					title={`${thread.title} · ${status.label}${thread.viewOnlyReason ? `: ${thread.viewOnlyReason}` : ''}`}
+					title={`${thread.title} · ${status.label}${thread.viewOnlyReason ? `: ${thread.viewOnlyReason}` : ''}${riskLabel ? `\n${riskLabel}. ${props.retention?.hint}` : ''}`}
 					disabled={props.pending}
 					onClick={() => props.onOpen(thread.id)}
 				>
@@ -68,6 +73,7 @@ export function ThreadRail(props: ThreadRailProps): React.ReactElement {
 					</span>
 					<span className="thread-copy">
 						<span className="thread-title">{thread.title}</span>
+						{riskLabel && <span className="thread-retention">{riskLabel}</span>}
 						{selected && (
 							<span className="thread-state-label">
 								{status.label} · {age}

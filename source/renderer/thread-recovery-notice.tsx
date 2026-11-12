@@ -65,10 +65,7 @@ export function ThreadRecoveryNotice({
 				<p className="thread-view-only-status">
 					<span aria-hidden="true">● </span>this thread is view-only
 				</p>
-				<p>
-					Nanocoder could not find this session. its retention policy or a
-					deletion outside the desktop may have removed it.
-				</p>
+				<p>{thread.viewOnlyReason ?? REPLAY_MISSING_REASON}</p>
 				<p>
 					there is no saved conversation to display. the desktop has the
 					thread’s metadata only.

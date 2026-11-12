@@ -179,6 +179,17 @@
 	white-space: nowrap;
 }
 
+.thread-retention {
+	display: block;
+	margin-top: 1px;
+	overflow: hidden;
+	color: var(--colors-on-surface);
+	font-size: 9px;
+	line-height: 14.4px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 .thread-age {
 	flex: none;
 	color: var(--colors-on-surface-muted);

@@ -19,9 +19,9 @@ const restoring =
 	'restoring saved history; sending and controls will be available when it finishes';
 const failed = 'Nanocoder could not resume the session';
 const missing =
-	"nanocoder can't find this session · it may have been deleted, expired or never saved";
+	"Nanocoder no longer has this chat's history. By default it deletes chats not opened for 30 days, and the oldest once there are more than 100. You can change this in Nanocoder's session settings.";
 const missingNotice =
-	'Nanocoder could not find this session. its retention policy or a deletion outside the desktop may have removed it.';
+	"Nanocoder no longer has this chat's history. By default it deletes chats not opened for 30 days, and the oldest once there are more than 100. You can change this in Nanocoder's session settings.";
 interface GateWindow {
 	desktop: DesktopApi;
 	replayRestart?: Promise<IpcResult<SupervisorState>>;

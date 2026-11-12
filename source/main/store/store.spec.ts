@@ -550,18 +550,18 @@ test('title metadata refuses cross-project targets and non-allowlisted fields (C
 	t.false(store.threads.getTitleManuallySet(owner.id, saved.id));
 });
 
-test('CHAT-08 current schema independently pins version six, migration ids and the exact metadata tables', async t => {
+test('CHAT-08 current schema independently pins version seven, migration ids and the exact metadata tables', async t => {
 	const f = fixture(t);
 	(await f.open()).close();
 	const db = f.driver.open(f.filename);
 	t.teardown(() => db.close());
-	t.is(db.prepare('PRAGMA user_version').get()?.user_version, 6);
+	t.is(db.prepare('PRAGMA user_version').get()?.user_version, 7);
 	t.deepEqual(
 		db
 			.prepare('SELECT version FROM schema_migration ORDER BY version')
 			.all()
 			.map(row => row.version),
-		[1, 2, 3, 4, 5, 6],
+		[1, 2, 3, 4, 5, 6, 7],
 	);
 	t.deepEqual(
 		db
@@ -573,6 +573,7 @@ test('CHAT-08 current schema independently pins version six, migration ids and t
 		[
 			'agent_run',
 			'browser_tab',
+			'nanocoder_retention',
 			'project',
 			'schema_migration',
 			'setting',
@@ -595,7 +596,7 @@ test('all migrated tables are introspected and have no content-bearing column', 
 	const tables = db
 		.prepare("SELECT name FROM sqlite_schema WHERE type = 'table'")
 		.all();
-	t.is(tables.length, 12);
+	t.is(tables.length, 13);
 	let columns = 0;
 	for (const table of tables) {
 		const fields = db
@@ -1642,4 +1643,84 @@ test('DEC-50 the always-allowed sites are a bounded list of distinct web origins
 		'https://docs.example.com',
 		'http://intranet.test:8080',
 	]);
+});
+
+test('CHAT-23 a thread records whether its session is pinned, and only active threads with an unpinned saved session are listed for the retention warning', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const owner = project(f.root);
+	const otherRoot = path.join(f.root, 'other-project');
+	mkdirSync(otherRoot);
+	const other = project(otherRoot);
+	store.projects.save(owner);
+	store.projects.save(other);
+	const open = thread(owner, {title: 'open'});
+	const pinned = thread(owner, {title: 'pinned'});
+	const archived = thread(owner, {archiveState: 'archived'});
+	const viewOnly = thread(owner, {runState: 'view-only'});
+	const unsaved = thread(owner, {nanocoderSessionId: null});
+	const elsewhere = thread(other, {title: 'elsewhere'});
+	for (const row of [open, pinned, archived, viewOnly, unsaved, elsewhere])
+		store.threads.save(row);
+	store.threads.setSessionPinned(owner.id, pinned.id, true);
+	t.deepEqual(
+		store.threads
+			.listUnpinnedSessions()
+			.map(row => row.title)
+			.sort(),
+		['elsewhere', 'open'],
+	);
+	t.deepEqual(
+		store.threads.listUnpinnedSessions().find(row => row.title === 'open'),
+		{
+			projectId: owner.id,
+			threadId: open.id,
+			title: 'open',
+			lastActivityAt: open.lastActivityAt,
+		},
+	);
+	t.throws(() => store.threads.setSessionPinned(owner.id, 'missing', true), {
+		instanceOf: IpcFailure,
+	});
+});
+
+test('CHAT-23 a pin belongs to one session: saving the same session keeps it, a replaced session loses it', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const owner = project(f.root);
+	store.projects.save(owner);
+	const row = thread(owner, {title: 'pin me'});
+	store.threads.save(row);
+	store.threads.setSessionPinned(owner.id, row.id, true);
+	store.threads.save({...row, title: 'renamed'});
+	t.deepEqual(store.threads.listUnpinnedSessions(), []);
+	store.threads.save({...row, nanocoderSessionId: randomUUID()});
+	t.is(store.threads.listUnpinnedSessions().length, 1);
+	store.threads.setSessionPinned(owner.id, row.id, true);
+	store.threads.setSessionPinned(owner.id, row.id, false);
+	t.is(store.threads.listUnpinnedSessions().length, 1);
+	t.false(store.threads.getSessionPinned(owner.id, row.id));
+	store.threads.setSessionPinned(owner.id, row.id, true);
+	t.true(store.threads.getSessionPinned(owner.id, row.id));
+	t.is(store.threads.getSessionPinned(owner.id, randomUUID()), undefined);
+});
+
+test('DEC-45 the retention limits Nanocoder reported are kept across a restart and refuse values it could not have sent', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	t.is(store.retention.get(), undefined);
+	store.retention.set({days: 45, maxSessions: 200});
+	t.deepEqual(store.retention.get(), {days: 45, maxSessions: 200});
+	store.close();
+	const reopened = await f.open();
+	t.deepEqual(reopened.retention.get(), {days: 45, maxSessions: 200});
+	for (const bad of [
+		{days: 0, maxSessions: 100},
+		{days: 30, maxSessions: 0},
+		{days: 1.5, maxSessions: 100},
+		{days: Number.NaN, maxSessions: 100},
+		{days: 30, maxSessions: 1e12},
+	])
+		t.throws(() => reopened.retention.set(bad), {instanceOf: IpcFailure});
+	t.deepEqual(reopened.retention.get(), {days: 45, maxSessions: 200});
 });
