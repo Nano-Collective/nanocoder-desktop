@@ -23,7 +23,11 @@ export function pinnedElectron(manifest) {
 }
 
 function topLevel(text, key) {
-	return new RegExp(`^${key}:\\s*(\\S+)`, 'm').exec(text)?.[1];
+	const prefix = `${key}:`;
+	for (const line of text.split('\n'))
+		if (line.startsWith(prefix))
+			return line.slice(prefix.length).trim().split(/\s+/)[0] || undefined;
+	return undefined;
 }
 
 export function pnpmPolicyProblems(workspace) {
