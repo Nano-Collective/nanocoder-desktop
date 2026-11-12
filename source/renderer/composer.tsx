@@ -136,6 +136,7 @@ export function Composer(props: ComposerProps) {
 			</div>
 			<form
 				className="gate-composer composer"
+				aria-label="message composer"
 				data-unavailable={!props.editable || undefined}
 				onSubmit={event => {
 					event.preventDefault();

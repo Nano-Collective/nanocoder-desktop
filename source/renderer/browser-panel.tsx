@@ -318,6 +318,7 @@ export function BrowserPanel({
 				<summary>manage profiles and data</summary>
 				<form
 					className="browser-manage-row"
+					aria-label="new browser profile"
 					onSubmit={event => {
 						event.preventDefault();
 						void onCreateProfile(newName).then(done => {

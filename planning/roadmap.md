@@ -833,14 +833,14 @@ Needs `OQ-10` answered.
 
 **Build**
 
-- [ ] Keyboard-only pass over chat, files, review, terminal and browser (`CHAT-18`, `FILE-11`, `TERM-11`)
-- [ ] Screen-reader pass on each platform's main screen reader
+- [x] Keyboard-only pass over chat, files, review, terminal and browser (`CHAT-18`, `FILE-11`, `TERM-11`): an automated sweep of all five areas and four dialogs for names, keyboard traps, tab order and landmarks, with the findings in [`accessibility-review.md`](accessibility-review.md)
+- [ ] Screen-reader pass on each platform's main screen reader: the protocol is written ([`screen-reader-protocol.md`](screen-reader-protocol.md)) and needs a person with VoiceOver, NVDA and Orca to run it
 
 **Results we want**
 
 - [ ] `A11Y-01` to `A11Y-05` pass across chat, files, review, terminal and browser
 - [ ] `A11Y-06` screen-reader runs recorded for VoiceOver, NVDA and Orca
-- [ ] Issues found are fixed or filed with a milestone
+- [ ] Issues found are fixed or filed with a milestone: the two the automated review found are fixed; the screen-reader runs are still to come
 
 ### Phase 4.10: first public release
 
