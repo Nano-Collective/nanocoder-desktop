@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   badges:
-    uses: Nano-Collective/.github/.github/workflows/update-badges.yml@main
+    uses: Nano-Collective/.github/.github/workflows/update-badges.yml@c64bf21e013bd713a43ee3eae166b97d1fb6ad41
     secrets:
       # The push must get past the branch rulesets.
       PAT_TOKEN: ${{ secrets.PAT_TOKEN }}

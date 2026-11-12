@@ -79,7 +79,7 @@ test('the question flag is display only and never changes answers', async t => {
 	});
 });
 
-test('a question answers only with its offered ids, matched exactly', async t => {
+test('SEC-09 a question answers only with its offered ids, matched exactly', async t => {
 	const {events, broker: b} = broker();
 	const response = b.request(
 		{
@@ -123,7 +123,7 @@ test('a request is not a question unless main says so', t => {
 	t.false('question' in (events[0] as {request: object}).request);
 });
 
-test('refuses an option Nanocoder did not offer', async t => {
+test('SEC-09 refuses an option Nanocoder did not offer', async t => {
 	const {broker: b} = broker();
 	const response = b.request(request);
 
@@ -135,7 +135,7 @@ test('refuses an option Nanocoder did not offer', async t => {
 	});
 });
 
-test('refuses an unknown request and a second answer', async t => {
+test('SEC-09 refuses an unknown request and a second answer', async t => {
 	const {broker: b} = broker();
 	const response = b.request(request);
 
@@ -175,7 +175,7 @@ test('titles a request by its tool call when it has no title', async t => {
 	);
 });
 
-test('answers every waiting request as cancelled on close', async t => {
+test('SEC-09 answers every waiting request as cancelled on close', async t => {
 	const {events, broker: b} = broker();
 	const first = b.request(request);
 	const second = b.request(request);

@@ -809,14 +809,14 @@ Needs `OQ-10` answered.
 
 **Build**
 
-- [ ] Full security test suite on all platforms
-- [ ] Electron checklist reviewed item by item ([`security.md`](security.md#electron-hardening-checklist))
-- [ ] Supply-chain settings and pinning in place (`SEC-18`)
+- [x] Full security test suite on all platforms: every `SEC-` rule is mapped to its tests in [`security-review.md`](security-review.md), run by CI on Linux, macOS and Windows; the new app-hardening tests are in `e2e/app.e2e.ts`
+- [x] Electron checklist reviewed item by item ([`security.md`](security.md#electron-hardening-checklist)): evidence for all 20 items is in [`security-review.md`](security-review.md#electron-checklist)
+- [x] Supply-chain settings and pinning in place (`SEC-18`): `scripts/lib/supply-chain.spec.mjs` enforces them, and the five shared workflow references are now pinned to a commit
 
 **Results we want**
 
-- [ ] Every `SEC-` rule has a test or a recorded manual check
-- [ ] Audit, Semgrep and CodeQL report no unresolved high findings
+- [ ] Every `SEC-` rule has a test or a recorded manual check: all but `SEC-14` (signed releases and updates), which is phase 4.4 and waits on [#120](https://github.com/Nano-Collective/docs/issues/120); see [`security-review.md`](security-review.md#still-open)
+- [x] Audit, Semgrep and CodeQL report no unresolved high findings: all three passed on 2026-11-12 with no open code scanning alert, and the open advisories are medium and low and outside the shipped app or in Nanocoder's own lock ([`security-review.md`](security-review.md#scanners-and-advisories))
 
 ### Phase 4.8: large-project performance
 
