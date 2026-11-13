@@ -144,22 +144,22 @@ Every page has `title`, `description` and `sidebar_order` frontmatter. Registeri
 
 From [Creating a new project][creating]:
 
-- [ ] `README.md` with the required sections, opening with the canonical tagline
-- [ ] `CONTRIBUTING.md` links the Code of Conduct and Charter rather than redefining them
-- [ ] `LICENSE` (MIT, "Nano Collective")
-- [ ] Linting and formatting set up
-- [ ] Test suite with at least a smoke test, full gate passing
-- [ ] Dead code detection (Knip)
-- [ ] Package security audit (`pnpm audit`)
-- [ ] Security scanning (Semgrep, CodeQL)
+- [x] `README.md` with the required sections, opening with the canonical tagline
+- [x] `CONTRIBUTING.md` links the Code of Conduct and Charter rather than redefining them
+- [x] `LICENSE` (MIT, "Nano Collective")
+- [x] Linting and formatting set up
+- [x] Test suite with at least a smoke test, full gate passing
+- [x] Dead code detection (Knip)
+- [x] Package security audit (`pnpm audit`)
+- [x] Security scanning (Semgrep, CodeQL)
 - [x] CI workflows: `pr-checks.yml` caller, `release.yml`, `update-badges.yml`
-- [ ] Both rulesets applied, six required checks green
-- [ ] `CODEOWNERS` naming `@Nano-Collective/core-team`
-- [ ] Changesets scaffolded, `pre.json` committed
-- [ ] Issue templates (bug, feature) and PR template
-- [ ] `docs/` with at least `index.md` and `getting-started/`
-- [ ] Badges point to real endpoints
-- [ ] At least one release published so the install path is proven
+- [ ] Both rulesets applied, six required checks green: both rulesets exist but are in `evaluate` mode, not `active`
+- [x] `CODEOWNERS` naming `@Nano-Collective/core-team`
+- [x] Changesets scaffolded, `pre.json` committed
+- [x] Issue templates (bug, feature) and PR template
+- [ ] `docs/` with at least `index.md` and `getting-started/`: `docs/` is empty
+- [ ] Badges point to real endpoints: the `badges/` files exist, but the README does not show them yet
+- [ ] At least one release published so the install path is proven: none yet; merging the Version Packages pull request makes the first
 - [ ] Project listed on the Nano Collective website
 - [ ] Announced in Discord
 
