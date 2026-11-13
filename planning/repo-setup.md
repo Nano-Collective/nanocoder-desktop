@@ -157,7 +157,7 @@ From [Creating a new project][creating]:
 - [x] `CODEOWNERS` naming `@Nano-Collective/core-team`
 - [x] Changesets scaffolded, `pre.json` committed
 - [x] Issue templates (bug, feature) and PR template
-- [ ] `docs/` with at least `index.md` and `getting-started/`: `docs/` is empty
+- [x] `docs/` with at least `index.md` and `getting-started/`
 - [ ] Badges point to real endpoints: the `badges/` files exist, but the README does not show them yet
 - [ ] At least one release published so the install path is proven: none yet; merging the Version Packages pull request makes the first
 - [ ] Project listed on the Nano Collective website
