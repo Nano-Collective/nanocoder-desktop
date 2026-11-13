@@ -1,0 +1,185 @@
+name: Release
+
+# Desktop builds are installers, not npm packages, so this is local and not the shared npm release.
+# Merging the Version Packages pull request bumps package.json. A push to main releases only when
+# that version has no GitHub Release yet and is not the unversioned 0.0.0 (REL-09, REL-12).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      should-release: ${{ steps.decide.outputs.should-release }}
+      prerelease: ${{ steps.decide.outputs.prerelease }}
+      tag: ${{ steps.decide.outputs.tag }}
+      version: ${{ steps.decide.outputs.version }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+
+      - name: Look for an existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          if out=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" 2>&1); then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif echo "$out" | grep -q "HTTP 404"; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$out"
+            exit 1
+          fi
+
+      - name: Decide
+        id: decide
+        env:
+          RELEASE_EXISTS: ${{ steps.existing.outputs.exists }}
+        run: node scripts/release.mjs check
+
+  gate:
+    name: Gate
+    needs: check
+    if: needs.check.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm test:all
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: [check, gate]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+          - name: macOS arm64
+            os: macos-latest
+          - name: macOS x64
+            os: macos-15-intel
+          - name: Windows
+            os: windows-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      # Ubuntu 24.04 blocks the user namespaces Chromium's sandbox needs.
+      - if: runner.os == 'Linux'
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          command -v xvfb-run || (sudo apt-get update && sudo apt-get install -y xvfb)
+
+      - run: pnpm package
+
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/smoke-packaged.mjs
+
+      - if: runner.os != 'Linux'
+        run: node scripts/smoke-packaged.mjs
+
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/smoke-installer.mjs
+
+      - if: runner.os != 'Linux'
+        run: node scripts/smoke-installer.mjs
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installers-${{ matrix.name }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+
+  publish:
+    name: Publish
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.check.outputs.tag }}
+      VERSION: ${{ needs.check.outputs.version }}
+      PRERELEASE: ${{ needs.check.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: installers
+          pattern: installers-*
+          merge-multiple: true
+
+      - name: Checksums and notes
+        run: |
+          set -euo pipefail
+          node scripts/release.mjs checksums --dir installers --out SHA256SUMS.txt
+          node scripts/release.mjs notes --out release-notes.md
+          cat SHA256SUMS.txt
+
+      # The release is a draft until every file is attached, so a failed upload never leaves a
+      # half-published release that the version check would then treat as done. A draft left by an
+      # earlier failed run is removed first; the check job has already shown no published release exists.
+      - name: Create the release
+        run: |
+          set -euo pipefail
+          FLAGS=()
+          if [ "$PRERELEASE" = "true" ]; then FLAGS+=(--prerelease); fi
+          TITLE="Nanocoder Desktop $VERSION"
+          if [ "$PRERELEASE" = "true" ]; then TITLE="$TITLE (pre-v0.1)"; fi
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          gh release create "$TAG" installers/* SHA256SUMS.txt \
+            --draft \
+            --target "$GITHUB_SHA" \
+            --title "$TITLE" \
+            --notes-file release-notes.md \
+            "${FLAGS[@]}"
+          gh release edit "$TAG" --draft=false

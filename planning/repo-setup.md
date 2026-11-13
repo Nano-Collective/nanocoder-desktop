@@ -152,7 +152,7 @@ From [Creating a new project][creating]:
 - [ ] Dead code detection (Knip)
 - [ ] Package security audit (`pnpm audit`)
 - [ ] Security scanning (Semgrep, CodeQL)
-- [ ] CI workflows: `pr-checks.yml` caller, `release.yml`, `update-badges.yml`
+- [x] CI workflows: `pr-checks.yml` caller, `release.yml`, `update-badges.yml`
 - [ ] Both rulesets applied, six required checks green
 - [ ] `CODEOWNERS` naming `@Nano-Collective/core-team`
 - [ ] Changesets scaffolded, `pre.json` committed
