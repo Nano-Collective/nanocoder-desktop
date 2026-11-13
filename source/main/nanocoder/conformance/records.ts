@@ -31,7 +31,7 @@ export function gatesFor(initialize: InitializeResponse) {
 	const gates = capabilityGates(
 		'record',
 		agent,
-		{rename: true, timeline: true, pin: true},
+		{rename: true, timeline: true, pin: true, read: true},
 		true,
 	);
 	return {
@@ -43,6 +43,7 @@ export function gatesFor(initialize: InitializeResponse) {
 			'rename',
 			'timeline',
 			'pinSession',
+			'agentChanges',
 			'browserControl',
 		] as FeatureId[],
 	};

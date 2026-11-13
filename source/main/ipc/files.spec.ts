@@ -39,6 +39,7 @@ function fixture(withRuntime = true) {
 				calls.push('status'), {available: false, reason: 'x'}
 			),
 			diff: async () => (calls.push('diff'), {kind: 'none'}),
+			agentDiff: async () => (calls.push('agentDiff'), {kind: 'fallback'}),
 		},
 	} as unknown as FilesRuntime;
 	registerFilesHandlers(
@@ -79,7 +80,7 @@ const valid = (channel: string): Record<string, unknown> =>
 			: {projectId, path: 'a'};
 
 test('SEC-02 every file and review channel is registered and answers a valid request', async t => {
-	t.is(all.length, 6);
+	t.is(all.length, 7);
 	const f = fixture();
 	for (const channel of all)
 		t.true((await f.call(channel, valid(channel))).ok, channel);
@@ -101,6 +102,11 @@ test('SEC-02 requests with extra fields, bad ids or oversized paths are refused 
 		[REVIEW_CHANNELS.diff, {projectId, path: '', staged: true}],
 		[REVIEW_CHANNELS.diff, {projectId, path: 'a', staged: 'yes'}],
 		[REVIEW_CHANNELS.diff, {projectId, path: 'a'}],
+		[REVIEW_CHANNELS.agentDiff, {projectId, path: ''}],
+		[REVIEW_CHANNELS.agentDiff, {projectId, path: 'a', staged: true}],
+		[REVIEW_CHANNELS.agentDiff, {projectId, path: 'a', sessionId: 's'}],
+		[REVIEW_CHANNELS.agentDiff, {projectId, path: 'a', checkpointId: 'c'}],
+		[REVIEW_CHANNELS.agentDiff, {projectId, path: 'a'.repeat(4_097)}],
 	] as const) {
 		const result = await f.call(channel, payload);
 		t.false(result.ok, JSON.stringify(payload));
@@ -155,7 +161,8 @@ test('FILE-09 reads and review route to their services', async t => {
 		path: 'src/a.ts',
 		staged: false,
 	});
-	t.deepEqual(f.calls, ['list', 'preview', 'status', 'diff']);
+	await f.call(REVIEW_CHANNELS.agentDiff, {projectId, path: 'src/a.ts'});
+	t.deepEqual(f.calls, ['list', 'preview', 'status', 'diff', 'agentDiff']);
 });
 
 test('FILE-09 without a runtime every channel answers UNAVAILABLE instead of throwing', async t => {

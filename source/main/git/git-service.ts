@@ -1,5 +1,7 @@
+import {refuseGitFolder} from '@/main/files/file-service';
+import {FILE_LIMITS} from '@/main/files/limits';
 import {authorisedRoot} from '@/main/files/project-access';
-import {relativeSegments} from '@/main/files/safe-path';
+import {relativeSegments, resolveInside} from '@/main/files/safe-path';
 import {type GitInstall, type GitLookup, locateGit} from '@/main/git/locate';
 import {type GitRunner, runGit} from '@/main/git/run';
 import {type ParsedEntry, parseStatus} from '@/main/git/status-parser';
@@ -348,6 +350,104 @@ export class GitService {
 		return {path: input, staged, kind: 'text', diff, ...countLines(diff)};
 	}
 
+	// Compares one file as it is now with text held in memory (GIT-09). The before-image goes to Git on
+	// standard input and is never written anywhere; Git still produces the diff (GIT-04).
+	async compare(
+		projectId: string,
+		input: string,
+		before: string | null,
+	): Promise<ReviewDiff> {
+		const project = this.options.project(projectId);
+		const root = await authorisedRoot(project);
+		const segments = relativeSegments(input);
+		if (segments.length === 0)
+			throw new IpcFailure('VALIDATION', 'Choose a file to compare');
+		refuseGitFolder(segments);
+		const found = await this.git();
+		if (!found.ok) throw new IpcFailure('UNAVAILABLE', found.reason);
+		let current: string | null = null;
+		try {
+			current = (await resolveInside(root, input)).real;
+		} catch (error) {
+			if (!(error instanceof IpcFailure) || error.code !== 'NOT_FOUND')
+				throw error;
+		}
+		if (before !== null && Buffer.byteLength(before) > FILE_LIMITS.previewBytes)
+			return {
+				path: input,
+				staged: false,
+				kind: 'too-large',
+				reason:
+					"This file's earlier version is larger than 1 MiB. Open the file in an editor to review it.",
+			};
+		if (before?.includes('\u0000'))
+			return {
+				path: input,
+				staged: false,
+				kind: 'binary',
+				reason: 'This is a binary file, so there is no text diff.',
+			};
+		const label = segments.join('/');
+		const result = await this.run()(
+			{
+				git: found.git.path,
+				cwd: root,
+				timeoutMs: GIT_LIMITS.diffMilliseconds,
+				maxBytes: GIT_LIMITS.diffBytes,
+				...(before === null ? {} : {input: before}),
+			},
+			[
+				'diff',
+				'--no-index',
+				'--no-ext-diff',
+				'--no-textconv',
+				'--no-color',
+				'--',
+				before === null ? '/dev/null' : '-',
+				current ?? '/dev/null',
+			],
+		).catch((error: unknown) => {
+			if (error instanceof IpcFailure && error.code === 'LIMIT') return error;
+			throw error;
+		});
+		if (result instanceof IpcFailure)
+			return {
+				path: input,
+				staged: false,
+				kind: 'too-large',
+				reason:
+					'This diff is larger than 1 MiB. Open the file in an editor to review it.',
+			};
+		if (result.code !== 0 && result.code !== 1)
+			throw new IpcFailure('UNAVAILABLE', 'Git could not produce this diff');
+		const raw = result.stdout.toString('utf8').replace(ANSI, '');
+		if (!raw.trim())
+			return {
+				path: input,
+				staged: false,
+				kind: 'none',
+				reason: 'The agent left this file as it was.',
+			};
+		if (
+			/^Binary files .* differ$/mu.test(raw) ||
+			/^GIT binary patch$/mu.test(raw)
+		)
+			return {
+				path: input,
+				staged: false,
+				kind: 'binary',
+				reason: 'This is a binary file, so there is no text diff.',
+			};
+		const diff = projectHeaders(raw, label, before === null, current === null);
+		return {
+			path: input,
+			staged: false,
+			kind: 'text',
+			diff,
+			...countLines(diff),
+		};
+	}
+
 	private async untracked(
 		project: ProjectInfo,
 		input: string,
@@ -390,6 +490,28 @@ function entryMark(entry: Omit<ReviewEntry, 'touched'>): ReviewMark {
 	if (entry.staged === 'renamed') return 'renamed';
 	if (entry.staged === 'added' && entry.unstaged === 'none') return 'added';
 	return 'modified';
+}
+
+// Git names the in-memory side `-` and the other by its absolute path; the review shows the project path.
+function projectHeaders(
+	raw: string,
+	label: string,
+	created: boolean,
+	deleted: boolean,
+): string {
+	const lines = raw.split('\n');
+	const first = lines.findIndex(line => line.startsWith('@@'));
+	const head = (first === -1 ? lines : lines.slice(0, first)).flatMap(line => {
+		if (line.startsWith('diff --git '))
+			return [`diff --git a/${label} b/${label}`];
+		if (line.startsWith('index ')) return [];
+		if (line.startsWith('--- '))
+			return [created ? '--- /dev/null' : `--- a/${label}`];
+		if (line.startsWith('+++ '))
+			return [deleted ? '+++ /dev/null' : `+++ b/${label}`];
+		return [line];
+	});
+	return [...head, ...(first === -1 ? [] : lines.slice(first))].join('\n');
 }
 
 function countLines(diff: string): {added: number; removed: number} {

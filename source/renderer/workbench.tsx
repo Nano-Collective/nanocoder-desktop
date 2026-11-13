@@ -171,6 +171,7 @@ export function Workbench({
 						state={review.state}
 						commentReason={attachReason}
 						onFilter={review.setFilter}
+						onView={review.setView}
 						onShow={review.show}
 						onClear={review.clear}
 						onRefresh={review.refresh}

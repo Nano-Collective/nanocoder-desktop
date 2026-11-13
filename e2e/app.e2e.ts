@@ -98,7 +98,7 @@ test('the preload bridge exposes typed methods only', async () => {
 	expect(nested.files).toEqual(
 		['list', 'onEvent', 'openInEditor', 'preview', 'reveal'].sort(),
 	);
-	expect(nested.review).toEqual(['diff', 'status']);
+	expect(nested.review).toEqual(['agentDiff', 'diff', 'status']);
 	expect(new Set(nested.types)).toEqual(new Set(['function']));
 });
 

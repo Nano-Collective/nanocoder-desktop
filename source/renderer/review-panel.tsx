@@ -11,6 +11,7 @@ import {
 	describeEntry,
 	type ReviewFilter,
 	type ReviewState,
+	type ReviewView,
 	visibleEntries,
 } from '@/renderer/review-controller';
 import {Button} from '@/renderer/ui';
@@ -41,11 +42,13 @@ type CommentAttachment = Extract<PromptAttachment, {kind: 'review-comment'}>;
 
 function DiffView({
 	diff,
+	agent,
 	commentReason,
 	onComment,
 	onOpenEditor,
 }: {
 	diff: Extract<ReviewDiff, {kind: 'text'}>;
+	agent: boolean;
 	commentReason: string | null;
 	onComment(comment: CommentAttachment): void;
 	onOpenEditor(path: string, line?: number): void;
@@ -75,11 +78,13 @@ function DiffView({
 	const first = shown.findIndex(row => row.selectable);
 	const tabbable = cursor ? cursor.cursor : first;
 	const side = diff.staged ? 'staged' : 'unstaged';
+	const label = agent ? 'agent changes' : side;
+	const described = agent ? 'agent changes' : `${side} changes`;
 	return (
 		<div className="diff-view">
 			<header className="diff-header">
 				<p className="diff-title">
-					{displayName(diff.path)} <span className="diff-side">({side})</span>
+					{displayName(diff.path)} <span className="diff-side">({label})</span>
 					<span className="diff-counts">
 						<span className="diff-count diff-count--add">+{diff.added}</span>{' '}
 						<span className="diff-count diff-count--remove">
@@ -100,7 +105,7 @@ function DiffView({
 			<div
 				className="diff-lines"
 				role="listbox"
-				aria-label={`${side} changes in ${displayName(diff.path)}. select lines to comment on them`}
+				aria-label={`${described} in ${displayName(diff.path)}. select lines to comment on them`}
 				aria-multiselectable="true"
 				onKeyDown={event => {
 					if (event.altKey || event.ctrlKey || event.metaKey) return;
@@ -244,6 +249,7 @@ export function ReviewPanel({
 	state,
 	commentReason,
 	onFilter,
+	onView,
 	onShow,
 	onClear,
 	onRefresh,
@@ -253,6 +259,7 @@ export function ReviewPanel({
 	state: ReviewState;
 	commentReason: string | null;
 	onFilter(filter: ReviewFilter): void;
+	onView(view: ReviewView): void;
 	onShow(path: string, staged: boolean): void;
 	onClear(): void;
 	onRefresh(): void;
@@ -279,7 +286,10 @@ export function ReviewPanel({
 	const current: ReviewEntry | undefined = selected
 		? value.entries.find(entry => entry.path === selected.path)
 		: undefined;
+	const agentView = state.diff?.source === 'agent';
+	const offerView = current?.touched === true && value.agentChanges.enabled;
 	const both =
+		!agentView &&
 		current !== undefined &&
 		current.staged !== 'none' &&
 		(current.unstaged !== 'none' || current.untracked);
@@ -359,6 +369,31 @@ export function ReviewPanel({
 			)}
 			{selected && (
 				<section className="review-diff" aria-label="diff">
+					{offerView && (
+						<div
+							className="review-sides"
+							role="group"
+							aria-label="how much of this file to show"
+						>
+							<Button
+								aria-pressed={state.view === 'agent'}
+								onClick={() => onView('agent')}
+							>
+								agent changes
+							</Button>
+							<Button
+								aria-pressed={state.view === 'all'}
+								onClick={() => onView('all')}
+							>
+								every change
+							</Button>
+						</div>
+					)}
+					{state.view === 'agent' && state.diff?.note && (
+						<p className="files-hint" role="status">
+							{state.diff.note}
+						</p>
+					)}
 					{both && (
 						<div
 							className="review-sides"
@@ -387,8 +422,9 @@ export function ReviewPanel({
 					)}
 					{state.diff?.value?.kind === 'text' && (
 						<DiffView
-							key={`${state.diff.value.path}:${state.diff.value.staged}`}
+							key={`${state.diff.value.path}:${state.diff.value.staged}:${state.diff.source}`}
 							diff={state.diff.value}
+							agent={agentView}
 							commentReason={commentReason}
 							onComment={onComment}
 							onOpenEditor={onOpenEditor}

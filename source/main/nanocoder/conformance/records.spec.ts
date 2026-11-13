@@ -59,6 +59,7 @@ test('every record says which gates rest on assumed inputs rather than the recor
 			'rename',
 			'timeline',
 			'pinSession',
+			'agentChanges',
 			'browserControl',
 		]);
 	}

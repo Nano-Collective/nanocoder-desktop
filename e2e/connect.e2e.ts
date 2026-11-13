@@ -153,7 +153,7 @@ const minimumReasons: Record<string, string> = {
 	'tool timeline':
 		'Nanocoder did not confirm the timeline/list extension with a safe probe; tool locations remain available.',
 	'exact agent changes':
-		'Nanocoder does not yet offer a verified snapshot-read method.',
+		'Nanocoder did not confirm the timeline/read extension with a safe probe; the review shows every change in a file.',
 	'child run tree':
 		'Nanocoder does not yet offer a verified child-event projection; subagents remain tool cards.',
 };

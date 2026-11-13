@@ -4,6 +4,7 @@ import {
 	ReviewController,
 	type ReviewFilter,
 	type ReviewState,
+	type ReviewView,
 } from '@/renderer/review-controller';
 
 export function useReview(projectId: string | null, enabled: boolean) {
@@ -14,6 +15,7 @@ export function useReview(projectId: string | null, enabled: boolean) {
 			{
 				status: request => window.desktop.review.status(request),
 				diff: request => window.desktop.review.diff(request),
+				agentDiff: request => window.desktop.review.agentDiff(request),
 				onEvent: listener => window.desktop.files.onEvent(listener),
 			},
 			setState,
@@ -31,6 +33,10 @@ export function useReview(projectId: string | null, enabled: boolean) {
 		state,
 		setFilter: useCallback(
 			(filter: ReviewFilter) => controller.current?.setFilter(filter),
+			[],
+		),
+		setView: useCallback(
+			(view: ReviewView) => controller.current?.setView(view),
 			[],
 		),
 		show: useCallback((path: string, staged: boolean) => {

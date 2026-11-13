@@ -628,6 +628,7 @@ export function registerIpcHandlers(
 				: undefined),
 	};
 	const store = services.store;
+	const snapshotSupervisor = supervisor;
 	filesRuntime = store
 		? createFilesRuntime({
 				projects: () => store.projects.list(),
@@ -636,6 +637,39 @@ export function registerIpcHandlers(
 				send: sendFilesEvent,
 				openPath: file => shell.openPath(file),
 				showItemInFolder: file => shell.showItemInFolder(file),
+				agentChanges: snapshotSupervisor
+					? {
+							gate: projectId => {
+								try {
+									return snapshotSupervisor.getCapabilityGates(projectId)
+										.features.agentChanges;
+								} catch {
+									return {
+										enabled: false,
+										reason: 'Nanocoder is not connected for this project.',
+									};
+								}
+							},
+							snapshots: (projectId, threadId) => {
+								const sessionId = store.threads.get(
+									projectId,
+									threadId,
+								)?.nanocoderSessionId;
+								if (!sessionId) return undefined;
+								try {
+									const connection =
+										snapshotSupervisor.getConnection(projectId);
+									return {
+										list: () => connection.listTimeline(sessionId),
+										read: (checkpointId, path) =>
+											connection.readTimeline(sessionId, checkpointId, path),
+									};
+								} catch {
+									return undefined;
+								}
+							},
+						}
+					: undefined,
 			})
 		: undefined;
 	threads =

@@ -1,4 +1,5 @@
 import test from 'ava';
+import type {AgentChangesService} from '@/main/git/agent-changes';
 import type {GitService} from '@/main/git/git-service';
 import {ReviewService} from '@/main/git/review-service';
 import {TurnTracker} from '@/main/git/turn-tracker';
@@ -189,7 +190,9 @@ test('GIT-05 the review joins Git status with the touched labels', async t => {
 			reason: 'nothing',
 		}),
 	} as unknown as GitService;
-	const review = new ReviewService(git, f.tracker);
+	const review = new ReviewService(git, f.tracker, {
+		availability: () => ({enabled: false, reason: 'off'}),
+	} as unknown as AgentChangesService);
 	const status = await review.status({projectId: 'p'});
 	if (!status.available) throw new Error('unexpected');
 	t.deepEqual(

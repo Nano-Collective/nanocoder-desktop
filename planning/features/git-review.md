@@ -22,8 +22,8 @@ Review must represent the repository, not only what the agent says it changed ([
 | GIT-06 | Refresh from the real work tree and index on file changes, turn completion and manual refresh. | Decided ([whitepaper][wp-git]) |
 | GIT-07 | Select a line range, add a comment, and insert both transiently into the composer. | Decided ([whitepaper][wp-git]) |
 | GIT-08 | Open the file in the external editor. | Decided ([whitepaper][wp-git]) |
-| GIT-09 | "Agent changes" view: diff each touched file against Nanocoder's pre-edit snapshot. | Proposed (awaiting @will-lamerton) ([#109][i109], `DEC-14`) |
-| GIT-10 | Where no snapshot exists, fall back to the touched-files label and say why. | Proposed (awaiting @will-lamerton) ([#109][i109]) |
+| GIT-09 | "Agent changes" view: diff each touched file against Nanocoder's pre-edit snapshot. | Built in phase 2.9 behind a probe; `DEC-14` Proposed (awaiting @will-lamerton) ([#109][i109], `DEC-44`) |
+| GIT-10 | Where no snapshot exists, fall back to the touched-files label and say why. | Built in phase 2.9 ([#109][i109]) |
 | GIT-11 | Every Git call uses an argument array, no pager, no external diff, no text conversion, and repository execution hooks off (`SEC-06`). | Decided in part ([whitepaper][wp-git]) |
 | GIT-12 | Record `HEAD` before and after each turn; if it moved (for example Nanocoder's `autoCommit`), show the commits made during the turn. | Suggestion (not discussed) |
 | GIT-13 | Without Git, review is disabled with a reason; the file browser still works. | Suggestion (not discussed) |
@@ -62,7 +62,16 @@ Suggestion (not discussed), covered by `PERF-07` and `PERF-08`:
 
 ## Agent changes view
 
-Proposed in [#109][i109-c]: Nanocoder already saves a copy of each file before the agent edits it (the `timeline/revert` mechanism). A small new ACP method would let the desktop read those copies as the baseline.
+Proposed in [#109][i109-c]: Nanocoder already saves a copy of each file before the agent edits it (the `timeline/revert` mechanism). Nanocoder 1.32.0 added `_nanocoder/timeline/read`, which returns those copies, and phase 2.9 uses it.
+
+How it works:
+
+- The view is offered only when safe probes confirm `timeline/list` and `_nanocoder/timeline/read` (`agentChanges` gate). Otherwise the review shows every change, with the reason.
+- "Agent changes" means the last turn. For a file that turn touched, the desktop lists the session's checkpoints, takes the earliest one of the turn's latest group that names the file, reads its before-image, and runs `git diff --no-index` between that text (on stdin) and the file. Nothing is written to disk and no snapshot is ever created or changed.
+- A file the agent created shows every line as added. A file with no net change says so.
+- The review panel opens a touched file on "agent changes" and offers "every change" beside it, which is Git's full diff.
+- It falls back to the full diff, with the reason in the panel (`GIT-10`), when: the turn is still running, the file was not edited through a tool call, Nanocoder no longer has the chat open, the checkpoint was pruned or never taken, the file is binary or over the preview limit, or Nanocoder cannot answer.
+- Nanocoder takes the snapshot before it validates an edit, so an edit it refused shows no net change rather than a diff.
 
 Limits found in source at `8a5f4d4`, which the fallback (`GIT-10`) must cover:
 
@@ -73,7 +82,7 @@ Limits found in source at `8a5f4d4`, which the fallback (`GIT-10`) must cover:
 - Snapshots live in the project at `.nanocoder/timeline/<sessionId>/`, which Nanocoder gitignores ([source][nc-gitignore]).
 - `timeline/list` works only on a session loaded in the current process.
 
-The whitepaper lists exact per-turn attribution under "Later" ([Next steps][wp-next]). Accepting `DEC-14` moves it into Milestone 2.
+The whitepaper lists exact per-turn attribution under "Later" ([Next steps][wp-next]). `DEC-44` kept it out of Milestone 2; phase 2.9 builds it on the released method.
 
 ## Explicit deferrals
 
@@ -81,7 +90,7 @@ Destructive Git actions, branch comparison, GitHub comments, worktrees, merge an
 
 ## Edge cases and failure modes
 
-- User and agent edits in the same file: the full diff shows both; only `GIT-09` separates them.
+- User and agent edits in the same file: the full diff shows both; the agent changes view (`GIT-09`) separates them when snapshots are available.
 - `nanocoder.autoCommit` on ([docs][nc-autocommit]): agent edits become commits, so the work-tree diff is empty (`GIT-12`).
 - Nanocoder creating `.nanocoder/.gitignore` shows as a new untracked file the first time.
 - Very large diffs, generated files, line-ending-only changes, submodules, a repository in the middle of a merge or rebase, a detached `HEAD`, an index lock held by another Git process.
@@ -97,7 +106,7 @@ Destructive Git actions, branch comparison, GitHub comments, worktrees, merge an
 
 ## Dependencies on Nanocoder changes
 
-A snapshot-read ACP method for `GIT-09` ([`acp-integration.md`](../acp-integration.md#nanocoder-changes-needed)).
+`_nanocoder/timeline/read` for `GIT-09`, released in Nanocoder 1.32.0 ([`acp-integration.md`](../acp-integration.md#nanocoder-changes-needed)).
 
 ## Open questions
 

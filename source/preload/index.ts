@@ -23,6 +23,8 @@ const api: DesktopApi = {
 	review: {
 		status: request => ipcRenderer.invoke(REVIEW_CHANNELS.status, request),
 		diff: request => ipcRenderer.invoke(REVIEW_CHANNELS.diff, request),
+		agentDiff: request =>
+			ipcRenderer.invoke(REVIEW_CHANNELS.agentDiff, request),
 	},
 	terminal: {
 		get: request => ipcRenderer.invoke(TERMINAL_CHANNELS.get, request),
