@@ -846,9 +846,9 @@ Needs `OQ-10` answered.
 
 **Build**
 
-- [ ] Release flow through changesets in `alpha` mode (`REL-09`)
-- [ ] Local `release.yml` building per platform
-- [ ] Pre-v0.1 status stated in the README, release notes and the app (`REL-10`)
+- [x] Release flow through changesets in `alpha` mode (`REL-09`): `pre.json` is in `alpha` mode, `release-prepare` keeps the Version Packages pull request open, and merging it is what releases
+- [x] Local `release.yml` building per platform: gate, four builds with the packaged smoke test and installer round trip, checksums, a draft published last ([behaviour](release-and-distribution.md#phase-410-behaviour)); its first real run is the first release
+- [x] Pre-v0.1 status stated in the README, release notes and the app (`REL-10`): the README banner, the welcome page, and the title and opening notice of every alpha release
 - [ ] Every box in the [launch checklist](repo-setup.md#launch-checklist)
 
 **Results we want**

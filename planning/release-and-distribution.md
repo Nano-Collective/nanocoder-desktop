@@ -158,6 +158,16 @@ Open ([#120][i120]). All nine sub-questions are in [`security.md`](security.md#s
 
 Stable 1.0 is a deliberate `changeset pre exit` followed by `changeset version` ([Project infrastructure][infra]).
 
+## Phase 4.10 behaviour
+
+- **What runs.** [`release.yml`](../.github/workflows/release.yml) is local, because desktop builds are installers and the shared release workflow publishes to npm. It runs on every push to `main` and does nothing unless a release is due.
+- **When a release is due (`REL-09`).** `scripts/release.mjs check` reads `package.json`. It releases when the version is not `0.0.0` and `v<version>` has no GitHub Release. Merging the Version Packages pull request is the only normal way that happens. `0.0.0` is skipped so that merging this workflow cannot release an unversioned build. A version that is not plain semver stops the run, so it never reaches a shell.
+- **The steps.** The gate (`pnpm test:all`) runs once on Linux. Then Linux, macOS arm64, macOS x64 and Windows each package the app, run the packaged smoke test and the installer round trip, and upload their installers. The publish job hashes every installer into `SHA256SUMS.txt` (`REL-12`), writes the notes from `CHANGELOG.md` and creates the release.
+- **A failed run leaves nothing half published.** The release is created as a draft with every file attached and published last. The version check treats only a published release as done, so a failed run can be re-run: it deletes the stale draft for that tag first. The tag is created when the draft is published.
+- **Notes (`REL-10`).** An alpha release is marked as a prerelease, titled "(pre-v0.1)" and opens with the pre-v0.1 notice. Every release says the installers are not signed or notarised and points to the checksums. When phase 4.4 signs the builds, that paragraph in `scripts/lib/release.mjs` changes with it.
+- **Tested here, not yet run for real.** `release.spec.mjs` covers the version decision, the checksum layout, the changelog extraction and the notes, and the supply-chain spec (`SEC-18`) reads this workflow like every other. The workflow itself first runs when a Version Packages pull request merges.
+- **Left for the first release.** The Discord notice waits for a webhook secret and for a decision on order, because the packaged restart-and-resume test with a real provider (step 5 above) has to be recorded before the release is announced. Signing and updates are phase 4.4 (`OQ-10`). The installers upload with a seven day retention, which is only a hand-off between jobs.
+
 ## Keeping current
 
 - **Electron.** Upgrade for every Electron security release (`SEC-14`) and record the embedded Node and Chromium versions in the release notes.
