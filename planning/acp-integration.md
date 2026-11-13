@@ -79,6 +79,7 @@ Nanocoder answers four extension requests ([source][nc-ext]). On the wire they u
 |---|---|---|
 | `renameSession` | User renames a thread (`CHAT-12`). | Works on the session file, so the session does not need to be loaded. |
 | `timeline/list` | Touched files and the #109 baseline (`GIT-05`, `GIT-09`). | Requires the session to be loaded in this process. |
+| `timeline/read` | The before-image of one file at one checkpoint (`GIT-09`). | Answered only as `_nanocoder/timeline/read`, with `{kind: 'text', content}`, `{kind: 'created'}` or `{kind: 'unavailable', reason}`. Read-only; the desktop never writes a snapshot. Requires the session to be loaded in this process. |
 | `timeline/revert` | Not in v1. | Destructive: rewrites files and truncates history. Out of scope with read-only review (`DEC-22`). |
 | `retryTurn` | Not in v1. | Truncates history. A later feature. |
 
@@ -99,7 +100,7 @@ None of these is declared in `initialize`, so the desktop detects them by versio
    | Session discovery | `sessionCapabilities.list` advertised. |
    | Rename | An accepted version and a safe probe confirming `renameSession`. |
    | Touched files from the timeline | Same rule for `timeline/list`. Otherwise tool call locations remain available. |
-   | Agent changes view | A snapshot-read method that does not exist yet (`DEC-14`). Off until it does. |
+   | Agent changes view | Safe probes confirm both `timeline/list` and `_nanocoder/timeline/read` (`GIT-09`, `DEC-44`). Otherwise the review shows every change, with the reason. |
    | Agent browser control | Nanocoder reports `mcpCapabilities.http`, its version is 1.32.0 or later (the release with [#116][i116]), and the desktop's browser server is listening. Off otherwise, with the reason. The broker operations exist from phase 3.8. |
    | Subagent run tree | A child-event projection that does not exist yet (`OQ-03`). Otherwise subagents show as tool cards. |
 
@@ -134,7 +135,7 @@ Three checks make up the run (`ACP-21`):
 
 To add a version: run `NANOCODER_CLI=<its dist/cli.js> NANOCODER_RECORD_CONFORMANCE=1 pnpm test:acp`, read the diff, commit the new file, and update `LAST_TESTED_VERSION` in `version-policy.ts`.
 
-The gates for `agentChanges` and `subagentTree` stay closed in the 1.32.0 record although 1.32.0 offers `_nanocoder/timeline/read`, `_nanocoder/cancelSubagent` and child run IDs. Opening them belongs to the features that use them, not to this phase.
+The gate for `subagentTree` stays closed in the 1.32.0 record although 1.32.0 offers `_nanocoder/cancelSubagent` and child run IDs. Opening it belongs to the feature that uses them. `agentChanges` opens from phase 2.9; like the rename and timeline gates it rests on probes that the recorded answer does not contain, so the record lists it as assumed.
 
 ### Provisional prototype policy (phase 1.4)
 
@@ -275,7 +276,7 @@ The UI says what is true: the model control belongs to the project, not the thre
 |---|---|---|---|---|---|
 | Honour client `mcpServers` on `session/new`, `session/load` and `session/resume`, with a per-session tool registry | The browser-control tool must exist only in desktop sessions (`ACP-22`, `BRW-11`). MCP servers are loaded once per process today ([source][nc-mcp-init]). | [#116][i116], [nanocoder#1889][nc1889] | @puri-adityakumar (offered on #116) | Before Milestone 3 | Released in 1.32.0 ([nanocoder#1914](https://github.com/Nano-Collective/nanocoder/pull/1914)); used from phase 3.7 |
 | Implement `session/close` | Advertised but unhandled. | [nanocoder#1709][nc1709] | @will-lamerton | Technical gate | Decided (merged 2026-10-19) |
-| Read pre-edit snapshots over ACP (for example a `timeline/read` method returning the before-image for a checkpoint and path) | The "Agent changes" view (`GIT-09`). | [#109][i109] | Open (approach proposed by @puri-adityakumar) | Milestone 2 if `DEC-14` is accepted for v1, otherwise Later | Proposed (awaiting @will-lamerton) |
+| Read pre-edit snapshots over ACP (for example a `timeline/read` method returning the before-image for a checkpoint and path) | The "Agent changes" view (`GIT-09`). | [#109][i109] | Released in 1.32.0 as `_nanocoder/timeline/read` ([nanocoder#1916](https://github.com/Nano-Collective/nanocoder/pull/1916)) | Phase 2.9 | Used by the desktop; `DEC-14` itself is still Proposed (awaiting @will-lamerton) |
 | Subagent event projection: child run IDs, parent link, status, real tool results, per-child cancel, and approval routing keyed by session | `SP-05` asks to observe and stop a child run (`SUB-05` to `SUB-08`). Today subagents appear only as a polled tool card title ([source][nc-agent-poll]). | [nanocoder#1105][nc1105] (results), new issue for the rest | Open | Milestone 1 for the full `SP-05`; v1 can ship the fallback | Open (`OQ-03`) |
 | Apply `session/set_mode` to a running turn, or reject it | `DEC-15` relies on mode to gate public-site control. | [nanocoder#1857][nc1857] | Open | Milestone 3 | Open |
 | A per-session way to turn off the built-in `browser` tool without editing user config: `_meta["nanocoder/disabledTools"]` on `session/new`, `session/load` and `session/resume` | Lets the desktop's setting turn Nanocoder's browser off for a session (`DEC-48`). | [nanocoder#1890](https://github.com/Nano-Collective/nanocoder/issues/1890), fixed by [#1915](https://github.com/Nano-Collective/nanocoder/pull/1915) | Open | Milestone 3 | Merged 2026-10-29, unreleased (`OQ-13` is answered by `DEC-48`) |

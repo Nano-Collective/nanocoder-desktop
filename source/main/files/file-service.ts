@@ -50,7 +50,7 @@ export interface Located {
 }
 
 // Git's own folder is never browsed: not listed, not previewed.
-function refuseGitFolder(segments: readonly string[]): void {
+export function refuseGitFolder(segments: readonly string[]): void {
 	if (segments.some(segment => segment.toLowerCase() === '.git'))
 		throw new IpcFailure('DENIED', 'The .git folder is not browsable');
 }

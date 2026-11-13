@@ -14,6 +14,8 @@ import {fileURLToPath} from 'node:url';
 const mode = existsSync('.fake-nanocoder')
 	? readFileSync('.fake-nanocoder', 'utf8').trim()
 	: 'ok';
+// What `files-timeline` kept before the agent's first edit of a file, as Nanocoder's snapshots do.
+const before = new Map();
 const MODES = ['normal', 'auto-accept', 'yolo', 'plan', 'architect'];
 const TRUST_REASONS = {
 	untrusted: 'is not trusted',
@@ -431,6 +433,7 @@ async function filesFixture(id, params) {
 	}
 	const edit = /edit (\S+)/u.exec(typed)?.[1];
 	if (edit) {
+		before.set(edit, readFileSync(edit, 'utf8'));
 		appendFileSync(edit, 'agent edit\n');
 		notify('session/update', {
 			sessionId,
@@ -650,7 +653,8 @@ async function runTurn(id, params) {
 		send({id, result: {stopReason: 'end_turn'}});
 		return;
 	}
-	if (mode === 'files') return filesFixture(id, params);
+	if (mode === 'files' || mode === 'files-timeline')
+		return filesFixture(id, params);
 	if (mode === 'streaming') return streamFixture(id, sessionId);
 	if (mode === 'subagents') return subagentFixture(id, params);
 	if (
@@ -771,6 +775,101 @@ function serve() {
 			}
 			log({method, params});
 			if (
+				method === '_nanocoder/timeline/read' &&
+				(mode === 'extensions' ||
+					mode === 'prefixed-extensions' ||
+					mode === 'files-timeline')
+			) {
+				const {sessionId, checkpointId, path: readPath} = params ?? {};
+				if (
+					typeof sessionId !== 'string' ||
+					typeof checkpointId !== 'string' ||
+					typeof readPath !== 'string'
+				) {
+					send({
+						id,
+						error: {
+							code: -32603,
+							message: 'Internal error',
+							data: {
+								details:
+									'timeline/read requires string sessionId, checkpointId and path',
+							},
+						},
+					});
+					return;
+				}
+				if (sessionId === 'gone-session') {
+					send({
+						id,
+						error: {
+							code: -32603,
+							message: 'Internal error',
+							data: {details: `Session not found: ${sessionId}`},
+						},
+					});
+					return;
+				}
+				if (mode === 'files-timeline') {
+					send({
+						id,
+						result: before.has(readPath)
+							? {kind: 'text', content: before.get(readPath)}
+							: {kind: 'created'},
+					});
+					return;
+				}
+				const answers = {
+					'notes.txt': {kind: 'text', content: 'user edit\nuser line\n'},
+					'fresh.txt': {kind: 'created'},
+					'photo.png': {
+						kind: 'unavailable',
+						reason: 'The checkpoint holds no before-image for this path',
+					},
+				};
+				send({id, result: answers[readPath] ?? {kind: 'garbage'}});
+				return;
+			}
+			if (
+				['_timeline/list', 'timeline/list'].includes(method) &&
+				typeof params?.sessionId === 'string' &&
+				((mode === 'extensions' && !method.startsWith('_')) ||
+					(mode === 'prefixed-extensions' && method.startsWith('_')) ||
+					(mode === 'files-timeline' && method.startsWith('_')))
+			) {
+				if (mode === 'files-timeline') {
+					send({
+						id,
+						result: {
+							entries: [...before.keys()].map((file, index) => ({
+								id: `c${index + 1}`,
+								seq: index + 1,
+								truncateToMessageIndex: 2,
+								filesChanged: [file],
+								createdFiles: [],
+								turnId: 'turn-1',
+							})),
+						},
+					});
+					return;
+				}
+				send({
+					id,
+					result: {
+						entries: [
+							{
+								id: 'c1',
+								seq: 1,
+								truncateToMessageIndex: 2,
+								filesChanged: ['notes.txt'],
+								createdFiles: [],
+							},
+						],
+					},
+				});
+				return;
+			}
+			if (
 				[
 					'renameSession',
 					'_renameSession',
@@ -793,7 +892,8 @@ function serve() {
 				const supported =
 					((mode === 'extensions' || mode === 'pin-extensions') &&
 						!method.startsWith('_')) ||
-					mode === 'prefixed-extensions';
+					mode === 'prefixed-extensions' ||
+					(mode === 'files-timeline' && method.startsWith('_'));
 				if (
 					supported &&
 					bare === 'pinSession' &&

@@ -723,6 +723,7 @@ test('probes extensions with no session ID or title and tries prefixed then bare
 			rename: true,
 			timeline: true,
 			pin: true,
+			read: true,
 		});
 		await connection.close();
 		const probes = fakeEvents(connection.stderr.lines()).filter(
@@ -778,12 +779,54 @@ test('CHAT-12 rename uses only the probed method and refuses bad titles and repl
 	);
 });
 
+test('GIT-09 snapshot reads use only the probed methods and refuse unknown answers', async t => {
+	const unprobed = await connect(fakeProject('extensions'));
+	await t.throwsAsync(unprobed.listTimeline('fake-session'), {
+		code: 'UNSUPPORTED',
+	});
+	await t.throwsAsync(
+		unprobed.readTimeline('fake-session', 'c1', 'notes.txt'),
+		{code: 'UNSUPPORTED'},
+	);
+	await unprobed.close();
+	for (const mode of ['extensions', 'prefixed-extensions']) {
+		const connection = await connect(fakeProject(mode));
+		await connection.probeExtensions();
+		t.is((await connection.listTimeline('fake-session'))[0].id, 'c1');
+		t.deepEqual(
+			await connection.readTimeline('fake-session', 'c1', 'notes.txt'),
+			{kind: 'text', content: 'user edit\nuser line\n'},
+		);
+		t.deepEqual(
+			await connection.readTimeline('fake-session', 'c1', 'fresh.txt'),
+			{kind: 'created'},
+		);
+		t.like(await connection.readTimeline('fake-session', 'c1', 'photo.png'), {
+			kind: 'unavailable',
+		});
+		await t.throwsAsync(
+			connection.readTimeline('fake-session', 'c1', 'other.txt'),
+			{code: 'AGENT_UNAVAILABLE'},
+		);
+		await t.throwsAsync(
+			connection.readTimeline('gone-session', 'c1', 'notes.txt'),
+			{code: 'NOT_FOUND'},
+		);
+		await connection.close();
+		const reads = fakeEvents(connection.stderr.lines()).filter(e =>
+			String(e.method).endsWith('timeline/read'),
+		);
+		t.true(reads.every(read => read.method === '_nanocoder/timeline/read'));
+	}
+});
+
 test('unknown extension methods fail closed', async t => {
 	const connection = await connect(fakeProject());
 	t.deepEqual(await connection.probeExtensions(), {
 		rename: false,
 		timeline: false,
 		pin: false,
+		read: false,
 	});
 	await connection.close();
 });
@@ -799,6 +842,7 @@ test('ambiguous, unexpectedly successful and silent probes never enable features
 			rename: false,
 			timeline: false,
 			pin: false,
+			read: false,
 		});
 		await connection.close();
 	}

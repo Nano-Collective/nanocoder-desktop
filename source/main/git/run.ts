@@ -30,6 +30,8 @@ export interface GitRun {
 	cwd: string;
 	timeoutMs: number;
 	maxBytes: number;
+	// Text sent on standard input, for a diff against a file that exists only in memory.
+	input?: string;
 }
 
 export interface GitOutput {
@@ -96,7 +98,7 @@ export const runGit: GitRunner = (run, args) =>
 				),
 			);
 		const prefix = command === '--version' ? [] : HARDENED;
-		execFile(
+		const child = execFile(
 			run.git,
 			[...prefix, ...args],
 			{
@@ -128,4 +130,8 @@ export const runGit: GitRunner = (run, args) =>
 				reject(new IpcFailure('UNAVAILABLE', 'Git could not be started'));
 			},
 		);
+		if (run.input !== undefined) {
+			child.stdin?.on('error', () => {});
+			child.stdin?.end(run.input);
+		}
 	});

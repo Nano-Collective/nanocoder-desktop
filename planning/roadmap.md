@@ -536,19 +536,19 @@ acceptance. Phase 1.8 and `SUB-05` remain app-composed, not full acceptance.
 - [x] A review comment reaches the next prompt and is not stored afterwards
 - [ ] The chosen editor opens the right file on all three platforms: the path and arguments are tested on every platform; a real editor launch was not exercised on Windows or Linux
 
-### Phase 2.9: agent changes view (deferred, `DEC-44`)
+### Phase 2.9: agent changes view (`DEC-44`)
 
-Not part of Milestone 2: it needs a Nanocoder method that does not exist and `DEC-14` is not accepted. Milestone 2 ships honest labels instead.
+Not part of Milestone 2. It is built on Nanocoder's `_nanocoder/timeline/read` ([nanocoder#1916](https://github.com/Nano-Collective/nanocoder/pull/1916), in 1.32.0) while `DEC-14` is still only proposed, and it stays off unless a safe probe confirms the method, so Milestone 2's honest labels remain the behaviour everywhere else.
 
 **Build**
 
-- [ ] Use the Nanocoder snapshot-read method once it exists (`GIT-09`)
-- [ ] Fallback label when no snapshot exists (`GIT-10`)
+- [x] Use the Nanocoder snapshot-read method once it exists (`GIT-09`): the last turn's earliest snapshot of each touched file, read through `_nanocoder/timeline/read` and compared with the file by `git diff --no-index`
+- [x] Fallback label when no snapshot exists (`GIT-10`)
 
 **Results we want**
 
-- [ ] In a file with earlier user edits, only the agent's changes appear in this view
-- [ ] Binary and pruned snapshots fall back with a reason
+- [x] In a file with earlier user edits, only the agent's changes appear in this view ([`agent-changes.acp.ts`](../source/main/git/agent-changes.acp.ts), real Nanocoder)
+- [x] Binary and pruned snapshots fall back with a reason
 
 ### Milestone 2 exit
 

@@ -2,6 +2,10 @@ import {EditorLauncher} from '@/main/files/editor';
 import {FileService} from '@/main/files/file-service';
 import {relativeFromAbsolute, relativeSegments} from '@/main/files/safe-path';
 import {WatchManager} from '@/main/files/watcher';
+import {
+	AgentChangesService,
+	type AgentSnapshots,
+} from '@/main/git/agent-changes';
 import {GitService} from '@/main/git/git-service';
 import {ReviewService} from '@/main/git/review-service';
 import {TurnTracker} from '@/main/git/turn-tracker';
@@ -15,6 +19,11 @@ export interface FilesRuntimeOptions {
 	send(event: FilesEvent): void;
 	openPath(file: string): Promise<string>;
 	showItemInFolder(file: string): void;
+	// Nanocoder's pre-edit snapshots for the agent changes view (GIT-09); closed when absent.
+	agentChanges?: {
+		gate(projectId: string): {enabled: boolean; reason: string | null};
+		snapshots(projectId: string, threadId: string): AgentSnapshots | undefined;
+	};
 }
 
 // Composes the file browser, Git review and editor handoff for the main process.
@@ -74,6 +83,17 @@ export function createFilesRuntime(options: FilesRuntimeOptions) {
 			options.send({type: 'review-changed', projectId});
 		},
 	});
+	const agentChanges = new AgentChangesService({
+		tracker,
+		gate: projectId =>
+			options.agentChanges?.gate(projectId) ?? {
+				enabled: false,
+				reason: 'Nanocoder snapshots are unavailable.',
+			},
+		snapshots: (projectId, threadId) =>
+			options.agentChanges?.snapshots(projectId, threadId),
+		compare: (projectId, path, before) => git.compare(projectId, path, before),
+	});
 	const editor = new EditorLauncher({
 		editor: options.editor,
 		roots: () => options.projects().map(project => project.canonicalRoot),
@@ -87,7 +107,7 @@ export function createFilesRuntime(options: FilesRuntimeOptions) {
 		git,
 		tracker,
 		editor,
-		review: new ReviewService(git, tracker),
+		review: new ReviewService(git, tracker, agentChanges),
 		closeProject(projectId: string) {
 			watchers.closeProject(projectId);
 			git.invalidate(projectId);

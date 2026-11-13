@@ -37,6 +37,12 @@ import {
 	sessionTitle,
 } from '@/main/nanocoder/session-title';
 import {redact, StderrRing} from '@/main/nanocoder/stderr-ring';
+import {
+	parseTimelineEntries,
+	parseTimelineRead,
+	type TimelineEntry,
+	type TimelineRead,
+} from '@/main/nanocoder/timeline';
 import {type TrustRefusal, trustRefusal} from '@/main/nanocoder/trust';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
 import {parsePromptMetadata} from '@/main/nanocoder/turn-metadata';
@@ -103,6 +109,13 @@ export interface NanocoderConnection {
 	deleteSession(sessionId: string): Promise<void>;
 	renameSession(sessionId: string, title: string): Promise<string>;
 	pinSession(sessionId: string, pinned: boolean): Promise<void>;
+	// Read-only views of Nanocoder's pre-edit snapshots for one live session (GIT-09).
+	listTimeline(sessionId: string): Promise<TimelineEntry[]>;
+	readTimeline(
+		sessionId: string,
+		checkpointId: string,
+		path: string,
+	): Promise<TimelineRead>;
 	getSessionOffers(sessionId: string): SessionOffers | undefined;
 	observeConfigOptions?(observer: ConfigOptionsObserver): () => void;
 	setMode(sessionId: string, mode: NanocoderMode): Promise<SessionInfo>;
@@ -784,6 +797,59 @@ export async function connectNanocoder(
 			);
 		}
 	};
+	let timelineListMethod: string | undefined;
+	let timelineReadMethod: string | undefined;
+	const timelineRequest = async (
+		method: string | undefined,
+		params: Record<string, string>,
+	): Promise<unknown> => {
+		if (!method)
+			throw new NanocoderFailure(
+				'UNSUPPORTED',
+				'Nanocoder did not offer its snapshot timeline',
+			);
+		try {
+			return await connection.agent.request(method, params);
+		} catch (error) {
+			throw (
+				missingSession(error) ??
+				new NanocoderFailure(
+					'AGENT_UNAVAILABLE',
+					'Nanocoder could not read its snapshot timeline',
+				)
+			);
+		}
+	};
+	const listTimeline = async (sessionId: string): Promise<TimelineEntry[]> => {
+		const entries = parseTimelineEntries(
+			await timelineRequest(timelineListMethod, {sessionId}),
+		);
+		if (!entries)
+			throw new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				'Nanocoder answered the snapshot timeline in an unknown shape',
+			);
+		return entries;
+	};
+	const readTimeline = async (
+		sessionId: string,
+		checkpointId: string,
+		path: string,
+	): Promise<TimelineRead> => {
+		const read = parseTimelineRead(
+			await timelineRequest(timelineReadMethod, {
+				sessionId,
+				checkpointId,
+				path,
+			}),
+		);
+		if (!read)
+			throw new NanocoderFailure(
+				'AGENT_UNAVAILABLE',
+				'Nanocoder answered the snapshot read in an unknown shape',
+			);
+		return read;
+	};
 	const probeExtensions = async (): Promise<ExtensionProbes> => {
 		const probe = async (
 			name: string,
@@ -819,7 +885,12 @@ export async function connectNanocoder(
 				'pinSession',
 				'pinSession requires a string sessionId and a boolean pinned',
 			),
-		]).then(([rename, timeline, pin]) => ({rename, timeline, pin}));
+			// Answered only under its prefixed name, so the bare attempt is refused harmlessly.
+			probe(
+				'nanocoder/timeline/read',
+				'timeline/read requires string sessionId, checkpointId and path',
+			),
+		]).then(([rename, timeline, pin, read]) => ({rename, timeline, pin, read}));
 		try {
 			const result = await Promise.race([
 				probes,
@@ -832,10 +903,13 @@ export async function connectNanocoder(
 			]);
 			renameMethod = result?.rename;
 			pinMethod = result?.pin;
+			timelineListMethod = result?.timeline;
+			timelineReadMethod = result?.read;
 			return {
 				rename: !!result?.rename,
 				timeline: !!result?.timeline,
 				pin: !!result?.pin,
+				read: !!result?.read,
 			};
 		} finally {
 			clearTimeout(timer);
@@ -855,6 +929,8 @@ export async function connectNanocoder(
 		deleteSession,
 		renameSession,
 		pinSession,
+		listTimeline,
+		readTimeline,
 		getSessionOffers: sessionControls.getSessionOffers,
 		observeConfigOptions: sessionControls.observeConfigOptions,
 		setMode: sessionControls.setMode,

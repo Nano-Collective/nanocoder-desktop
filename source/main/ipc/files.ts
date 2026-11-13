@@ -33,6 +33,7 @@ const reviewSchemas: {
 } = {
 	status: z.strictObject(project),
 	diff: z.strictObject({...project, path: path.min(1), staged: z.boolean()}),
+	agentDiff: z.strictObject({...project, path: path.min(1)}),
 };
 
 export function registerFilesHandlers(
@@ -72,6 +73,7 @@ export function registerFilesHandlers(
 	} = {
 		status: request => available().review.status(request),
 		diff: request => available().review.diff(request),
+		agentDiff: request => available().review.agentDiff(request),
 	};
 	const registerFile = <K extends keyof FilesRequests>(key: K) =>
 		registerHandler(

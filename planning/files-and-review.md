@@ -114,4 +114,4 @@ Local, macOS arm64, Node 22, generated fixtures.
 - The review list is capped at 5,000 files and a diff view at 5,000 rows.
 - CodeMirror virtualises long documents, so a screen reader reads only the visible part (`A11Y-06`).
 - On narrow windows the panel replaces the conversation, as the shell already does for any workbench; attachments stay until the message is sent.
-- The agent changes view is not part of this milestone (`DEC-44`).
+- The agent changes view is not part of this milestone (`DEC-44`); phase 2.9 adds it later.

@@ -8,7 +8,12 @@ import {
 } from '@/renderer/review-controller';
 import type {FilesEvent} from '@/shared/files';
 import type {IpcResult} from '@/shared/ipc';
-import type {ReviewDiff, ReviewEntry, ReviewStatus} from '@/shared/review';
+import type {
+	AgentDiff,
+	ReviewDiff,
+	ReviewEntry,
+	ReviewStatus,
+} from '@/shared/review';
 
 const entry = (
 	path: string,
@@ -24,7 +29,13 @@ const entry = (
 	...extra,
 });
 
-const status = (entries: ReviewEntry[]): ReviewStatus => ({
+const status = (
+	entries: ReviewEntry[],
+	agentChanges: {enabled: boolean; reason: string | null} = {
+		enabled: false,
+		reason: null,
+	},
+): ReviewStatus => ({
 	available: true,
 	git: {path: '/usr/bin/git', version: '2.40.0'},
 	head: 'h',
@@ -32,6 +43,7 @@ const status = (entries: ReviewEntry[]): ReviewStatus => ({
 	entries,
 	notShown: 0,
 	turn: null,
+	agentChanges,
 });
 
 const ok = <T>(value: T): IpcResult<T> => ({ok: true, value});
@@ -64,8 +76,20 @@ function fixture() {
 	let current: IpcResult<ReviewStatus> = ok(status([]));
 	let diff: (path: string, staged: boolean) => Promise<IpcResult<ReviewDiff>> =
 		async (path, staged) => ok(textDiff(path, staged));
+	let agent: (path: string) => Promise<IpcResult<AgentDiff>> = async path =>
+		ok({
+			path,
+			kind: 'text',
+			diff: '@@ -2 +2 @@\n-x\n+y\n',
+			added: 1,
+			removed: 1,
+		});
 	const controller = new ReviewController(
 		{
+			agentDiff: async ({path}) => {
+				calls.push(`agent:${path}`);
+				return agent(path);
+			},
 			status: async () => {
 				calls.push('status');
 				const hold = holds.shift();
@@ -92,6 +116,9 @@ function fixture() {
 		emit: (event: FilesEvent) => listener?.(event),
 		set: (value: IpcResult<ReviewStatus>) => {
 			current = value;
+		},
+		setAgent: (next: typeof agent) => {
+			agent = next;
 		},
 		setDiff: (next: typeof diff) => {
 			diff = next;
@@ -262,4 +289,83 @@ test('GIT-05 each review row is one plain sentence, with no reliance on colour',
 		'has a merge conflict, unstaged modified',
 	);
 	t.is(describeEntry(entry('x.ts')), '');
+});
+
+const touchedFile = (path: string) =>
+	entry(path, {unstaged: 'modified', touched: true});
+const on = {enabled: true, reason: null};
+
+test('GIT-09 a touched file opens as only the agent lines when Nanocoder confirmed it', async t => {
+	const f = fixture();
+	f.set(ok(status([touchedFile('a.ts')], on)));
+	f.controller.select('p');
+	await f.flush();
+	f.calls.length = 0;
+	await f.controller.show('a.ts', false);
+	t.deepEqual(f.calls, ['agent:a.ts']);
+	const diff = f.controller.getState().diff;
+	t.is(diff?.source, 'agent');
+	t.is(diff?.note, null);
+	t.is(diff?.value?.kind, 'text');
+});
+
+test('GIT-09 all changes shows what Git sees, and switching back asks for the agent lines again', async t => {
+	const f = fixture();
+	f.set(ok(status([touchedFile('a.ts')], on)));
+	f.controller.select('p');
+	await f.flush();
+	await f.controller.show('a.ts', false);
+	f.calls.length = 0;
+	f.controller.setView('all');
+	await f.flush();
+	t.deepEqual(f.calls, ['diff:a.ts:false']);
+	t.is(f.controller.getState().diff?.source, 'git');
+	f.calls.length = 0;
+	f.controller.setView('agent');
+	await f.flush();
+	t.deepEqual(f.calls, ['agent:a.ts']);
+});
+
+test('GIT-10 when the agent lines cannot be told apart the file falls back to Git with the reason', async t => {
+	const f = fixture();
+	f.set(ok(status([touchedFile('a.ts')], on)));
+	f.controller.select('p');
+	await f.flush();
+	f.setAgent(async path =>
+		ok({path, kind: 'fallback', reason: 'Nanocoder no longer keeps it'}),
+	);
+	f.calls.length = 0;
+	await f.controller.show('a.ts', false);
+	t.deepEqual(f.calls, ['agent:a.ts', 'diff:a.ts:false']);
+	const diff = f.controller.getState().diff;
+	t.is(diff?.source, 'git');
+	t.is(diff?.note, 'Nanocoder no longer keeps it');
+	f.setAgent(async () => fail('boom'));
+	await f.controller.show('a.ts', false);
+	t.is(f.controller.getState().diff?.source, 'git');
+	t.truthy(f.controller.getState().diff?.note);
+});
+
+test('GIT-10 with the feature off a touched file shows Git and the gate reason, without asking Nanocoder', async t => {
+	const f = fixture();
+	f.set(
+		ok(status([touchedFile('a.ts')], {enabled: false, reason: 'Not offered'})),
+	);
+	f.controller.select('p');
+	await f.flush();
+	f.calls.length = 0;
+	await f.controller.show('a.ts', false);
+	t.deepEqual(f.calls, ['diff:a.ts:false']);
+	t.is(f.controller.getState().diff?.note, 'Not offered');
+});
+
+test('GIT-09 a file the last turn did not touch never asks for agent lines', async t => {
+	const f = fixture();
+	f.set(ok(status([entry('b.ts', {unstaged: 'modified'})], on)));
+	f.controller.select('p');
+	await f.flush();
+	f.calls.length = 0;
+	await f.controller.show('b.ts', false);
+	t.deepEqual(f.calls, ['diff:b.ts:false']);
+	t.is(f.controller.getState().diff?.note, null);
 });

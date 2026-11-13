@@ -3,6 +3,7 @@ import type {IpcResult} from '@/shared/ipc';
 export const REVIEW_CHANNELS = {
 	status: 'review:status',
 	diff: 'review:diff',
+	agentDiff: 'review:agent-diff',
 } as const;
 
 // What Git reports for one path, reduced to what the tree and review list show.
@@ -58,6 +59,8 @@ export type ReviewStatus =
 			entries: ReviewEntry[];
 			notShown: number;
 			turn: TurnReview | null;
+			// Whether Nanocoder's pre-edit snapshots can show only the agent's lines (GIT-09).
+			agentChanges: {enabled: boolean; reason: string | null};
 	  };
 
 export type ReviewDiff =
@@ -76,14 +79,27 @@ export type ReviewDiff =
 			reason: string;
 	  };
 
+// The agent's own lines in one file touched by the last turn, or the reason they cannot be told apart (GIT-10).
+export type AgentDiff =
+	| {
+			path: string;
+			kind: 'text';
+			diff: string;
+			added: number;
+			removed: number;
+	  }
+	| {path: string; kind: 'none' | 'fallback'; reason: string};
+
 export interface ReviewRequests {
 	status: {projectId: string};
 	diff: {projectId: string; path: string; staged: boolean};
+	agentDiff: {projectId: string; path: string};
 }
 
 export interface ReviewValues {
 	status: ReviewStatus;
 	diff: ReviewDiff;
+	agentDiff: AgentDiff;
 }
 
 export type ReviewApi = {

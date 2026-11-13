@@ -49,7 +49,9 @@ const put = (name: string, content: string | Buffer) => {
 	writeFileSync(path.join(project, name), content);
 };
 
-async function start(options: {repository?: boolean} = {}) {
+async function start(
+	options: {repository?: boolean; fake?: 'files' | 'files-timeline'} = {},
+) {
 	work = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'nd-files-')));
 	project = path.join(work, 'project');
 	profile = path.join(work, 'profile');
@@ -69,7 +71,7 @@ async function start(options: {repository?: boolean} = {}) {
 		path.join(root, 'source/main/nanocoder/fixtures/fake-nanocoder.mjs'),
 		fakeCli,
 	);
-	put('.fake-nanocoder', 'files');
+	put('.fake-nanocoder', options.fake ?? 'files');
 	put('.gitignore', 'build/\n');
 	put('README.md', '# demo\n');
 	put('src/a.ts', 'export const a = 1;\n');
@@ -470,6 +472,60 @@ test('SP-08 GIT-05 GIT-04 after a turn the files its tools edited are labelled, 
 	await expect(page.getByText(/the last turn edited 1 file/)).toBeVisible();
 });
 
+test('GIT-09 GIT-10 a touched file shows only the agent lines when Nanocoder offers its snapshots, and every change on request', async () => {
+	await start({fake: 'files-timeline'});
+	writeFileSync(
+		path.join(project, 'src/a.ts'),
+		'export const a = 1;\nuser edit\n',
+	);
+	await filesButton().click();
+	await page.getByRole('tab', {name: 'review'}).click();
+	await send('please edit src/a.ts now');
+	const list = page.getByRole('list', {name: 'changed files'});
+	await list.getByRole('button', {name: /src\/a\.ts/}).click();
+	const agent = page.getByRole('listbox', {
+		name: /agent changes in src\/a\.ts/,
+	});
+	await expect(
+		agent.getByRole('option', {name: /added line 3: agent edit/}),
+	).toBeVisible();
+	await expect(agent.getByRole('option', {name: /added line 2/})).toHaveCount(
+		0,
+	);
+	await page.getByRole('button', {name: 'every change'}).click();
+	const all = page.getByRole('listbox', {
+		name: /unstaged changes in src\/a\.ts/,
+	});
+	await expect(
+		all.getByRole('option', {name: /added line 2: user edit/}),
+	).toBeVisible();
+	await page.getByRole('button', {name: 'agent changes'}).click();
+	await expect(agent).toBeVisible();
+});
+
+test('GIT-10 without the snapshot method the review shows every change and still labels the file', async () => {
+	await start({fake: 'files'});
+	writeFileSync(
+		path.join(project, 'src/a.ts'),
+		'export const a = 1;\nuser edit\n',
+	);
+	await filesButton().click();
+	await page.getByRole('tab', {name: 'review'}).click();
+	await send('please edit src/a.ts now');
+	const list = page.getByRole('list', {name: 'changed files'});
+	await list.getByRole('button', {name: /src\/a\.ts/}).click();
+	await expect(page.getByRole('button', {name: 'every change'})).toHaveCount(0);
+	const all = page.getByRole('listbox', {
+		name: /unstaged changes in src\/a\.ts/,
+	});
+	await expect(
+		all.getByRole('option', {name: /added line 2: user edit/}),
+	).toBeVisible();
+	await expect(
+		page.getByText(/did not confirm the timeline\/read extension/),
+	).toBeVisible();
+});
+
 test('SP-09 GIT-07 CHAT-16 a comment on selected diff lines reaches only the next prompt and is never stored', async () => {
 	await start();
 	await send('please edit src/a.ts now');
@@ -546,14 +602,14 @@ test('GIT-14 the page can only read from Git, so no destructive action is reacha
 	await filesButton().click();
 	await page.getByRole('tab', {name: 'review'}).click();
 	// The proof: the review namespace is the page's only route to Git, and it
-	// has two read methods. Main refuses every other Git subcommand as well
+	// has three read methods. Main refuses every other Git subcommand as well
 	// (source/main/git/run.spec.ts), so a new write method would fail both.
 	const keys = await page.evaluate(() =>
 		Object.keys(
 			(window as unknown as {desktop: {review: object}}).desktop.review,
 		),
 	);
-	expect(keys.sort()).toEqual(['diff', 'status']);
+	expect(keys.sort()).toEqual(['agentDiff', 'diff', 'status']);
 	// A smoke check only, not proof: no control is labelled with an obvious write verb.
 	const labels = (await page.getByRole('button').allInnerTexts())
 		.join('\n')

@@ -3,10 +3,12 @@ import {
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	realpathSync,
 	renameSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -617,4 +619,70 @@ test('GIT-06 two reads of the same project at once share one run', async t => {
 	]);
 	t.is(one, two);
 	t.is(statusRuns, 1);
+});
+
+test('GIT-09 compare shows only the lines that differ from the before-image, with project paths in the headers', async t => {
+	const f = fixture(t);
+	f.write('notes.txt', 'agent one\nuser line\n');
+	const result = await f.service.compare(
+		'project',
+		'notes.txt',
+		'user edit\nuser line\n',
+	);
+	t.is(result.kind, 'text');
+	if (result.kind !== 'text') return;
+	t.is(result.added, 1);
+	t.is(result.removed, 1);
+	t.true(result.diff.startsWith('diff --git a/notes.txt b/notes.txt\n'));
+	t.true(result.diff.includes('\n--- a/notes.txt\n+++ b/notes.txt\n'));
+	t.false(result.diff.includes('index '));
+	t.false(result.diff.includes(f.root));
+	t.true(result.diff.includes('-user edit\n+agent one\n user line\n'));
+});
+
+test('GIT-09 compare treats a missing before-image as a new file and a missing file as deleted', async t => {
+	const f = fixture(t);
+	f.write('fresh.txt', 'new\n');
+	const created = await f.service.compare('project', 'fresh.txt', null);
+	t.like(created, {kind: 'text', added: 1, removed: 0});
+	if (created.kind === 'text')
+		t.true(created.diff.includes('--- /dev/null\n+++ b/fresh.txt\n'));
+	const deleted = await f.service.compare('project', 'gone.txt', 'was here\n');
+	t.like(deleted, {kind: 'text', added: 0, removed: 1});
+	if (deleted.kind === 'text')
+		t.true(deleted.diff.includes('--- a/gone.txt\n+++ /dev/null\n'));
+});
+
+test('GIT-09 compare reports no net change, binary content and an oversized before-image', async t => {
+	const f = fixture(t);
+	f.write('same.txt', 'same\n');
+	t.like(await f.service.compare('project', 'same.txt', 'same\n'), {
+		kind: 'none',
+	});
+	f.write('bin.dat', Buffer.from([0, 1, 2, 3]));
+	t.like(await f.service.compare('project', 'bin.dat', 'text\n'), {
+		kind: 'binary',
+	});
+	f.write('big.txt', 'x\n');
+	t.like(await f.service.compare('project', 'big.txt', 'y'.repeat(1_048_577)), {
+		kind: 'too-large',
+	});
+});
+
+test('SEC-03 GIT-09 compare refuses paths that leave the project, reach .git or are linked outside', async t => {
+	const f = fixture(t);
+	writeFileSync(path.join(f.base, 'outside.txt'), 'secret\n');
+	symlinkSync(path.join(f.base, 'outside.txt'), path.join(f.root, 'link.txt'));
+	for (const input of ['../outside.txt', '.git/config', 'link.txt', ''])
+		await t.throwsAsync(f.service.compare('project', input, 'x\n'), {
+			instanceOf: IpcFailure,
+		});
+});
+
+test('GIT-14 compare never writes the before-image to disk', async t => {
+	const f = fixture(t);
+	f.write('notes.txt', 'now\n');
+	const before = readdirSync(f.root).sort();
+	await f.service.compare('project', 'notes.txt', 'before\n');
+	t.deepEqual(readdirSync(f.root).sort(), before);
 });

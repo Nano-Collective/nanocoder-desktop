@@ -29,6 +29,8 @@ export interface ExtensionProbes {
 	rename: boolean;
 	timeline: boolean;
 	pin: boolean;
+	// `_nanocoder/timeline/read`, the before-image of a file in a checkpoint (GIT-09).
+	read: boolean;
 }
 
 function limit(value: unknown, max: number): number | null {
@@ -97,8 +99,8 @@ export function capabilityGates(
 				'Nanocoder did not confirm the timeline/list extension with a safe probe; tool locations remain available.',
 			),
 			agentChanges: gate(
-				false,
-				'Nanocoder does not yet offer a verified snapshot-read method.',
+				probes.read && probes.timeline,
+				'Nanocoder did not confirm the timeline/read extension with a safe probe; the review shows every change in a file.',
 			),
 			browserControl: browserControlGate(agent, browserServer, gate),
 			nanocoderBrowserOff: gate(

@@ -1,5 +1,6 @@
 import type {FilesApi} from '@/shared/files';
 import type {
+	AgentDiff,
 	ReviewApi,
 	ReviewDiff,
 	ReviewEntry,
@@ -8,21 +9,29 @@ import type {
 
 export type ReviewFilter = 'all' | 'staged' | 'unstaged' | 'touched';
 
+// Whether a touched file opens as only the agent's lines or as everything Git sees (GIT-09).
+export type ReviewView = 'agent' | 'all';
+
 export interface ReviewState {
 	projectId: string | null;
 	status: 'idle' | 'loading' | 'ready' | 'error';
 	value: ReviewStatus | null;
 	error: string | null;
 	filter: ReviewFilter;
+	view: ReviewView;
 	selected: {path: string; staged: boolean} | null;
 	diff: {
 		status: 'loading' | 'ready' | 'error';
 		value: ReviewDiff | null;
 		error: string | null;
+		// Only the agent's lines, as Nanocoder's snapshot shows them.
+		source: 'agent' | 'git';
+		// Why the agent's lines are not shown for a file the last turn touched (GIT-10).
+		note: string | null;
 	} | null;
 }
 
-export type ReviewBridge = Pick<ReviewApi, 'status' | 'diff'> &
+export type ReviewBridge = Pick<ReviewApi, 'status' | 'diff' | 'agentDiff'> &
 	Pick<FilesApi, 'onEvent'>;
 
 export const emptyReviewState = (projectId: string | null): ReviewState => ({
@@ -31,6 +40,7 @@ export const emptyReviewState = (projectId: string | null): ReviewState => ({
 	value: null,
 	error: null,
 	filter: 'all',
+	view: 'agent',
 	selected: null,
 	diff: null,
 });
@@ -63,6 +73,12 @@ export function defaultSide(entry: ReviewEntry): boolean {
 		!entry.untracked &&
 		!entry.conflicted
 	);
+}
+
+function fromAgent(diff: AgentDiff): ReviewDiff {
+	return diff.kind === 'text'
+		? {...diff, staged: false}
+		: {path: diff.path, staged: false, kind: 'none', reason: diff.reason};
 }
 
 export class ReviewController {
@@ -104,6 +120,13 @@ export class ReviewController {
 
 	setFilter(filter: ReviewFilter): void {
 		this.update({...this.state, filter});
+	}
+
+	setView(view: ReviewView): void {
+		if (view === this.state.view) return;
+		this.update({...this.state, view});
+		const selected = this.state.selected;
+		if (selected) void this.show(selected.path, selected.staged);
 	}
 
 	// Changes that arrive while a read is running are folded into one more read.
@@ -152,15 +175,49 @@ export class ReviewController {
 		const epoch = this.epoch;
 		const token = ++this.diffToken;
 		const reload = this.state.selected?.path === path;
+		const previous = reload ? this.state.diff : null;
 		this.update({
 			...this.state,
 			selected: {path, staged},
 			diff: {
 				status: 'loading',
-				value: reload ? (this.state.diff?.value ?? null) : null,
+				value: previous?.value ?? null,
 				error: null,
+				source: previous?.source ?? 'git',
+				note: previous?.note ?? null,
 			},
 		});
+		const current = this.state.value?.available ? this.state.value : null;
+		const touched =
+			current?.entries.find(entry => entry.path === path)?.touched ?? false;
+		let note: string | null = null;
+		if (this.state.view === 'agent' && touched && current) {
+			if (current.agentChanges.enabled) {
+				const agent = await this.bridge
+					.agentDiff({projectId, path})
+					.catch(() => null);
+				if (this.disposed || epoch !== this.epoch || token !== this.diffToken)
+					return;
+				if (agent?.ok && agent.value.kind !== 'fallback') {
+					this.update({
+						...this.state,
+						diff: {
+							status: 'ready',
+							value: fromAgent(agent.value),
+							error: null,
+							source: 'agent',
+							note: null,
+						},
+					});
+					return;
+				}
+				note = agent?.ok
+					? agent.value.kind === 'fallback'
+						? agent.value.reason
+						: null
+					: "The agent's own lines could not be read.";
+			} else note = current.agentChanges.reason;
+		}
 		const result = await this.bridge
 			.diff({projectId, path, staged})
 			.catch(() => null);
@@ -169,11 +226,19 @@ export class ReviewController {
 		this.update({
 			...this.state,
 			diff: result?.ok
-				? {status: 'ready', value: result.value, error: null}
+				? {
+						status: 'ready',
+						value: result.value,
+						error: null,
+						source: 'git',
+						note,
+					}
 				: {
 						status: 'error',
 						value: null,
 						error: result ? result.error.message : 'The diff could not be read',
+						source: 'git',
+						note,
 					},
 		});
 	}
