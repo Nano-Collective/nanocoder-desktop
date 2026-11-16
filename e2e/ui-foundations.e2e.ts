@@ -158,7 +158,7 @@ test('both themes apply and keep the technical gate readable at all three widths
 		}, theme);
 		await expect(page.locator('html')).toHaveCSS(
 			'background-color',
-			theme === 'light' ? 'rgb(245, 246, 251)' : 'rgb(22, 22, 22)',
+			theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(22, 22, 22)',
 		);
 		await expect(page.locator('html')).toHaveCSS('color-scheme', theme);
 		for (const width of [1240, 1020, 840]) {
@@ -436,7 +436,7 @@ test('running and failed badge backgrounds and failure typography follow their c
 					page.locator(`#token-fixture .ui-badge--${state}`),
 				).toHaveCSS(
 					'background-color',
-					theme === 'light' ? 'rgb(235, 237, 245)' : 'rgb(22, 22, 22)',
+					theme === 'light' ? 'rgb(250, 250, 250)' : 'rgb(22, 22, 22)',
 				);
 			}
 			await expect(page.locator('#token-fixture .ui-card--failure')).toHaveCSS(
@@ -556,7 +556,7 @@ test('a child exit shows a failed turn without a stale ACP readiness claim in ei
 		await expect(stateLabel).toContainText('failed');
 		await expect(selected).toHaveCSS(
 			'background-color',
-			theme === 'dark' ? 'rgb(32, 42, 59)' : 'rgb(220, 230, 250)',
+			theme === 'dark' ? 'rgb(32, 42, 59)' : 'rgb(230, 233, 253)',
 		);
 		await expect(selected).toHaveCSS('border-left-color', 'rgba(0, 0, 0, 0)');
 		const rendered = await stateLabel.evaluate(element => {
