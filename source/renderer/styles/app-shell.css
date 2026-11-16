@@ -282,6 +282,15 @@
 	.shell-title-bar {
 		padding-inline: 16px;
 	}
+	.shell-header-actions {
+		gap: 0;
+	}
+	.shell-header-actions > .ui-button {
+		padding-inline: 5px;
+	}
+	.shell-header-actions > .theme-toggle {
+		width: 30px;
+	}
 	/* the reference reading column is inset 27px, the composer 24px */
 	.shell-stream-scroll {
 		padding-inline: 27px;
