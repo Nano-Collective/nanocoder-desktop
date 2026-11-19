@@ -29,10 +29,11 @@ run. Raw output is in [performance.log](performance.log).
 
 - `pnpm build`: pass in Instabox.
 - `xvfb-run -a pnpm exec playwright test e2e/files.e2e.ts e2e/accessibility.e2e.ts --workers=1`: 31 passed.
+- Final combined built-app rerun including the performance test: 32 passed.
 - `xvfb-run -a pnpm exec playwright test e2e/review-performance.e2e.ts --repeat-each=5 --workers=1`: 5 passed.
 - Focused renderer tests: 26 passed.
 - Focused ACP/thread isolation rerun: 259 passed.
-- `pnpm test:format`, `pnpm test:types`, `pnpm test:lint`, `pnpm test:knip` and `pnpm test:audit`: pass when run independently.
+- `pnpm test:format`, `pnpm test:types`, `pnpm test:lint`, `pnpm test:knip` and `pnpm test:audit`: pass when run independently. The audit command's high-severity gate passed; its informational npm audit output still reports two moderate and five low bundled-Nanocoder dependency advisories.
 - The full gate is blocked by four existing runtime-check tests that call
   `chmod` on sandbox temporary files and receive `EPERM`; moving `TMPDIR` to
   `/tmp` and `/var/tmp` does not change that restriction. One concurrent
