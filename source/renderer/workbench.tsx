@@ -167,7 +167,7 @@ export function Workbench({
 				id="workbench-panel-review"
 				aria-labelledby="workbench-tab-review"
 				hidden={tab !== 'review'}
-				className="workbench-panel"
+				className="workbench-panel workbench-panel--review"
 			>
 				{tab === 'review' && (
 					<ReviewPanel

@@ -3,7 +3,7 @@
 How each part of the plan is tested, the measurable targets results are judged against, and the cross-platform CI that runs them.
 
 - Status: Draft
-- Last updated: 2026-11-10
+- Last updated: 2026-11-19
 - Drafted by: @akramcodez
 
 ## Conventions
@@ -127,6 +127,8 @@ Suggestion (not discussed): starting budgets, to be confirmed after the first me
 | PERF-09 | Idle memory with one project open and no browser page is recorded every release; a rise of more than 20% blocks the release until explained. | OS process metrics. |
 | PERF-10 | Installer size per platform is recorded every release, as the whitepaper asks ("measured, not defended"). | Release artefact sizes. |
 
+Review virtualisation has a matched built-app benchmark in `e2e/review-performance.e2e.ts`. It uses 2,505 replaced lines, or 5,015 parsed rows before the existing cap, and five fresh runs per version on Instabox Linux x64 with 4 vCPUs and 8 GiB RAM. Median first render fell from 527.1 ms on `main` to 74.4 ms, keyboard scrolling to the capped last row fell from 347.9 ms to 15.7 ms, and mounted rows fell from 5,001 to 24. The fixture, explicit file selection and first-row focus are identical on both versions. Run it with `xvfb-run -a pnpm exec playwright test e2e/review-performance.e2e.ts --repeat-each=5 --workers=1` on headless Linux.
+
 ## Accessibility targets
 
 Phase 1.3 recovery checks live in `supervisor-recovery.spec.ts`, `diagnostics*.spec.ts`, `stderr-security.spec.ts` and `e2e/supervisor-recovery.e2e.ts`. A fake clock advances backoff and idle deadlines without sleeps. Refusal cases cover initialisation/trust/version failures, stale roots and handles, late approvals, resume/mode failures, cancelled timers, foreign or expired captures and renderer-supplied export lines or paths. Built-main tests use temporary profiles and fake projects only. Recovery QA covers keyboard retry and diagnostics focus at 1240px, 1020px and 840px in both themes. The existing failure-banner error-on-elevated contrast gap remains recorded in `DESIGN.md`; it is not a new token choice.
@@ -140,7 +142,7 @@ Behaviour only. Visual design: see [`DESIGN.md`](../DESIGN.md). The criteria nam
 | A11Y-03 | Every control exposes a name, role and state to assistive technology (WCAG 4.1.2). | Automated accessibility-tree assertions in end-to-end tests. |
 | A11Y-04 | Turn started, completed, failed, cancelled and "approval needed" are announced without moving focus (WCAG 4.1.3). | Screen-reader check. |
 | A11Y-05 | Streaming text is announced at a polite rate, not chunk by chunk. | Screen-reader check during a long turn. |
-| A11Y-06 | Each release, the main screen reader on each platform completes `SP-03`, `SP-04`, `SP-07` (file preview) and `SP-08` (diffs), since CodeMirror renders only the visible part of a document: VoiceOver on macOS, NVDA on Windows, Orca on Linux. Unverified: how well Orca works with Electron apps; the first run will show. | Manual protocol recorded in the release pull request. |
+| A11Y-06 | Each release, the main screen reader on each platform completes `SP-03`, `SP-04`, `SP-07` (file preview) and `SP-08` (diffs), since CodeMirror renders only the visible part of a document: VoiceOver on macOS, NVDA on Windows, Orca on Linux. Orca 48.1 completed the virtualised-review `SP-08` with native input and recorded speech on Debian 13; the other items and platforms remain unverified. | Manual protocol recorded in the release pull request. |
 
 ## Cross-platform CI
 
