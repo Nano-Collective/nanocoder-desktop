@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {Icon} from '@/renderer/icons';
 import {ResizeHandle, usePanelSizes} from '@/renderer/resize-handle';
+import {initialFollowState, reduceFollow} from '@/renderer/transcript-follow';
 import {Button} from '@/renderer/ui';
 
 const defaults = {rail: 260, bottom: 360};
@@ -37,6 +38,8 @@ export function AppShell({
 	palette,
 	workbench,
 	bottomPanel,
+	followKey,
+	followContent,
 	children,
 }: {
 	title: React.ReactNode;
@@ -59,9 +62,36 @@ export function AppShell({
 	palette?: React.ReactNode;
 	workbench?: {title: string; children: React.ReactNode; onClose(): void};
 	bottomPanel?: React.ReactNode;
+	followKey?: string;
+	followContent?: unknown;
 	children: React.ReactNode;
 }) {
 	const inThread = threadTitle !== undefined;
+	const scroller = React.useRef<HTMLDivElement>(null);
+	const latestButton = React.useRef<HTMLButtonElement>(null);
+	const [follow, dispatchFollow] = React.useReducer(
+		reduceFollow,
+		followKey ?? '',
+		initialFollowState,
+	);
+	React.useLayoutEffect(() => {
+		if (followKey !== undefined && follow.key !== followKey)
+			dispatchFollow({type: 'thread', key: followKey});
+	}, [follow.key, followKey]);
+	React.useLayoutEffect(() => {
+		const element = scroller.current;
+		if (
+			!element ||
+			followKey === undefined ||
+			followContent === undefined ||
+			follow.key !== followKey ||
+			!follow.following
+		)
+			return;
+		element.scrollTop = element.scrollHeight;
+	}, [follow.following, follow.key, followContent, followKey]);
+	const showLatest =
+		followKey !== undefined && follow.key === followKey && !follow.following;
 	const [sizes, setSize] = usePanelSizes();
 	const viewport = useViewport();
 	const rail = sizes.rail ?? defaults.rail;
@@ -142,10 +172,23 @@ export function AppShell({
 						data-composer-placement={composerPlacement}
 					>
 						<div
+							ref={scroller}
 							className="shell-stream-scroll"
 							role="region"
 							aria-label="conversation"
 							tabIndex={0}
+							onScroll={event => {
+								if (followKey === undefined || follow.key !== followKey) return;
+								const element = event.currentTarget;
+								dispatchFollow({
+									type: 'scroll',
+									atBottom:
+										element.scrollHeight -
+											element.scrollTop -
+											element.clientHeight <=
+										2,
+								});
+							}}
 						>
 							{streamTools && (
 								<div
@@ -156,6 +199,27 @@ export function AppShell({
 								</div>
 							)}
 							<div className="technical-gate">{children}</div>
+							{showLatest && (
+								<Button
+									ref={latestButton}
+									className="shell-latest"
+									aria-label="latest"
+									onMouseDown={event => event.preventDefault()}
+									onClick={() => {
+										const element = scroller.current;
+										const keyboard =
+											document.activeElement === latestButton.current;
+										dispatchFollow({type: 'latest'});
+										if (element) {
+											element.scrollTop = element.scrollHeight;
+											if (keyboard) element.focus({preventScroll: true});
+										}
+									}}
+								>
+									<Icon name="latest" size={14} />
+									latest
+								</Button>
+							)}
 						</div>
 						<div className="shell-conversation-footer">
 							{approvalShelf && (

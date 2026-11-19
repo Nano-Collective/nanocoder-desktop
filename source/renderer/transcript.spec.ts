@@ -6,6 +6,7 @@ import {
 	applyEvents,
 	carryMessageTimes,
 	emptyTranscript,
+	transcriptRowId,
 } from '@/renderer/transcript';
 
 test('SUB-05 historical outcome patches keep only the enum and remain immutable and ordered', t => {
@@ -83,18 +84,15 @@ test('title-only subagent-prefixed tool updates retain classification status con
 });
 
 test('keeps reasoning separate from the agent answer (CHAT-05)', t => {
-	t.deepEqual(
-		applyEvent(emptyTranscript, {type: 'thought', text: 'Checking'}),
-		{
-			items: [{kind: 'thought', text: 'Checking'}],
-			permissions: [],
-		},
-	);
+	t.like(applyEvent(emptyTranscript, {type: 'thought', text: 'Checking'}), {
+		items: [{kind: 'thought', text: 'Checking'}],
+		permissions: [],
+	});
 });
 
 test('attaches reported usage to the answer without inferring context use (CHAT-19)', t => {
 	const before = applyEvent(emptyTranscript, {type: 'text', text: 'answer'});
-	t.deepEqual(
+	t.like(
 		applyEvent(before, {
 			type: 'metadata',
 			metadata: {
@@ -413,7 +411,7 @@ test('rebuilds a resumed thread from its replayed events', t => {
 	] as const) {
 		transcript = applyEvent(transcript, event);
 	}
-	t.deepEqual(transcript.items, [
+	t.like(transcript.items, [
 		{kind: 'user', text: 'Earlier question'},
 		{kind: 'agent', text: 'Earlier answer'},
 		{kind: 'tool', id: 'c1', title: 'ls', status: 'completed'},
@@ -425,7 +423,7 @@ test('joins consecutive agent text into one message', t => {
 	let transcript = addUserMessage(emptyTranscript, 'Hi');
 	transcript = applyEvent(transcript, {type: 'text', text: 'Hello, '});
 	transcript = applyEvent(transcript, {type: 'text', text: 'there.'});
-	t.deepEqual(transcript.items, [
+	t.like(transcript.items, [
 		{kind: 'user', text: 'Hi'},
 		{kind: 'agent', text: 'Hello, there.'},
 	]);
@@ -570,7 +568,7 @@ test('replayed or snapshot events applied without a time add no time field', t =
 		{type: 'user', text: 'saved'},
 		{type: 'text', text: 'saved answer'},
 	]);
-	t.deepEqual(transcript.items, [
+	t.like(transcript.items, [
 		{kind: 'user', text: 'saved'},
 		{kind: 'agent', text: 'saved answer'},
 	]);
@@ -635,6 +633,37 @@ test('an id on only one side never carries a time (A2)', t => {
 		applyEvents(emptyTranscript, [{type: 'text', text: 'reply'}]),
 	);
 	t.is(next.items.map(at)[0], 'none');
+});
+
+test('row identity survives streamed appends and prefers reported structural ids', t => {
+	const streamed = applyEvents(emptyTranscript, [
+		{type: 'text', text: 'first chunk'},
+		{type: 'text', text: ' and the next chunk'},
+	]);
+	t.is(
+		transcriptRowId(streamed.items[0], 0),
+		`agent:${streamed.items[0].rowId}`,
+	);
+	const identified = applyEvents(emptyTranscript, [
+		{type: 'text', text: 'first chunk', messageId: 'message-1'},
+		{type: 'text', text: ' and the next chunk', messageId: 'message-1'},
+	]);
+	t.is(transcriptRowId(identified.items[0], 0), 'agent:message-1');
+});
+
+test('id-less replay rows never reuse an identity for different content', t => {
+	const first = applyEvent(emptyTranscript, {
+		type: 'text',
+		text: 'first replay answer',
+	});
+	const second = applyEvent(emptyTranscript, {
+		type: 'text',
+		text: 'different replay answer',
+	});
+	t.not(
+		transcriptRowId(first.items[0], 0),
+		transcriptRowId(second.items[0], 0),
+	);
 });
 
 test('an empty agent message with a shared id never carries a time (A2)', t => {

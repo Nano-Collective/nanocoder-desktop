@@ -175,6 +175,15 @@
 	min-height: 0;
 }
 
+.shell-latest {
+	position: sticky;
+	z-index: 2;
+	bottom: 8px;
+	width: max-content;
+	margin: -40px 0 8px auto;
+	box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+}
+
 .shell-stream-scroll,
 .shell-conversation-footer {
 	padding-inline: 40px;
