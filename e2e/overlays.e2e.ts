@@ -110,7 +110,7 @@ test('no results remain keyboard safe', async () => {
 	const input = palette.getByRole('combobox');
 	await input.fill('no-matching-action');
 	await expect(
-		palette.getByText('no commands found. try a different action name.'),
+		palette.getByText('no threads or actions found. try a different search.'),
 	).toBeVisible();
 	await expect(input).toHaveAttribute('aria-expanded', 'false');
 	await expect(palette.getByRole('listbox')).toHaveCount(0);

@@ -1,7 +1,7 @@
 # Accessibility review (phase 4.9)
 
 - Status: Draft
-- Last updated: 2026-11-12
+- Last updated: 2026-11-19
 - Drafted by: @akramcodez
 
 The keyboard and assistive technology review of chat, files, review, terminal and browser: what is proved by an automated test, what only a person with a screen reader can prove, and what the review found. The rules are `A11Y-01` to `A11Y-06` in [`testing-strategy.md`](testing-strategy.md#accessibility-targets), with `CHAT-18`, `FILE-11` and `TERM-11` for the areas.
@@ -17,7 +17,7 @@ Test paths start with `e2e/` unless they are under `source/`. The new sweep is `
 | Review | The sweep; the diff keyboard model is unit tested (`diff-parse.spec.ts`, `review-controller.spec.ts`) | The sweep | The sweep (filters, file entries and the comment form are named) |
 | Terminal | "TERM-02/04/06/11 mounted terminal types, escapes, restarts, clears and stops without trapping focus" (`terminal.e2e.ts`). The sweep uses the documented key whenever focus enters the terminal | Focus returns to the "focus your terminal" button after the escape key | The sweep. The new `TERM-11` test checks the escape key is shown on screen and in `aria-keyshortcuts` |
 | Browser | The sweep. The address bar, back, forward, reload and the profile picker are native controls | The sweep | The sweep (address, go, profile picker, the two settings checkboxes) |
-| Dialogs | Escape closes each | Palette, shortcuts, projects and thread actions return focus to their opener (`accessibility.e2e.ts`, `cross-dialog-focus.e2e.ts`, `palette-focus-editing.e2e.ts`) | Each dialog is swept |
+| Dialogs | Escape closes each; palette arrows traverse active threads, archived threads and actions without a trap | Palette, shortcuts, projects and thread actions return focus to their opener (`accessibility.e2e.ts`, `cross-dialog-focus.e2e.ts`, `palette-focus-editing.e2e.ts`); opening a thread returns focus to its composer or conversation region (`palette-threads.e2e.ts`) | The palette combobox exposes one active descendant and each grouped result exposes selected, current-thread and unavailable state (`palette-threads.e2e.ts`) |
 
 `A11Y-04` and `A11Y-05` (announcements, and streaming at a polite rate) are proved for chat by `stream-announcements.e2e.ts` and `stream-announcements.spec.ts`: a clock-injected live region, one persistent polite node, no focus move, failure and cancellation distinct. They are not proved for what a real screen reader says, which is the manual protocol below.
 
@@ -35,6 +35,7 @@ Each check was shown to fail when it should. The sweep has failing examples (an 
 
 - **`A11Y-04` and `A11Y-05` as heard.** The tests prove what is sent to the live region and when, not that VoiceOver, NVDA or Orca read it at a sensible pace.
 - **`A11Y-06`.** The screen reader on each platform completing `SP-03`, `SP-04`, `SP-07` and `SP-08`, including reading a file or a diff past the first screen, since CodeMirror renders only the visible part. The protocol is in [`screen-reader-protocol.md`](screen-reader-protocol.md). No run has been done, and none is claimed here.
+- **Grouped palette results as heard.** The browser tests prove the combobox, listbox groups, selected result and focus destinations. A manual screen-reader pass should confirm that the active-thread, archived-thread and action headings are announced naturally, and that the current-thread and unavailable annotations are understandable without relying on colour.
 - **Orca with Electron** is the open question the testing strategy already names. The first Linux run will show.
 
 ## Not covered
