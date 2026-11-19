@@ -282,6 +282,20 @@ test('GIT-06 a refresh clears a selected side that disappeared from the index', 
 	t.is(f.controller.getState().diff, null);
 });
 
+test('GIT-05 a refresh clears a selection that is no longer touched', async t => {
+	const f = fixture();
+	f.set(ok(status([entry('a.ts', {unstaged: 'modified', touched: true})])));
+	f.controller.select('p');
+	await f.flush();
+	await f.controller.show('a.ts', false);
+	f.controller.setFilter('touched');
+	f.set(ok(status([entry('a.ts', {unstaged: 'modified'})])));
+	await f.controller.refresh();
+	await f.flush();
+	t.is(f.controller.getState().selected, null);
+	t.is(f.controller.getState().diff, null);
+});
+
 test('GIT-04 showing a file reads that side only, and a late diff for an earlier file is dropped', async t => {
 	const f = fixture();
 	f.controller.select('p');

@@ -92,6 +92,7 @@ function selectionIsVisible(
 		return false;
 	if (filter === 'staged') return selected.staged;
 	if (filter === 'unstaged') return !selected.staged;
+	if (filter === 'touched') return entry.touched;
 	return true;
 }
 
