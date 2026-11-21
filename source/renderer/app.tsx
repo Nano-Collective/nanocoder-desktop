@@ -53,7 +53,11 @@ import {
 import {TerminalPanel} from '@/renderer/terminal-panel';
 import {threadComposerState} from '@/renderer/thread-composer-state';
 import {type ThreadDialogData, ThreadDialogs} from '@/renderer/thread-dialogs';
-import {importPalette, threadPalette} from '@/renderer/thread-palette';
+import {
+	importPalette,
+	threadPalette,
+	threadSearchPalette,
+} from '@/renderer/thread-palette';
 import {ThreadRail} from '@/renderer/thread-rail';
 import {
 	ThreadRecoveryNotice,
@@ -257,6 +261,11 @@ export function App() {
 	const retryScope = useRef<string | null>(null);
 	const retrying = useRef(false);
 	const [overlayOpen, setOverlayOpen] = useState(false);
+	const paletteFocus = useRef<{
+		projectId: string | null;
+		threadId: string;
+		archived: boolean;
+	} | null>(null);
 	const overlays = useRef<OverlayHandle>(null);
 	// What is happening in other projects, kept apart from the one in view (CHAT-22).
 	const activity = useProjectActivity(id => void projectControls.onOpen(id));
@@ -319,6 +328,24 @@ export function App() {
 	}, [sending, cancellation]);
 
 	const scopeKey = `${projectId ?? ''}\n${workspace.activeThreadId ?? ''}`;
+	useEffect(() => {
+		const request = paletteFocus.current;
+		if (
+			!request ||
+			overlayOpen ||
+			request.projectId !== projectId ||
+			request.threadId !== workspace.activeThreadId
+		)
+			return;
+		const target =
+			!request.archived && editable && transcript.permissions.length === 0
+				? composerInput.current
+				: document.querySelector<HTMLElement>('.shell-stream-scroll');
+		if (!target || (target instanceof HTMLTextAreaElement && target.disabled))
+			return;
+		target.focus();
+		if (document.activeElement === target) paletteFocus.current = null;
+	});
 	useEffect(() => {
 		if (!retryFocus.current) return;
 		const composer = composerInput.current;
@@ -484,6 +511,29 @@ export function App() {
 		)?.id ??
 		null;
 	const newShortcut = `${commandModifier(navigator.platform)}N`;
+	const openThread = (id: string) => {
+		if (
+			runningThreadId &&
+			id !== runningThreadId &&
+			id !== workspace.activeThreadId
+		)
+			openOverlay({kind: 'other-thread', threadId: runningThreadId});
+		setImportFor(null);
+		return controls.open(id);
+	};
+	const openPaletteThread = (id: string) => {
+		const target = workspace.threads.find(row => row.id === id);
+		if (!target) return;
+		paletteFocus.current = {
+			projectId,
+			threadId: id,
+			archived: target.archiveState === 'archived',
+		};
+		void openThread(id).then(opened => {
+			if (!opened && paletteFocus.current?.threadId === id)
+				paletteFocus.current = null;
+		});
+	};
 	const onNew = () => {
 		setImportFor(null);
 		openOverlay({kind: 'new-thread'});
@@ -677,6 +727,13 @@ export function App() {
 					<ThreadDialogs request={request} data={threadDialogData} api={api} />
 				)
 			}
+			threads={threadSearchPalette({
+				projectId,
+				threads: workspace.threads,
+				activeThreadId: workspace.activeThreadId,
+				pending,
+				onOpen: openPaletteThread,
+			})}
 			actions={[
 				...threadPalette({
 					projectId,
@@ -941,17 +998,7 @@ export function App() {
 							newThreadShortcut={newShortcut}
 							onNew={onNew}
 							onOpen={id => {
-								if (
-									runningThreadId &&
-									id !== runningThreadId &&
-									id !== workspace.activeThreadId
-								)
-									openOverlay({
-										kind: 'other-thread',
-										threadId: runningThreadId,
-									});
-								setImportFor(null);
-								void controls.open(id);
+								void openThread(id);
 							}}
 							onOpenArchives={opener => openDialog('archives', opener)}
 							onOpenImport={openImportPage}

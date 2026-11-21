@@ -18,13 +18,15 @@ import {
 	type DialogApi,
 	type DialogRequest,
 	dialogLabel,
-	filterActions,
+	filterPalette,
+	flatPaletteResults,
 	focusReturn,
 	keyHint,
 	moveSelection,
 	type OverlayRequest,
 	overlayRules,
 	type PaletteAction,
+	type PaletteThread,
 	runAction,
 	type Toast,
 	toastQueue,
@@ -127,6 +129,7 @@ function ShortcutRow({label, keys}: {label: string; keys: React.ReactNode}) {
 export function OverlayProvider({
 	ref,
 	actions,
+	threads = [],
 	pendingApprovalCount = 0,
 	canClose = () => true,
 	onClosed,
@@ -136,6 +139,7 @@ export function OverlayProvider({
 }: {
 	ref?: Ref<OverlayHandle>;
 	actions: PaletteAction[];
+	threads?: PaletteThread[];
 	pendingApprovalCount?: number;
 	// A dismissal or replacement is refused when this returns false; the dialog stays open.
 	canClose?(request: OverlayRequest): boolean;
@@ -376,7 +380,11 @@ export function OverlayProvider({
 			run: () => open('shortcuts'),
 		},
 	];
-	const filtered = filterActions(commands, query);
+	const groups = filterPalette(commands, threads, query);
+	const filtered = flatPaletteResults(groups);
+	const positions = new Map(
+		filtered.map((result, index) => [result.id, index]),
+	);
 	const index = moveSelection(selected, 0, filtered.length);
 	const selectedId = filtered[index]?.id;
 	useLayoutEffect(() => {
@@ -452,7 +460,7 @@ export function OverlayProvider({
 										: undefined
 								}
 								value={query}
-								placeholder="find an action…"
+								placeholder="find a thread or action…"
 								onChange={event => {
 									setQuery(event.target.value);
 									setSelected(0);
@@ -486,39 +494,68 @@ export function OverlayProvider({
 								aria-label="commands"
 								className="palette-results"
 							>
-								{filtered.map((action, position) => (
+								{groups.map(group => (
 									<div
-										key={action.id}
-										id={`palette-option-${action.id}`}
-										role="option"
-										tabIndex={-1}
-										aria-selected={position === index}
-										aria-disabled={!!action.disabledReason}
-										className="palette-option"
-										onPointerMove={() => setSelected(position)}
-										onMouseDown={event => event.preventDefault()}
-										onClick={() => execute(action)}
-										onKeyDown={event => {
-											if (event.key === 'Enter') execute(action);
-										}}
+										key={group.id}
+										role={query.trim() ? 'group' : undefined}
+										aria-label={query.trim() ? group.label : undefined}
+										className="palette-group"
 									>
-										<span aria-hidden="true">{action.glyph}</span>
-										<span className="palette-label">
-											{action.label}
-											{action.disabledReason && (
-												<span className="palette-reason">
-													{' '}
-													· unavailable: {action.disabledReason}
-												</span>
-											)}
-										</span>
-										{action.shortcut && <kbd>{action.shortcut}</kbd>}
+										{query.trim() && (
+											<h3 className="palette-group-heading">{group.label}</h3>
+										)}
+										{group.results.map(result => {
+											const position = positions.get(result.id) ?? 0;
+											return (
+												<div
+													key={result.id}
+													id={`palette-option-${result.id}`}
+													role="option"
+													tabIndex={-1}
+													aria-selected={position === index}
+													aria-current={
+														result.kind === 'thread' && result.current
+															? 'true'
+															: undefined
+													}
+													aria-disabled={!!result.disabledReason}
+													className="palette-option"
+													data-result-kind={result.kind}
+													onPointerMove={() => setSelected(position)}
+													onMouseDown={event => event.preventDefault()}
+													onClick={() => execute(result)}
+													onKeyDown={event => {
+														if (event.key === 'Enter') execute(result);
+													}}
+												>
+													<span aria-hidden="true">{result.glyph}</span>
+													<span className="palette-label">
+														{result.label}
+														{result.kind === 'thread' && result.current && (
+															<span className="palette-current">
+																{' '}
+																· current thread
+															</span>
+														)}
+														{result.disabledReason && (
+															<span className="palette-reason">
+																{' '}
+																· unavailable: {result.disabledReason}
+															</span>
+														)}
+													</span>
+													{result.shortcut && <kbd>{result.shortcut}</kbd>}
+												</div>
+											);
+										})}
 									</div>
 								))}
 							</div>
 						) : (
 							<p className="palette-empty" role="status">
-								no commands found. try a different action name.
+								{query.trim()
+									? 'no threads or actions found. try a different search.'
+									: 'no commands found. try a different action name.'}
 							</p>
 						)}
 						<p className="overlay-hint">
