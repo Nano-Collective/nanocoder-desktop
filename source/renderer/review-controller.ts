@@ -75,6 +75,27 @@ export function defaultSide(entry: ReviewEntry): boolean {
 	);
 }
 
+function selectionIsVisible(
+	selected: {path: string; staged: boolean},
+	entries: readonly ReviewEntry[],
+	filter: ReviewFilter,
+): boolean {
+	const entry = entries.find(item => item.path === selected.path);
+	if (!entry) return false;
+	if (selected.staged && entry.staged === 'none') return false;
+	if (
+		!selected.staged &&
+		entry.unstaged === 'none' &&
+		!entry.untracked &&
+		!entry.conflicted
+	)
+		return false;
+	if (filter === 'staged') return selected.staged;
+	if (filter === 'unstaged') return !selected.staged;
+	if (filter === 'touched') return entry.touched;
+	return true;
+}
+
 function fromAgent(diff: AgentDiff): ReviewDiff {
 	return diff.kind === 'text'
 		? {...diff, staged: false}
@@ -119,6 +140,19 @@ export class ReviewController {
 	}
 
 	setFilter(filter: ReviewFilter): void {
+		const selected = this.state.selected;
+		if (
+			selected &&
+			!selectionIsVisible(
+				selected,
+				visibleEntries(this.state.value, filter),
+				filter,
+			)
+		) {
+			++this.diffToken;
+			this.update({...this.state, filter, selected: null, diff: null});
+			return;
+		}
 		this.update({...this.state, filter});
 	}
 
@@ -145,6 +179,7 @@ export class ReviewController {
 			status: this.state.value ? 'ready' : 'loading',
 			error: null,
 		});
+		const opening = this.state.value === null;
 		const result = await this.bridge.status({projectId}).catch(() => null);
 		if (this.disposed || epoch !== this.epoch) return;
 		this.running = false;
@@ -160,8 +195,17 @@ export class ReviewController {
 						: 'The repository could not be read',
 			});
 			const selected = this.state.selected;
-			if (selected && result?.ok)
-				void this.show(selected.path, selected.staged);
+			if (result?.ok) {
+				const entries = visibleEntries(this.state.value, this.state.filter);
+				if (selected) {
+					if (selectionIsVisible(selected, entries, this.state.filter))
+						void this.show(selected.path, selected.staged);
+					else this.clearSelection();
+				} else if (opening && entries.length === 1) {
+					const only = entries[0];
+					void this.show(only.path, defaultSide(only));
+				}
+			}
 		}
 		if (this.dirty) {
 			this.dirty = false;

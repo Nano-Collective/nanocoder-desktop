@@ -3,7 +3,7 @@
 How Milestone 2 is built and where it stops. The requirements are in [`features/file-browser.md`](features/file-browser.md) and [`features/git-review.md`](features/git-review.md); the path rules are in [`security.md`](security.md#path-canonicalisation).
 
 - Status: Implemented, awaiting Windows and Linux CI evidence
-- Last updated: 2026-11-03
+- Last updated: 2026-11-19
 
 Everything here is read-only. The desktop never edits, stages, discards or commits (`GIT-14`, `DEC-24`).
 
@@ -35,7 +35,7 @@ Each is one constant in `source/main/files/limits.ts` or `source/main/git/git-se
 | Changed files listed | 5,000 | `N more changed files not shown` |
 | Status time | 5 seconds | `LIMIT` with a retry |
 | Diff size | 1 MiB | `too-large` with `open in editor` |
-| Diff rows drawn | 5,000 | The rest is left to an editor |
+| Diff rows parsed and addressable | 5,000 | The rest is left to an editor; only the viewport and eight rows of overscan on each side are mounted |
 | Attachments per message | 20 | The renderer ignores further ones and the prompt schema in `source/main/ipc/workspace.ts` refuses more |
 
 ## Browsing and preview
@@ -79,7 +79,11 @@ An attached file is checked through the file service. If Nanocoder advertises em
 - A turn is bracketed by `HEAD` before and after, taken in main around each prompt. Commits made meanwhile (Nanocoder's `autoCommit`) are listed.
 - A file is labelled touched only when a tool call of kind `edit`, `delete` or `move` reports it. Reads and searches are not labels. Files changed by a shell command appear in Git's list but are not labelled, and the panel says so. Where user and agent edited the same file only the full diff is shown (`RISK-08`, `DEC-44`).
 - A prompt that is refused before it starts leaves the earlier labels in place.
-- A comment is made by selecting rows with the pointer (click, Shift+click) or the keyboard (arrows, Shift+arrows, Escape), then adding text. Only lines of change and context can be selected.
+- A sole visible change opens automatically. With multiple changes, refresh and filtering preserve a selection that is still visible and clear one that is not.
+- The file list keeps a bounded share of the panel and the selected diff stays visible beside or below it. Arrow keys, Home and End move through the file list and change the diff without moving DOM focus out of the list.
+- The parser retains the full model up to the 5,000-row cap. `source/renderer/diff-virtual.ts` mounts only the viewport plus eight rows of overscan on each side, with stable full-model keys, row indices, `aria-posinset` and `aria-setsize`. Keyboard navigation and future scroll-to-row callers share one minimal-scroll function. Long lines remain unwrapped and horizontally scrollable.
+- A comment is made by selecting rows with the pointer (click, Shift+click) or the keyboard (arrows, Shift+arrows, Home, End, Escape), then adding text. Only lines of change and context can be selected. Selection and comment coordinates always refer to the capped full model, not the mounted window.
+- `source/renderer/review-interaction.ts` keeps each draft, range and added-comment status by project, canonical path, staged side and agent/all view. Switching files therefore restores that file's state without leaking it into another identity.
 
 ## Open in editor
 
@@ -104,6 +108,13 @@ Local, macOS arm64, Node 22, generated fixtures.
 | `PERF-07` status, 100,001 tracked files | 5 seconds | 170 ms |
 | `PERF-08` diff of about 1 MiB | 1 second | 149 ms |
 
+The review-renderer comparison uses `e2e/review-performance.e2e.ts`, five fresh built-app runs per version on Instabox Linux x64 with 4 vCPUs and 8 GiB RAM. The fake fixture has 2,505 replaced lines, producing 5,015 parsed rows before the 5,000-row cap. Both versions explicitly select the same file, then focus its first removed row and press End.
+
+| Version, median of 5 | First render | Keyboard scroll to capped last row | Mounted rows |
+|---|---:|---:|---:|
+| `main` | 527.1 ms | 347.9 ms | 5,001 |
+| Virtualised review | 74.4 ms | 15.7 ms | 24 |
+
 `PERF-07` and `PERF-08` build a repository of 100,001 files, so they run on request: `NANOCODER_DESKTOP_PERF=1 pnpm exec ava source/main/git/perf.spec.ts --timeout=15m`.
 
 ## Known limits
@@ -111,7 +122,7 @@ Local, macOS arm64, Node 22, generated fixtures.
 - Windows and Linux were not run locally. Their results are the CI jobs on the pull request.
 - Windows and Linux editor launches are not exercised for real: the path and arguments are tested on every platform, but no editor was started on Windows or Linux.
 - A repository file name that is not valid UTF-8 is shown with replacement characters and its diff cannot be read.
-- The review list is capped at 5,000 files and a diff view at 5,000 rows.
-- CodeMirror virtualises long documents, so a screen reader reads only the visible part (`A11Y-06`).
+- The review list is capped at 5,000 files and the diff model at 5,000 rows. The diff keeps stable coordinates across its virtual window, but rows beyond the cap are unavailable in the panel and require the editor.
+- CodeMirror virtualises long documents, so a screen reader reads only the visible part (`A11Y-06`). Review rows use the same visible-window approach with explicit keyboard scrolling; the Linux SP-08 result is recorded in [`accessibility-review.md`](accessibility-review.md).
 - On narrow windows the panel replaces the conversation, as the shell already does for any workbench; attachments stay until the message is sent.
 - The agent changes view is not part of this milestone (`DEC-44`); phase 2.9 adds it later.
