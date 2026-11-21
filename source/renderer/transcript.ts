@@ -13,10 +13,11 @@ export type TranscriptItem = (
 			kind: 'user' | 'agent';
 			text: string;
 			messageId?: string;
+			rowId?: string;
 			// Epoch ms seen live by this renderer; never persisted or estimated.
 			at?: number;
 	  }
-	| {kind: 'thought'; text: string; messageId?: string}
+	| {kind: 'thought'; text: string; messageId?: string; rowId?: string}
 	| {kind: 'turn-metadata'}
 	| {kind: 'failure'; text: string}
 	| {
@@ -100,11 +101,42 @@ export function currentTurnStart(items: readonly TranscriptItem[]): number {
 	return -1;
 }
 
+function fingerprint(text: string): string {
+	let hash = 2166136261;
+	for (let index = 0; index < text.length; index++)
+		hash = Math.imul(hash ^ text.charCodeAt(index), 16777619);
+	return `${(hash >>> 0).toString(36)}-${text.length.toString(36)}`;
+}
+
+function fallbackRowId(kind: string, index: number, text: string): string {
+	return `${kind}:${index}:${fingerprint(text)}`;
+}
+
+export function transcriptRowId(item: TranscriptItem, index: number): string {
+	if ('id' in item && item.id !== null) return `${item.kind}:${item.id}`;
+	if ('messageId' in item && item.messageId)
+		return `${item.kind}:${item.messageId}`;
+	if ('rowId' in item && item.rowId) return `${item.kind}:${item.rowId}`;
+	const text =
+		'text' in item && typeof item.text === 'string'
+			? item.text
+			: 'title' in item && typeof item.title === 'string'
+				? item.title
+				: '';
+	return fallbackRowId(item.kind, index, text);
+}
+
 export function addUserMessage(
 	transcript: Transcript,
 	text: string,
 ): Transcript {
-	return {...transcript, items: [...transcript.items, {kind: 'user', text}]};
+	return {
+		...transcript,
+		items: [
+			...transcript.items,
+			{kind: 'user', text, rowId: fallbackRowId('live', 0, text)},
+		],
+	};
 }
 
 function upsert(
@@ -157,7 +189,9 @@ function applyContent(
 				: {
 						kind,
 						text: event.text,
-						...(event.messageId ? {messageId: event.messageId} : {}),
+						...(event.messageId
+							? {messageId: event.messageId}
+							: {rowId: fallbackRowId('live', items.length, event.text)}),
 						...(at !== undefined && kind !== 'thought' ? {at} : {}),
 					};
 			return {

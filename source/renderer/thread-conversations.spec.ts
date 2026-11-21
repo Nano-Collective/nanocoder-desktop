@@ -232,7 +232,7 @@ test('replay replaces a flushed prefix without duplicate old chunks and retains 
 			]),
 		),
 	);
-	t.deepEqual(conversations.getState().transcript.items, [
+	t.like(conversations.getState().transcript.items, [
 		{kind: 'user', text: 'earlier'},
 		{kind: 'agent', text: 'history from main'},
 		{kind: 'failure', text: 'failed turn'},

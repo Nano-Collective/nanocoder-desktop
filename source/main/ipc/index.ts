@@ -3,6 +3,7 @@ import {homedir} from 'node:os';
 import {
 	app,
 	BrowserWindow,
+	clipboard,
 	dialog,
 	Notification,
 	type OpenDialogOptions,
@@ -32,6 +33,7 @@ import {confirmYolo} from '@/main/controls/yolo-consent';
 import {resolveAttachments} from '@/main/files/attachments';
 import {createFilesRuntime, type FilesRuntime} from '@/main/files/runtime';
 import {registerBrowserHandlers} from '@/main/ipc/browser';
+import {clipboardWriteSchema, writeClipboard} from '@/main/ipc/clipboard';
 import {registerFilesHandlers} from '@/main/ipc/files';
 import {IpcFailure} from '@/main/ipc/handle-request';
 import {registerHandler} from '@/main/ipc/register';
@@ -834,6 +836,12 @@ export function registerIpcHandlers(
 		CHANNELS.getAppInfo,
 		z.strictObject({}),
 		(): AppInfo => ({name: APP_NAME, version: app.getVersion()}),
+		allowedOrigins,
+	);
+	registerHandler(
+		CHANNELS.writeClipboard,
+		clipboardWriteSchema,
+		request => writeClipboard(request, text => clipboard.writeText(text)),
 		allowedOrigins,
 	);
 	registerHandler(

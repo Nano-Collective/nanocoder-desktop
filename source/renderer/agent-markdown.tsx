@@ -1,7 +1,13 @@
 import * as React from 'react';
 import Markdown, {type Components} from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import {copyableCodeText} from '@/renderer/copy-content';
+import {Icon} from '@/renderer/icons';
 import {findLocalUrls} from '@/shared/local-url';
+
+export const CopyContext = React.createContext<
+	((text: string) => void) | undefined
+>(undefined);
 
 export const LocalUrlContext = React.createContext<
 	((url: string) => void) | undefined
@@ -40,8 +46,31 @@ function MarkdownLink({
 	);
 }
 
+function MarkdownPre({children}: {children?: React.ReactNode}) {
+	const copy = React.useContext(CopyContext);
+	const text = copyableCodeText(children);
+	return (
+		<div className="stream-code-block">
+			<pre>{children}</pre>
+			{copy && (
+				<button
+					type="button"
+					className="stream-copy stream-code-copy"
+					aria-label="copy code"
+					title="copy code"
+					onClick={() => copy(text)}
+				>
+					<Icon name="copy" size={14} />
+					copy
+				</button>
+			)}
+		</div>
+	);
+}
+
 const components: Components = {
 	a: MarkdownLink,
+	pre: MarkdownPre,
 	img: ({alt}) => (
 		<span className="stream-resource">
 			[image not loaded: {alt || 'image'}]

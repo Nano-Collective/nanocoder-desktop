@@ -25,6 +25,7 @@ export type IpcResult<T> = {ok: true; value: T} | {ok: false; error: IpcError};
 
 export const CHANNELS = {
 	getAppInfo: 'app:get-info',
+	writeClipboard: 'clipboard:write-text',
 	getNanocoderRuntime: 'nanocoder:get-runtime',
 	connectNanocoder: 'nanocoder:connect',
 	getSettings: 'store:get-settings',

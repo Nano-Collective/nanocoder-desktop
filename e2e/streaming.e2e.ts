@@ -354,6 +354,127 @@ test('100 updates per second keep ordered content and input and scroll response 
 	await expect(page.locator('.gate-message-user')).toHaveCount(1);
 });
 
+test('transcript follows only at the end and copies exact message and fence text', async () => {
+	const input = page.getByRole('textbox', {name: 'message', exact: true});
+	const scroller = page.getByRole('region', {
+		name: 'conversation',
+		exact: true,
+	});
+	const atEnd = () =>
+		scroller.evaluate(
+			element =>
+				element.scrollHeight - element.scrollTop - element.clientHeight <= 2,
+		);
+	const itemCount = () =>
+		page
+			.locator('.gate-message-agent p')
+			.filter({hasText: /^item \d+$/})
+			.count();
+	const prompt = 'follow and copy fixture';
+	await input.fill(prompt);
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	await expect.poll(itemCount).toBeGreaterThanOrEqual(20);
+	await expect.poll(atEnd).toBe(true);
+	const firstAgentRow = await page
+		.locator('.gate-message-agent')
+		.getAttribute('data-row-id');
+	await expect.poll(itemCount).toBeGreaterThanOrEqual(35);
+	await expect(page.locator('.gate-message-agent')).toHaveAttribute(
+		'data-row-id',
+		firstAgentRow ?? '',
+	);
+
+	await scroller.hover();
+	await page.mouse.wheel(0, -1400);
+	const latest = page.getByRole('button', {name: 'latest', exact: true});
+	await expect(latest).toBeVisible();
+	const readingPosition = await scroller.evaluate(element => element.scrollTop);
+	const countAtReadingPosition = await itemCount();
+	await expect.poll(itemCount).toBeGreaterThan(countAtReadingPosition);
+	expect(await scroller.evaluate(element => element.scrollTop)).toBe(
+		readingPosition,
+	);
+	await input.focus();
+	await latest.click();
+	await expect.poll(atEnd).toBe(true);
+	await expect(input).toBeFocused();
+	await expect(latest).toHaveCount(0);
+	const countAfterLatest = await itemCount();
+	await expect.poll(itemCount).toBeGreaterThan(countAfterLatest);
+	await expect.poll(atEnd).toBe(true);
+
+	await scroller.hover();
+	await page.mouse.wheel(0, -1400);
+	await expect(latest).toBeVisible();
+	await latest.focus();
+	await page.keyboard.press('Enter');
+	await expect.poll(atEnd).toBe(true);
+	await expect(scroller).toBeFocused();
+	await expect(latest).toHaveCount(0);
+	await expect(turnEnded(page)).toBeVisible();
+
+	const copyMessage = page.getByRole('button', {
+		name: 'copy message',
+		exact: true,
+	});
+	await expect(copyMessage).toHaveCount(2);
+	const toast = page.locator('.overlay-toast');
+	await copyMessage.first().click();
+	await expect(toast).toHaveText('copied');
+	await expect(toast).toHaveCount(1);
+	expect(await app.evaluate(({clipboard}) => clipboard.readText())).toBe(
+		prompt,
+	);
+	await expect(toast).toHaveCount(0);
+
+	await copyMessage.nth(1).click();
+	await expect(toast).toHaveText('copied');
+	const expectedAgent = `${'# streamed fixture\n\n[fixture link](https://fixture.invalid) ![fixture image](https://fixture.invalid/image)\n\n<script>fixture</script>\n\n```ts\nconst fakeFixture = 67;\n```\n\n'}${Array.from(
+		{length: 300},
+		(_, index) => `item ${index + 1}\n\n`,
+	).join('')}`;
+	expect(await app.evaluate(({clipboard}) => clipboard.readText())).toBe(
+		expectedAgent,
+	);
+	await expect(toast).toHaveCount(0);
+
+	const copyCode = page.getByRole('button', {name: 'copy code', exact: true});
+	await expect(copyCode).toHaveCount(1);
+	await copyCode.focus();
+	await page.keyboard.press('Enter');
+	await expect(toast).toHaveText('copied');
+	expect(await app.evaluate(({clipboard}) => clipboard.readText())).toBe(
+		'const fakeFixture = 67;\n',
+	);
+
+	const firstUserRow = await page
+		.locator('.gate-message-user')
+		.getAttribute('data-row-id');
+	await page.getByRole('button', {name: 'new thread', exact: true}).click();
+	const dialog = page.getByRole('dialog', {name: 'new thread', exact: true});
+	await dialog
+		.getByRole('button', {name: 'keep as new thread draft', exact: true})
+		.click();
+	await input.fill('different thread fixture');
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	await expect.poll(itemCount).toBeGreaterThanOrEqual(20);
+	await expect.poll(atEnd).toBe(true);
+	expect(
+		await page.locator('.gate-message-user').getAttribute('data-row-id'),
+	).not.toBe(firstUserRow);
+	await page
+		.locator('.thread-row')
+		.filter({hasText: prompt})
+		.locator('.thread-open')
+		.click();
+	await expect(page.locator('.gate-message-user')).toContainText(prompt);
+	await expect.poll(atEnd).toBe(true);
+	await expect(page.locator('.gate-message-user')).toHaveAttribute(
+		'data-row-id',
+		firstUserRow ?? '',
+	);
+});
+
 test('stream semantics keyboard disclosure reduced motion and both themes at three widths (CHAT-05 CHAT-19 CHAT-20)', async () => {
 	expect(page.url()).toMatch(/^app:\/\/renderer\//);
 	const input = page.getByRole('textbox', {name: 'message', exact: true});

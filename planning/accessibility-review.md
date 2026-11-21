@@ -1,7 +1,7 @@
 # Accessibility review (phase 4.9)
 
 - Status: Draft
-- Last updated: 2026-11-12
+- Last updated: 2026-11-19
 - Drafted by: @akramcodez
 
 The keyboard and assistive technology review of chat, files, review, terminal and browser: what is proved by an automated test, what only a person with a screen reader can prove, and what the review found. The rules are `A11Y-01` to `A11Y-06` in [`testing-strategy.md`](testing-strategy.md#accessibility-targets), with `CHAT-18`, `FILE-11` and `TERM-11` for the areas.
@@ -12,7 +12,7 @@ Test paths start with `e2e/` unless they are under `source/`. The new sweep is `
 
 | Area | `A11Y-01` keyboard, no trap | `A11Y-02` focus order and return | `A11Y-03` name, role and state |
 |---|---|---|---|
-| Chat | The sweep tabs forward and back 40 times with no trap. `milestone-exit-checks.e2e.ts` runs the project, palette and approval journey by keyboard | No positive tab index anywhere (the sweep). Approvals take focus and return it (`milestone-exit-checks`, `subagents.e2e.ts`, `approval-requests.spec.ts`) | The sweep reads Chromium's accessibility tree and fails on any unnamed control. `milestone-exit-checks` checks states |
+| Chat | The sweep tabs forward and back 40 times with no trap. `milestone-exit-checks.e2e.ts` runs the project, palette and approval journey by keyboard. `streaming.e2e.ts` activates `latest` and code copy by keyboard | No positive tab index anywhere (the sweep). Approvals take focus and return it (`milestone-exit-checks`, `subagents.e2e.ts`, `approval-requests.spec.ts`). Pointer `latest` preserves composer focus and keyboard `latest` focuses the conversation region | The sweep reads Chromium's accessibility tree and fails on any unnamed control. `milestone-exit-checks` checks states. Message/code controls have names containing `copy`, and copy success uses the existing polite notification region |
 | Files | `files.e2e.ts` ("SP-07 FILE-11 the tree is fully operable from the keyboard with tree semantics"), the sweep | The sweep, `files.e2e.ts` | The sweep, tree roles and expanded state in `files.e2e.ts` |
 | Review | The sweep; the diff keyboard model is unit tested (`diff-parse.spec.ts`, `review-controller.spec.ts`) | The sweep | The sweep (filters, file entries and the comment form are named) |
 | Terminal | "TERM-02/04/06/11 mounted terminal types, escapes, restarts, clears and stops without trapping focus" (`terminal.e2e.ts`). The sweep uses the documented key whenever focus enters the terminal | Focus returns to the "focus your terminal" button after the escape key | The sweep. The new `TERM-11` test checks the escape key is shown on screen and in `aria-keyshortcuts` |
