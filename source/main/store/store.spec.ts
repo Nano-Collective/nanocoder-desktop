@@ -760,7 +760,7 @@ test('backup failure stops the upgrade and closes the connection', async t => {
 	t.is(schemaVersion(db), 0);
 });
 
-test('corrupt bytes are moved aside and a fresh database starts', async t => {
+test('corrupt bytes are moved aside and a fresh database starts (DATA-08)', async t => {
 	const f = fixture(t);
 	const bytes = Buffer.from('fixture invalid SQLite bytes');
 	writeFileSync(f.filename, bytes);
@@ -775,8 +775,12 @@ test('corrupt bytes are moved aside and a fresh database starts', async t => {
 		readFileSync(path.join(f.root, directory as string, 'desktop.sqlite')),
 		bytes,
 	);
+	// The store says where the old data went, so the user can be told (P4-02).
+	t.is(path.basename(store.recoveredFrom as string), directory as string);
 	store.close();
-	(await f.open()).close();
+	const reopened = await f.open();
+	t.is(reopened.recoveredFrom, undefined);
+	reopened.close();
 	t.is(
 		readdirSync(f.root).filter(name => name.includes('.corrupt-')).length,
 		1,
@@ -1152,6 +1156,19 @@ test('repositories mark missing and replaced roots without following them', asyn
 	t.throws(() => store.projects.save({...row, trusted: true}), {
 		code: 'DENIED',
 	});
+});
+
+test('a project root replaced by a file is a changed folder, not an available one', async t => {
+	const f = fixture(t);
+	const store = await f.open();
+	const root = path.join(f.root, 'project');
+	mkdirSync(root);
+	const row = project(root);
+	store.projects.save(row);
+	t.is(store.projects.get(row.id)?.availability, 'available');
+	rmSync(root, {recursive: true});
+	writeFileSync(root, 'not a folder');
+	t.is(store.projects.get(row.id)?.availability, 'changed');
 });
 
 test('concurrent opens recheck the migration version under the write lock', async t => {
