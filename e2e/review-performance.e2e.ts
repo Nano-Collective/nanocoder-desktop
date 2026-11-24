@@ -48,7 +48,7 @@ test('GIT-04 measure first render and keyboard scrolling on the 5,000-row fixtur
 	).join('\n');
 	writeFileSync(path.join(project, 'large.ts'), `${oldText}\n`);
 	const git = (...args: string[]) =>
-		execFileSync('git', args, {
+		execFileSync('git', ['-c', 'core.hooksPath=', ...args], {
 			cwd: project,
 			encoding: 'utf8',
 			env: {
@@ -61,6 +61,7 @@ test('GIT-04 measure first render and keyboard scrolling on the 5,000-row fixtur
 		});
 	git('-c', 'init.defaultBranch=main', 'init', '-q');
 	git('config', 'core.autocrlf', 'false');
+	mkdirSync(path.join(project, '.git/info'), {recursive: true});
 	writeFileSync(path.join(project, '.git/info/exclude'), '.fake-nanocoder\n');
 	git('add', '-A');
 	git('commit', '-q', '-m', 'initial fake fixture');

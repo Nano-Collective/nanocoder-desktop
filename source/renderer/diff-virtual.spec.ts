@@ -1,10 +1,10 @@
 import test from 'ava';
 import {
-	DIFF_OVERSCAN,
 	DIFF_ROW_HEIGHT,
 	diffRowKey,
 	diffWindow,
 	MAX_DIFF_ROWS,
+	mountedDiffRows,
 	scrollTopForRow,
 } from '@/renderer/diff-virtual';
 
@@ -19,13 +19,20 @@ test('GIT-04 the virtual window mounts only viewport rows and bounded overscan',
 		end: 2_422,
 		totalHeight: MAX_DIFF_ROWS * DIFF_ROW_HEIGHT,
 	});
-	t.is(DIFF_OVERSCAN, 8);
+});
+
+test('GIT-04 pinned keyboard rows stay bounded and in full-model DOM order', t => {
+	t.deepEqual(
+		mountedDiffRows({start: 20, end: 23}, 5, 24),
+		[5, 20, 21, 22, 24],
+	);
+	t.deepEqual(mountedDiffRows({start: 20, end: 23}, 21, 21), [20, 21, 22]);
 });
 
 test('GIT-04 the last virtual window includes the last capped row and nothing beyond it', t => {
 	const lastTop = (MAX_DIFF_ROWS - 10) * DIFF_ROW_HEIGHT;
 	const window = diffWindow(MAX_DIFF_ROWS, lastTop, 10 * DIFF_ROW_HEIGHT);
-	t.is(window.start, MAX_DIFF_ROWS - 10 - DIFF_OVERSCAN);
+	t.is(window.start, MAX_DIFF_ROWS - 18);
 	t.is(window.end, MAX_DIFF_ROWS);
 	t.is(window.totalHeight, MAX_DIFF_ROWS * DIFF_ROW_HEIGHT);
 	t.deepEqual(diffWindow(3, 0, 500), {

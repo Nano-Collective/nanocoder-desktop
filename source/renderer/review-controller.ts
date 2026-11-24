@@ -51,7 +51,26 @@ export function visibleEntries(
 	filter: ReviewFilter,
 ): ReviewEntry[] {
 	if (!value?.available) return [];
-	return value.entries.filter(entry => {
+	const paths = new Map<string, ReviewEntry>();
+	for (const entry of value.entries) {
+		const previous = paths.get(entry.path);
+		paths.set(
+			entry.path,
+			previous
+				? {
+						...previous,
+						oldPath: previous.oldPath ?? entry.oldPath,
+						staged: previous.staged === 'none' ? entry.staged : previous.staged,
+						unstaged:
+							previous.unstaged === 'none' ? entry.unstaged : previous.unstaged,
+						untracked: previous.untracked || entry.untracked,
+						conflicted: previous.conflicted || entry.conflicted,
+						touched: previous.touched || entry.touched,
+					}
+				: entry,
+		);
+	}
+	return [...paths.values()].filter(entry => {
 		switch (filter) {
 			case 'staged':
 				return entry.staged !== 'none';
@@ -66,7 +85,12 @@ export function visibleEntries(
 }
 
 // Which side opens first: staged only when nothing is left unstaged.
-export function defaultSide(entry: ReviewEntry): boolean {
+export function defaultSide(
+	entry: ReviewEntry,
+	filter: ReviewFilter = 'all',
+): boolean {
+	if (filter === 'staged') return true;
+	if (filter === 'unstaged') return false;
 	return (
 		entry.staged !== 'none' &&
 		entry.unstaged === 'none' &&
@@ -110,6 +134,8 @@ export class ReviewController {
 	private running = false;
 	private dirty = false;
 	private disposed = false;
+	private open = true;
+	private selectOnRead = false;
 	private readonly unsubscribe: () => void;
 
 	constructor(
@@ -128,6 +154,14 @@ export class ReviewController {
 
 	getState(): ReviewState {
 		return this.state;
+	}
+
+	setOpen(open: boolean): void {
+		if (open === this.open) return;
+		this.open = open;
+		if (!open) return;
+		this.selectOnRead = true;
+		void this.refresh();
 	}
 
 	select(projectId: string | null): void {
@@ -179,11 +213,12 @@ export class ReviewController {
 			status: this.state.value ? 'ready' : 'loading',
 			error: null,
 		});
-		const opening = this.state.value === null;
 		const result = await this.bridge.status({projectId}).catch(() => null);
 		if (this.disposed || epoch !== this.epoch) return;
 		this.running = false;
 		if (token === this.statusToken) {
+			const opening =
+				this.open && (this.state.value === null || this.selectOnRead);
 			this.update({
 				...this.state,
 				status: result?.ok ? 'ready' : 'error',
@@ -197,13 +232,14 @@ export class ReviewController {
 			const selected = this.state.selected;
 			if (result?.ok) {
 				const entries = visibleEntries(this.state.value, this.state.filter);
+				if (this.open && entries.length > 0) this.selectOnRead = false;
 				if (selected) {
 					if (selectionIsVisible(selected, entries, this.state.filter))
 						void this.show(selected.path, selected.staged);
 					else this.clearSelection();
 				} else if (opening && entries.length === 1) {
 					const only = entries[0];
-					void this.show(only.path, defaultSide(only));
+					void this.show(only.path, defaultSide(only, this.state.filter));
 				}
 			}
 		}
@@ -218,7 +254,9 @@ export class ReviewController {
 		if (!projectId) return;
 		const epoch = this.epoch;
 		const token = ++this.diffToken;
-		const reload = this.state.selected?.path === path;
+		const reload =
+			this.state.selected?.path === path &&
+			this.state.selected.staged === staged;
 		const previous = reload ? this.state.diff : null;
 		this.update({
 			...this.state,
@@ -233,9 +271,10 @@ export class ReviewController {
 		});
 		const current = this.state.value?.available ? this.state.value : null;
 		const touched =
-			current?.entries.find(entry => entry.path === path)?.touched ?? false;
+			current?.entries.some(entry => entry.path === path && entry.touched) ??
+			false;
 		let note: string | null = null;
-		if (this.state.view === 'agent' && touched && current) {
+		if (!staged && this.state.view === 'agent' && touched && current) {
 			if (current.agentChanges.enabled) {
 				const agent = await this.bridge
 					.agentDiff({projectId, path})

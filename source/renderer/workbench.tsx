@@ -172,6 +172,8 @@ export function Workbench({
 				{tab === 'review' && (
 					<ReviewPanel
 						state={review.state}
+						interactions={review.interactions}
+						onInteraction={review.setInteraction}
 						commentReason={attachReason}
 						onFilter={review.setFilter}
 						onView={review.setView}

@@ -1,11 +1,32 @@
 export const MAX_DIFF_ROWS = 5_000;
 export const DIFF_ROW_HEIGHT = 20.8;
-export const DIFF_OVERSCAN = 8;
+const DIFF_OVERSCAN = 8;
 
-export interface DiffWindow {
+interface DiffWindow {
 	start: number;
 	end: number;
 	totalHeight: number;
+}
+
+export function mountedDiffRows(
+	window: Pick<DiffWindow, 'start' | 'end'>,
+	...pinned: Array<number | null | undefined>
+): number[] {
+	const indices = new Set(
+		Array.from(
+			{length: Math.max(0, window.end - window.start)},
+			(_, offset) => window.start + offset,
+		),
+	);
+	for (const index of pinned)
+		if (
+			index !== null &&
+			index !== undefined &&
+			index >= 0 &&
+			index < MAX_DIFF_ROWS
+		)
+			indices.add(index);
+	return [...indices].sort((a, b) => a - b);
 }
 
 export function diffWindow(

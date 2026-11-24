@@ -1,4 +1,13 @@
-import type {DiffCursor} from '@/renderer/diff-parse';
+import type {DiffCursor, LineSelection} from '@/renderer/diff-parse';
+import {MAX_REVIEW_EXCERPT, MAX_REVIEW_LINE_SPAN} from '@/shared/ipc';
+
+export function reviewSelectionReason(selection: LineSelection): string | null {
+	if (selection.endLine - selection.startLine > MAX_REVIEW_LINE_SPAN)
+		return 'select a smaller range: the line-number span must not exceed 2,000.';
+	if (selection.excerpt.length > MAX_REVIEW_EXCERPT)
+		return 'select a smaller range: a comment excerpt can contain at most 20,000 characters.';
+	return null;
+}
 
 export interface ReviewInteractionIdentity {
 	projectId: string | null;
@@ -9,8 +18,8 @@ export interface ReviewInteractionIdentity {
 
 export interface ReviewInteraction {
 	cursor: DiffCursor | null;
+	cursorFingerprint: string | null;
 	comment: string;
-	added: string | null;
 }
 
 export type ReviewInteractions = Readonly<
@@ -19,8 +28,8 @@ export type ReviewInteractions = Readonly<
 
 export const emptyInteraction: ReviewInteraction = {
 	cursor: null,
+	cursorFingerprint: null,
 	comment: '',
-	added: null,
 };
 
 export function interactionKey(identity: ReviewInteractionIdentity): string {
@@ -35,8 +44,12 @@ export function interactionKey(identity: ReviewInteractionIdentity): string {
 export function interactionFor(
 	drafts: ReviewInteractions,
 	identity: ReviewInteractionIdentity,
+	fingerprint?: string,
 ): ReviewInteraction {
-	return drafts[interactionKey(identity)] ?? emptyInteraction;
+	const saved = drafts[interactionKey(identity)] ?? emptyInteraction;
+	return fingerprint !== undefined && saved.cursorFingerprint !== fingerprint
+		? {...saved, cursor: null, cursorFingerprint: null}
+		: saved;
 }
 
 export function storeInteraction(

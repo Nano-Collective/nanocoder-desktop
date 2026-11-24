@@ -58,6 +58,10 @@
 	flex: 1 1 auto;
 }
 
+.workbench-panel--review {
+	min-height: 360px;
+}
+
 .workbench-panel[hidden] {
 	display: none;
 }
@@ -253,7 +257,7 @@
 	flex-direction: column;
 	gap: 8px;
 	min-height: 0;
-	overflow: hidden;
+	overflow: auto;
 }
 
 .review-meta,
@@ -329,7 +333,7 @@
 	flex: 1 1 auto;
 	flex-direction: column;
 	gap: 6px;
-	min-height: 0;
+	min-height: 240px;
 	overflow: hidden;
 	padding-top: 8px;
 	border-top: 1px solid var(--colors-stroke);
@@ -376,7 +380,7 @@
 }
 
 .diff-lines {
-	flex: 1 1 auto;
+	flex: 1 1 0;
 	min-height: 80px;
 	overflow: auto;
 	border: 1px solid var(--colors-stroke);
@@ -403,10 +407,8 @@
 	gap: 6px;
 	width: max-content;
 	min-width: 100%;
-	height: 20.8px;
 	padding-inline: 6px;
 	color: var(--colors-on-surface);
-	line-height: 20.8px;
 	white-space: pre;
 }
 
