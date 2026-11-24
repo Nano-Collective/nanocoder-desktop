@@ -1,8 +1,9 @@
 import {z} from 'zod';
 import {IpcFailure} from '@/main/ipc/handle-request';
+import {MAX_CLIPBOARD_LENGTH} from '@/shared/ipc';
 
 export const clipboardWriteSchema = z.strictObject({
-	text: z.string().max(1_000_000),
+	text: z.string().min(1).max(MAX_CLIPBOARD_LENGTH),
 });
 
 export async function writeClipboard(

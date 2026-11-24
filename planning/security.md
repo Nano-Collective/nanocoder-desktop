@@ -3,7 +3,7 @@
 The threat model, trust boundaries and security rules for Nanocoder Desktop, including the browser-to-agent boundary and signing.
 
 - Status: Draft
-- Last updated: 2026-11-19
+- Last updated: 2026-11-24
 - Drafted by: @akramcodez
 
 ## Why this matters here
@@ -99,7 +99,7 @@ flowchart LR
 
 ## Clipboard writes
 
-Issue #67 adds one write-only `clipboard:write-text` IPC method for explicit message and fenced-code copy actions. It accepts a strict object containing only a string of at most 1,000,000 code units, and `SEC-02` checks the trusted app main frame before parsing it. Main writes through Electron's clipboard API and returns a generic failure without logging copied text or the underlying error. There is no renderer clipboard-read bridge. Copied content, scroll offsets and renderer-only row identities are never persisted or logged by the desktop; the operating system clipboard is replaced only after the user's action.
+Issue #67 adds one write-only `clipboard:write-text` IPC method for message and fenced-code copy actions. It accepts a strict object containing only a non-empty string of at most 1,000,000 code units, and `SEC-02` checks the trusted app main frame before parsing it. Main writes through Electron's clipboard API and returns a generic failure without logging copied text or the underlying error. There is no renderer clipboard-read bridge. The UI invokes the method from explicit copy controls; IPC validates the sender and payload but does not prove a user gesture. Copied content, scroll offsets and renderer-only row identities are never persisted or logged by the desktop.
 
 ## Browser-to-agent trust boundary
 

@@ -14,6 +14,7 @@ export type TranscriptItem = (
 			text: string;
 			messageId?: string;
 			rowId?: string;
+			attachmentSummary?: string[];
 			// Epoch ms seen live by this renderer; never persisted or estimated.
 			at?: number;
 	  }
@@ -126,19 +127,6 @@ export function transcriptRowId(item: TranscriptItem, index: number): string {
 	return fallbackRowId(item.kind, index, text);
 }
 
-export function addUserMessage(
-	transcript: Transcript,
-	text: string,
-): Transcript {
-	return {
-		...transcript,
-		items: [
-			...transcript.items,
-			{kind: 'user', text, rowId: fallbackRowId('live', 0, text)},
-		],
-	};
-}
-
 function upsert(
 	transcript: Transcript,
 	matches: (item: TranscriptItem, index: number) => boolean,
@@ -189,6 +177,9 @@ function applyContent(
 				: {
 						kind,
 						text: event.text,
+						...(event.type === 'user' && event.attachmentSummary
+							? {attachmentSummary: event.attachmentSummary}
+							: {}),
 						...(event.messageId
 							? {messageId: event.messageId}
 							: {rowId: fallbackRowId('live', items.length, event.text)}),
@@ -429,6 +420,34 @@ function sameMessage(earlier: Message, item: Message): boolean {
 	if (earlier.messageId !== undefined || item.messageId !== undefined)
 		return earlier.messageId === item.messageId;
 	return earlier.text === item.text;
+}
+
+export function carryMessageRows(
+	previous: Transcript,
+	next: Transcript,
+): Transcript {
+	let changed = false;
+	const items = next.items.map((item, index) => {
+		const earlier = previous.items[index];
+		if (
+			(item.kind !== 'user' &&
+				item.kind !== 'agent' &&
+				item.kind !== 'thought') ||
+			item.messageId
+		)
+			return item;
+		const rowId =
+			earlier?.kind === item.kind &&
+			earlier.messageId === item.messageId &&
+			earlier.text === item.text &&
+			earlier.rowId
+				? earlier.rowId
+				: fallbackRowId('snapshot', index, item.text);
+		if (item.rowId === rowId) return item;
+		changed = true;
+		return {...item, rowId};
+	});
+	return changed ? {...next, items} : next;
 }
 
 export function carryMessageTimes(

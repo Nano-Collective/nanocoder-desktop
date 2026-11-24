@@ -1,13 +1,14 @@
 import * as React from 'react';
-import Markdown, {type Components} from 'react-markdown';
+import Markdown, {type Components, type ExtraProps} from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import {copyableCodeText} from '@/renderer/copy-content';
+import {fencedCodeText} from '@/renderer/copy-content';
 import {Icon} from '@/renderer/icons';
 import {findLocalUrls} from '@/shared/local-url';
 
 export const CopyContext = React.createContext<
 	((text: string) => void) | undefined
 >(undefined);
+const MarkdownSource = React.createContext('');
 
 export const LocalUrlContext = React.createContext<
 	((url: string) => void) | undefined
@@ -46,13 +47,30 @@ function MarkdownLink({
 	);
 }
 
-function MarkdownPre({children}: {children?: React.ReactNode}) {
+function MarkdownPre({
+	children,
+	node,
+}: React.ComponentProps<'pre'> & ExtraProps) {
 	const copy = React.useContext(CopyContext);
-	const text = copyableCodeText(children);
+	const source = React.useContext(MarkdownSource);
+	const start = node?.position?.start.offset;
+	const end = node?.position?.end.offset;
+	const text =
+		start === undefined || end === undefined
+			? undefined
+			: fencedCodeText(
+					source.slice(start, end),
+					source.slice(
+						Math.max(
+							source.lastIndexOf('\n', start - 1),
+							source.lastIndexOf('\r', start - 1),
+						) + 1,
+						start,
+					),
+				);
 	return (
 		<div className="stream-code-block">
-			<pre>{children}</pre>
-			{copy && (
+			{copy && text !== undefined && text.length > 0 && (
 				<button
 					type="button"
 					className="stream-copy stream-code-copy"
@@ -64,6 +82,7 @@ function MarkdownPre({children}: {children?: React.ReactNode}) {
 					copy
 				</button>
 			)}
+			<pre>{children}</pre>
 		</div>
 	);
 }
@@ -89,45 +108,47 @@ export const AgentMarkdown = React.memo(function AgentMarkdown({
 	text: string;
 }) {
 	return (
-		<div className="stream-markdown">
-			<Markdown
-				skipHtml
-				remarkPlugins={[remarkGfm]}
-				unwrapDisallowed
-				urlTransform={url => localHref(url) ?? ''}
-				allowedElements={[
-					'p',
-					'h1',
-					'h2',
-					'h3',
-					'h4',
-					'h5',
-					'h6',
-					'blockquote',
-					'ul',
-					'ol',
-					'li',
-					'pre',
-					'code',
-					'strong',
-					'em',
-					'del',
-					'hr',
-					'br',
-					'a',
-					'img',
-					'input',
-					'table',
-					'thead',
-					'tbody',
-					'tr',
-					'th',
-					'td',
-				]}
-				components={components}
-			>
-				{text}
-			</Markdown>
-		</div>
+		<MarkdownSource.Provider value={text}>
+			<div className="stream-markdown">
+				<Markdown
+					skipHtml
+					remarkPlugins={[remarkGfm]}
+					unwrapDisallowed
+					urlTransform={url => localHref(url) ?? ''}
+					allowedElements={[
+						'p',
+						'h1',
+						'h2',
+						'h3',
+						'h4',
+						'h5',
+						'h6',
+						'blockquote',
+						'ul',
+						'ol',
+						'li',
+						'pre',
+						'code',
+						'strong',
+						'em',
+						'del',
+						'hr',
+						'br',
+						'a',
+						'img',
+						'input',
+						'table',
+						'thead',
+						'tbody',
+						'tr',
+						'th',
+						'td',
+					]}
+					components={components}
+				>
+					{text}
+				</Markdown>
+			</div>
+		</MarkdownSource.Provider>
 	);
 });

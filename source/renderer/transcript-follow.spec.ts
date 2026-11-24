@@ -6,7 +6,6 @@ test('follow starts at the latest row and releases only when the reader leaves t
 	t.true(state.following);
 	state = reduceFollow(state, {type: 'scroll', atBottom: false});
 	t.false(state.following);
-	state = reduceFollow(state, {type: 'append'});
 	t.false(state.following);
 	state = reduceFollow(state, {type: 'scroll', atBottom: true});
 	t.true(state.following);

@@ -177,18 +177,17 @@ function AgentLabel({at}: {at?: number}) {
 
 function CopyMessage({text}: {text: string}) {
 	const copy = React.useContext(CopyContext);
-	if (!copy) return null;
+	if (!copy || !text.length) return null;
 	return (
 		<div className="stream-message-actions">
 			<button
 				type="button"
 				className="stream-copy"
-				aria-label="copy message"
-				title="copy message"
+				aria-label="copy text"
+				title="copy text"
 				onClick={() => copy(text)}
 			>
 				<Icon name="copy" size={14} />
-				copy
 			</button>
 		</div>
 	);
@@ -196,7 +195,6 @@ function CopyMessage({text}: {text: string}) {
 
 const StreamRow = React.memo(function StreamRow({
 	item,
-	rowId,
 	runPosition,
 	runCount,
 	streaming,
@@ -208,7 +206,6 @@ const StreamRow = React.memo(function StreamRow({
 	notice,
 }: {
 	item: TranscriptItem;
-	rowId: string;
 	runPosition: number;
 	runCount: number;
 	streaming: boolean;
@@ -237,6 +234,11 @@ const StreamRow = React.memo(function StreamRow({
 					</div>
 					<CopyMessage text={item.text} />
 					<div className="stream-plain">{item.text}</div>
+					{item.attachmentSummary?.length ? (
+						<div className="stream-plain">
+							{item.attachmentSummary.join('\n')}
+						</div>
+					) : null}
 				</>
 			);
 			break;
@@ -437,7 +439,6 @@ const StreamRow = React.memo(function StreamRow({
 	return (
 		<li
 			className={`gate-message-${item.kind}${group ? ` stream-tool-${group}` : ''}`}
-			data-row-id={rowId}
 			data-status={'status' in item ? item.status : undefined}
 		>
 			{content}
@@ -538,7 +539,6 @@ export function ConversationStream({
 								<StreamRow
 									key={key}
 									item={item}
-									rowId={key}
 									runPosition={runPosition}
 									runCount={runCount}
 									active={running && index > turnStart}

@@ -181,7 +181,7 @@ test('only fenced code gets an accessible copy action', t => {
 			CopyContext.Provider,
 			{value: () => {}},
 			createElement(AgentMarkdown, {
-				text: '`inline fixture`\n\n```ts\nconst fixture = 1;\n```',
+				text: '`inline fixture`\n\n    indented fixture\n\n```\n```\n\n```ts\nconst fixture = 1;\n```',
 			}),
 		),
 	);

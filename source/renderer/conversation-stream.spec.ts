@@ -17,7 +17,7 @@ const render = (items: TranscriptItem[], running = false) =>
 		}),
 	);
 
-test('user and assistant rows expose original-text copy controls and stable row ids', t => {
+test('user and assistant rows expose copy controls without changing message text or composer labels', t => {
 	const first = renderToStaticMarkup(
 		createElement(ConversationStream, {
 			transcript: {
@@ -31,9 +31,32 @@ test('user and assistant rows expose original-text copy controls and stable row 
 			onCopy() {},
 		}),
 	);
-	t.is(first.match(/aria-label="copy message"/g)?.length, 2);
-	t.true(first.includes('data-row-id="user:user-row:0"'));
-	t.true(first.includes('data-row-id="agent:agent-row:0"'));
+	t.is(first.match(/aria-label="copy text"/g)?.length, 2);
+	t.false(first.includes('aria-label="copy message"'));
+	t.false(first.includes('>copy<'));
+});
+
+test('empty streaming rows have no copy action and attachment summaries remain separate display text', t => {
+	const html = renderToStaticMarkup(
+		createElement(ConversationStream, {
+			transcript: {
+				...emptyTranscript,
+				items: [
+					{
+						kind: 'user',
+						text: 'original',
+						attachmentSummary: ['attached: fixture.ts'],
+					},
+					{kind: 'agent', text: ''},
+				],
+			},
+			running: true,
+			onCopy() {},
+		}),
+	);
+	t.is(html.match(/aria-label="copy text"/g)?.length, 1);
+	t.true(html.includes('<div class="stream-plain">original</div>'));
+	t.true(html.includes('<div class="stream-plain">attached: fixture.ts</div>'));
 });
 
 test('user and agent author labels show only reported token and cost metadata (CHAT-05 CHAT-19)', t => {

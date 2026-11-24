@@ -35,6 +35,7 @@ test('clipboard write refuses malformed, unknown and oversized requests without 
 	let writes = 0;
 	for (const payload of [
 		{},
+		{text: ''},
 		{text: 42},
 		{text: 'fixture', read: true},
 		{text: 'x'.repeat(1_000_001)},

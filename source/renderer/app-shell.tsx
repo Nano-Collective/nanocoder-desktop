@@ -68,15 +68,31 @@ export function AppShell({
 }) {
 	const inThread = threadTitle !== undefined;
 	const scroller = React.useRef<HTMLDivElement>(null);
-	const latestButton = React.useRef<HTMLButtonElement>(null);
+	const content = React.useRef<HTMLDivElement>(null);
+	const metrics = React.useRef({height: 0, width: 0, content: 0});
+	const [latestFocused, setLatestFocused] = React.useState(false);
 	const [follow, dispatchFollow] = React.useReducer(
 		reduceFollow,
 		followKey ?? '',
 		initialFollowState,
 	);
+	const followRef = React.useRef(follow);
+	followRef.current = follow;
+	const scrollToEnd = React.useCallback(() => {
+		const element = scroller.current;
+		if (!element) return;
+		element.scrollTop = element.scrollHeight;
+		metrics.current = {
+			height: element.clientHeight,
+			width: element.clientWidth,
+			content: element.scrollHeight,
+		};
+	}, []);
 	React.useLayoutEffect(() => {
-		if (followKey !== undefined && follow.key !== followKey)
+		if (followKey !== undefined && follow.key !== followKey) {
+			setLatestFocused(false);
 			dispatchFollow({type: 'thread', key: followKey});
+		}
 	}, [follow.key, followKey]);
 	React.useLayoutEffect(() => {
 		const element = scroller.current;
@@ -88,10 +104,29 @@ export function AppShell({
 			!follow.following
 		)
 			return;
-		element.scrollTop = element.scrollHeight;
-	}, [follow.following, follow.key, followContent, followKey]);
+		scrollToEnd();
+	}, [follow.following, follow.key, followContent, followKey, scrollToEnd]);
+	React.useLayoutEffect(() => {
+		const element = scroller.current;
+		if (!element || followKey === undefined) return;
+		const observer = new ResizeObserver(() => {
+			if (followRef.current.key === followKey && followRef.current.following)
+				scrollToEnd();
+			else
+				metrics.current = {
+					height: element.clientHeight,
+					width: element.clientWidth,
+					content: element.scrollHeight,
+				};
+		});
+		observer.observe(element);
+		if (content.current) observer.observe(content.current);
+		return () => observer.disconnect();
+	}, [followKey, scrollToEnd]);
 	const showLatest =
-		followKey !== undefined && follow.key === followKey && !follow.following;
+		followKey !== undefined &&
+		follow.key === followKey &&
+		(!follow.following || latestFocused);
 	const [sizes, setSize] = usePanelSizes();
 	const viewport = useViewport();
 	const rail = sizes.rail ?? defaults.rail;
@@ -180,13 +215,28 @@ export function AppShell({
 							onScroll={event => {
 								if (followKey === undefined || follow.key !== followKey) return;
 								const element = event.currentTarget;
+								const previous = metrics.current;
+								const resized =
+									previous.height !== element.clientHeight ||
+									previous.width !== element.clientWidth ||
+									previous.content !== element.scrollHeight;
+								if (resized && follow.following) {
+									scrollToEnd();
+									return;
+								}
+								metrics.current = {
+									height: element.clientHeight,
+									width: element.clientWidth,
+									content: element.scrollHeight,
+								};
+								const atBottom =
+									element.scrollHeight -
+										element.scrollTop -
+										element.clientHeight <=
+									2;
 								dispatchFollow({
 									type: 'scroll',
-									atBottom:
-										element.scrollHeight -
-											element.scrollTop -
-											element.clientHeight <=
-										2,
+									atBottom,
 								});
 							}}
 						>
@@ -198,29 +248,35 @@ export function AppShell({
 									{streamTools}
 								</div>
 							)}
-							<div className="technical-gate">{children}</div>
-							{showLatest && (
-								<Button
-									ref={latestButton}
-									className="shell-latest"
-									aria-label="latest"
-									onMouseDown={event => event.preventDefault()}
-									onClick={() => {
-										const element = scroller.current;
-										const keyboard =
-											document.activeElement === latestButton.current;
-										dispatchFollow({type: 'latest'});
-										if (element) {
-											element.scrollTop = element.scrollHeight;
-											if (keyboard) element.focus({preventScroll: true});
-										}
-									}}
-								>
-									<Icon name="latest" size={14} />
-									latest
-								</Button>
-							)}
+							<div ref={content} className="technical-gate">
+								{children}
+							</div>
 						</div>
+						{showLatest && (
+							<Button
+								className="shell-latest"
+								aria-label="latest"
+								onFocus={() => setLatestFocused(true)}
+								onBlur={() => setLatestFocused(false)}
+								onMouseDown={event => event.preventDefault()}
+								onKeyDown={event => {
+									if (event.key !== 'End') return;
+									event.preventDefault();
+									scroller.current?.focus({preventScroll: true});
+									dispatchFollow({type: 'latest'});
+								}}
+								onClick={event => {
+									const element = scroller.current;
+									const keyboard =
+										document.activeElement === event.currentTarget;
+									dispatchFollow({type: 'latest'});
+									if (keyboard) element?.focus({preventScroll: true});
+								}}
+							>
+								<Icon name="latest" size={14} />
+								latest
+							</Button>
+						)}
 						<div className="shell-conversation-footer">
 							{approvalShelf && (
 								<div

@@ -430,7 +430,7 @@ export function App() {
 		setAttachments(current => addAttachment(current, attachKey, item));
 		overlays.current?.notify(`attached ${labelFor(item)} to your next message`);
 	};
-	const copy = (text: string) => {
+	const copy = useCallback((text: string) => {
 		void copyContent(
 			text,
 			async value => {
@@ -439,7 +439,7 @@ export function App() {
 			},
 			message => overlays.current?.notify(message),
 		);
-	};
+	}, []);
 	const openInBrowser = (url: string) => {
 		showPanel('browser');
 		void browser.open(url);

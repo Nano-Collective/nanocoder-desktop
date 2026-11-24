@@ -6,8 +6,7 @@ export interface FollowState {
 export type FollowEvent =
 	| {type: 'thread'; key: string}
 	| {type: 'scroll'; atBottom: boolean}
-	| {type: 'latest'}
-	| {type: 'append'};
+	| {type: 'latest'};
 
 export function initialFollowState(key: string): FollowState {
 	return {key, following: true};
@@ -26,7 +25,5 @@ export function reduceFollow(
 				: {...state, following: event.atBottom};
 		case 'latest':
 			return state.following ? state : {...state, following: true};
-		case 'append':
-			return state;
 	}
 }

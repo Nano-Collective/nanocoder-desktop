@@ -1,7 +1,7 @@
 # Accessibility review (phase 4.9)
 
 - Status: Draft
-- Last updated: 2026-11-19
+- Last updated: 2026-11-24
 - Drafted by: @akramcodez
 
 The keyboard and assistive technology review of chat, files, review, terminal and browser: what is proved by an automated test, what only a person with a screen reader can prove, and what the review found. The rules are `A11Y-01` to `A11Y-06` in [`testing-strategy.md`](testing-strategy.md#accessibility-targets), with `CHAT-18`, `FILE-11` and `TERM-11` for the areas.
@@ -29,6 +29,8 @@ Each check was shown to fail when it should. The sweep has failing examples (an 
 |---|---|
 | The chat composer, the form around the main input, was exposed as a landmark with no name. It is the most used control in the app | Fixed: it is named "composer", and not "message composer", because the text box is labelled "message" and a second label containing that word makes label lookups by "Message" ambiguous |
 | The form for adding a browser profile had no name | Fixed: "new browser profile" |
+| Transcript copy controls made the composer label ambiguous and changed the old keyboard-order assertions | Fixed in issue #67: icon-only `copy text` buttons avoid the composer label and message `innerText`; native Tab reaches copy controls before the approval shelf and composer, with no forced tab index |
+| A focused `latest` button could disappear when keyboard navigation reached the bottom | Fixed in issue #67: it stays mounted until focus leaves; activation and End return focus to the conversation region. Pointer activation preserves the composer |
 | Everything else the sweep covers already had a name, a role and a working keyboard path, with no keyboard trap and no forced tab order | No change |
 
 ## What only a person can prove

@@ -73,6 +73,14 @@ test.beforeEach(async () => {
 		path.join(root, 'source/main/nanocoder/fixtures/fake-nanocoder.mjs'),
 		fakeCli,
 	);
+	if (test.info().title.startsWith('fenced copy stays'))
+		writeFileSync(
+			fakeCli,
+			readFileSync(fakeCli, 'utf8').replace(
+				'const fakeFixture = 67;',
+				`const fakeFixture = ${'7'.repeat(200)};`,
+			),
+		);
 	app = await electron.launch({
 		cwd: root,
 		args: [root, `--user-data-dir=${path.join(work, 'profile')}`],
@@ -96,6 +104,12 @@ test.beforeEach(async () => {
 			checkboxChecked: false,
 		})) as typeof dialog.showMessageBox;
 	}, project);
+	await app.evaluate(({clipboard}) => {
+		Object.assign(globalThis, {fixtureClipboard: ''});
+		clipboard.writeText = async text => {
+			Object.assign(globalThis, {fixtureClipboard: text});
+		};
+	});
 	await page
 		.getByRole('button', {name: 'open a project folder', exact: true})
 		.click();
@@ -377,11 +391,10 @@ test('transcript follows only at the end and copies exact message and fence text
 	await expect.poll(atEnd).toBe(true);
 	const firstAgentRow = await page
 		.locator('.gate-message-agent')
-		.getAttribute('data-row-id');
+		.elementHandle();
 	await expect.poll(itemCount).toBeGreaterThanOrEqual(35);
-	await expect(page.locator('.gate-message-agent')).toHaveAttribute(
-		'data-row-id',
-		firstAgentRow ?? '',
+	expect(await firstAgentRow?.evaluate(element => element.isConnected)).toBe(
+		true,
 	);
 
 	await scroller.hover();
@@ -413,8 +426,35 @@ test('transcript follows only at the end and copies exact message and fence text
 	await expect(latest).toHaveCount(0);
 	await expect(turnEnded(page)).toBeVisible();
 
+	for (const size of [
+		{width: 840, height: 650},
+		{width: 1240, height: 900},
+	]) {
+		await page.setViewportSize(size);
+		await expect.poll(atEnd).toBe(true);
+		await expect(latest).toHaveCount(0);
+	}
+	await input.fill(Array.from({length: 8}, () => 'fixture draft').join('\n'));
+	await expect.poll(atEnd).toBe(true);
+	await page.getByRole('button', {name: 'open terminal', exact: true}).click();
+	await expect(page.locator('.shell-bottom-panel')).toBeVisible();
+	await expect.poll(atEnd).toBe(true);
+	await page
+		.getByRole('button', {name: 'close terminal panel', exact: true})
+		.click();
+	await input.fill('');
+	await expect.poll(atEnd).toBe(true);
+	await scroller.hover();
+	await page.mouse.wheel(0, -1400);
+	await expect(latest).toBeVisible();
+	await latest.focus();
+	await page.keyboard.press('End');
+	await expect.poll(atEnd).toBe(true);
+	await expect(scroller).toBeFocused();
+	await expect(latest).toHaveCount(0);
+
 	const copyMessage = page.getByRole('button', {
-		name: 'copy message',
+		name: 'copy text',
 		exact: true,
 	});
 	await expect(copyMessage).toHaveCount(2);
@@ -422,9 +462,12 @@ test('transcript follows only at the end and copies exact message and fence text
 	await copyMessage.first().click();
 	await expect(toast).toHaveText('copied');
 	await expect(toast).toHaveCount(1);
-	expect(await app.evaluate(({clipboard}) => clipboard.readText())).toBe(
-		prompt,
-	);
+	expect(
+		await app.evaluate(
+			() =>
+				(globalThis as unknown as {fixtureClipboard: string}).fixtureClipboard,
+		),
+	).toBe(prompt);
 	await expect(toast).toHaveCount(0);
 
 	await copyMessage.nth(1).click();
@@ -433,9 +476,12 @@ test('transcript follows only at the end and copies exact message and fence text
 		{length: 300},
 		(_, index) => `item ${index + 1}\n\n`,
 	).join('')}`;
-	expect(await app.evaluate(({clipboard}) => clipboard.readText())).toBe(
-		expectedAgent,
-	);
+	expect(
+		await app.evaluate(
+			() =>
+				(globalThis as unknown as {fixtureClipboard: string}).fixtureClipboard,
+		),
+	).toBe(expectedAgent);
 	await expect(toast).toHaveCount(0);
 
 	const copyCode = page.getByRole('button', {name: 'copy code', exact: true});
@@ -443,13 +489,14 @@ test('transcript follows only at the end and copies exact message and fence text
 	await copyCode.focus();
 	await page.keyboard.press('Enter');
 	await expect(toast).toHaveText('copied');
-	expect(await app.evaluate(({clipboard}) => clipboard.readText())).toBe(
-		'const fakeFixture = 67;\n',
-	);
+	expect(
+		await app.evaluate(
+			() =>
+				(globalThis as unknown as {fixtureClipboard: string}).fixtureClipboard,
+		),
+	).toBe('const fakeFixture = 67;\n');
 
-	const firstUserRow = await page
-		.locator('.gate-message-user')
-		.getAttribute('data-row-id');
+	const firstUserRow = await page.locator('.gate-message-user').elementHandle();
 	await page.getByRole('button', {name: 'new thread', exact: true}).click();
 	const dialog = page.getByRole('dialog', {name: 'new thread', exact: true});
 	await dialog
@@ -459,9 +506,9 @@ test('transcript follows only at the end and copies exact message and fence text
 	await page.getByRole('button', {name: 'send', exact: true}).click();
 	await expect.poll(itemCount).toBeGreaterThanOrEqual(20);
 	await expect.poll(atEnd).toBe(true);
-	expect(
-		await page.locator('.gate-message-user').getAttribute('data-row-id'),
-	).not.toBe(firstUserRow);
+	expect(await firstUserRow?.evaluate(element => element.isConnected)).toBe(
+		false,
+	);
 	await page
 		.locator('.thread-row')
 		.filter({hasText: prompt})
@@ -469,10 +516,41 @@ test('transcript follows only at the end and copies exact message and fence text
 		.click();
 	await expect(page.locator('.gate-message-user')).toContainText(prompt);
 	await expect.poll(atEnd).toBe(true);
-	await expect(page.locator('.gate-message-user')).toHaveAttribute(
-		'data-row-id',
-		firstUserRow ?? '',
-	);
+	await expect(
+		page.locator('.gate-message-user .stream-plain').first(),
+	).toHaveText(prompt);
+});
+
+test('fenced copy stays outside long code at narrow widths and after horizontal scrolling', async () => {
+	const input = page.getByRole('textbox', {name: 'message', exact: true});
+	await input.fill('long fenced code fixture');
+	await page.getByRole('button', {name: 'send', exact: true}).click();
+	await expect(turnEnded(page)).toBeVisible();
+	for (const width of [1240, 840]) {
+		await page.setViewportSize({width, height: 900});
+		const block = page.locator('.stream-code-block');
+		await block.scrollIntoViewIfNeeded();
+		const code = block.locator('pre');
+		await expect
+			.poll(() =>
+				code.evaluate(element => element.scrollWidth > element.clientWidth),
+			)
+			.toBe(true);
+		for (const end of [false, true]) {
+			await code.evaluate((element, end) => {
+				element.scrollLeft = end ? element.scrollWidth : 0;
+			}, end);
+			const control = await block
+				.getByRole('button', {name: 'copy code', exact: true})
+				.boundingBox();
+			const text = await code.boundingBox();
+			expect(control).not.toBeNull();
+			expect(text).not.toBeNull();
+			expect((control?.y ?? 0) + (control?.height ?? 0)).toBeLessThanOrEqual(
+				text?.y ?? 0,
+			);
+		}
+	}
 });
 
 test('stream semantics keyboard disclosure reduced motion and both themes at three widths (CHAT-05 CHAT-19 CHAT-20)', async () => {
