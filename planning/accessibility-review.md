@@ -1,7 +1,7 @@
 # Accessibility review (phase 4.9)
 
 - Status: Draft
-- Last updated: 2026-11-19
+- Last updated: 2026-11-24
 - Drafted by: @akramcodez
 
 The keyboard and assistive technology review of chat, files, review, terminal and browser: what is proved by an automated test, what only a person with a screen reader can prove, and what the review found. The rules are `A11Y-01` to `A11Y-06` in [`testing-strategy.md`](testing-strategy.md#accessibility-targets), with `CHAT-18`, `FILE-11` and `TERM-11` for the areas.
@@ -35,7 +35,7 @@ Each check was shown to fail when it should. The sweep has failing examples (an 
 
 - **`A11Y-04` and `A11Y-05` as heard.** The tests prove what is sent to the live region and when, not that VoiceOver, NVDA or Orca read it at a sensible pace.
 - **`A11Y-06`.** The screen reader on each platform completing `SP-03`, `SP-04`, `SP-07` and `SP-08`, including reading a file or a diff past the first screen, since CodeMirror renders only the visible part. The protocol is in [`screen-reader-protocol.md`](screen-reader-protocol.md). No run has been done, and none is claimed here.
-- **Grouped palette results as heard.** The browser tests prove the combobox, listbox groups, selected result and focus destinations. A manual screen-reader pass should confirm that the active-thread, archived-thread and action headings are announced naturally, and that the current-thread and unavailable annotations are understandable without relying on colour.
+- **Grouped palette results as heard.** The browser tests prove the combobox, labelled listbox groups, active descendant, selected and unavailable results, and focus destinations. Group labels are presentational text referenced by `aria-labelledby`, not live headings inside the listbox. A manual screen-reader pass should confirm that the active-thread, archived-thread and action group names are announced naturally, and that the current-thread and unavailable annotations are understandable without relying on colour.
 - **Orca with Electron** is the open question the testing strategy already names. The first Linux run will show.
 
 ## Not covered

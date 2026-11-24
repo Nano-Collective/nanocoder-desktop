@@ -264,8 +264,9 @@ export function App() {
 	const paletteFocus = useRef<{
 		projectId: string | null;
 		threadId: string;
-		archived: boolean;
+		settled: boolean;
 	} | null>(null);
+	const [, setPaletteFocusRevision] = useState(0);
 	const overlays = useRef<OverlayHandle>(null);
 	// What is happening in other projects, kept apart from the one in view (CHAT-22).
 	const activity = useProjectActivity(id => void projectControls.onOpen(id));
@@ -330,22 +331,48 @@ export function App() {
 	const scopeKey = `${projectId ?? ''}\n${workspace.activeThreadId ?? ''}`;
 	useEffect(() => {
 		const request = paletteFocus.current;
+		if (!request) return;
+		if (request.projectId !== projectId) {
+			paletteFocus.current = null;
+			return;
+		}
 		if (
-			!request ||
+			!request.settled ||
 			overlayOpen ||
-			request.projectId !== projectId ||
-			request.threadId !== workspace.activeThreadId
+			document.querySelector('dialog:modal')
 		)
 			return;
-		const target =
-			!request.archived && editable && transcript.permissions.length === 0
-				? composerInput.current
-				: document.querySelector<HTMLElement>('.shell-stream-scroll');
-		if (!target || (target instanceof HTMLTextAreaElement && target.disabled))
+		if (
+			request.threadId !== workspace.activeThreadId ||
+			transcript.permissions.length
+		) {
+			paletteFocus.current = null;
+			return;
+		}
+		if (workspace.pending || workspace.loading) return;
+		const target = editable
+			? composerInput.current
+			: document.querySelector<HTMLElement>('.shell-stream-scroll');
+		if (
+			!target ||
+			!target.getClientRects().length ||
+			(target instanceof HTMLTextAreaElement && target.disabled)
+		)
 			return;
 		target.focus();
 		if (document.activeElement === target) paletteFocus.current = null;
 	});
+	useEffect(() => {
+		const cancel = () => {
+			paletteFocus.current = null;
+		};
+		document.addEventListener('pointerdown', cancel, true);
+		document.addEventListener('keydown', cancel, true);
+		return () => {
+			document.removeEventListener('pointerdown', cancel, true);
+			document.removeEventListener('keydown', cancel, true);
+		};
+	}, []);
 	useEffect(() => {
 		if (!retryFocus.current) return;
 		const composer = composerInput.current;
@@ -524,14 +551,20 @@ export function App() {
 	const openPaletteThread = (id: string) => {
 		const target = workspace.threads.find(row => row.id === id);
 		if (!target) return;
-		paletteFocus.current = {
+		if (window.matchMedia('(max-width: 840px)').matches) setInspector(null);
+		const request = {
 			projectId,
 			threadId: id,
-			archived: target.archiveState === 'archived',
+			settled: false,
 		};
+		paletteFocus.current = request;
 		void openThread(id).then(opened => {
-			if (!opened && paletteFocus.current?.threadId === id)
-				paletteFocus.current = null;
+			if (paletteFocus.current !== request) return;
+			if (!opened) paletteFocus.current = null;
+			else {
+				request.settled = true;
+				setPaletteFocusRevision(revision => revision + 1);
+			}
 		});
 	};
 	const onNew = () => {

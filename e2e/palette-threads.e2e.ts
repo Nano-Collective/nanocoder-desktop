@@ -23,6 +23,11 @@ let work: string;
 let app: ElectronApplication;
 let page: Page;
 
+const paletteSearch = () =>
+	page
+		.getByRole('dialog', {name: 'command palette', exact: true})
+		.getByRole('combobox');
+
 async function seedThreads() {
 	const seeded = await page.evaluate(async () => {
 		const {desktop} = window as unknown as {desktop: DesktopApi};
@@ -129,6 +134,260 @@ test.afterEach(async () => {
 	if (work) rmSync(work, {recursive: true, force: true});
 });
 
+test('a thread open during a turn keeps the running-turn notice modal and the palette reusable', async () => {
+	await seedThreads();
+	const composer = page.getByRole('textbox', {name: 'message', exact: true});
+	await composer.fill('fake approval turn');
+	await composer.press('Enter');
+	await expect(page.getByRole('alertdialog')).toBeVisible();
+	await page.keyboard.press(paletteKey);
+	await paletteSearch().fill('keyboard target');
+	await page.keyboard.press('Enter');
+	const notice = page.getByRole('dialog', {
+		name: 'another thread is running',
+		exact: true,
+	});
+	await expect(notice).toBeVisible();
+	await expect(notice).toHaveJSProperty('open', true);
+	expect(await notice.evaluate(element => element.matches(':modal'))).toBe(
+		true,
+	);
+	await notice.getByRole('button', {name: 'keep reading', exact: true}).click();
+	await expect(notice).toBeHidden();
+	await page.keyboard.press(paletteKey);
+	await expect(
+		page.getByRole('dialog', {name: 'command palette', exact: true}),
+	).toBeVisible();
+	await page.keyboard.press('Escape');
+});
+
+test('opening the current thread waits for pending selection before focusing the composer', async () => {
+	await seedThreads();
+	await page.keyboard.press(paletteKey);
+	await paletteSearch().fill('keyboard current');
+	await page.keyboard.press('Enter');
+	await expect(
+		page.getByRole('textbox', {name: 'message', exact: true}),
+	).toBeFocused();
+});
+
+test('returning to a pending approval preserves its focus and numbered shortcuts', async () => {
+	await seedThreads();
+	const composer = page.getByRole('textbox', {name: 'message', exact: true});
+	await composer.fill('fake approval turn');
+	await composer.press('Enter');
+	await expect(page.getByRole('alertdialog')).toBeFocused();
+	await page.keyboard.press(paletteKey);
+	await paletteSearch().fill('keyboard current');
+	await page.keyboard.press('Enter');
+	const approval = page.getByRole('alertdialog');
+	await expect(approval).toBeFocused();
+	await page.keyboard.press('1');
+	await expect(approval).toBeHidden();
+});
+
+test('a live archive moves the highlighted thread between groups without changing its identity', async () => {
+	const seeded = await seedThreads();
+	await page.keyboard.press(paletteKey);
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	const input = palette.getByRole('combobox');
+	await input.fill('keyboard');
+	const target = palette.getByRole('option', {
+		name: 'keyboard target',
+		exact: true,
+	});
+	await target.hover();
+	const targetId = await target.getAttribute('id');
+	if (!targetId) throw new Error('Expected an option id');
+	await expect(input).toHaveAttribute('aria-activedescendant', targetId);
+	await page.evaluate(async ({projectId, targetId}) => {
+		const result = await window.desktop.archiveThread({
+			projectId,
+			threadId: targetId,
+			archived: true,
+		});
+		if (!result.ok) throw new Error('Expected fake archive');
+	}, seeded);
+	await expect(
+		palette
+			.getByRole('group', {name: 'archived threads', exact: true})
+			.getByRole('option', {name: 'keyboard target', exact: true}),
+	).toHaveAttribute('aria-selected', 'true');
+	await expect(input).toHaveAttribute('aria-activedescendant', targetId);
+	await expect(palette.getByRole('listbox').getByRole('heading')).toHaveCount(
+		0,
+	);
+});
+
+test('a delayed thread open does not take focus back after the user moves elsewhere', async () => {
+	const seeded = await seedThreads();
+	const snapshot = await page.evaluate(
+		({projectId, targetId}) =>
+			window.desktop.getThreadSnapshot({projectId, threadId: targetId}),
+		seeded,
+	);
+	if (!snapshot.ok) throw new Error('Expected fake snapshot');
+	await app.evaluate(({ipcMain}, snapshot) => {
+		const fixture = globalThis as unknown as {releasePaletteOpen(): void};
+		ipcMain.removeHandler('threads:open');
+		ipcMain.handle(
+			'threads:open',
+			() =>
+				new Promise(resolve => {
+					fixture.releasePaletteOpen = () => resolve(snapshot);
+				}),
+		);
+	}, snapshot);
+	await page.keyboard.press(paletteKey);
+	await paletteSearch().fill('keyboard target');
+	await page.keyboard.press('Enter');
+	const outside = page.getByRole('button', {
+		name: 'command palette',
+		exact: true,
+	});
+	await outside.click();
+	await page.keyboard.press('Escape');
+	await outside.focus();
+	const focused = await page.evaluateHandle(() => document.activeElement);
+	await app.evaluate(() =>
+		(
+			globalThis as unknown as {releasePaletteOpen(): void}
+		).releasePaletteOpen(),
+	);
+	await expect(page.locator('.shell-identity h2')).toHaveText(
+		'keyboard target',
+	);
+	expect(
+		await page.evaluate(element => document.activeElement === element, focused),
+	).toBe(true);
+	await focused.dispose();
+});
+
+test('pending thread results retain an active descendant and unavailable reasons without executing', async () => {
+	const seeded = await seedThreads();
+	const snapshot = await page.evaluate(
+		({projectId, targetId}) =>
+			window.desktop.getThreadSnapshot({projectId, threadId: targetId}),
+		seeded,
+	);
+	if (!snapshot.ok) throw new Error('Expected fake snapshot');
+	await app.evaluate(({ipcMain}, snapshot) => {
+		const fixture = globalThis as unknown as {releasePaletteOpen(): void};
+		ipcMain.removeHandler('threads:open');
+		ipcMain.handle(
+			'threads:open',
+			() =>
+				new Promise(resolve => {
+					fixture.releasePaletteOpen = () => resolve(snapshot);
+				}),
+		);
+	}, snapshot);
+	await page.keyboard.press(paletteKey);
+	await paletteSearch().fill('keyboard target');
+	await page.keyboard.press('Enter');
+	await expect(
+		page.getByRole('dialog', {name: 'command palette', exact: true}),
+	).toBeHidden();
+	await page.keyboard.press(paletteKey);
+	await paletteSearch().fill('keyboard target');
+	const option = page.getByRole('option', {name: /keyboard target/});
+	await expect(option).toHaveAttribute('aria-disabled', 'true');
+	await expect(option).toHaveAttribute('aria-selected', 'true');
+	await expect(option).toContainText('another thread request is pending');
+	await expect(paletteSearch()).toHaveAttribute(
+		'aria-activedescendant',
+		`palette-option-thread-thread-open-${seeded.targetId}`,
+	);
+	await page.keyboard.press('Enter');
+	await option.click({force: true});
+	await expect(paletteSearch()).toBeFocused();
+	await expect(page.locator('.shell-identity h2')).toHaveText(
+		'keyboard current',
+	);
+	await page.keyboard.press('Escape');
+	await app.evaluate(() =>
+		(
+			globalThis as unknown as {releasePaletteOpen(): void}
+		).releasePaletteOpen(),
+	);
+});
+
+test('removing the highlighted result resets the active descendant to the first remaining result', async () => {
+	const seeded = await seedThreads();
+	await page.keyboard.press(paletteKey);
+	await paletteSearch().fill('keyboard');
+	const palette = page.getByRole('dialog', {
+		name: 'command palette',
+		exact: true,
+	});
+	await palette
+		.getByRole('option', {name: 'keyboard target', exact: true})
+		.hover();
+	await page.evaluate(async ({projectId, targetId}) => {
+		const result = await window.desktop.removeThread({
+			projectId,
+			threadId: targetId,
+		});
+		if (!result.ok) throw new Error('Expected fake removal');
+	}, seeded);
+	await expect(
+		palette.getByRole('option', {name: 'keyboard target', exact: true}),
+	).toHaveCount(0);
+	const first = palette.getByRole('option').first();
+	await expect(first).toHaveAttribute('aria-selected', 'true');
+	await expect(paletteSearch()).toHaveAttribute(
+		'aria-activedescendant',
+		(await first.getAttribute('id')) ?? 'missing',
+	);
+});
+
+test('a narrow workbench yields to the thread selected from the palette', async () => {
+	await seedThreads();
+	await page.setViewportSize({width: 840, height: 900});
+	await page
+		.getByRole('button', {name: 'open project files', exact: true})
+		.click();
+	await expect(
+		page.getByRole('textbox', {name: 'message', exact: true}),
+	).toBeHidden();
+	await page.keyboard.press(paletteKey);
+	await paletteSearch().fill('keyboard target');
+	await page.keyboard.press('Enter');
+	await expect(
+		page.getByRole('textbox', {name: 'message', exact: true}),
+	).toBeFocused();
+});
+
+test('long unbroken titles stay inside palette results in both themes', async () => {
+	const seeded = await seedThreads();
+	await page.evaluate(async ({projectId, targetId}) => {
+		await window.desktop.renameThread({
+			projectId,
+			threadId: targetId,
+			title: `keyboard${'x'.repeat(220)}`,
+		});
+	}, seeded);
+	for (const theme of ['dark', 'light']) {
+		await page.evaluate(theme => {
+			document.documentElement.dataset.theme = theme;
+		}, theme);
+		await page.keyboard.press(paletteKey);
+		await paletteSearch().fill('keyboard');
+		const results = page
+			.getByRole('dialog', {name: 'command palette', exact: true})
+			.getByRole('listbox');
+		expect(
+			await results.evaluate(
+				element => element.scrollWidth <= element.clientWidth,
+			),
+		).toBe(true);
+		await page.keyboard.press('Escape');
+	}
+});
+
 test('thread groups share arrow and pointer selection, open an active thread and restore composer focus on Escape', async () => {
 	const seeded = await seedThreads();
 	await page.keyboard.press(paletteKey);
@@ -145,17 +404,16 @@ test('thread groups share arrow and pointer selection, open an active thread and
 	]);
 	const options = palette.getByRole('option');
 	await expect(options).toHaveCount(4);
-	const optionIds = await options.evaluateAll(rows =>
-		rows.map(row => ({id: row.id, kind: row.dataset.resultKind})),
+	const optionIds = await options.evaluateAll(rows => rows.map(row => row.id));
+	await expect(
+		palette
+			.getByRole('group', {name: 'active threads', exact: true})
+			.getByRole('option'),
+	).toHaveCount(2);
+	expect(optionIds[2]).toBe(
+		`palette-option-thread-thread-open-${seeded.archivedId}`,
 	);
-	expect(optionIds.slice(0, 2).map(option => option.kind)).toEqual([
-		'thread',
-		'thread',
-	]);
-	expect(optionIds[2]?.id).toBe(
-		`palette-option-thread-open-${seeded.archivedId}`,
-	);
-	expect(optionIds[3]?.id).toBe('palette-option-shortcuts');
+	expect(optionIds[3]).toBe('palette-option-action-shortcuts');
 	const current = palette.getByRole('option', {
 		name: /keyboard current/,
 	});
@@ -163,7 +421,7 @@ test('thread groups share arrow and pointer selection, open an active thread and
 	await expect(current).toHaveAttribute('aria-current', 'true');
 	const target = palette.getByRole('option', {name: /keyboard target/});
 	const targetIndex = optionIds.findIndex(option =>
-		option.id.endsWith(seeded.targetId),
+		option.endsWith(seeded.targetId),
 	);
 	expect(targetIndex).toBeGreaterThanOrEqual(0);
 	await target.hover();
@@ -248,7 +506,7 @@ test('empty queries hide threads and command names work without selected-title k
 		exact: true,
 	});
 	const input = palette.getByRole('combobox');
-	await expect(palette.locator('[data-result-kind="thread"]')).toHaveCount(0);
+	await expect(palette.getByRole('group')).toHaveCount(0);
 	await expect(palette.locator('.palette-group-heading')).toHaveCount(0);
 	await expect(palette.getByRole('option').first()).toContainText('new thread');
 	await input.fill('keyboard current');

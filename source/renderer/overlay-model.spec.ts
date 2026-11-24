@@ -4,7 +4,6 @@ import {
 	dialogLabel,
 	filterActions,
 	filterPalette,
-	flatPaletteResults,
 	focusReturn,
 	importedToast,
 	keyHint,
@@ -67,7 +66,7 @@ test('an empty palette query keeps the existing action list and hides threads', 
 		['actions'],
 	);
 	t.deepEqual(
-		flatPaletteResults(groups).map(result => result.id),
+		groups.flatMap(group => group.results).map(result => result.id),
 		['rename'],
 	);
 });
@@ -100,7 +99,7 @@ test('a title query groups active and archived threads before matching actions',
 		['active-threads', 'archived-threads', 'actions'],
 	);
 	t.deepEqual(
-		flatPaletteResults(groups).map(result => result.id),
+		groups.flatMap(group => group.results).map(result => result.id),
 		['thread-open-active', 'thread-open-archived', 'shortcuts'],
 	);
 	t.true(
@@ -117,9 +116,9 @@ test('palette title matching is a case-insensitive substring, not action keyword
 		},
 	];
 	t.deepEqual(
-		flatPaletteResults(filterPalette([], threads, 'THE PAR')).map(
-			result => result.id,
-		),
+		filterPalette([], threads, 'THE PAR')
+			.flatMap(group => group.results)
+			.map(result => result.id),
 		['thread-open-a'],
 	);
 	t.deepEqual(filterPalette([], threads, 'parser review'), []);
@@ -129,12 +128,20 @@ test('palette title matching is a case-insensitive substring, not action keyword
 test('a project without threads keeps matching actions and an honest empty result', t => {
 	const actions = [action('new', 'new thread', 'chat session')];
 	t.deepEqual(
-		flatPaletteResults(filterPalette(actions, [], 'new')).map(
-			result => result.id,
-		),
+		filterPalette(actions, [], 'new')
+			.flatMap(group => group.results)
+			.map(result => result.id),
 		['new'],
 	);
 	t.deepEqual(filterPalette(actions, [], 'nothing matches'), []);
+});
+
+test('Greek sigma matches regardless of whether the query ends at the sigma', t => {
+	const threads = [
+		{...action('greek', 'ΟΣΑ'), archived: false, current: false},
+	];
+	t.is(filterPalette([], threads, 'ΟΣ')[0]?.results[0]?.id, 'greek');
+	t.is(filterPalette([], threads, 'οσ')[0]?.results[0]?.id, 'greek');
 });
 
 test('keyboard selection wraps, resets and handles empty results', t => {

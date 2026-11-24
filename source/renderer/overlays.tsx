@@ -19,7 +19,6 @@ import {
 	type DialogRequest,
 	dialogLabel,
 	filterPalette,
-	flatPaletteResults,
 	focusReturn,
 	keyHint,
 	moveSelection,
@@ -150,14 +149,13 @@ export function OverlayProvider({
 }) {
 	const [current, setCurrent] = useState<OverlayRequest | null>(null);
 	const [query, setQuery] = useState('');
-	const [selected, setSelected] = useState(0);
+	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [toast, setToast] = useState<Toast | null>(null);
 	const [themeError, setThemeError] = useState('');
 	const [activeTheme, setActiveTheme] = useState<'dark' | 'light'>('dark');
 	const dialog = useRef<HTMLDialogElement>(null);
 	const latestHooks = useRef({canClose, onClosed, onOpenChange});
 	const returnFocus = useRef<(() => void) | null>(null);
-	const returnTarget = useRef<HTMLElement | null>(null);
 	const closingFocus = useRef<Element | null>(null);
 	const notifications = useRef<ReturnType<typeof toastQueue> | null>(null);
 	const themeChanged = useRef(false);
@@ -235,7 +233,6 @@ export function OverlayProvider({
 			if (!rules.open(request)) return;
 			if (!dialog.current?.open) {
 				const target = opener === undefined ? document.activeElement : opener;
-				returnTarget.current = target instanceof HTMLElement ? target : null;
 				returnFocus.current = focusReturn(
 					target instanceof HTMLElement ? target : null,
 					document.querySelector<HTMLButtonElement>(
@@ -244,7 +241,7 @@ export function OverlayProvider({
 				);
 			}
 			setQuery('');
-			setSelected(0);
+			setSelectedId(null);
 			setCurrent(request);
 		},
 		[rules],
@@ -381,22 +378,28 @@ export function OverlayProvider({
 		},
 	];
 	const groups = filterPalette(commands, threads, query);
-	const filtered = flatPaletteResults(groups);
-	const positions = new Map(
-		filtered.map((result, index) => [result.id, index]),
-	);
-	const index = moveSelection(selected, 0, filtered.length);
-	const selectedId = filtered[index]?.id;
+	const filtered = groups.flatMap(group => group.results);
+	const resultKey = (result: (typeof filtered)[number]) =>
+		`${result.kind}-${result.id}`;
+	const selectedIndex = selectedId
+		? filtered.findIndex(result => resultKey(result) === selectedId)
+		: -1;
+	const index = moveSelection(selectedIndex, 0, filtered.length);
+	const activeResultId = filtered[index] ? resultKey(filtered[index]) : null;
 	useLayoutEffect(() => {
-		if (current === 'palette' && selectedId)
+		if (current === 'palette' && selectedId !== activeResultId)
+			setSelectedId(activeResultId);
+	}, [current, selectedId, activeResultId]);
+	useLayoutEffect(() => {
+		if (current === 'palette' && activeResultId)
 			document
-				.getElementById(`palette-option-${selectedId}`)
+				.getElementById(`palette-option-${activeResultId}`)
 				?.scrollIntoView({block: 'nearest'});
-	}, [current, selectedId]);
+	}, [current, activeResultId]);
 	const execute = (action: PaletteAction | undefined) => {
 		if (!action || action.disabledReason) return;
-		if (!action.opensDialog) close();
 		runAction(action);
+		if (!action.opensDialog) closeIf('palette');
 	};
 	const modifier = commandModifier(navigator.platform);
 
@@ -450,20 +453,20 @@ export function OverlayProvider({
 							<input
 								data-autofocus
 								role="combobox"
-								aria-label="find a command"
+								aria-label="find a thread or action"
 								aria-expanded={filtered.length > 0}
 								aria-autocomplete="list"
 								aria-controls={filtered.length ? 'palette-results' : undefined}
 								aria-activedescendant={
-									filtered[index]
-										? `palette-option-${filtered[index].id}`
+									activeResultId
+										? `palette-option-${activeResultId}`
 										: undefined
 								}
 								value={query}
 								placeholder="find a thread or action…"
 								onChange={event => {
 									setQuery(event.target.value);
-									setSelected(0);
+									setSelectedId(null);
 								}}
 								onKeyDown={event => {
 									if (
@@ -473,12 +476,13 @@ export function OverlayProvider({
 										return;
 									if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 										event.preventDefault();
-										setSelected(
-											moveSelection(
-												index,
-												event.key === 'ArrowDown' ? 1 : -1,
-												filtered.length,
-											),
+										const next = moveSelection(
+											index,
+											event.key === 'ArrowDown' ? 1 : -1,
+											filtered.length,
+										);
+										setSelectedId(
+											filtered[next] ? resultKey(filtered[next]) : null,
 										);
 									} else if (event.key === 'Enter') {
 										event.preventDefault();
@@ -491,28 +495,35 @@ export function OverlayProvider({
 							<div
 								id="palette-results"
 								role="listbox"
-								aria-label="commands"
+								aria-label="matching threads and actions"
 								className="palette-results"
 							>
 								{groups.map(group => (
 									<div
 										key={group.id}
 										role={query.trim() ? 'group' : undefined}
-										aria-label={query.trim() ? group.label : undefined}
+										aria-labelledby={
+											query.trim() ? `palette-group-${group.id}` : undefined
+										}
 										className="palette-group"
 									>
 										{query.trim() && (
-											<h3 className="palette-group-heading">{group.label}</h3>
+											<div
+												id={`palette-group-${group.id}`}
+												role="presentation"
+												className="palette-group-heading"
+											>
+												{group.label}
+											</div>
 										)}
 										{group.results.map(result => {
-											const position = positions.get(result.id) ?? 0;
 											return (
 												<div
-													key={result.id}
-													id={`palette-option-${result.id}`}
+													key={resultKey(result)}
+													id={`palette-option-${resultKey(result)}`}
 													role="option"
 													tabIndex={-1}
-													aria-selected={position === index}
+													aria-selected={resultKey(result) === activeResultId}
 													aria-current={
 														result.kind === 'thread' && result.current
 															? 'true'
@@ -520,8 +531,7 @@ export function OverlayProvider({
 													}
 													aria-disabled={!!result.disabledReason}
 													className="palette-option"
-													data-result-kind={result.kind}
-													onPointerMove={() => setSelected(position)}
+													onPointerMove={() => setSelectedId(resultKey(result))}
 													onMouseDown={event => event.preventDefault()}
 													onClick={() => execute(result)}
 													onKeyDown={event => {
@@ -553,9 +563,7 @@ export function OverlayProvider({
 							</div>
 						) : (
 							<p className="palette-empty" role="status">
-								{query.trim()
-									? 'no threads or actions found. try a different search.'
-									: 'no commands found. try a different action name.'}
+								no threads or actions found. try a different search.
 							</p>
 						)}
 						<p className="overlay-hint">

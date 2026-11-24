@@ -337,6 +337,11 @@
 	cursor: not-allowed;
 }
 
+.palette-label {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
 .palette-option kbd {
 	color: var(--colors-on-surface-muted);
 	font-size: 13px;

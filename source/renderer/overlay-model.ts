@@ -14,11 +14,11 @@ export interface PaletteThread extends PaletteAction {
 	current: boolean;
 }
 
-export type PaletteResult =
+type PaletteResult =
 	| (PaletteAction & {kind: 'action'})
 	| (PaletteThread & {kind: 'thread'});
 
-export interface PaletteGroup {
+interface PaletteGroup {
 	id: 'active-threads' | 'archived-threads' | 'actions';
 	label: string;
 	results: PaletteResult[];
@@ -126,10 +126,10 @@ export function filterPalette(
 				results: actions.map(action => ({...action, kind: 'action'})),
 			},
 		];
-	const text = query.trim().toLocaleLowerCase();
-	const matches = threads.filter(thread =>
-		thread.label.toLocaleLowerCase().includes(text),
-	);
+	const fold = (value: string) =>
+		value.toLocaleLowerCase().replaceAll('ς', 'σ');
+	const text = fold(query.trim());
+	const matches = threads.filter(thread => fold(thread.label).includes(text));
 	const groups: PaletteGroup[] = [
 		{
 			id: 'active-threads',
@@ -155,10 +155,6 @@ export function filterPalette(
 		},
 	];
 	return groups.filter(group => group.results.length > 0);
-}
-
-export function flatPaletteResults(groups: PaletteGroup[]): PaletteResult[] {
-	return groups.flatMap(group => group.results);
 }
 
 export function moveSelection(index: number, delta: number, length: number) {
