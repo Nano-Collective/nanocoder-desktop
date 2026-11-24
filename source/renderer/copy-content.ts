@@ -16,12 +16,16 @@ export function fencedCodeText(
 	const opening = /^ {0,3}(`{3,}|~{3,})[^\r\n]*/.exec(lines[0] ?? '');
 	if (!opening) return undefined;
 	const fence = opening[1];
-	const closing = new RegExp(
-		`^ {0,3}${fence[0]}{${fence.length},}[ \\t]*(?:\\r\\n|\\r|\\n)?$`,
-	);
 	let end = lines.length;
 	for (let index = 1; index < lines.length; index++) {
-		if (closing.test(lines[index])) {
+		const closing = /^ {0,3}(`{3,}|~{3,})[ \t]*(?:\r\n|\r|\n)?$/.exec(
+			lines[index],
+		);
+		if (
+			closing &&
+			closing[1][0] === fence[0] &&
+			closing[1].length >= fence.length
+		) {
 			end = index;
 			break;
 		}
@@ -29,7 +33,11 @@ export function fencedCodeText(
 	const indent = /^ */.exec(lines[0] ?? '')?.[0].length ?? 0;
 	return lines
 		.slice(1, end)
-		.map(line => line.replace(new RegExp(`^ {0,${indent}}`), ''))
+		.map(line => {
+			let remove = 0;
+			while (remove < indent && line[remove] === ' ') remove++;
+			return line.slice(remove);
+		})
 		.join('');
 }
 
