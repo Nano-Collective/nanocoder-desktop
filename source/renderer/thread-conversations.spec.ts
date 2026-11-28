@@ -781,14 +781,13 @@ test('the view cache keeps the open thread, unsent drafts and live turns, and dr
 		...turn([{type: 'text', text: 'd reply'}], 'd'),
 		result: {ok: true, value: {stopReason: 'end_turn'}},
 	});
+	t.is(conversations.getState().transcript.items[0]?.kind, 'agent');
 	conversations.selectThread('a');
 	t.is(conversations.getState().draft, 'unsent');
 	conversations.selectThread('b');
 	t.is(conversations.getState().transcript.items[0]?.text, 'b reply');
 	conversations.selectThread('c');
 	t.deepEqual(conversations.getState().transcript.items, []);
-	conversations.selectThread('d');
-	t.is(conversations.getState().transcript.items[0]?.kind, 'agent');
 });
 
 test('a view that waits for an approval is kept when the cache is full (PERF-04)', t => {
@@ -812,6 +811,84 @@ test('a view that waits for an approval is kept when the cache is full (PERF-04)
 	});
 	conversations.selectThread('a');
 	t.is(conversations.getState().transcript.permissions.length, 1);
+});
+
+test('opening a thread with snapshot before selectThread keeps its history even when other views are protected (PERF-04)', t => {
+	const conversations = createThreadConversations({
+		onChange() {},
+		clock: {schedule: () => () => {}},
+		maxViews: 2,
+	});
+	conversations.selectProject('project-a');
+	// One protected draft view plus one currently active idle view fill maxViews=2.
+	conversations.selectThread('draft-1');
+	conversations.setDraft('unsent draft');
+	conversations.selectThread('outgoing');
+	conversations.snapshot(snapshot('outgoing', [{type: 'text', text: 'old'}]));
+	// Production open order: snapshot arrives before selectThread switches activeThreadId.
+	conversations.snapshot(
+		snapshot('incoming', [{type: 'text', text: 'loaded history'}]),
+	);
+	conversations.selectThread('incoming');
+	t.deepEqual(
+		conversations
+			.getState()
+			.transcript.items.map(item => (item.kind === 'agent' ? item.text : '')),
+		['loaded history'],
+	);
+	// After switching, the outgoing idle view was trimmed while the draft stayed.
+	conversations.selectThread('outgoing');
+	t.deepEqual(conversations.getState().transcript.items, []);
+	conversations.selectThread('draft-1');
+	t.is(conversations.getState().draft, 'unsent draft');
+});
+
+test('evicted failed-turn rows stay anchored beside their turns after reopening from a snapshot', t => {
+	const conversations = createThreadConversations({
+		onChange() {},
+		clock: {schedule: () => () => {}},
+		maxViews: 1,
+	});
+	const history: TurnEvent[] = [
+		{type: 'user', text: 'turn one'},
+		{type: 'user', text: 'turn two'},
+	];
+	conversations.selectProject('project-a');
+	conversations.selectThread('failed');
+	conversations.receive({
+		...turn([{type: 'user', text: 'turn one'}], 'failed'),
+		result: {ok: false, error: {code: 'UNAVAILABLE', message: 'first boom'}},
+	});
+	conversations.receive({
+		...turn([{type: 'user', text: 'turn two'}], 'failed'),
+		result: {ok: false, error: {code: 'UNAVAILABLE', message: 'second boom'}},
+	});
+	// Visit another thread so the idle failed view is evicted from the cache.
+	conversations.selectThread('other');
+	conversations.snapshot(snapshot('other', [{type: 'text', text: 'idle'}]));
+	// Reopen via snapshot (carrying only the latest terminal result, as main does).
+	conversations.snapshot({
+		...snapshot('failed', history),
+		result: {ok: false, error: {code: 'UNAVAILABLE', message: 'second boom'}},
+	});
+	conversations.selectThread('failed');
+	t.deepEqual(
+		conversations
+			.getState()
+			.transcript.items.map(item =>
+				item.kind === 'failure'
+					? `failure:${item.text}`
+					: item.kind === 'user'
+						? `user:${item.text}`
+						: item.kind,
+			),
+		[
+			'user:turn one',
+			'failure:first boom',
+			'user:turn two',
+			'failure:second boom',
+		],
+	);
 });
 
 const epoch = '00000000-0000-4000-8000-000000000001';

@@ -105,11 +105,50 @@ const listItemStart = /^(?:[-+*]|\d{1,9}[.)])(?:[ \t]|\r?\n?$)/;
 const fenceOpen = /^ {0,3}(`{3,}|~{3,})/;
 const fenceClose = /^ {0,3}(`{3,}|~{3,})[ \t]*\r?\n?$/;
 
+// Checks for constructs whose meaning spans blocks: CommonMark link reference
+// definitions (including multiline or escaped-bracket labels), GFM footnotes
+// and line-start HTML. Linear in input length.
+function hasCrossBlockSyntax(text: string): boolean {
+	if (/\[\^|^[ \t]{0,3}</m.test(text)) return true;
+	const lines = text.split(/\r?\n/);
+	let inLabel = false;
+	for (const line of lines) {
+		if (line.trim() === '') {
+			inLabel = false;
+			continue;
+		}
+		let start = 0;
+		if (!inLabel) {
+			const match = /^ {0,3}\[/.exec(line);
+			if (!match) continue;
+			inLabel = true;
+			start = match[0].length;
+		}
+		for (let i = start; i < line.length; i++) {
+			const ch = line[i];
+			if (ch === '\\') {
+				i++;
+				continue;
+			}
+			if (ch === '[') {
+				inLabel = false;
+				break;
+			}
+			if (ch === ']') {
+				if (line[i + 1] === ':') return true;
+				inLabel = false;
+				break;
+			}
+		}
+	}
+	return false;
+}
+
 // Splits at a blank line only when the next line starts a new top-level block,
 // so each part parses as it would inside the whole text. Text that can refer
 // across blocks (link definitions, footnotes, HTML) stays in one block.
 export function splitMarkdownBlocks(text: string): string[] {
-	if (/^ {0,3}\[[^\]\n]+\]:|\[\^|^[ \t]{0,3}</m.test(text)) return [text];
+	if (hasCrossBlockSyntax(text)) return [text];
 	const blocks: string[] = [];
 	let block = '';
 	let content = false;

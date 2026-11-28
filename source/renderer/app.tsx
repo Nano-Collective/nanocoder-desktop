@@ -529,6 +529,20 @@ export function App() {
 
 	useEffect(() => {
 		return window.desktop.onProjectEvent(event => {
+			// Attachment cleanup runs regardless of supervisor state or active project,
+			// so a background deletion after switching projects never leaks attachments.
+			if (event.type === 'thread-removed') {
+				setAttachments(current =>
+					clearAttachments(
+						current,
+						attachmentKey(event.projectId, event.threadId),
+					),
+				);
+			} else if (event.type === 'project-removed') {
+				setAttachments(current =>
+					forgetProjectAttachments(current, event.projectId),
+				);
+			}
 			const previous = supervisorIndex.current;
 			const next = observeSupervisor(previous, event);
 			if (next === previous) return;
@@ -538,9 +552,6 @@ export function App() {
 				selectedProject.current = event.projectId;
 				setAttemptedProjectId(event.projectId);
 			} else if (event.type === 'project-removed') {
-				setAttachments(current =>
-					forgetProjectAttachments(current, event.projectId),
-				);
 				if (selectedProject.current === event.projectId) {
 					selectedProject.current = null;
 					setAttemptedProjectId(null);

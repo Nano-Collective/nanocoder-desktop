@@ -1,8 +1,9 @@
 import {findTextRanges} from '@/renderer/find-model';
 
 interface TextSegment<N> {
-	node: N;
+	node: N | null;
 	text: string;
+	block?: Element | null;
 }
 
 interface FindPoint<N> {
@@ -14,45 +15,64 @@ interface FieldFindSpan<N> {
 	id: string;
 	start: FindPoint<N>;
 	end: FindPoint<N>;
+	block?: Element | null;
 }
 
-// An end offset is exclusive, so it belongs to the node holding the last character.
-function locate<N>(
-	segments: readonly TextSegment<N>[],
-	offset: number,
-	end: boolean,
-): FindPoint<N> | undefined {
-	let base = 0;
-	for (const segment of segments) {
-		const limit = base + segment.text.length;
-		const inside = end
-			? offset > base && offset <= limit
-			: offset >= base && offset < limit;
-		if (inside) return {node: segment.node, offset: offset - base};
-		base = limit;
-	}
-	return undefined;
-}
-
-// A field's text can span several nodes, so each edge goes in the node holding it.
+// Single forward pass over sorted match ranges, so mapping stays linear even
+// when a long reply contains thousands of text nodes and hits.
 export function fieldFindSpans<N>(
 	fieldId: string,
 	segments: readonly TextSegment<N>[],
 	query: string,
 ): FieldFindSpan<N>[] {
+	if (query === '' || segments.length === 0) return [];
 	const text = segments.map(segment => segment.text).join('');
+	const ranges = findTextRanges(text, query);
+	if (ranges.length === 0) return [];
 	const spans: FieldFindSpan<N>[] = [];
-	for (const [index, range] of findTextRanges(text, query).entries()) {
-		const start = locate(segments, range.start, false);
-		const end = locate(segments, range.end, true);
-		if (start && end) spans.push({id: `${fieldId}:${index}`, start, end});
+	let startIdx = 0;
+	let startBase = 0;
+	let endIdx = 0;
+	let endBase = 0;
+	for (const [index, range] of ranges.entries()) {
+		while (
+			startIdx < segments.length &&
+			startBase + segments[startIdx].text.length <= range.start
+		) {
+			startBase += segments[startIdx].text.length;
+			startIdx++;
+		}
+		if (endIdx < startIdx) {
+			endIdx = startIdx;
+			endBase = startBase;
+		}
+		while (
+			endIdx < segments.length &&
+			endBase + segments[endIdx].text.length < range.end
+		) {
+			endBase += segments[endIdx].text.length;
+			endIdx++;
+		}
+		const startSeg = segments[startIdx];
+		const endSeg = segments[endIdx];
+		if (startSeg?.node && endSeg?.node) {
+			spans.push({
+				id: `${fieldId}:${index}`,
+				start: {node: startSeg.node, offset: range.start - startBase},
+				end: {node: endSeg.node, offset: range.end - endBase},
+				...(startSeg.block === undefined ? {} : {block: startSeg.block}),
+			});
+		}
 	}
 	return spans;
 }
 
 const fieldSelector = '[data-find-id]';
-// Link hosts and copy buttons are chrome, not reported text.
-const chromeSelector = '.stream-link-target, button';
+// Exclude copy controls and appended localhost host labels, while keeping
+// visible localhost link button text searchable and highlightable.
+const chromeSelector = '.stream-link-target, .stream-copy, .stream-code-copy';
+const blockSelector =
+	'p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, tr, td, th';
 const matchName = 'find-match';
 const activeName = 'find-active';
 const viewportOverscanPx = 300;
@@ -96,6 +116,7 @@ function highlightRegistry() {
 
 function textSegments(field: HTMLElement): TextSegment<Text>[] {
 	const segments: TextSegment<Text>[] = [];
+	let lastBlock: Element | null = null;
 	const walker = field.ownerDocument.createTreeWalker(
 		field,
 		NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
@@ -109,7 +130,17 @@ function textSegments(field: HTMLElement): TextSegment<Text>[] {
 		},
 	);
 	for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-		segments.push({node: node as Text, text: node.textContent ?? ''});
+		const text = node.textContent ?? '';
+		if (text === '') continue;
+		const block = node.parentElement?.closest(blockSelector) ?? field;
+		// Keep adjacent blocks separated so words never fuse across block boundaries.
+		if (lastBlock && block !== lastBlock) {
+			const prev = segments.at(-1);
+			if (prev && !prev.text.endsWith('\n') && !text.startsWith('\n'))
+				segments.push({node: null, text: '\n'});
+		}
+		lastBlock = block;
+		segments.push({node: node as Text, text, block});
 	}
 	return segments;
 }
@@ -133,23 +164,41 @@ export function paintTranscriptFind(
 	const bounds = viewport?.getBoundingClientRect();
 	const useViewport = Boolean(bounds && bounds.bottom > bounds.top);
 	const activeField = activeFieldOf(activeId);
+	const blockVisibility = new WeakMap<Element, boolean>();
+	const isBlockVisible = (block: Element | null | undefined): boolean => {
+		if (!useViewport || !bounds || !block) return true;
+		const cached = blockVisibility.get(block);
+		if (cached !== undefined) return cached;
+		const visible = inFindViewport(block.getBoundingClientRect(), bounds);
+		blockVisibility.set(block, visible);
+		return visible;
+	};
 	const matches: Range[] = [];
 	const active: Range[] = [];
 	for (const field of root.querySelectorAll<HTMLElement>(fieldSelector)) {
 		const fieldId = field.dataset.findId ?? '';
+		const fieldRect = useViewport ? field.getBoundingClientRect() : null;
 		if (
 			useViewport &&
 			bounds &&
+			fieldRect &&
 			fieldId !== activeField &&
-			!inFindViewport(field.getBoundingClientRect(), bounds)
+			!inFindViewport(fieldRect, bounds)
 		)
 			continue;
+		const tallField =
+			useViewport &&
+			bounds !== undefined &&
+			fieldRect !== null &&
+			fieldRect.height > bounds.bottom - bounds.top + viewportOverscanPx * 2;
 		const spans = fieldFindSpans(fieldId, textSegments(field), query);
 		for (const span of spans) {
+			const isActive = span.id === activeId;
+			if (!isActive && tallField && !isBlockVisible(span.block)) continue;
 			const range = new Range();
 			range.setStart(span.start.node, span.start.offset);
 			range.setEnd(span.end.node, span.end.offset);
-			(span.id === activeId ? active : matches).push(range);
+			(isActive ? active : matches).push(range);
 		}
 	}
 	if (matches.length > 0) highlights.set(matchName, highlightOf(matches));

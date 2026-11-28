@@ -312,6 +312,27 @@ function DiffView({
 		if (top !== element.scrollTop) element.scrollTop = top;
 		updateWindow(top, element.clientHeight);
 	}, [activeMatch, shown.length, updateWindow]);
+	// Runs after the active row mounts so an offscreen horizontal hit scrolls into view.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: window changes mount the target row
+	React.useLayoutEffect(() => {
+		if (!activeMatch) return;
+		const element = scroller.current;
+		if (!element) return;
+		const mark = element.querySelector<HTMLElement>(
+			'[data-find-active="true"] mark.find-hit--active',
+		);
+		if (!mark) return;
+		const markRect = mark.getBoundingClientRect();
+		const viewRect = element.getBoundingClientRect();
+		if (
+			markRect.width > 0 &&
+			(markRect.left < viewRect.left || markRect.right > viewRect.right)
+		) {
+			const delta =
+				markRect.left - viewRect.left - (viewRect.width - markRect.width) / 2;
+			element.scrollLeft = Math.max(0, element.scrollLeft + delta);
+		}
+	}, [activeMatch, window.start, window.end]);
 	const orderedMounted = mountedDiffRows(
 		window,
 		activeCursor?.cursor,
@@ -518,7 +539,16 @@ function DiffView({
 							onChange={event =>
 								onInteraction({...interaction, comment: event.target.value})
 							}
-							onKeyDown={event => event.stopPropagation()}
+							onKeyDown={event => {
+								if (
+									(event.metaKey || event.ctrlKey) &&
+									!event.altKey &&
+									!event.shiftKey &&
+									event.key.toLowerCase() === 'f'
+								)
+									return;
+								event.stopPropagation();
+							}}
 						/>
 					</label>
 					{commentReason && <p className="files-hint">{commentReason}</p>}

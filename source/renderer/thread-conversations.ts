@@ -53,6 +53,9 @@ export function createThreadConversations(options: {
 		cancellation: null,
 	};
 	const views = new Map<string, View>();
+	// Compact turn-anchor + failure skeleton kept after a view is evicted,
+	// so earlier failed turns stay beside their turn if the thread reopens.
+	const rememberedFailures = new Map<string, Transcript>();
 	const removed = new Set<string>();
 	const replaying = new Set<string>();
 	// Threads with a turn that sent live events and has no result yet.
@@ -75,14 +78,32 @@ export function createThreadConversations(options: {
 	};
 	const allowed = (threadId: string) =>
 		!disposed && projectId !== null && !removed.has(key(threadId));
-	// Idle views go first. Live turns, approvals and drafts stay; an idle thread
-	// reloads from its snapshot when it is opened again.
-	const trim = () => {
+	const failureSkeleton = (transcript: Transcript): Transcript | null => {
+		let hasFailure = false;
+		const items: Transcript['items'] = [];
+		for (const item of transcript.items) {
+			if (item.kind === 'failure') {
+				hasFailure = true;
+				items.push(item);
+			} else if (item.kind === 'user') {
+				items.push(
+					item.messageId === undefined
+						? {kind: 'user', text: item.text}
+						: {kind: 'user', text: item.text, messageId: item.messageId},
+				);
+			}
+		}
+		return hasFailure ? {...emptyTranscript, items} : null;
+	};
+	// Idle views go first. Live turns, approvals, drafts and the view just
+	// written stay; an idle thread reloads from its snapshot when opened again.
+	const trim = (keep?: string) => {
 		const active = activeThreadId ? key(activeThreadId) : null;
 		for (const [viewKey, held] of views) {
 			if (views.size <= maxViews) return;
 			if (
 				viewKey === active ||
+				viewKey === keep ||
 				tickets.has(viewKey) ||
 				replaying.has(viewKey) ||
 				streaming.has(viewKey) ||
@@ -90,15 +111,18 @@ export function createThreadConversations(options: {
 				held.transcript.permissions.length > 0
 			)
 				continue;
+			const skeleton = failureSkeleton(held.transcript);
+			if (skeleton) rememberedFailures.set(viewKey, skeleton);
 			views.delete(viewKey);
 		}
 	};
 	const put = (threadId: string, patch: Partial<View>) => {
+		const viewKey = key(threadId);
 		const next = {...view(threadId), ...patch};
 		// Deleting first moves the view to the newest end of the map.
-		views.delete(key(threadId));
-		views.set(key(threadId), next);
-		trim();
+		views.delete(viewKey);
+		views.set(viewKey, next);
+		trim(viewKey);
 		emit();
 	};
 	const terminal = (
@@ -158,6 +182,7 @@ export function createThreadConversations(options: {
 				return;
 			batcher.flush();
 			activeThreadId = threadId;
+			trim();
 			emit();
 		},
 		setDraft(draft: string) {
@@ -216,14 +241,19 @@ export function createThreadConversations(options: {
 			// The stream folds a replay begin marker into this snapshot.
 			if (snapshot.replaying) replaying.add(key(threadId));
 			else replaying.delete(key(threadId));
+			const viewKey = key(threadId);
 			const previous = view(threadId).transcript;
+			const failureSource = previous.items.some(item => item.kind === 'failure')
+				? previous
+				: (rememberedFailures.get(viewKey) ?? previous);
+			rememberedFailures.delete(viewKey);
 			// Failure rows are not in the history, so messages match without them.
 			const history = {
 				...previous,
 				items: previous.items.filter(item => item.kind !== 'failure'),
 			};
 			const transcript = carryFailureRows(
-				previous,
+				failureSource,
 				carryMessageTimes(
 					history,
 					carryMessageRows(
@@ -320,6 +350,7 @@ export function createThreadConversations(options: {
 			if (!allowed(threadId)) return;
 			batcher.remove(threadId);
 			views.delete(key(threadId));
+			rememberedFailures.delete(key(threadId));
 			tickets.delete(key(threadId));
 			replaying.delete(key(threadId));
 			streaming.delete(key(threadId));
@@ -332,6 +363,7 @@ export function createThreadConversations(options: {
 			batcher.dispose();
 			tickets.clear();
 			views.clear();
+			rememberedFailures.clear();
 			removed.clear();
 			replaying.clear();
 			streaming.clear();

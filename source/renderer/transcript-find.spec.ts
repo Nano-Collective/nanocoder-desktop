@@ -113,3 +113,22 @@ test('row keys follow the ConversationStream formula, with an occurrence for rep
 	];
 	t.deepEqual(transcriptRowKeys(repeated), ['tool:same:0', 'tool:same:1']);
 });
+
+test('agent Markdown search matches visible rendered text instead of raw Markdown syntax', t => {
+	const formatted: TranscriptItem[] = [
+		{
+			kind: 'agent',
+			messageId: 'md-1',
+			text: 'hello **world**\n\n[alpha](https://alpha.invalid) alpha\n\n[local app](http://localhost:3000)\n\n```ts\nconst raw = "**bold**";\n```',
+		},
+	];
+	// Phrase spanning bold markers is found.
+	t.is(findTranscriptMatches(formatted, 'hello world').length, 1);
+	// Link URL target is excluded, so only the two visible `alpha` words match.
+	t.is(findTranscriptMatches(formatted, 'alpha').length, 2);
+	// Localhost link label is found without matching the hidden URL host.
+	t.is(findTranscriptMatches(formatted, 'local app').length, 1);
+	t.is(findTranscriptMatches(formatted, 'localhost:3000').length, 0);
+	// Fenced code body stays verbatim (including literal asterisks).
+	t.is(findTranscriptMatches(formatted, '**bold**').length, 1);
+});

@@ -131,9 +131,10 @@ function writeLargeRepo(project: string): void {
 		{length: 2_505},
 		(_, index) => `old line ${index + 1}`,
 	).join('\n');
-	const newText = Array.from(
-		{length: 2_505},
-		(_, index) => `new line ${index + 1}`,
+	const newText = Array.from({length: 2_505}, (_, index) =>
+		index === 2_449
+			? `new line ${index + 1} ${'padding '.repeat(30)}far-right-token`
+			: `new line ${index + 1}`,
 	).join('\n');
 	const git = (...args: string[]) =>
 		execFileSync('git', ['-c', 'core.hooksPath=', ...args], {
@@ -388,6 +389,9 @@ test('#72 transcript find searches user, Markdown, tool and folded detail text',
 			exact: true,
 		});
 		await expect(sheet).toBeVisible();
+		// A modal dialog owns keyboard focus; Cmd/Ctrl+F must not open find behind it.
+		await page.keyboard.press(findKey);
+		await expect(transcriptBar(page)).toHaveCount(0);
 		await expect(sheet.locator('.shortcut-list')).toContainText(
 			'find in conversation or open diff',
 		);
@@ -395,6 +399,17 @@ test('#72 transcript find searches user, Markdown, tool and folded detail text',
 		await capture(page, 'after-shortcuts.png');
 		await sheet.getByRole('button', {name: 'close keyboard shortcuts'}).click();
 		await expect(sheet).toBeHidden();
+
+		// Phrases crossing Markdown formatting still match and paint one active range.
+		await composer(page).focus();
+		await page.keyboard.press(findKey);
+		await transcriptInput(page).fill('A zephyr bold');
+		await expect(transcriptStatus(page)).toHaveText(
+			`1 of 1 · ${transcriptScope}`,
+		);
+		await expect.poll(() => highlightState(page)).toMatchObject({active: 1});
+		await page.keyboard.press('Escape');
+		await expect(transcriptBar(page)).toHaveCount(0);
 	} finally {
 		await closeSession(session);
 	}
@@ -464,6 +479,25 @@ test('#72 diff find covers the 5,000-row cap, routes by focus and leaves termina
 		);
 		await capture(page, 'after-diff-find-dark.png');
 
+		// A match at the far right of an unwrapped line scrolls horizontally into view.
+		await diffInput.fill('far-right-token');
+		await expect(diffStatus(page)).toHaveText(`1 of 1 · ${diffScope}`);
+		const farMark = active.locator('mark.find-hit--active');
+		await expect(farMark).toHaveText('far-right-token');
+		await expect
+			.poll(async () => {
+				const [scrollerBox, markBox] = await Promise.all([
+					lines.boundingBox(),
+					farMark.boundingBox(),
+				]);
+				if (!scrollerBox || !markBox) return false;
+				return (
+					markBox.x >= scrollerBox.x &&
+					markBox.x + markBox.width <= scrollerBox.x + scrollerBox.width
+				);
+			})
+			.toBe(true);
+
 		const queryStarted = performance.now();
 		await diffInput.fill('line');
 		await expect(diffStatus(page)).toHaveText(
@@ -493,6 +527,20 @@ test('#72 diff find covers the 5,000-row cap, routes by focus and leaves termina
 				),
 			)
 			.toBe(true);
+
+		// Cmd/Ctrl+F from the review comment textarea opens diff find and returns focus on Escape.
+		await lines
+			.locator('[role="option"]:not([aria-disabled="true"])')
+			.first()
+			.click();
+		const commentBox = page.locator('.review-comment textarea');
+		await expect(commentBox).toBeVisible();
+		await commentBox.focus();
+		await page.keyboard.press(findKey);
+		await expect(diffInput).toBeFocused();
+		await page.keyboard.press('Escape');
+		await expect(diffBar(page)).toHaveCount(0);
+		await expect(commentBox).toBeFocused();
 
 		await composer(page).focus();
 		await page.keyboard.press(findKey);
