@@ -102,7 +102,7 @@ The following detail is Suggestion (not discussed):
   | `INTERNAL` | Anything else. Details go to the diagnostics ring, never to the message. |
 
 - **Safe messages.** Error messages contain project-relative paths only, never secrets, environment values or stderr.
-- **Ordered streams.** Events pushed from main carry a per-thread sequence number. A renderer that sees a gap asks for a fresh snapshot instead of guessing.
+- **Ordered streams.** Events pushed from main carry a per-thread sequence number. A renderer that sees a gap asks for a fresh snapshot instead of guessing. A failed snapshot read is retried with backoff (0.5 to 8 seconds, five tries), then left to the next live event; while it waits, at most 500 events are held for the thread, and past that only the newest sequence is kept, so the snapshot that ends the wait must reach it.
 - **Bounded event rate.** High-rate ACP chunks are batched before they cross IPC, so a fast model cannot flood the renderer.
 - **Cancellable work.** Long requests (large diffs, deep listings) accept a cancellation ID.
 
