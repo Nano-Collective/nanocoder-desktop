@@ -202,12 +202,14 @@ export const PAGE_SCRIPTS = {
 		const root = el.getRootNode();
 		const hit = inView ? (typeof root.elementFromPoint === 'function' ? root : document).elementFromPoint(x, y) : null;
 		const viaLabel = !!hit && !!el.labels && Array.from(el.labels).some(item => item.contains(hit));
+		const FRAMES = new Set(['IFRAME', 'FRAME', 'OBJECT', 'EMBED', 'FENCEDFRAME', 'PORTAL']);
 		return {
 			ref: refFor(el),
 			facts: facts(el),
 			visible: shown(el),
 			inView,
 			hitOk: !!hit && (hit === el || el.contains(hit) || viaLabel),
+			framed: FRAMES.has(el.tagName.toUpperCase()) || (!!hit && FRAMES.has(hit.tagName.toUpperCase())),
 			x: Math.round(x),
 			y: Math.round(y),
 		};

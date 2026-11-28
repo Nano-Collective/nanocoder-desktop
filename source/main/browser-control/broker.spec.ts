@@ -56,6 +56,7 @@ const located = (overrides: Record<string, unknown> = {}) => ({
 	visible: true,
 	inView: true,
 	hitOk: true,
+	framed: false,
 	x: 40,
 	y: 60,
 	...overrides,
@@ -315,6 +316,7 @@ test('click refuses stale, missing, hidden, covered and disabled targets without
 		[located({visible: false}), /not visible/],
 		[located({inView: false}), /not visible/],
 		[located({hitOk: false}), /Another element covers it/],
+		[located({framed: true}), /embedded frame/],
 		[located({facts: facts({disabled: true})}), /disabled/],
 	];
 	for (const [answer, message] of cases) {

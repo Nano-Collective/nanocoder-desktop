@@ -1233,6 +1233,44 @@ test('BRW-16 during an agent action a page may go only where the policy admits, 
 	t.true(f.views[0].hooks.allow('https://example.com/next'));
 });
 
+test('BRW-03 an embedded frame follows the same origin policy as the page, without reporting a block', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	const {hooks} = f.views[0];
+	t.true(hooks.frame('http://localhost:3000/widget'));
+	t.true(hooks.frame('http://127.0.0.1:4000/'));
+	t.false(hooks.frame('https://example.com/'));
+	t.false(hooks.frame('file:///etc/passwd'));
+	t.false(hooks.frame('not a url'));
+	t.is(f.service.get({projectId: first}).blocked, null);
+	t.is(f.service.get({projectId: first}).status, 'ready');
+	f.settings.publicSites = true;
+	t.true(hooks.frame('https://example.com/'));
+});
+
+test('BRW-16 during an agent action a frame loads only where the policy admits', async t => {
+	const p = scripted();
+	const f = await agentReady(t, 'http://localhost:5173/', {policy: p.policy});
+	f.settings.publicSites = true;
+	const outcome = await f.service.agentUse(ctx, 'click', async () => [
+		f.views[0].hooks.frame('https://example.com/ad'),
+		f.views[0].hooks.frame('https://allowed.example/widget'),
+	]);
+	t.deepEqual(outcome.value, [false, true]);
+	t.deepEqual(outcome.cancelled, ['navigation']);
+	t.true(f.views[0].hooks.frame('https://example.com/ad'));
+});
+
+test('BRW-03 a frame hook from a view that was replaced allows nothing', async t => {
+	const f = fixture(t);
+	f.service.activate(first);
+	await f.service.open({projectId: first, url: 'http://localhost:3000/'});
+	const old = f.views[0].hooks;
+	f.service.activate(first);
+	t.false(old.frame('http://localhost:3000/widget'));
+});
+
 test('BRW-13 during an agent action a request that sends data asks the user, and a refused one is cancelled', async t => {
 	const p = scripted([true, false]);
 	const f = await agentReady(t, 'http://localhost:5173/', {policy: p.policy});

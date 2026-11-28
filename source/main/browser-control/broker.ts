@@ -86,6 +86,7 @@ const locateResult = z.union([
 		visible: z.boolean(),
 		inView: z.boolean(),
 		hitOk: z.boolean(),
+		framed: z.boolean(),
 		x: z.number().int(),
 		y: z.number().int(),
 	}),
@@ -112,6 +113,10 @@ const FAILURES: Record<z.infer<typeof failure>['error'], string> = {
 	missing: 'No element matches that selector.',
 	selector: 'That is not a valid CSS selector.',
 };
+
+// The agent sees and acts on the top page only, never inside a frame it embeds (BRW-16).
+const EMBEDDED = (target: string) =>
+	`${target} is or lands in an embedded frame, which the agent cannot act in, so it was not clicked.`;
 
 async function call<T>(
 	driver: PageDriver,
@@ -229,6 +234,7 @@ async function approved(
 	const again = await locate(action.driver, {ref: found.ref}, true);
 	if (
 		again.ref !== found.ref ||
+		again.framed ||
 		recheck(again.facts).some(risk => !risks.includes(risk))
 	)
 		throw new AgentRefusal(
@@ -403,6 +409,7 @@ export function browserBrokerTools(
 							throw new AgentRefusal(
 								`Another element covers it, so ${describe(found)} was not clicked.`,
 							);
+						if (found.framed) throw new AgentRefusal(EMBEDDED(describe(found)));
 						if (found.facts.disabled)
 							throw new AgentRefusal(`${describe(found)} is disabled.`);
 						const risks = clickRisks(found.facts);

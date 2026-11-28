@@ -59,6 +59,11 @@ window.getComputedStyle = () => ({display: 'none', visibility: 'hidden'});
 </script>
 <button id="real" onclick="document.title = 'clicked'">Real button</button>`;
 
+const FRAMED = `<!doctype html><title>Framed</title>
+<iframe id="inner" src="/next" style="width: 400px; height: 200px"></iframe>
+<div id="wrap" style="width: 400px; height: 200px"><iframe src="/next" style="width: 100%; height: 100%; border: 0"></iframe></div>
+<button id="after" onclick="document.title = 'clicked'">After</button>`;
+
 const WORKER_PAGE = `<!doctype html><title>Worker</title>
 <button id="swping" onclick="fetch('/sw-ping', {method: 'POST', body: 'data'}).catch(() => {})">Send through worker</button>`;
 
@@ -78,6 +83,7 @@ test.beforeEach(async () => {
 			'/': FIXTURE,
 			'/next': '<!doctype html><title>Next</title><p>Next page body</p>',
 			'/tampered': TAMPERED,
+			'/framed': FRAMED,
 			'/worker': WORKER_PAGE,
 		};
 		const body = pages[request.url ?? ''];
@@ -391,6 +397,19 @@ test('BRW-13 BRW-16 submits, downloads, password fields, covered targets, data r
 	expect(received.filter(line => !line.startsWith('GET '))).toEqual([]);
 	expect(received).not.toContain('GET /file.txt');
 	expect(await browserUrl()).toBe(`${origin}/`);
+});
+
+test('BRW-16 a click that is or lands in an embedded frame is refused', async () => {
+	await openAsAgent(`${origin}/framed`);
+	await expect.poll(browserUrl).toBe(`${origin}/framed`);
+	for (const selector of ['#inner', '#wrap']) {
+		const click = await agent('desktop_browser_click', {selector});
+		expect(click.isError).toBe(true);
+		expect(click.text).toContain('embedded frame');
+	}
+	const after = await agent('desktop_browser_click', {selector: '#after'});
+	expect(after.isError).toBe(false);
+	await expect.poll(() => inPage('document.title')).toBe('clicked');
 });
 
 test('SEC-13 the page cannot see or bend the agent helpers, and cannot reach them from its own scripts', async () => {

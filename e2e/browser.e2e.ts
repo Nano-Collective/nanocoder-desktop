@@ -42,6 +42,7 @@ let projectId: string;
 let server: Server;
 let origin: string;
 let port: number;
+let served: string[];
 
 const PUBLIC_HOST = 'public-site.test';
 const publicUrl = (suffix = '/') => `http://${PUBLIC_HOST}:${port}${suffix}`;
@@ -62,8 +63,17 @@ function call<K extends keyof BrowserRequests>(
 }
 
 test.beforeEach(async () => {
+	served = [];
 	server = createServer((request, response) => {
+		served.push(`${request.headers.host?.split(':')[0]} ${request.url}`);
 		if (request.url === '/slow') return;
+		if (request.url === '/frames') {
+			response.writeHead(200, {'Content-Type': 'text/html'});
+			response.end(
+				`<!doctype html><title>frames</title><iframe src="${publicUrl('/framed')}"></iframe><iframe src="/redirect"></iframe><object data="${publicUrl('/object')}"></object><iframe src="/local-frame"></iframe>`,
+			);
+			return;
+		}
 		if (request.url === '/cookie') {
 			response.writeHead(200, {
 				'Content-Type': 'text/html',
@@ -274,6 +284,28 @@ test('BRW-03 the same redirect is followed once public browsing is on', async ()
 			blocked: null,
 		},
 	});
+});
+
+test('BRW-03 a localhost page cannot load a public site in a frame while public browsing is off', async () => {
+	const opened = await call('open', {projectId, url: `${origin}/frames`});
+	expect(opened).toMatchObject({ok: true, value: {status: 'ready'}});
+	await expect.poll(() => served).toContain('127.0.0.1 /local-frame');
+	await expect.poll(() => served).toContain('127.0.0.1 /redirect');
+	expect(served.filter(line => line.startsWith(PUBLIC_HOST))).toEqual([]);
+	const snapshot = await call('get', {projectId});
+	expect(snapshot).toMatchObject({
+		ok: true,
+		value: {status: 'ready', url: `${origin}/frames`, blocked: null},
+	});
+});
+
+test('BRW-03 the same frames load once public browsing is on', async () => {
+	await publicBrowsing(true);
+	const opened = await call('open', {projectId, url: `${origin}/frames`});
+	expect(opened).toMatchObject({ok: true, value: {status: 'ready'}});
+	await expect.poll(() => served).toContain(`${PUBLIC_HOST} /framed`);
+	await expect.poll(() => served).toContain(`${PUBLIC_HOST} /landing`);
+	await expect.poll(() => served).toContain(`${PUBLIC_HOST} /object`);
 });
 
 test('BRW-03 a public address is refused until the setting is on', async () => {
