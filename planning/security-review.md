@@ -55,7 +55,7 @@ Test paths are under `source/` unless they start with `e2e/` or `scripts/`. All 
 | 9 | No experimental features | `SEC-01` test above |
 | 10 | No `enableBlinkFeatures` | `SEC-01` test above |
 | 11, 12 | `<webview>` | Not used. `will-attach-webview` is cancelled for every web contents (`main/index.ts`) and `webviewTag` is checked off by the `SEC-01` test |
-| 13 | Limit navigation | `will-navigate` and `will-redirect` use the allowed origins in app UI; the browser view applies its own origin policy. `e2e/app.e2e.ts` |
+| 13 | Limit navigation | `will-navigate` and `will-redirect` use the allowed origins in app UI; the browser view applies its own origin policy to pages and embedded frames. `e2e/app.e2e.ts`, `e2e/browser.e2e.ts` |
 | 14 | Limit new windows | `setWindowOpenHandler` denies in every web contents. `e2e/app.e2e.ts` |
 | 15 | `openExternal` | `SEC-16` |
 | 16 | Current Electron | Pinned to an exact version and exempt from the seven day release age so a security release applies at once (`SEC-18` test). Applying releases promptly is process, not code |

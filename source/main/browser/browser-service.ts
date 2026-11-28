@@ -64,6 +64,8 @@ export interface BrowserPage {
 
 export interface BrowserViewHooks {
 	allow(url: string): boolean;
+	// Whether an embedded frame may load this address; never reported as a page block.
+	frame(url: string): boolean;
 	// Whether a request from the page may go ahead; only agent actions restrict it, and may ask.
 	request(method: string, url: string): boolean | Promise<boolean>;
 	navigated(page: BrowserPage): void;
@@ -673,6 +675,16 @@ export class BrowserService {
 					this.block(url, verdict.reason);
 				}
 				return false;
+			},
+			frame: url => {
+				if (!live()) return false;
+				const acting = this.action?.hold ? this.action : null;
+				if (acting && !this.policy.admitted(acting.context, url)) {
+					this.cancelled.add('navigation');
+					return false;
+				}
+				return checkPage(url, {publicSites: this.options.publicSites()})
+					.allowed;
 			},
 			navigated: page => {
 				if (!live()) return;

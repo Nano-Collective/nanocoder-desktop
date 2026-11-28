@@ -19,6 +19,8 @@ const ERR_ABORTED = -3;
 // A world of its own, so page scripts cannot see or replace the broker's helpers (SEC-13).
 const AGENT_WORLD = 1287;
 const SCREENSHOT_WIDTH = 1280;
+// Requests that load a document into a frame inside the page (BRW-03).
+const FRAME_TYPES = new Set(['subFrame', 'object']);
 
 export async function clearBrowserPartition(partition: string): Promise<void> {
 	const target = session.fromPartition(partition);
@@ -70,8 +72,13 @@ export function createElectronViewFactory(
 			hooks.popup(details.url);
 			return {action: 'deny'};
 		});
-		const guard = (event: {preventDefault(): void}, url: string) => {
-			if (!hooks.allow(url)) event.preventDefault();
+		const guard = (
+			event: {preventDefault(): void; isMainFrame?: boolean},
+			url: string,
+		) => {
+			const allowed =
+				event.isMainFrame === false ? hooks.frame(url) : hooks.allow(url);
+			if (!allowed) event.preventDefault();
 		};
 		contents.on('will-navigate', guard);
 		contents.on('will-redirect', guard);
@@ -117,6 +124,10 @@ export function createElectronViewFactory(
 		partition.webRequest.onBeforeRequest((details, callback) => {
 			if (details.webContentsId !== contents.id) {
 				callback({});
+				return;
+			}
+			if (FRAME_TYPES.has(details.resourceType) && !hooks.frame(details.url)) {
+				callback({cancel: true});
 				return;
 			}
 			// An agent action may hold a request until the user answers.

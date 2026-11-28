@@ -184,7 +184,7 @@ This is Electron's own security guidance mapped onto the plan. It is guidance, n
 | 10 | Do not use `enableBlinkFeatures` | `SEC-01`. |
 | 11 | `<webview>`: do not use `allowpopups` | Not applicable: the plan uses `WebContentsView`, not `<webview>`. Popups are denied (`SEC-10`). |
 | 12 | `<webview>`: verify options and params | Not applicable for the same reason. |
-| 13 | Disable or limit navigation | App UI cannot navigate away; the browser view applies the same origin policy to typed addresses, redirects and clicked links, so a redirect from localhost to a public site stops while public browsing is off (`SEC-15`, `BRW-03`). |
+| 13 | Disable or limit navigation | App UI cannot navigate away; the browser view applies the same origin policy to typed addresses, redirects, clicked links and embedded frames (`iframe`, `object`, `embed` and their redirects), so a redirect or a frame from localhost to a public site stops while public browsing is off (`SEC-15`, `BRW-03`). |
 | 14 | Disable or limit creation of new windows | Denied in app UI and browser view (`SEC-15`, `SEC-10`). |
 | 15 | Do not use `shell.openExternal` with untrusted content | `SEC-16`. |
 | 16 | Use a current version of Electron | `SEC-14`, `SEC-18`. |
