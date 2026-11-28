@@ -22,7 +22,7 @@ The scaffold (roadmap phases S.1 to S.5) is in place, and the technical gate has
 
 ### Prerequisites
 
-- Node.js 22 or newer.
+- Node.js 22.16 or newer.
 - pnpm 11, through Corepack.
 - Git.
 - Nanocoder 1.32.0 or newer, for `pnpm dev`. Install it globally and the app finds `nanocoder` and `node` on your `PATH`, or point it at one with `NANOCODER_DESKTOP_CLI=/absolute/path/to/nanocoder/dist/cli.js`, and at a Node.js with `NANOCODER_DESKTOP_NODE`. A packaged app does not look at your `PATH`: it runs the Nanocoder and Node.js it ships, unless you set those two variables.
