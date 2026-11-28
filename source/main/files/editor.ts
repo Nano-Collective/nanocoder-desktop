@@ -71,6 +71,95 @@ export function editorArguments(
 	return editor === 'zed' ? [`${file}:${line}`] : ['--goto', `${file}:${line}`];
 }
 
+// The operating system's default handler runs these instead of opening them
+// for editing, so the system editor refuses them (SEC-05).
+const PROGRAM_EXTENSIONS: Record<'darwin' | 'win32' | 'other', Set<string>> = {
+	darwin: new Set([
+		'.app',
+		'.action',
+		'.applescript',
+		'.command',
+		'.dmg',
+		'.fileloc',
+		'.inetloc',
+		'.jar',
+		'.mpkg',
+		'.pkg',
+		'.prefpane',
+		'.scpt',
+		'.scptd',
+		'.shortcut',
+		'.terminal',
+		'.tool',
+		'.webloc',
+		'.workflow',
+	]),
+	win32: new Set([
+		'.appref-ms',
+		'.application',
+		'.bat',
+		'.chm',
+		'.cmd',
+		'.com',
+		'.cpl',
+		'.exe',
+		'.gadget',
+		'.hta',
+		'.inf',
+		'.jar',
+		'.js',
+		'.jse',
+		'.lnk',
+		'.msc',
+		'.msi',
+		'.msp',
+		'.pif',
+		'.ps1',
+		'.psm1',
+		'.reg',
+		'.scf',
+		'.scr',
+		'.settingcontent-ms',
+		'.url',
+		'.vb',
+		'.vbe',
+		'.vbs',
+		'.website',
+		'.ws',
+		'.wsc',
+		'.wsf',
+		'.wsh',
+	]),
+	other: new Set(['.appimage', '.desktop', '.jar', '.run']),
+};
+
+export function runsAsProgram(
+	file: string,
+	platform: NodeJS.Platform,
+	mode: number,
+): boolean {
+	const flavour = platform === 'win32' ? path.win32 : path.posix;
+	const extension = flavour.extname(file).toLowerCase();
+	const key =
+		platform === 'darwin' || platform === 'win32' ? platform : 'other';
+	if (PROGRAM_EXTENSIONS[key].has(extension)) return true;
+	return platform !== 'win32' && (mode & 0o111) !== 0;
+}
+
+function fileManagerName(platform: NodeJS.Platform): string {
+	if (platform === 'darwin') return 'Finder';
+	if (platform === 'win32') return 'File Explorer';
+	return 'the file manager';
+}
+
+async function fileMode(file: string): Promise<number | undefined> {
+	try {
+		return (await stat(file)).mode;
+	} catch {
+		return undefined;
+	}
+}
+
 export interface EditorOptions {
 	editor(): EditorId;
 	// Roots of every stored project: a program inside one is never launched.
@@ -80,6 +169,8 @@ export interface EditorOptions {
 	platform?: NodeJS.Platform;
 	env?: NodeJS.ProcessEnv;
 	home?: string;
+	// The file's mode bits, or undefined when they cannot be read.
+	mode?(file: string): Promise<number | undefined>;
 	// Resolves a candidate to a canonical executable path, or undefined.
 	executable?(candidate: string): Promise<string | undefined>;
 	launch?(file: string, args: string[]): Promise<void>;
@@ -120,7 +211,19 @@ export class EditorLauncher {
 	// The caller has already resolved and contained the path (SEC-03).
 	async open(file: string, line?: number): Promise<{editor: EditorId}> {
 		const editor = this.options.editor();
+		const platform = this.options.platform ?? process.platform;
 		if (editor === 'system') {
+			const mode = await (this.options.mode ?? fileMode)(file);
+			if (mode === undefined)
+				throw new IpcFailure(
+					'UNAVAILABLE',
+					'The system could not open that file',
+				);
+			if (runsAsProgram(file, platform, mode))
+				throw new IpcFailure(
+					'UNAVAILABLE',
+					`This file could run as a program, so it is not opened with the system default. Reveal it in ${fileManagerName(platform)}, or choose an editor in settings.`,
+				);
 			const failure = await this.options.openPath(file);
 			if (failure)
 				throw new IpcFailure(
@@ -129,7 +232,6 @@ export class EditorLauncher {
 				);
 			return {editor};
 		}
-		const platform = this.options.platform ?? process.platform;
 		const candidates = editorCandidates(
 			editor,
 			platform,

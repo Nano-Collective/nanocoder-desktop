@@ -63,6 +63,17 @@ const FRAMED = `<!doctype html><title>Framed</title>
 <div id="wrap" style="width: 400px; height: 200px"><iframe src="/next" style="width: 100%; height: 100%; border: 0"></iframe></div>
 <button id="after" onclick="document.title = 'clicked'">After</button>`;
 
+const WORKER_PAGE = `<!doctype html><title>Worker</title>
+<button id="swping" onclick="fetch('/sw-ping', {method: 'POST', body: 'data'}).catch(() => {})">Send through worker</button>`;
+
+// Answers the page's POST itself, so the request that reaches the network comes from the worker.
+const WORKER = `self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', event => {
+	if (new URL(event.request.url).pathname !== '/sw-ping') return;
+	event.respondWith(event.request.text().then(body => fetch('/sw-ping', {method: 'POST', body})));
+});`;
+
 test.beforeEach(async () => {
 	received = [];
 	server = createServer((request, response) => {
@@ -72,8 +83,14 @@ test.beforeEach(async () => {
 			'/next': '<!doctype html><title>Next</title><p>Next page body</p>',
 			'/tampered': TAMPERED,
 			'/framed': FRAMED,
+			'/worker': WORKER_PAGE,
 		};
 		const body = pages[request.url ?? ''];
+		if (request.url === '/worker.js') {
+			response.writeHead(200, {'Content-Type': 'text/javascript'});
+			response.end(WORKER);
+			return;
+		}
 		if (request.url === '/file.txt') {
 			response.writeHead(200, {
 				'Content-Type': 'text/plain',
@@ -502,6 +519,24 @@ test('BRW-13 data the page sends during an agent click is asked about, and typin
 	await password.getByRole('button', {name: 'allow once', exact: true}).click();
 	expect((await typing).isError).toBe(false);
 	expect(await inPage("document.getElementById('pw').value")).toBe('hunter2');
+});
+
+test('BRW-13 data a page sends through its service worker during an agent click is asked about', {
+	tag: '@held-turn',
+}, async () => {
+	await openAsAgent(`${origin}/worker`);
+	await inPage(
+		"navigator.serviceWorker.register('/worker.js').then(() => navigator.serviceWorker.ready)",
+	);
+	await expect
+		.poll(() => inPage('Boolean(navigator.serviceWorker.controller)'))
+		.toBe(true);
+	const ping = agent('desktop_browser_click', {selector: '#swping'});
+	const send = card('The page wants to send data (POST to');
+	await expect(send).toBeVisible();
+	await send.getByRole('button', {name: 'reject', exact: true}).click();
+	await ping;
+	expect(received).not.toContain('POST /sw-ping');
 });
 
 test('DEC-50 BRW-16 a public site is asked about once, always-allowed sites are listed and forgotten, and a block holds for the chat', {
