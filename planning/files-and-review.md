@@ -88,7 +88,7 @@ An attached file is checked through the file service. If Nanocoder advertises em
 
 ## Open in editor
 
-The system default goes through the operating system. Visual Studio Code, Cursor and Zed start from known install paths (`DEC-43`):
+The system default goes through the operating system, which runs a program rather than opening it. So the system default refuses any file that would run: one marked executable (outside Windows), or one with a program, script or shortcut extension for the platform (for example `.command` and `.webloc` on macOS, `.bat`, `.js`, `.lnk` and `.hta` on Windows, `.desktop` on Linux). The message points to reveal and to choosing a named editor, which only ever opens the file. Visual Studio Code, Cursor and Zed start from known install paths (`DEC-43`):
 
 | Platform | Locations tried |
 |---|---|
