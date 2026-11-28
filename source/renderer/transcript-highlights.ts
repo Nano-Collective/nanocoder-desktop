@@ -1,4 +1,4 @@
-import {findTextRanges} from '@/renderer/find-model';
+import {findPreparedTextRanges, prepareFindQuery} from '@/renderer/find-model';
 
 interface TextSegment<N> {
 	node: N | null;
@@ -18,16 +18,14 @@ interface FieldFindSpan<N> {
 	block?: Element | null;
 }
 
-// Single forward pass over sorted match ranges, so mapping stays linear even
-// when a long reply contains thousands of text nodes and hits.
-export function fieldFindSpans<N>(
+function fieldFindSpansPrepared<N>(
 	fieldId: string,
 	segments: readonly TextSegment<N>[],
-	query: string,
+	needle: string,
 ): FieldFindSpan<N>[] {
-	if (query === '' || segments.length === 0) return [];
+	if (needle === '' || segments.length === 0) return [];
 	const text = segments.map(segment => segment.text).join('');
-	const ranges = findTextRanges(text, query);
+	const ranges = findPreparedTextRanges(text, needle);
 	if (ranges.length === 0) return [];
 	const spans: FieldFindSpan<N>[] = [];
 	let startIdx = 0;
@@ -67,6 +65,16 @@ export function fieldFindSpans<N>(
 	return spans;
 }
 
+// Single forward pass over sorted match ranges, so mapping stays linear even
+// when a long reply contains thousands of text nodes and hits.
+export function fieldFindSpans<N>(
+	fieldId: string,
+	segments: readonly TextSegment<N>[],
+	query: string,
+): FieldFindSpan<N>[] {
+	return fieldFindSpansPrepared(fieldId, segments, prepareFindQuery(query));
+}
+
 const fieldSelector = '[data-find-id]';
 // Exclude copy controls and appended localhost host labels, while keeping
 // visible localhost link button text searchable and highlightable.
@@ -98,12 +106,6 @@ export function inFindViewport(
 		field.bottom >= viewport.top - overscan &&
 		field.top <= viewport.bottom + overscan
 	);
-}
-
-function activeFieldOf(activeId: string | null): string | null {
-	if (!activeId) return null;
-	const separator = activeId.lastIndexOf(':');
-	return separator > 0 ? activeId.slice(0, separator) : null;
 }
 
 function highlightRegistry() {
@@ -158,12 +160,18 @@ export function paintTranscriptFind(
 	query: string,
 	activeId: string | null,
 	viewport?: HTMLElement | null,
+	activeField: string | null = null,
 ): PaintedTranscriptFind | null {
 	const highlights = highlightRegistry();
 	if (!root || !highlights) return null;
+	const needle = prepareFindQuery(query);
+	if (needle === '') {
+		highlights.delete(matchName);
+		highlights.delete(activeName);
+		return {painted: 0, activeRange: null};
+	}
 	const bounds = viewport?.getBoundingClientRect();
 	const useViewport = Boolean(bounds && bounds.bottom > bounds.top);
-	const activeField = activeFieldOf(activeId);
 	const blockVisibility = new WeakMap<Element, boolean>();
 	const isBlockVisible = (block: Element | null | undefined): boolean => {
 		if (!useViewport || !bounds || !block) return true;
@@ -191,7 +199,7 @@ export function paintTranscriptFind(
 			bounds !== undefined &&
 			fieldRect !== null &&
 			fieldRect.height > bounds.bottom - bounds.top + viewportOverscanPx * 2;
-		const spans = fieldFindSpans(fieldId, textSegments(field), query);
+		const spans = fieldFindSpansPrepared(fieldId, textSegments(field), needle);
 		for (const span of spans) {
 			const isActive = span.id === activeId;
 			if (!isActive && tallField && !isBlockVisible(span.block)) continue;

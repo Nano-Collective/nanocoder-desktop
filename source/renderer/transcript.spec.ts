@@ -8,6 +8,7 @@ import {
 	carryMessageRows,
 	carryMessageTimes,
 	emptyTranscript,
+	extractEvictedThread,
 	type Transcript,
 	transcriptRowId,
 } from '@/renderer/transcript';
@@ -894,5 +895,118 @@ test('carrying times over a long history gives each message its own time (PERF-0
 	t.deepEqual(
 		carryMessageTimes(timed, untimed).items.map(at),
 		Array.from({length: count}, (_, index) => index),
+	);
+});
+
+test('an orphaned or unanchored failure stays last across multiple snapshots without attaching to another turn (CHAT-04)', t => {
+	const initial = appendFailure(
+		applyEvents(emptyTranscript, [{type: 'user', text: 'first turn'}]),
+		'first failed',
+	);
+	const different = applyEvents(emptyTranscript, [
+		{type: 'user', text: 'different first turn'},
+		{type: 'text', text: 'reply one'},
+	]);
+	const afterFirst = carryFailureRows(initial, different);
+	t.deepEqual(
+		afterFirst.items.map(item => item.kind),
+		['user', 'agent', 'failure'],
+	);
+	const withSecondTurn = applyEvents(emptyTranscript, [
+		{type: 'user', text: 'different first turn'},
+		{type: 'text', text: 'reply one'},
+		{type: 'user', text: 'second turn'},
+		{type: 'text', text: 'reply two'},
+	]);
+	const afterSecond = carryFailureRows(afterFirst, withSecondTurn);
+	t.deepEqual(
+		afterSecond.items.map(item => item.kind),
+		['user', 'agent', 'user', 'agent', 'failure'],
+	);
+
+	// A prompt rejected before its user row appeared is explicitly unanchored.
+	const unanchored = appendFailure(
+		applyEvents(emptyTranscript, [{type: 'user', text: 'turn one'}]),
+		'send rejected',
+		false,
+	);
+	const afterUnanchored = carryFailureRows(
+		unanchored,
+		applyEvents(emptyTranscript, [
+			{type: 'user', text: 'turn one'},
+			{type: 'text', text: 'ok'},
+			{type: 'user', text: 'turn two'},
+		]),
+	);
+	t.deepEqual(
+		afterUnanchored.items.map(item => item.kind),
+		['user', 'agent', 'user', 'failure'],
+	);
+});
+
+test('extractEvictedThread preserves compact anchors and live timestamps without retaining raw prompt text (PERF-04)', t => {
+	const secretPrompt = 'unique-prompt-body-never-retained';
+	const live = appendFailure(
+		applyEvents(
+			emptyTranscript,
+			[
+				{type: 'user', text: secretPrompt},
+				{type: 'text', text: 'unique-reply-body-never-retained'},
+			],
+			4200,
+		),
+		'turn failed',
+	);
+	const saved = extractEvictedThread(live);
+	t.truthy(saved);
+	if (!saved) return;
+	const serialised = JSON.stringify({
+		failures: saved.failures,
+		times: [...saved.times.entries()],
+	});
+	t.false(serialised.includes(secretPrompt));
+	t.false(serialised.includes('unique-reply-body-never-retained'));
+	const replayed = applyEvents(emptyTranscript, [
+		{type: 'user', text: secretPrompt},
+		{type: 'text', text: 'unique-reply-body-never-retained'},
+		{type: 'user', text: 'later turn'},
+	]);
+	const restored = carryFailureRows(
+		emptyTranscript,
+		carryMessageTimes(emptyTranscript, replayed, saved.times),
+		saved.failures,
+	);
+	t.deepEqual(
+		restored.items.map(item => item.kind),
+		['user', 'agent', 'failure', 'user'],
+	);
+	t.deepEqual(restored.items.map(at), [4200, 4200, 'none', 'none']);
+});
+
+test('tool-heavy replay batches update matching tool ids in order (PERF-03)', t => {
+	const events: Array<Parameters<typeof applyEvent>[1]> = [
+		{type: 'user', text: 'run tools'},
+	];
+	for (let index = 0; index < 200; index++) {
+		events.push({
+			type: 'tool',
+			id: `tool-${index}`,
+			title: `cmd ${index}`,
+			status: 'in_progress',
+		});
+	}
+	for (let index = 0; index < 200; index++) {
+		events.push({
+			type: 'tool',
+			id: `tool-${index}`,
+			status: 'completed',
+		});
+	}
+	const result = applyEvents(emptyTranscript, events);
+	t.is(result.items.length, 201);
+	t.true(
+		result.items
+			.slice(1)
+			.every(item => item.kind === 'tool' && item.status === 'completed'),
 	);
 });

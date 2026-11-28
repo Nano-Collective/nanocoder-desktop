@@ -1,5 +1,11 @@
-import {type FindMatch, findTextRanges} from '@/renderer/find-model';
+import {isFenceClose, matchFenceOpen} from '@/renderer/copy-content';
+import {
+	type FindMatch,
+	findPreparedTextRanges,
+	prepareFindQuery,
+} from '@/renderer/find-model';
 import {type TranscriptItem, transcriptRowId} from '@/renderer/transcript';
+import {subagentLabel} from '@/shared/subagents';
 
 export type TranscriptFindField =
 	| 'user'
@@ -51,24 +57,34 @@ export function transcriptRowKeys(items: readonly TranscriptItem[]): string[] {
 	});
 }
 
-function formatLocation(location: {path: string; line?: number}): string {
+export function formatToolLocation(location: {
+	path: string;
+	line?: number;
+}): string {
 	return location.line === undefined
 		? location.path
 		: `${location.path}:${location.line}`;
 }
 
 function toolFields(item: ToolItem): SearchableField[] {
+	// A delegation row shows its subagent card instead of tool details,
+	// and only renders the sanitised label when subagentLabel accepts it.
+	if (item.delegation) {
+		const progress = subagentLabel(item.title);
+		return progress === undefined
+			? []
+			: [{field: 'tool-title', text: progress, folded: false}];
+	}
 	const fields: SearchableField[] = [
 		{field: 'tool-title', text: item.title, folded: false},
 	];
-	// A delegation row shows its subagent card instead of these details.
-	const details = item.delegation ? undefined : item.details;
+	const {details} = item;
 	if (!details) return fields;
 	for (const [fieldIndex, location] of (details.locations ?? []).entries()) {
 		fields.push({
 			field: 'tool-location',
 			fieldIndex,
-			text: formatLocation(location),
+			text: formatToolLocation(location),
 			folded: true,
 		});
 	}
@@ -82,8 +98,6 @@ function toolFields(item: ToolItem): SearchableField[] {
 	return fields;
 }
 
-const fenceOpen = /^ {0,3}(`{3,}|~{3,})/;
-const fenceClose = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
 const tableDivider =
 	/^ {0,3}\|?(?:[ \t]*:?-{3,}:?[ \t]*\|)+[ \t]*:?-{3,}:?[ \t]*\|?[ \t]*$/;
 const thematicBreak =
@@ -153,42 +167,42 @@ function markdownSearchText(markdown: string): string {
 	const lines = markdown.split(/\r?\n/);
 	const out: string[] = [];
 	let fence: string | null = null;
+	// Tracks a scanned run that had no closing `]`, avoiding quadratic rescanning.
+	let noCloseBefore = 0;
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
 		if (fence !== null) {
-			const close = fenceClose.exec(line);
-			if (
-				close &&
-				close[1][0] === fence[0] &&
-				close[1].length >= fence.length
-			) {
-				fence = null;
-			} else {
-				out.push(line);
-			}
+			if (isFenceClose(line, fence)) fence = null;
+			else out.push(line);
 			continue;
 		}
-		const open = fenceOpen.exec(line);
+		const open = matchFenceOpen(line);
 		if (open) {
-			fence = open[1];
+			fence = open;
 			continue;
 		}
 		// Skip link reference definitions (including multiline labels).
-		if (/^ {0,3}\[/.test(line)) {
+		if (i >= noCloseBefore && /^ {0,3}\[/.test(line)) {
 			let end = i;
 			let isDef = false;
+			let closed = false;
 			while (end < lines.length && lines[end].trim() !== '') {
 				if (/(?:^|[^\\])(?:\\\\)*\]:/.test(lines[end])) {
 					isDef = true;
+					closed = true;
 					break;
 				}
-				if (/(?:^|[^\\])(?:\\\\)*\]/.test(lines[end])) break;
+				if (/(?:^|[^\\])(?:\\\\)*\]/.test(lines[end])) {
+					closed = true;
+					break;
+				}
 				end++;
 			}
 			if (isDef) {
 				i = end;
 				continue;
 			}
+			if (!closed) noCloseBefore = end;
 		}
 		if (thematicBreak.test(line) || tableDivider.test(line)) continue;
 		let body = line
@@ -211,19 +225,35 @@ function markdownSearchText(markdown: string): string {
 	return out.join('\n');
 }
 
-function fieldsOf(item: TranscriptItem): SearchableField[] {
+// Settled transcript items keep object identity across stream batches, so
+// caching projected searchable fields avoids re-stripping older Markdown replies.
+const itemFieldsCache = new WeakMap<
+	TranscriptItem,
+	readonly SearchableField[]
+>();
+
+function fieldsOf(item: TranscriptItem): readonly SearchableField[] {
+	const cached = itemFieldsCache.get(item);
+	if (cached) return cached;
+	let fields: readonly SearchableField[];
 	switch (item.kind) {
 		case 'user':
-			return [{field: 'user', text: item.text, folded: false}];
+			fields = [{field: 'user', text: item.text, folded: false}];
+			break;
 		case 'agent':
-			return [
+			fields = [
 				{field: 'agent', text: markdownSearchText(item.text), folded: false},
 			];
+			break;
 		case 'tool':
-			return toolFields(item);
+			fields = toolFields(item);
+			break;
 		default:
-			return [];
+			fields = [];
+			break;
 	}
+	itemFieldsCache.set(item, fields);
+	return fields;
 }
 
 export function findTranscriptMatches(
@@ -232,11 +262,12 @@ export function findTranscriptMatches(
 	rowKeys: readonly string[] = transcriptRowKeys(items),
 ): TranscriptMatch[] {
 	const matches: TranscriptMatch[] = [];
-	if (query === '') return matches;
+	const needle = prepareFindQuery(query);
+	if (needle === '') return matches;
 	for (const [itemIndex, item] of items.entries()) {
 		const rowKey = rowKeys[itemIndex];
 		for (const field of fieldsOf(item)) {
-			const ranges = findTextRanges(field.text, query);
+			const ranges = findPreparedTextRanges(field.text, needle);
 			for (const [occurrence, range] of ranges.entries()) {
 				matches.push({
 					id: `${transcriptFieldId(rowKey, field.field, field.fieldIndex)}:${occurrence}`,

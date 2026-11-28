@@ -86,20 +86,19 @@ export function forgetProjectAttachments(
 	projectId: string,
 ): AttachmentStore {
 	const prefix = attachmentKey(projectId, '');
-	return pruneAttachments(
-		store,
-		new Set(Object.keys(store).filter(key => !key.startsWith(prefix))),
-	);
-}
-
-// Keeps attachments only for threads that still exist, so a removed thread
-// cannot keep its files in memory.
-export function pruneAttachments(
-	store: AttachmentStore,
-	live: ReadonlySet<string>,
-): AttachmentStore {
-	const kept = Object.entries(store).filter(([key]) => live.has(key));
-	return kept.length === Object.keys(store).length
-		? store
-		: Object.fromEntries(kept);
+	let next: AttachmentStore | null = null;
+	for (const [key, list] of Object.entries(store)) {
+		if (key.startsWith(prefix)) {
+			if (!next) {
+				next = {};
+				for (const [keptKey, keptList] of Object.entries(store)) {
+					if (keptKey === key) break;
+					next[keptKey] = keptList;
+				}
+			}
+		} else if (next) {
+			next[key] = list;
+		}
+	}
+	return next ?? store;
 }

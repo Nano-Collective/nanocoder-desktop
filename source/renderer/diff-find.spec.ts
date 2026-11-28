@@ -188,3 +188,14 @@ test('highlighted pieces rebuild the row, and bad matches are skipped', t => {
 		{text: 'fghij', match: 'none'},
 	]);
 });
+
+test('dense lines cap passive highlight marks while keeping the active hit highlighted', t => {
+	const text = 'api '.repeat(300);
+	const matches = findDiffMatches([row(text)], 'api').matches;
+	t.is(matches.length, 300);
+	const activeId = matches[295].id;
+	const pieces = sliceRowHighlights(text, matches, activeId, 10);
+	t.is(pieces.map(piece => piece.text).join(''), text);
+	t.is(pieces.filter(piece => piece.match === 'hit').length, 10);
+	t.is(pieces.filter(piece => piece.match === 'active').length, 1);
+});

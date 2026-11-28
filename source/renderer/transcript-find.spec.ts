@@ -132,3 +132,38 @@ test('agent Markdown search matches visible rendered text instead of raw Markdow
 	// Fenced code body stays verbatim (including literal asterisks).
 	t.is(findTranscriptMatches(formatted, '**bold**').length, 1);
 });
+
+test('delegated tool rows search only the sanitised label rendered on the subagent card', t => {
+	const items: TranscriptItem[] = [
+		{
+			kind: 'tool',
+			id: 'sub-1',
+			title: 'run checks',
+			status: 'completed',
+			delegation: {history: false},
+		},
+		{
+			kind: 'tool',
+			id: 'sub-2',
+			title: 'run\tchecks',
+			status: 'completed',
+			delegation: {history: false},
+		},
+		{
+			kind: 'tool',
+			id: 'sub-3',
+			title: '\u001b[31m\u0007',
+			status: 'completed',
+			delegation: {history: false},
+		},
+	];
+	t.is(findTranscriptMatches(items, 'run checks').length, 1);
+	t.is(findTranscriptMatches(items, 'checks').length, 1);
+	t.is(findTranscriptMatches(items, '31m').length, 0);
+});
+
+test('many bracket-prefixed lines without closing brackets stay fast to search', t => {
+	const lines = Array.from({length: 2000}, (_, index) => `[line ${index}`);
+	const items: TranscriptItem[] = [{kind: 'agent', text: lines.join('\n')}];
+	t.is(findTranscriptMatches(items, 'line 1999').length, 1);
+});

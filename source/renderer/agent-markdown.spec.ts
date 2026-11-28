@@ -244,6 +244,9 @@ test('streamed Markdown splits only where a new top-level block starts (DEC-39)'
 		),
 	);
 	t.true(escapedBracketHtml.includes('stream-local-link'));
+	const quotedRef = '[open][dev]\n\n> [dev]: http://localhost:3000';
+	t.deepEqual(splitMarkdownBlocks(quotedRef), [quotedRef]);
+	t.true(renderWithOpener(quotedRef).includes('stream-local-link'));
 });
 
 test('a long streamed reply renders every paragraph once (PERF-03 DEC-39)', t => {

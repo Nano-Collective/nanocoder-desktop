@@ -74,20 +74,16 @@ const closedFind = initialFindState<DiffFindTarget>();
 
 interface DiffFindHandle {
 	open(opener: HTMLElement | null): void;
-	close(): void;
 }
 
 export interface ReviewPanelHandle {
 	openFind(opener?: HTMLElement | null): void;
-	closeFind(): void;
 	hasOpenDiff(): boolean;
 }
 
-function focusInDiff(): boolean {
+function focusInDiff(root: HTMLElement | null): boolean {
 	const active = document.activeElement;
-	return (
-		!active || active === document.body || active.closest('.diff-view') !== null
-	);
+	return !active || active === document.body || Boolean(root?.contains(active));
 }
 
 function findHighlights(
@@ -133,6 +129,7 @@ function DiffView({
 	const shown = React.useMemo(() => rows.slice(0, MAX_DIFF_ROWS), [rows]);
 	const fingerprint = diff.diff;
 	const {cursor, comment} = interaction;
+	const diffRoot = React.useRef<HTMLDivElement | null>(null);
 	const scroller = React.useRef<HTMLDivElement | null>(null);
 	const [window, setWindow] = React.useState(() =>
 		diffWindow(shown.length, 0, 0),
@@ -142,6 +139,7 @@ function DiffView({
 	const pending = React.useRef<number | null>(null);
 	const findInput = React.useRef<HTMLInputElement | null>(null);
 	const findOpener = React.useRef<HTMLElement | null>(null);
+	const pendingHorizontalReveal = React.useRef<string | null>(null);
 	const [findFocusRequest, setFindFocusRequest] = React.useState(0);
 	const [findFingerprint, setFindFingerprint] = React.useState(fingerprint);
 	const [find, setFind] = React.useState(closedFind);
@@ -167,7 +165,14 @@ function DiffView({
 	const scopeLabel = diffScopeLabel(rows.length, MAX_DIFF_ROWS);
 	const updateWindow = React.useCallback(
 		(top: number, height: number) => {
-			setWindow(diffWindow(shown.length, top, height));
+			const next = diffWindow(shown.length, top, height);
+			setWindow(current =>
+				next.start === current.start &&
+				next.end === current.end &&
+				next.totalHeight === current.totalHeight
+					? current
+					: next,
+			);
 		},
 		[shown.length],
 	);
@@ -238,18 +243,24 @@ function DiffView({
 	const side = diff.staged ? 'staged' : 'unstaged';
 	const label = agent ? 'agent changes' : side;
 	const described = agent ? 'agent changes' : `${side} changes`;
+	const scrollToRow = React.useCallback(
+		(index: number) => {
+			const element = scroller.current;
+			if (!element) return;
+			const top = scrollTopForRow(
+				index,
+				element.scrollTop,
+				element.clientHeight,
+				shown.length,
+			);
+			if (top !== element.scrollTop) element.scrollTop = top;
+			updateWindow(top, element.clientHeight);
+		},
+		[shown.length, updateWindow],
+	);
 	const focusRow = (index: number) => {
 		pending.current = index;
-		const element = scroller.current;
-		if (!element) return;
-		const top = scrollTopForRow(
-			index,
-			element.scrollTop,
-			element.clientHeight,
-			shown.length,
-		);
-		if (top !== element.scrollTop) element.scrollTop = top;
-		updateWindow(top, element.clientHeight);
+		scrollToRow(index);
 	};
 	const showFind = React.useCallback(
 		(opener: HTMLElement | null) => {
@@ -270,15 +281,18 @@ function DiffView({
 		if (!find.open) return;
 		setFind(current => closeFind(current));
 		const fallback = nodes.current.get(tabbable) ?? scroller.current;
-		if (fallback && focusInDiff()) focusReturn(findOpener.current, fallback)();
+		if (fallback && focusInDiff(diffRoot.current))
+			focusReturn(findOpener.current, fallback)();
 	}, [find.open, tabbable]);
 	const changeFindQuery = React.useCallback(
 		(query: string) => {
 			setFind(current =>
-				reconcileFindMatches(
-					setFindQuery(current, query),
-					findDiffMatches(rows, query).matches,
-				),
+				query === current.query
+					? current
+					: reconcileFindMatches(
+							setFindQuery(current, query),
+							findDiffMatches(rows, query).matches,
+						),
 			);
 		},
 		[rows],
@@ -290,9 +304,8 @@ function DiffView({
 		findRef,
 		() => ({
 			open: showFind,
-			close: hideFind,
 		}),
-		[showFind, hideFind],
+		[showFind],
 	);
 	React.useLayoutEffect(() => {
 		if (findFocusRequest === 0) return;
@@ -300,28 +313,26 @@ function DiffView({
 		findInput.current?.select();
 	}, [findFocusRequest]);
 	React.useLayoutEffect(() => {
-		if (!activeMatch) return;
-		const element = scroller.current;
-		if (!element) return;
-		const top = scrollTopForRow(
-			activeMatch.target.rowIndex,
-			element.scrollTop,
-			element.clientHeight,
-			shown.length,
-		);
-		if (top !== element.scrollTop) element.scrollTop = top;
-		updateWindow(top, element.clientHeight);
-	}, [activeMatch, shown.length, updateWindow]);
-	// Runs after the active row mounts so an offscreen horizontal hit scrolls into view.
+		if (!activeMatch) {
+			pendingHorizontalReveal.current = null;
+			return;
+		}
+		pendingHorizontalReveal.current = activeMatch.id;
+		scrollToRow(activeMatch.target.rowIndex);
+	}, [activeMatch, scrollToRow]);
+	// Runs once per active-match navigation after the target row mounts, so
+	// manual horizontal panning is never undone by vertical scrolling.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: window changes mount the target row
 	React.useLayoutEffect(() => {
-		if (!activeMatch) return;
+		if (!activeMatch || pendingHorizontalReveal.current !== activeMatch.id)
+			return;
 		const element = scroller.current;
 		if (!element) return;
 		const mark = element.querySelector<HTMLElement>(
 			'[data-find-active="true"] mark.find-hit--active',
 		);
 		if (!mark) return;
+		pendingHorizontalReveal.current = null;
 		const markRect = mark.getBoundingClientRect();
 		const viewRect = element.getBoundingClientRect();
 		if (
@@ -341,7 +352,7 @@ function DiffView({
 		activeRow,
 	);
 	return (
-		<div className="diff-view">
+		<div ref={diffRoot} className="diff-view">
 			<FindBar
 				open={find.open}
 				query={find.query}
@@ -622,7 +633,6 @@ export function ReviewPanel({
 		() => ({
 			openFind: (opener?: HTMLElement | null) =>
 				diffFind.current?.open(opener ?? null),
-			closeFind: () => diffFind.current?.close(),
 			hasOpenDiff: () => diffFind.current !== null,
 		}),
 		[],

@@ -205,3 +205,14 @@ test('focus context comes from the terminal, browser or diff ancestor', t => {
 	t.deepEqual(detectFindFocusContext(null), none);
 	t.deepEqual(detectFindFocusContext({} as EventTarget), none);
 });
+
+test('no-op close, step and reconcile keep state object identity', t => {
+	const empty = initialFindState<string>();
+	t.is(closeFind(empty), empty);
+	t.is(stepFind(empty, 1), empty);
+	t.is(reconcileFindMatches(empty, []), empty);
+	const single = [match('only', 'row')];
+	const opened = reconcileFindMatches(openFind(empty), single);
+	t.is(reconcileFindMatches(opened, single), opened);
+	t.is(stepFind(opened, 1), opened);
+});

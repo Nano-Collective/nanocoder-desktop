@@ -326,7 +326,10 @@ export function App() {
 				: [],
 		[findShown, transcript.items, transcriptFind.query],
 	);
-	const liveFind = reconcileFindMatches(transcriptFind, transcriptMatches);
+	const liveFind = useMemo(
+		() => reconcileFindMatches(transcriptFind, transcriptMatches),
+		[transcriptFind, transcriptMatches],
+	);
 	const activeFindMatch =
 		liveFind.activeIndex >= 0
 			? liveFind.matches[liveFind.activeIndex]
@@ -612,12 +615,6 @@ export function App() {
 				});
 		}
 	};
-	// A removed thread or project takes its unsent attachments with it.
-	const dropThreadAttachments = (threadId: string) => {
-		if (!projectId) return;
-		const key = attachmentKey(projectId, threadId);
-		setAttachments(current => clearAttachments(current, key));
-	};
 	const attach = (item: PromptAttachment) => {
 		if (!attachKey) return;
 		setAttachments(current => addAttachment(current, attachKey, item));
@@ -832,16 +829,8 @@ export function App() {
 			open: controls.open,
 			rename: controls.rename,
 			archive: controls.archive,
-			remove: threadId =>
-				controls.remove(threadId).then(removed => {
-					if (removed) dropThreadAttachments(threadId);
-					return removed;
-				}),
-			deleteHistory: threadId =>
-				controls.deleteHistory(threadId).then(removed => {
-					if (removed) dropThreadAttachments(threadId);
-					return removed;
-				}),
+			remove: controls.remove,
+			deleteHistory: controls.deleteHistory,
 		},
 	};
 	const workspaceDialogData: Omit<WorkspaceDialogsProps, 'kind' | 'onClose'> = {

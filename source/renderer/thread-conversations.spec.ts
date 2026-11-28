@@ -48,6 +48,7 @@ const turn = (
 function fixture(
 	onChange?: (state: ThreadConversationState) => void,
 	now?: () => number,
+	maxViews?: number,
 ) {
 	const changes: ThreadConversationState[] = [];
 	const timers: {callback(): void; delayMs: number; cancelled: boolean}[] = [];
@@ -66,6 +67,7 @@ function fixture(
 			},
 		},
 		...(now && {now}),
+		...(maxViews !== undefined && {maxViews}),
 	});
 	conversations.selectProject('project-a');
 	conversations.selectThread('a');
@@ -1018,4 +1020,82 @@ test('a settled snapshot ends replay and carries live times only to matching mes
 		'none',
 		'none',
 	]);
+});
+
+test('a rejected send that never echoed its user row stays unanchored after a snapshot (CHAT-04)', t => {
+	const {conversations} = fixture();
+	conversations.snapshot(
+		snapshot('a', [
+			{type: 'user', text: 'earlier'},
+			{type: 'text', text: 'done'},
+		]),
+	);
+	conversations.setDraft('rejected prompt');
+	const ticket = conversations.beginTurn('a');
+	if (!ticket) {
+		t.fail('expected a turn ticket');
+		return;
+	}
+	conversations.finishTurn(ticket, {
+		ok: false,
+		error: {code: 'AGENT_UNAVAILABLE', message: 'send failed', retryable: true},
+	});
+	conversations.snapshot(
+		snapshot('a', [
+			{type: 'user', text: 'earlier'},
+			{type: 'text', text: 'done'},
+			{type: 'user', text: 'next turn'},
+			{type: 'text', text: 'reply'},
+		]),
+	);
+	t.deepEqual(
+		conversations.getState().transcript.items.map(item => item.kind),
+		['user', 'agent', 'user', 'agent', 'failure'],
+	);
+});
+
+test('an evicted idle thread restores its live timestamps and anchored failures when reopened (PERF-04)', t => {
+	const {conversations} = fixture(undefined, () => 900, 2);
+	conversations.selectThread('t0');
+	conversations.receive(
+		turn(
+			[
+				{type: 'user', text: 'first'},
+				{type: 'text', text: 'answer'},
+			],
+			't0',
+		),
+	);
+	conversations.flush('t0');
+	conversations.receive({
+		...turn([], 't0'),
+		result: {
+			ok: false,
+			error: {
+				code: 'AGENT_UNAVAILABLE',
+				message: 'failed on first',
+				retryable: true,
+			},
+		},
+	});
+	// Visit enough other threads to evict t0.
+	for (const id of ['t1', 't2', 't3']) {
+		conversations.selectThread(id);
+		conversations.receive(turn([{type: 'user', text: id}], id));
+		conversations.flush(id);
+	}
+	conversations.selectThread('t0');
+	t.deepEqual(conversations.getState().transcript.items, []);
+	conversations.snapshot(
+		snapshot('t0', [
+			{type: 'user', text: 'first'},
+			{type: 'text', text: 'answer'},
+			{type: 'user', text: 'second'},
+		]),
+	);
+	t.deepEqual(
+		conversations.getState().transcript.items.map(item => item.kind),
+		['user', 'agent', 'failure', 'user'],
+	);
+	t.deepEqual(times(conversations.getState()), [900, 900, 'none', 'none']);
 });

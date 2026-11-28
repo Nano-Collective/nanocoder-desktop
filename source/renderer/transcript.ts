@@ -8,6 +8,12 @@ import type {
 	TurnEvent,
 } from '@/shared/ipc';
 
+export interface FailureAnchor {
+	turn: number;
+	messageId?: string;
+	textDigest?: string;
+}
+
 export type TranscriptItem = (
 	| {
 			kind: 'user' | 'agent';
@@ -20,7 +26,13 @@ export type TranscriptItem = (
 	  }
 	| {kind: 'thought'; text: string; messageId?: string; rowId?: string}
 	| {kind: 'turn-metadata'}
-	| {kind: 'failure'; text: string; rowId?: string}
+	| {
+			kind: 'failure';
+			text: string;
+			rowId?: string;
+			// Immutable turn anchor recorded when the failure occurred; null means unanchored.
+			anchor?: FailureAnchor | null;
+	  }
 	| {
 			kind: 'tool';
 			id: string;
@@ -109,6 +121,26 @@ function fingerprint(text: string): string {
 	return `${(hash >>> 0).toString(36)}-${text.length.toString(36)}`;
 }
 
+// Compact 64-bit-pair + length digest so evicted anchors and timestamps
+// never retain raw prompt or reply text in memory.
+function textDigest(text: string): string {
+	let h1 = 2166136261;
+	let h2 = 33554467;
+	for (let index = 0; index < text.length; index++) {
+		const code = text.charCodeAt(index);
+		h1 = Math.imul(h1 ^ code, 16777619);
+		h2 = Math.imul(h2 ^ (code + index), 2246822519);
+	}
+	return `${(h1 >>> 0).toString(36)}-${(h2 >>> 0).toString(36)}-${text.length.toString(36)}`;
+}
+
+function compactMessageKey(item: Message): string | undefined {
+	if (item.kind === 'agent' && item.text === '') return undefined;
+	return item.messageId === undefined
+		? `${item.kind}:digest:${textDigest(item.text)}`
+		: `${item.kind}:id:${item.messageId}`;
+}
+
 function fallbackRowId(kind: string, index: number, text: string): string {
 	return `${kind}:${index}:${fingerprint(text)}`;
 }
@@ -127,81 +159,185 @@ export function transcriptRowId(item: TranscriptItem, index: number): string {
 	return fallbackRowId(item.kind, index, text);
 }
 
+type Message = Extract<TranscriptItem, {kind: 'user' | 'agent'}>;
+type FailureItem = Extract<TranscriptItem, {kind: 'failure'}>;
+
+function anchorForUser(turn: number, user: Message | undefined): FailureAnchor {
+	if (!user) return {turn: 0};
+	return user.messageId !== undefined
+		? {turn, messageId: user.messageId}
+		: {turn, textDigest: textDigest(user.text)};
+}
+
 // A failure belongs to the turn that was current when it was recorded.
+// Pass anchored = false when a prompt failed before its user row appeared.
 export function appendFailure(
 	transcript: Transcript,
 	text: string,
+	anchored = true,
 ): Transcript {
-	const turns = transcript.items.filter(item => item.kind === 'user').length;
-	const failures = transcript.items.filter(
-		item => item.kind === 'failure',
-	).length;
+	let turns = 0;
+	let failures = 0;
+	let lastUser: Message | undefined;
+	for (const item of transcript.items) {
+		if (item.kind === 'user') {
+			turns++;
+			lastUser = item;
+		} else if (item.kind === 'failure') {
+			failures++;
+		}
+	}
 	return {
 		...transcript,
 		items: [
 			...transcript.items,
-			{kind: 'failure', text, rowId: `${turns}:${failures}`},
+			{
+				kind: 'failure',
+				text,
+				rowId: `${turns}:${failures}`,
+				anchor: anchored ? anchorForUser(turns, lastUser) : null,
+			},
 		],
 	};
 }
 
-// One variant covers both user and agent text, so Extract matches on both kinds.
-type UserItem = Extract<TranscriptItem, {kind: 'user' | 'agent'}>;
-
-function sameTurnUser(
-	a: UserItem | undefined,
-	b: UserItem | undefined,
+function matchesFailureAnchor(
+	anchor: FailureAnchor | null | undefined,
+	seenTurn: number,
+	seenUser: Message | undefined,
 ): boolean {
-	if (!a || !b) return false;
-	if (a.messageId !== undefined || b.messageId !== undefined)
-		return a.messageId === b.messageId;
-	return a.text === b.text;
+	if (!anchor || anchor.turn !== seenTurn) return false;
+	if (seenTurn === 0) return true;
+	if (!seenUser) return false;
+	if (anchor.messageId !== undefined || seenUser.messageId !== undefined)
+		return anchor.messageId === seenUser.messageId;
+	return anchor.textDigest === textDigest(seenUser.text);
 }
 
-// Re-inserts each failure after the turn that failed (before the next user
-// message), so a snapshot keeps it beside its turn. Failures whose turn no
-// longer matches go last.
-export function carryFailureRows(
-	previous: Transcript,
-	next: Transcript,
-): Transcript {
-	const failures = new Map<
-		number,
-		{anchor?: UserItem; rows: TranscriptItem[]}
-	>();
+interface AnchoredFailure {
+	item: FailureItem;
+	anchor: FailureAnchor | null;
+}
+
+function collectAnchoredFailures(
+	items: readonly TranscriptItem[],
+): AnchoredFailure[] {
+	const result: AnchoredFailure[] = [];
 	let turns = 0;
-	let currentUser: UserItem | undefined;
-	for (const item of previous.items) {
+	let currentUser: Message | undefined;
+	for (const item of items) {
 		if (item.kind === 'user') {
 			turns++;
 			currentUser = item;
 		} else if (item.kind === 'failure') {
-			const group = failures.get(turns);
-			if (group) group.rows.push(item);
-			else failures.set(turns, {anchor: currentUser, rows: [item]});
+			result.push({
+				item,
+				anchor:
+					item.anchor === undefined
+						? anchorForUser(turns, currentUser)
+						: item.anchor,
+			});
 		}
 	}
-	if (failures.size === 0) return next;
-	const placed = new Set<number>();
+	return result;
+}
+
+export interface EvictedThreadMemory {
+	failures: readonly FailureItem[];
+	times: ReadonlyMap<string, number>;
+}
+
+// Keeps compact failure anchors and live session timestamps when an idle view
+// is evicted, without holding raw prompt or reply text in memory.
+export function extractEvictedThread(
+	transcript: Transcript,
+): EvictedThreadMemory | null {
+	const failures = collectAnchoredFailures(transcript.items).map(
+		({item, anchor}) => (item.anchor === undefined ? {...item, anchor} : item),
+	);
+	const counts = new Map<string, number>();
+	const singleTimes = new Map<string, number>();
+	for (const item of transcript.items) {
+		if (!isMessage(item)) continue;
+		const key = compactMessageKey(item);
+		if (key === undefined) continue;
+		const nextCount = (counts.get(key) ?? 0) + 1;
+		counts.set(key, nextCount);
+		if (nextCount === 1 && item.at !== undefined) singleTimes.set(key, item.at);
+		else singleTimes.delete(key);
+	}
+	if (failures.length === 0 && singleTimes.size === 0) return null;
+	return {failures, times: singleTimes};
+}
+
+// Re-inserts each failure after the turn that failed (before the next user
+// message), so a snapshot keeps it beside its turn. Unanchored failures or
+// failures whose immutable anchor no longer matches stay last without
+// attaching to another turn.
+export function carryFailureRows(
+	previous: Transcript,
+	next: Transcript,
+	remembered?: readonly FailureItem[],
+): Transcript {
+	const collected = collectAnchoredFailures(previous.items);
+	const source: readonly AnchoredFailure[] =
+		collected.length > 0
+			? collected
+			: (remembered ?? []).map(item => ({
+					item,
+					anchor: item.anchor ?? null,
+				}));
+	if (source.length === 0) return next;
+	const grouped = new Map<number, AnchoredFailure[]>();
+	const unanchored: FailureItem[] = [];
+	for (const entry of source) {
+		if (!entry.anchor) {
+			unanchored.push(entry.item);
+			continue;
+		}
+		const bucket = grouped.get(entry.anchor.turn);
+		if (bucket) bucket.push(entry);
+		else grouped.set(entry.anchor.turn, [entry]);
+	}
+	const placed = new Set<AnchoredFailure>();
 	const items: TranscriptItem[] = [];
 	let seen = 0;
-	let seenUser: UserItem | undefined;
+	let seenUser: Message | undefined;
 	for (const item of next.items) {
 		if (item.kind === 'user') {
-			const group = failures.get(seen);
-			if (group && (seen === 0 || sameTurnUser(group.anchor, seenUser))) {
-				items.push(...group.rows);
-				placed.add(seen);
+			const candidates = grouped.get(seen);
+			if (candidates) {
+				for (const entry of candidates) {
+					if (matchesFailureAnchor(entry.anchor, seen, seenUser)) {
+						items.push(entry.item);
+						placed.add(entry);
+					}
+				}
 			}
 			seen++;
 			seenUser = item;
 		}
 		items.push(item);
 	}
-	for (const [turn, group] of failures) {
-		if (!placed.has(turn)) items.push(...group.rows);
+	for (const entry of source) {
+		if (placed.has(entry) || !entry.anchor) continue;
+		if (matchesFailureAnchor(entry.anchor, seen, seenUser)) {
+			items.push(entry.item);
+		} else {
+			items.push(
+				entry.item.anchor === undefined
+					? {...entry.item, anchor: entry.anchor}
+					: entry.item,
+			);
+		}
 	}
+	for (const item of unanchored) items.push(item);
 	return {...next, items};
+}
+
+interface BatchCursor {
+	turnStart: number | undefined;
+	toolIndex: Map<string, number> | null;
 }
 
 // Each batch copies the list at most once, lazily on the first item write.
@@ -212,16 +348,22 @@ function upsert(
 	update: (previous?: TranscriptItem) => TranscriptItem,
 	floor = -1,
 ): void {
-	let index = readItems.length - 1;
-	while (index > floor && !matches(readItems[index])) index--;
+	let index = -1;
+	for (let cursor = floor + 1; cursor < readItems.length; cursor++) {
+		if (matches(readItems[cursor])) {
+			index = cursor;
+			break;
+		}
+	}
 	const items = mutableItems();
-	if (index > floor) items[index] = update(items[index]);
+	if (index >= 0) items[index] = update(items[index]);
 	else items.push(update());
 }
 
 function applyContent(
 	draft: Transcript,
 	mutableItems: () => TranscriptItem[],
+	cursor: BatchCursor,
 	event: TurnEvent,
 	at: number | undefined,
 ): void {
@@ -269,62 +411,88 @@ function applyContent(
 					};
 			if (join) items[items.length - 1] = item;
 			else items.push(item);
+			if (kind === 'user') {
+				cursor.turnStart = items.length - 1;
+				cursor.toolIndex = null;
+			}
 			return;
 		}
-		case 'tool':
-			upsert(
-				mutableItems,
-				draft.items,
-				item => item.kind === 'tool' && item.id === event.id,
-				previous => {
-					const known = previous?.kind === 'tool' ? previous : undefined;
-					if (
-						known &&
-						(known.turnOutcome ||
-							['completed', 'failed', 'cancelled'].includes(known.status)) &&
-						(event.status === 'pending' || event.status === 'in_progress')
-					)
-						return known;
-					const reported = event.history?.outcome;
-					const historyOutcome =
-						reported === 'unknown' ||
-						reported === 'completed' ||
-						reported === 'failed' ||
-						reported === 'interrupted'
-							? reported
-							: event.history === undefined
-								? known?.historyOutcome
-								: undefined;
-					return {
-						kind: 'tool',
-						id: event.id,
-						title: event.title ?? known?.title ?? event.id,
-						status: event.status ?? known?.status ?? 'pending',
-						...(historyOutcome ? {historyOutcome} : {}),
-						...(known?.turnOutcome ? {turnOutcome: known.turnOutcome} : {}),
-						...(event.toolKind || known?.toolKind
-							? {toolKind: event.toolKind ?? known?.toolKind}
-							: {}),
-						...(event.details || known?.details
-							? {details: {...known?.details, ...event.details}}
-							: {}),
-						...(known?.delegation || event.delegation
-							? {delegation: known?.delegation ?? event.delegation}
-							: {}),
-						...(known?.approvalOnly || event.approvalOnly
-							? {approvalOnly: true}
-							: {}),
-					};
-				},
-				currentTurnStart(draft.items),
-			);
+		case 'tool': {
+			if (cursor.turnStart === undefined)
+				cursor.turnStart = currentTurnStart(draft.items);
+			if (cursor.toolIndex === null) {
+				cursor.toolIndex = new Map<string, number>();
+				for (
+					let index = cursor.turnStart + 1;
+					index < draft.items.length;
+					index++
+				) {
+					const row = draft.items[index];
+					if (row.kind === 'tool' && !cursor.toolIndex.has(row.id))
+						cursor.toolIndex.set(row.id, index);
+				}
+			}
+			const existingIndex = cursor.toolIndex.get(event.id);
+			const items = mutableItems();
+			const previous =
+				existingIndex !== undefined ? items[existingIndex] : undefined;
+			const known = previous?.kind === 'tool' ? previous : undefined;
+			const nextTool: TranscriptItem =
+				known &&
+				(known.turnOutcome ||
+					['completed', 'failed', 'cancelled'].includes(known.status)) &&
+				(event.status === 'pending' || event.status === 'in_progress')
+					? known
+					: (() => {
+							const reported = event.history?.outcome;
+							const historyOutcome =
+								reported === 'unknown' ||
+								reported === 'completed' ||
+								reported === 'failed' ||
+								reported === 'interrupted'
+									? reported
+									: event.history === undefined
+										? known?.historyOutcome
+										: undefined;
+							return {
+								kind: 'tool',
+								id: event.id,
+								title: event.title ?? known?.title ?? event.id,
+								status: event.status ?? known?.status ?? 'pending',
+								...(historyOutcome ? {historyOutcome} : {}),
+								...(known?.turnOutcome ? {turnOutcome: known.turnOutcome} : {}),
+								...(event.toolKind || known?.toolKind
+									? {toolKind: event.toolKind ?? known?.toolKind}
+									: {}),
+								...(event.details || known?.details
+									? {details: {...known?.details, ...event.details}}
+									: {}),
+								...(known?.delegation || event.delegation
+									? {delegation: known?.delegation ?? event.delegation}
+									: {}),
+								...(known?.approvalOnly || event.approvalOnly
+									? {approvalOnly: true}
+									: {}),
+							};
+						})();
+			if (existingIndex !== undefined) {
+				items[existingIndex] = nextTool;
+			} else {
+				cursor.toolIndex.set(event.id, items.length);
+				items.push(nextTool);
+			}
 			return;
+		}
 		case 'plan':
 			if (event.content === null) {
 				const filtered = draft.items.filter(
 					item => item.kind !== 'plan' || item.id !== event.id,
 				);
-				if (filtered.length !== draft.items.length) draft.items = filtered;
+				if (filtered.length !== draft.items.length) {
+					draft.items = filtered;
+					cursor.turnStart = undefined;
+					cursor.toolIndex = null;
+				}
 				return;
 			}
 			upsert(
@@ -448,21 +616,22 @@ function mergeMetadata(
 function applyOne(
 	draft: Transcript,
 	mutableItems: () => TranscriptItem[],
+	cursor: BatchCursor,
 	event: TurnEvent,
 	at: number | undefined,
 ): void {
-	applyContent(draft, mutableItems, event, at);
+	applyContent(draft, mutableItems, cursor, event, at);
 	if (!event.metadata) return;
 	const items = mutableItems();
 	let index = -1;
-	for (let cursor = items.length - 1; cursor >= 0; cursor--) {
-		const {kind} = items[cursor];
+	for (let pos = items.length - 1; pos >= 0; pos--) {
+		const {kind} = items[pos];
 		if (kind === 'user') break;
 		if (kind === 'turn-metadata') {
-			index = cursor;
+			index = pos;
 			break;
 		}
-		if (kind === 'agent' && index < 0) index = cursor;
+		if (kind === 'agent' && index < 0) index = pos;
 	}
 	if (index < 0) {
 		items.push({kind: 'turn-metadata', metadata: event.metadata});
@@ -492,6 +661,7 @@ export function applyEvents(
 	if (events.length === 0) return transcript;
 	const draft: Transcript = {...transcript};
 	let copied = false;
+	const cursor: BatchCursor = {turnStart: undefined, toolIndex: null};
 	const mutableItems = () => {
 		if (!copied || draft.items === transcript.items) {
 			draft.items = [...draft.items];
@@ -499,11 +669,9 @@ export function applyEvents(
 		}
 		return draft.items;
 	};
-	for (const event of events) applyOne(draft, mutableItems, event, at);
+	for (const event of events) applyOne(draft, mutableItems, cursor, event, at);
 	return draft;
 }
-
-type Message = Extract<TranscriptItem, {kind: 'user' | 'agent'}>;
 
 function isMessage(item: TranscriptItem): item is Message {
 	return item.kind === 'user' || item.kind === 'agent';
@@ -549,28 +717,38 @@ export function carryMessageRows(
 export function carryMessageTimes(
 	previous: Transcript,
 	next: Transcript,
+	remembered?: ReadonlyMap<string, number>,
 ): Transcript {
-	const earlier = new Map<string, Message[]>();
-	for (const item of previous.items) {
-		if (!isMessage(item)) continue;
-		const key = messageKey(item);
-		if (key === undefined) continue;
-		const bucket = earlier.get(key);
-		if (bucket) bucket.push(item);
-		else earlier.set(key, [item]);
+	const singleTimes = new Map<string, number>();
+	const useCompact = previous.items.length === 0 && remembered !== undefined;
+	const keyOf = useCompact ? compactMessageKey : messageKey;
+	if (!useCompact) {
+		const counts = new Map<string, number>();
+		for (const item of previous.items) {
+			if (!isMessage(item)) continue;
+			const key = messageKey(item);
+			if (key === undefined) continue;
+			const nextCount = (counts.get(key) ?? 0) + 1;
+			counts.set(key, nextCount);
+			if (nextCount === 1 && item.at !== undefined)
+				singleTimes.set(key, item.at);
+			else singleTimes.delete(key);
+		}
+	} else {
+		for (const [key, at] of remembered) singleTimes.set(key, at);
 	}
+	if (singleTimes.size === 0) return next;
 	let changed = false;
 	const items = next.items.map(item => {
 		if (!isMessage(item) || item.at !== undefined) return item;
-		const key = messageKey(item);
-		const matches = key === undefined ? [] : (earlier.get(key) ?? []);
+		const key = keyOf(item);
+		if (key === undefined) return item;
+		const at = singleTimes.get(key);
+		if (at === undefined) return item;
 		// Only a single unused match carries a time, and then it is used up.
-		if (key === undefined || matches.length !== 1) return item;
-		earlier.delete(key);
-		const [match] = matches;
-		if (match.at === undefined) return item;
+		singleTimes.delete(key);
 		changed = true;
-		return {...item, at: match.at};
+		return {...item, at};
 	});
 	return changed ? {...next, items} : next;
 }

@@ -15,6 +15,7 @@ import {StreamAnnouncements} from '@/renderer/stream-announcements';
 import {SubagentRunCard} from '@/renderer/subagent-run-card';
 import {type Transcript, type TranscriptItem} from '@/renderer/transcript';
 import {
+	formatToolLocation,
 	type TranscriptFindTarget,
 	transcriptFieldId,
 	transcriptRowKeys,
@@ -93,8 +94,7 @@ function ToolDetails({
 					key={`${location.path}:${index}`}
 					data-find-id={transcriptFieldId(rowKey, 'tool-location', index)}
 				>
-					{location.path}
-					{location.line === undefined ? '' : `:${location.line}`}
+					{formatToolLocation(location)}
 				</p>
 			))}
 			{details.input !== undefined && (
@@ -622,7 +622,13 @@ export function ConversationStream({
 		const paintMarks = () => {
 			window.clearTimeout(timer);
 			findPaint.current.at = performance.now();
-			return paintTranscriptFind(scope, findQuery, findActiveId, scroller);
+			return paintTranscriptFind(
+				scope,
+				findQuery,
+				findActiveId,
+				scroller,
+				findField,
+			);
 		};
 		// Only a find change repaints at once. Streamed rows repaint the marks
 		// at most once per interval, with a trailing repaint for the last batch.
@@ -639,22 +645,50 @@ export function ConversationStream({
 		let painted: ReturnType<typeof paintMarks> = null;
 		if (moved || wait <= 0) painted = paintMarks();
 		else timer = window.setTimeout(paintMarks, wait);
-		// A long message or tool output can span several screens; centre the exact
-		// matched text inside the scroller when the active range sits outside it.
-		if (shouldReveal && scroller && painted?.activeRange) {
-			const rangeRect = painted.activeRange.getBoundingClientRect();
-			const viewRect = scroller.getBoundingClientRect();
-			if (
-				rangeRect.height > 0 &&
-				(rangeRect.top < viewRect.top || rangeRect.bottom > viewRect.bottom)
-			) {
-				const delta =
-					rangeRect.top -
-					viewRect.top -
-					(viewRect.height - rangeRect.height) / 2;
-				scroller.scrollTop = Math.max(0, scroller.scrollTop + delta);
-				paintMarks();
+		// A long message, code block or tool output can exceed the viewport; centre
+		// the active range vertically and inside any horizontally scrollable container.
+		if (shouldReveal && painted?.activeRange) {
+			let scrolled = false;
+			if (scroller) {
+				const rangeRect = painted.activeRange.getBoundingClientRect();
+				const viewRect = scroller.getBoundingClientRect();
+				if (
+					rangeRect.height > 0 &&
+					(rangeRect.top < viewRect.top || rangeRect.bottom > viewRect.bottom)
+				) {
+					const delta =
+						rangeRect.top -
+						viewRect.top -
+						(viewRect.height - rangeRect.height) / 2;
+					scroller.scrollTop = Math.max(0, scroller.scrollTop + delta);
+					scrolled = true;
+				}
 			}
+			const startNode = painted.activeRange.startContainer;
+			let container =
+				startNode.nodeType === Node.ELEMENT_NODE
+					? (startNode as HTMLElement)
+					: startNode.parentElement;
+			while (container && container !== scroller && scope.contains(container)) {
+				if (container.scrollWidth > container.clientWidth) {
+					const rangeRect = painted.activeRange.getBoundingClientRect();
+					const boxRect = container.getBoundingClientRect();
+					if (
+						rangeRect.width > 0 &&
+						(rangeRect.left < boxRect.left || rangeRect.right > boxRect.right)
+					) {
+						const delta =
+							rangeRect.left -
+							boxRect.left -
+							(boxRect.width - rangeRect.width) / 2;
+						container.scrollLeft = Math.max(0, container.scrollLeft + delta);
+						scrolled = true;
+					}
+					break;
+				}
+				container = container.parentElement;
+			}
+			if (scrolled) paintMarks();
 		}
 		let frame = 0;
 		const scheduleRepaint = () => {

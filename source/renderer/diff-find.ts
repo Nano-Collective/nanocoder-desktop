@@ -3,7 +3,8 @@ import {MAX_DIFF_ROWS} from '@/renderer/diff-virtual';
 import {
 	diffScopeLabel,
 	type FindMatch,
-	findTextRanges,
+	findPreparedTextRanges,
+	prepareFindQuery,
 } from '@/renderer/find-model';
 
 export interface DiffFindTarget {
@@ -30,20 +31,24 @@ export function findDiffMatches(
 ): DiffFindResult {
 	const searchedRows = Math.min(rows.length, MAX_DIFF_ROWS);
 	const matches: DiffMatch[] = [];
-	for (const [rowIndex, row] of rows.slice(0, searchedRows).entries()) {
-		const ranges = findTextRanges(row.text, query);
-		for (const [matchInRow, range] of ranges.entries()) {
-			matches.push({
-				id: `diff:${rowIndex}:${matchInRow}`,
-				target: {
-					rowIndex,
-					oldLine: row.oldLine,
-					newLine: row.newLine,
-					kind: row.kind,
-				},
-				start: range.start,
-				end: range.end,
-			});
+	const needle = prepareFindQuery(query);
+	if (needle !== '') {
+		for (let rowIndex = 0; rowIndex < searchedRows; rowIndex++) {
+			const row = rows[rowIndex];
+			const ranges = findPreparedTextRanges(row.text, needle);
+			for (const [matchInRow, range] of ranges.entries()) {
+				matches.push({
+					id: `diff:${rowIndex}:${matchInRow}`,
+					target: {
+						rowIndex,
+						oldLine: row.oldLine,
+						newLine: row.newLine,
+						kind: row.kind,
+					},
+					start: range.start,
+					end: range.end,
+				});
+			}
 		}
 	}
 	return {
@@ -72,24 +77,35 @@ export interface RowHighlight {
 	match: 'none' | 'hit' | 'active';
 }
 
+// Caps passive highlight marks on dense single lines so rendering stays fast;
+// match totals and active-hit highlighting remain exact.
+const maxRowHighlightMarks = 200;
+
 // Splits one row around its matches. The view renders the pieces as text.
 export function sliceRowHighlights(
 	text: string,
 	rowMatches: readonly DiffMatch[],
 	activeMatchId: string | null,
+	maxPassiveMarks = maxRowHighlightMarks,
 ): RowHighlight[] {
 	const pieces: RowHighlight[] = [];
 	let cursor = 0;
+	let passiveMarks = 0;
 	const ordered = [...rowMatches].sort((a, b) => a.start - b.start);
 	for (const match of ordered) {
 		// Skip a match that overlaps another or leaves the row.
 		if (match.start < cursor || match.end <= match.start) continue;
 		if (match.end > text.length) continue;
+		const isActive = match.id === activeMatchId;
+		if (!isActive) {
+			if (passiveMarks >= maxPassiveMarks) continue;
+			passiveMarks++;
+		}
 		if (match.start > cursor)
 			pieces.push({text: text.slice(cursor, match.start), match: 'none'});
 		pieces.push({
 			text: text.slice(match.start, match.end),
-			match: match.id === activeMatchId ? 'active' : 'hit',
+			match: isActive ? 'active' : 'hit',
 		});
 		cursor = match.end;
 	}

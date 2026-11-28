@@ -8,7 +8,9 @@ import {
 	carryFailureRows,
 	carryMessageRows,
 	carryMessageTimes,
+	type EvictedThreadMemory,
 	emptyTranscript,
+	extractEvictedThread,
 	settleSubagentTurn,
 	type Transcript,
 } from '@/renderer/transcript';
@@ -53,9 +55,10 @@ export function createThreadConversations(options: {
 		cancellation: null,
 	};
 	const views = new Map<string, View>();
-	// Compact turn-anchor + failure skeleton kept after a view is evicted,
-	// so earlier failed turns stay beside their turn if the thread reopens.
-	const rememberedFailures = new Map<string, Transcript>();
+	// Bounded LRU memory of compact failure anchors and live session timestamps
+	// kept when an idle view is evicted, without retaining unrelated prompt text.
+	const maxRemembered = 64;
+	const remembered = new Map<string, EvictedThreadMemory>();
 	const removed = new Set<string>();
 	const replaying = new Set<string>();
 	// Threads with a turn that sent live events and has no result yet.
@@ -78,22 +81,16 @@ export function createThreadConversations(options: {
 	};
 	const allowed = (threadId: string) =>
 		!disposed && projectId !== null && !removed.has(key(threadId));
-	const failureSkeleton = (transcript: Transcript): Transcript | null => {
-		let hasFailure = false;
-		const items: Transcript['items'] = [];
-		for (const item of transcript.items) {
-			if (item.kind === 'failure') {
-				hasFailure = true;
-				items.push(item);
-			} else if (item.kind === 'user') {
-				items.push(
-					item.messageId === undefined
-						? {kind: 'user', text: item.text}
-						: {kind: 'user', text: item.text, messageId: item.messageId},
-				);
-			}
+	const remember = (viewKey: string, transcript: Transcript) => {
+		const compact = extractEvictedThread(transcript);
+		if (!compact) return;
+		remembered.delete(viewKey);
+		remembered.set(viewKey, compact);
+		while (remembered.size > maxRemembered) {
+			const oldest = remembered.keys().next().value;
+			if (oldest === undefined) break;
+			remembered.delete(oldest);
 		}
-		return hasFailure ? {...emptyTranscript, items} : null;
 	};
 	// Idle views go first. Live turns, approvals, drafts and the view just
 	// written stay; an idle thread reloads from its snapshot when opened again.
@@ -111,8 +108,7 @@ export function createThreadConversations(options: {
 				held.transcript.permissions.length > 0
 			)
 				continue;
-			const skeleton = failureSkeleton(held.transcript);
-			if (skeleton) rememberedFailures.set(viewKey, skeleton);
+			remember(viewKey, held.transcript);
 			views.delete(viewKey);
 		}
 	};
@@ -243,24 +239,24 @@ export function createThreadConversations(options: {
 			else replaying.delete(key(threadId));
 			const viewKey = key(threadId);
 			const previous = view(threadId).transcript;
-			const failureSource = previous.items.some(item => item.kind === 'failure')
-				? previous
-				: (rememberedFailures.get(viewKey) ?? previous);
-			rememberedFailures.delete(viewKey);
+			const saved = remembered.get(viewKey);
+			remembered.delete(viewKey);
 			// Failure rows are not in the history, so messages match without them.
 			const history = {
 				...previous,
 				items: previous.items.filter(item => item.kind !== 'failure'),
 			};
 			const transcript = carryFailureRows(
-				failureSource,
+				previous,
 				carryMessageTimes(
 					history,
 					carryMessageRows(
 						history,
 						applyEvents(emptyTranscript, snapshot.events),
 					),
+					saved?.times,
 				),
+				saved?.failures,
 			);
 			if (snapshot.result) streaming.delete(key(threadId));
 			put(
@@ -332,7 +328,7 @@ export function createThreadConversations(options: {
 				turn: result,
 				transcript:
 					result && !result.ok
-						? appendFailure(transcript, result.error.message)
+						? appendFailure(transcript, result.error.message, displayed)
 						: transcript,
 			});
 			return result !== null;
@@ -350,7 +346,7 @@ export function createThreadConversations(options: {
 			if (!allowed(threadId)) return;
 			batcher.remove(threadId);
 			views.delete(key(threadId));
-			rememberedFailures.delete(key(threadId));
+			remembered.delete(key(threadId));
 			tickets.delete(key(threadId));
 			replaying.delete(key(threadId));
 			streaming.delete(key(threadId));
@@ -363,7 +359,7 @@ export function createThreadConversations(options: {
 			batcher.dispose();
 			tickets.clear();
 			views.clear();
-			rememberedFailures.clear();
+			remembered.clear();
 			removed.clear();
 			replaying.clear();
 			streaming.clear();

@@ -7,7 +7,6 @@ import {
 	forgetProjectAttachments,
 	labelFor,
 	MAX_ATTACHMENTS,
-	pruneAttachments,
 	removeAttachment,
 } from '@/renderer/attachments';
 import type {PromptAttachment} from '@/shared/ipc';
@@ -113,15 +112,4 @@ test('a project that leaves the desktop forgets its own threads only (CHAT-16)',
 		[sibling]: [file('c.ts')],
 	});
 	t.is(forgetProjectAttachments(store, 'missing'), store);
-});
-
-test('a removed thread drops its attachments, and an unchanged store is returned as it is (CHAT-16)', t => {
-	const kept = attachmentKey('p', 'a');
-	const removed = attachmentKey('p', 'b');
-	let store = addAttachment({}, kept, file('a.ts'));
-	store = addAttachment(store, removed, file('b.ts'));
-	const pruned = pruneAttachments(store, new Set([kept]));
-	t.deepEqual(pruned, {[kept]: [file('a.ts')]});
-	t.is(pruneAttachments(pruned, new Set([kept])), pruned);
-	t.deepEqual(pruneAttachments(store, new Set()), {});
 });

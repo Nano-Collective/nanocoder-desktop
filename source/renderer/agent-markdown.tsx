@@ -1,7 +1,11 @@
 import * as React from 'react';
 import Markdown, {type Components, type ExtraProps} from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import {fencedCodeText} from '@/renderer/copy-content';
+import {
+	fencedCodeText,
+	isFenceClose,
+	matchFenceOpen,
+} from '@/renderer/copy-content';
 import {Icon} from '@/renderer/icons';
 import {findLocalUrls} from '@/shared/local-url';
 
@@ -102,17 +106,16 @@ const components: Components = {
 };
 
 const listItemStart = /^(?:[-+*]|\d{1,9}[.)])(?:[ \t]|\r?\n?$)/;
-const fenceOpen = /^ {0,3}(`{3,}|~{3,})/;
-const fenceClose = /^ {0,3}(`{3,}|~{3,})[ \t]*\r?\n?$/;
 
 // Checks for constructs whose meaning spans blocks: CommonMark link reference
-// definitions (including multiline or escaped-bracket labels), GFM footnotes
-// and line-start HTML. Linear in input length.
+// definitions (including multiline, escaped-bracket or blockquote-nested labels),
+// GFM footnotes and line-start HTML. Linear in input length.
 function hasCrossBlockSyntax(text: string): boolean {
 	if (/\[\^|^[ \t]{0,3}</m.test(text)) return true;
 	const lines = text.split(/\r?\n/);
 	let inLabel = false;
-	for (const line of lines) {
+	for (const rawLine of lines) {
+		const line = rawLine.replace(/^(?: {0,3}>[ \t]?)+/, '');
 		if (line.trim() === '') {
 			inLabel = false;
 			continue;
@@ -171,12 +174,9 @@ export function splitMarkdownBlocks(text: string): string[] {
 		block += line;
 		content ||= !blank;
 		if (fence === null) {
-			const open = fenceOpen.exec(line);
-			if (open) fence = open[1];
-		} else {
-			const close = fenceClose.exec(line);
-			if (close && close[1][0] === fence[0] && close[1].length >= fence.length)
-				fence = null;
+			fence = matchFenceOpen(line);
+		} else if (isFenceClose(line, fence)) {
+			fence = null;
 		}
 		afterBlank = blank;
 	}

@@ -43,6 +43,13 @@ export function openFind<T>(state: FindState<T>): FindState<T> {
 
 // The query survives a close; matches and the active result do not.
 export function closeFind<T>(state: FindState<T>): FindState<T> {
+	if (
+		!state.open &&
+		state.matches.length === 0 &&
+		state.activeIndex === -1 &&
+		state.activeId === null
+	)
+		return state;
 	return {...state, open: false, matches: [], activeIndex: -1, activeId: null};
 }
 
@@ -57,7 +64,10 @@ export function setFindQuery<T>(
 export function stepFind<T>(state: FindState<T>, delta: 1 | -1): FindState<T> {
 	const {matches} = state;
 	const count = matches.length;
-	if (count === 0) return {...state, activeIndex: -1, activeId: null};
+	if (count === 0)
+		return state.activeIndex === -1 && state.activeId === null
+			? state
+			: {...state, activeIndex: -1, activeId: null};
 	const current = Math.min(state.activeIndex, count - 1);
 	const start = delta === 1 ? 0 : count - 1;
 	const next = current < 0 ? start : (current + delta + count) % count;
@@ -78,10 +88,24 @@ function activate<T>(
 	matches: readonly FindMatch<T>[],
 	index: number,
 ): FindState<T> {
-	if (matches.length === 0)
+	if (matches.length === 0) {
+		if (
+			state.matches.length === 0 &&
+			state.activeIndex === -1 &&
+			state.activeId === null
+		)
+			return state;
 		return {...state, matches, activeIndex: -1, activeId: null};
+	}
 	const activeIndex = Math.min(Math.max(index, 0), matches.length - 1);
-	return {...state, matches, activeIndex, activeId: matches[activeIndex].id};
+	const activeId = matches[activeIndex].id;
+	if (
+		state.matches === matches &&
+		state.activeIndex === activeIndex &&
+		state.activeId === activeId
+	)
+		return state;
+	return {...state, matches, activeIndex, activeId};
 }
 
 export function findStatus(
@@ -162,11 +186,17 @@ function foldText(value: string): string {
 	return result;
 }
 
-// Case-insensitive and literal: no regular expression, and no cap on matches.
-export function findTextRanges(text: string, query: string): TextRange[] {
-	if (query === '') return [];
+// Prepares a literal query once so scanning many fields avoids re-folding it.
+export function prepareFindQuery(query: string): string {
+	return query === '' ? '' : foldText(query);
+}
+
+export function findPreparedTextRanges(
+	text: string,
+	needle: string,
+): TextRange[] {
+	if (needle === '' || text.length < needle.length) return [];
 	const haystack = foldText(text);
-	const needle = foldText(query);
 	const ranges: TextRange[] = [];
 	let from = haystack.indexOf(needle);
 	while (from >= 0) {
@@ -174,6 +204,11 @@ export function findTextRanges(text: string, query: string): TextRange[] {
 		from = haystack.indexOf(needle, from + needle.length);
 	}
 	return ranges;
+}
+
+// Case-insensitive and literal: no regular expression, and no cap on matches.
+export function findTextRanges(text: string, query: string): TextRange[] {
+	return findPreparedTextRanges(text, prepareFindQuery(query));
 }
 
 export interface FindKey {
