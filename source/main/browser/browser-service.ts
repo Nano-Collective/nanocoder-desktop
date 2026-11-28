@@ -135,6 +135,8 @@ interface RunningAction {
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+// A page may send data on a timer or debounce after the agent's step (BRW-13).
+const QUIET_MS = 5000;
 const ACTIVITY_LIMIT = 20;
 const ACTIVITY_TEXT = 200;
 
@@ -171,6 +173,7 @@ export class BrowserService {
 	private agentQueue: Promise<unknown> = Promise.resolve();
 	private readonly cancelled = new Set<AgentCancellation>();
 	private action: RunningAction | null = null;
+	private quiet: (RunningAction & {until: number}) | null = null;
 	private paused = false;
 	private activity: BrowserAgentActivity[] = [];
 	private activityCount = 0;
@@ -192,6 +195,7 @@ export class BrowserService {
 				hooks: BrowserViewHooks,
 			): BrowserViewHandle;
 			delay?: (ms: number) => Promise<void>;
+			now?: () => number;
 			policy?: AgentPolicy;
 			sites?: SiteAccess;
 		},
@@ -204,6 +208,7 @@ export class BrowserService {
 	activate(projectId: string | null): void {
 		this.activeId = projectId;
 		++this.generation;
+		this.endQuiet();
 		this.destroyView();
 		this.state = closedState(projectId ?? '', this.state.sequence);
 		this.publish();
@@ -276,7 +281,10 @@ export class BrowserService {
 	}: BrowserRequests['setAgentPaused']): BrowserSnapshot {
 		this.check(projectId);
 		this.paused = paused;
-		if (paused) this.action?.abort.abort();
+		if (paused) {
+			this.action?.abort.abort();
+			this.endQuiet();
+		}
 		this.publish();
 		return this.snapshot();
 	}
@@ -296,6 +304,7 @@ export class BrowserService {
 	}: BrowserRequests['interruptAgent']): BrowserSnapshot {
 		this.check(projectId);
 		this.action?.abort.abort();
+		this.endQuiet();
 		return this.snapshot();
 	}
 
@@ -322,6 +331,7 @@ export class BrowserService {
 				},
 			};
 			this.cancelled.clear();
+			this.endQuiet();
 			this.action = running;
 			this.activity = [...this.activity, running.activity].slice(
 				-ACTIVITY_LIMIT,
@@ -329,7 +339,19 @@ export class BrowserService {
 			this.publish();
 			const finish = (outcome: BrowserAgentActivity['outcome']) => {
 				running.activity.outcome = outcome;
-				if (this.action === running) this.action = null;
+				if (this.action === running) {
+					this.action = null;
+					if (
+						hold &&
+						outcome !== 'interrupted' &&
+						generation === this.generation
+					)
+						this.quiet = {
+							...running,
+							abort: new AbortController(),
+							until: this.now() + QUIET_MS,
+						};
+				}
 				this.publish();
 			};
 			try {
@@ -407,6 +429,22 @@ export class BrowserService {
 			);
 	}
 
+	private now(): number {
+		return (this.options.now ?? Date.now)();
+	}
+
+	private endQuiet(): void {
+		this.quiet?.abort.abort();
+		this.quiet = null;
+	}
+
+	// The running action, or the one that just ended while its quiet period lasts.
+	private holding(): RunningAction | null {
+		if (this.action?.hold) return this.action;
+		if (this.quiet && this.now() > this.quiet.until) this.endQuiet();
+		return this.quiet;
+	}
+
 	// Gives a navigation the action started time to begin, then to finish.
 	private async settle(generation: number): Promise<void> {
 		const delay =
@@ -421,6 +459,7 @@ export class BrowserService {
 
 	async open(request: BrowserRequests['open']): Promise<BrowserSnapshot> {
 		this.check(request.projectId);
+		if (!this.action) this.endQuiet();
 		const verdict = checkPage(request.url, {
 			publicSites: this.options.publicSites(),
 		});
@@ -527,6 +566,7 @@ export class BrowserService {
 
 	navigate({projectId, action}: BrowserRequests['navigate']): BrowserSnapshot {
 		this.check(projectId);
+		if (!this.action) this.endQuiet();
 		const view = this.view;
 		if (!view) throw new IpcFailure('UNAVAILABLE', 'Open a page first');
 		const target =
@@ -652,6 +692,7 @@ export class BrowserService {
 	close(): Promise<void> {
 		this.closed = true;
 		++this.generation;
+		this.endQuiet();
 		this.destroyView();
 		return Promise.resolve();
 	}
@@ -723,7 +764,7 @@ export class BrowserService {
 				this.publish();
 			},
 			request: (method, url) => {
-				const acting = this.action?.hold ? this.action : null;
+				const acting = this.holding();
 				if (!acting || acting.data || SAFE_METHODS.has(method.toUpperCase()))
 					return true;
 				// The page tries to send data while the agent acts: the user decides (BRW-13).
@@ -829,6 +870,7 @@ export class BrowserService {
 
 	private resetView(projectId: string): void {
 		++this.generation;
+		this.endQuiet();
 		this.destroyView();
 		this.state = closedState(projectId, this.state.sequence);
 		this.publish();

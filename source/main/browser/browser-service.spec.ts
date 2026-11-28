@@ -34,6 +34,7 @@ function fixture(
 		publicSites?: boolean;
 		delay?: (ms: number) => Promise<void>;
 		policy?: AgentPolicy;
+		now?: () => number;
 	} = {},
 ) {
 	const events: BrowserEvent[] = [];
@@ -66,6 +67,7 @@ function fixture(
 		publicSites: () => settings.publicSites,
 		delay: options.delay ?? (() => Promise.resolve()),
 		policy: options.policy,
+		now: options.now,
 		downloadsPath: () => '/home/user/Downloads',
 		profiles,
 		clearData: async partition => {
@@ -1286,7 +1288,100 @@ test('BRW-13 during an agent action a request that sends data asks the user, and
 		"The page wants to send data (POST to http://localhost:5173) after the agent's action. Allow it?",
 		"The page wants to send data (DELETE to http://localhost:5173) after the agent's action. Allow it?",
 	]);
+});
+
+test('BRW-13 a request the page sends shortly after an agent action still asks the user', async t => {
+	const p = scripted([false, true]);
+	let time = 0;
+	const f = await agentReady(t, 'http://localhost:5173/', {
+		policy: p.policy,
+		now: () => time,
+	});
+	await f.service.agentUse(ctx, 'click', async () => undefined);
+	time = 600;
+	t.false(await f.views[0].hooks.request('POST', 'http://localhost:5173/save'));
+	time = 4000;
+	t.true(await f.views[0].hooks.request('PUT', 'http://localhost:5173/save'));
+	t.true(f.views[0].hooks.request('GET', 'http://localhost:5173/a') === true);
+	t.is(p.asked.length, 2);
+	time = 5001;
 	t.true(f.views[0].hooks.request('POST', 'http://localhost:5173/x') === true);
+	t.is(p.asked.length, 2);
+});
+
+for (const [name, end] of [
+	[
+		'pauses agent control',
+		f => f.service.setAgentPaused({projectId: first, paused: true}),
+	],
+	['interrupts the agent', f => f.service.interruptAgent({projectId: first})],
+	[
+		'reloads the page',
+		f => f.service.navigate({projectId: first, action: 'reload'}),
+	],
+	[
+		'opens another page',
+		f => f.service.open({projectId: first, url: 'http://localhost:5173/b'}),
+	],
+] as Array<[string, (f: Awaited<ReturnType<typeof agentReady>>) => unknown]>) {
+	test(`BRW-13 the hold after an agent action ends when the user ${name}`, async t => {
+		const p = scripted();
+		const f = await agentReady(t, 'http://localhost:5173/', {
+			policy: p.policy,
+			now: () => 100,
+		});
+		await f.service.agentUse(ctx, 'click', async () => undefined);
+		await end(f);
+		t.true(
+			f.views.at(-1)?.hooks.request('POST', 'http://localhost:5173/x') === true,
+		);
+		t.deepEqual(p.asked, []);
+	});
+}
+
+test('BRW-13 an approval asked after the action is cancelled when the user takes control', async t => {
+	let signal: AbortSignal | undefined;
+	const policy: AgentPolicy = {
+		...scripted().policy,
+		approve: (_context, _title, given) => {
+			signal = given;
+			return new Promise(resolve =>
+				given?.addEventListener('abort', () => resolve(false)),
+			);
+		},
+	};
+	const f = await agentReady(t, 'http://localhost:5173/', {
+		policy,
+		now: () => 100,
+	});
+	await f.service.agentUse(ctx, 'click', async () => undefined);
+	const asked = f.views[0].hooks.request('POST', 'http://localhost:5173/x');
+	f.service.setAgentPaused({projectId: first, paused: true});
+	t.false(await asked);
+	t.true(signal?.aborted);
+});
+
+test('BRW-13 reading the page starts no hold after it', async t => {
+	const p = scripted();
+	const f = await agentReady(t, 'http://localhost:5173/', {
+		policy: p.policy,
+		now: () => 100,
+	});
+	await f.service.agentRead(ctx, 'snapshot', async () => undefined);
+	t.true(f.views[0].hooks.request('POST', 'http://localhost:5173/x') === true);
+});
+
+test('BRW-13 an approved step lets the page send data in the quiet period after it too', async t => {
+	const p = scripted();
+	const f = await agentReady(t, 'http://localhost:5173/', {
+		policy: p.policy,
+		now: () => 100,
+	});
+	await f.service.agentUse(ctx, 'submit', async action => {
+		action.permit('data');
+	});
+	t.true(f.views[0].hooks.request('POST', 'http://localhost:5173/x') === true);
+	t.deepEqual(p.asked, []);
 });
 
 test('BRW-13 an approved step may send data and download without asking again, and only during that action', async t => {

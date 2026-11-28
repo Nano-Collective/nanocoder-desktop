@@ -683,6 +683,10 @@ async function runTurn(id, params) {
 		return;
 	}
 	say(sessionId, 'Working on it. ');
+	if (mode === 'ignore-cancel') {
+		await new Promise(() => {});
+		return;
+	}
 	if (mode === 'wait-for-cancel') {
 		await new Promise(resolve => cancellations.set(sessionId, resolve));
 		cancellations.delete(sessionId);

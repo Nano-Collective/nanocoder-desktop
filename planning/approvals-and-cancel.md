@@ -51,7 +51,7 @@ Accepted risk: a request from another source with the same question shape would 
 
 The `cancelThread()` bridge sends only desktop project/thread IDs on `threads:cancel`. Main resolves the saved Nanocoder session and cancels only that active owner. Renderer-supplied session IDs, extra fields and malformed scopes are rejected before the service runs. An unknown thread is refused; a known sessionless or idle thread is a local no-op. The strict schemas and service-invocation refusal tests live in `source/main/ipc/workspace.ts` and its adjacent spec.
 
-Cancellation reuses `ProjectSupervisor.cancel`, which cancels pending permissions and waits for the turn to settle. A cancelled turn is shown as interrupted, not successful or failed. The cancel control remains available during approval, and the composer becomes usable again afterwards.
+Cancellation reuses `ProjectSupervisor.cancel`, which cancels pending permissions and waits for the turn to settle. A cancelled turn is shown as interrupted, not successful or failed. If Nanocoder has not ended the turn 10 seconds after the cancel, the supervisor ends it as cancelled itself, stops the project's process (which may still be acting on the turn) and shows why in the recovery notice; the next start is an ordinary one. The cancel control remains available during approval, and the composer becomes usable again afterwards.
 
 The temporary `sendPrompt`, `answerPermission`, `cancelPrompt` and legacy event bridge are retired. ThreadService owns prompt, approval and cancel routing. Its tests retain scoped forwarding, offered-option refusals, cancellation during preparation and the requirement to await supervisor settlement.
 

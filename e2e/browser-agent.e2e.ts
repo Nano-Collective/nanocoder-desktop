@@ -42,6 +42,7 @@ const FIXTURE = `<!doctype html><title>Agent fixture</title>
 <a id="dl" href="/file.txt" download>Get file</a>
 <div style="position: relative"><button id="under">Hidden under</button><div style="position: absolute; inset: 0; background: white"></div></div>
 <button id="ping" onclick="fetch('/ping', {method: 'POST', body: 'data'}).catch(() => {})">Ping</button>
+<button id="later" onclick="setTimeout(() => fetch('/later', {method: 'POST', body: 'data'}).catch(() => { document.title = 'refused'; }), 600)">Later</button>
 <a id="out" href="https://example.com/">Outside</a>
 <a id="next" href="/next">Next page</a>
 <label>Email <input id="email" type="email" value="ada@"></label>
@@ -519,6 +520,19 @@ test('BRW-13 data the page sends during an agent click is asked about, and typin
 	await password.getByRole('button', {name: 'allow once', exact: true}).click();
 	expect((await typing).isError).toBe(false);
 	expect(await inPage("document.getElementById('pw').value")).toBe('hunter2');
+});
+
+test('BRW-13 data the page sends on a timer after an agent click is still asked about', {
+	tag: '@held-turn',
+}, async () => {
+	await openAsAgent(`${origin}/`);
+	const later = await agent('desktop_browser_click', {selector: '#later'});
+	expect(later.isError).toBe(false);
+	const send = card('The page wants to send data (POST to');
+	await expect(send).toBeVisible();
+	await send.getByRole('button', {name: 'reject', exact: true}).click();
+	await expect.poll(() => inPage('document.title')).toBe('refused');
+	expect(received).not.toContain('POST /later');
 });
 
 test('BRW-13 data a page sends through its service worker during an agent click is asked about', {

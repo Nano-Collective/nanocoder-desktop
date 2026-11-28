@@ -6,6 +6,8 @@ import {
 
 type ThreadTurn = Extract<ProjectEvent, {type: 'turn'}>;
 
+export const WAITING_LIMIT = 500;
+
 export function createThreadStream(options: {
 	onSnapshot(snapshot: ThreadSnapshot): void;
 	onTurn(event: ThreadTurn): void;
@@ -56,14 +58,22 @@ export function createThreadStream(options: {
 	};
 	const pending = new Map<
 		string,
-		{token: number; events: ThreadTurn[]; requested: boolean}
+		{
+			token: number;
+			events: ThreadTurn[];
+			requested: boolean;
+			// Set once the buffer overflowed: only a snapshot this new can replace it.
+			latest?: number;
+		}
 	>();
 	const begin = (threadId: string) => {
 		const value = ++token;
+		const previous = pending.get(threadId);
 		pending.set(threadId, {
 			token: value,
-			events: pending.get(threadId)?.events ?? [],
+			events: previous?.events ?? [],
 			requested: true,
+			latest: previous?.latest,
 		});
 		return value;
 	};
@@ -110,7 +120,13 @@ export function createThreadStream(options: {
 		}
 		const waiting = pending.get(event.threadId);
 		if (waiting) {
-			waiting.events.push(structuredClone(event));
+			if (
+				waiting.latest !== undefined ||
+				waiting.events.length >= WAITING_LIMIT
+			) {
+				waiting.events = [];
+				waiting.latest = Math.max(waiting.latest ?? 0, event.sequence);
+			} else waiting.events.push(structuredClone(event));
 			if (!waiting.requested) {
 				waiting.requested = true;
 				options.onGap(event.threadId, waiting.token);
@@ -234,9 +250,25 @@ export function createThreadStream(options: {
 				}
 				deliver(event);
 			}
+			if (
+				waiting.latest !== undefined &&
+				waiting.latest > (sequences.get(threadId) ?? -1)
+			) {
+				pending.set(threadId, {token: ++token, events: [], requested: true});
+				options.onGap(threadId, token);
+				return false;
+			}
 			return true;
 		},
 		receive,
+		// A failed read hands the next live event the job of asking again.
+		release: (threadId: string, value: number) => {
+			const waiting = pending.get(threadId);
+			if (waiting?.token !== value) return false;
+			waiting.requested = false;
+			return true;
+		},
+		waiting: (threadId: string) => pending.get(threadId)?.events.length ?? 0,
 		isCurrent: (threadId: string, value: number) =>
 			pending.get(threadId)?.token === value,
 		remove: (threadId: string) => {
