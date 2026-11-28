@@ -13,6 +13,7 @@ import type {
 } from '@/main/browser/browser-service';
 import {createExternalOpener} from '@/main/browser/external';
 import {denyBrowserPermissions} from '@/main/browser/profile';
+import {fromView} from '@/main/browser/request-owner';
 
 const browserSessions = new WeakSet<Session>();
 const ERR_ABORTED = -3;
@@ -115,7 +116,7 @@ export function createElectronViewFactory(
 		};
 		partition.on('will-download', onDownload);
 		partition.webRequest.onBeforeRequest((details, callback) => {
-			if (details.webContentsId !== contents.id) {
+			if (!fromView(details.webContentsId, contents.id)) {
 				callback({});
 				return;
 			}
