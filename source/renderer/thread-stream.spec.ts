@@ -1,5 +1,5 @@
 import test from 'ava';
-import {createThreadStream} from '@/renderer/thread-stream';
+import {createThreadStream, WAITING_LIMIT} from '@/renderer/thread-stream';
 import type {ProjectEvent, ThreadSnapshot} from '@/shared/ipc';
 
 type ThreadTurn = Extract<ProjectEvent, {type: 'turn'}>;
@@ -238,4 +238,36 @@ test('a snapshot with a remaining sequence gap never appends across it or starts
 	t.is(gaps.length, 1);
 	t.true(stream.replace(gaps[0].token, snapshot(6)));
 	t.deepEqual(delivered, [snapshot(2), snapshot(3), snapshot(6)]);
+});
+
+test('a released gap read lets the next live event request another snapshot (CHAT-04)', t => {
+	const {stream, delivered, gaps} = fixture();
+	stream.replace(stream.begin('thread-a'), snapshot(2));
+	stream.receive(turn(4));
+	t.is(gaps.length, 1);
+	stream.receive(turn(5));
+	t.is(gaps.length, 1);
+	t.false(stream.release('thread-a', gaps[0].token + 1));
+	t.true(stream.release('thread-a', gaps[0].token));
+	stream.receive(turn(6));
+	t.is(gaps.length, 2);
+	t.true(stream.replace(gaps[1].token, snapshot(4)));
+	t.deepEqual(delivered, [snapshot(2), snapshot(4), turn(5), turn(6)]);
+});
+
+test('events waiting for a snapshot are bounded and an overflow reads a newer snapshot (CHAT-04)', t => {
+	const {stream, delivered, gaps} = fixture();
+	stream.replace(stream.begin('thread-a'), snapshot(0));
+	const extra = 50;
+	for (let sequence = 2; sequence < WAITING_LIMIT + extra; sequence++)
+		stream.receive(turn(sequence));
+	t.is(gaps.length, 1);
+	t.true(stream.waiting('thread-a') <= WAITING_LIMIT);
+	const latest = WAITING_LIMIT + extra - 1;
+	t.false(stream.replace(gaps[0].token, snapshot(1)));
+	t.is(gaps.length, 2);
+	t.true(stream.replace(gaps[1].token, snapshot(latest)));
+	t.deepEqual(delivered.at(-1), snapshot(latest));
+	stream.receive(turn(latest + 1));
+	t.deepEqual(delivered.at(-1), turn(latest + 1));
 });

@@ -38,12 +38,20 @@ export interface ThreadControllerState {
 	replay?: Record<string, 'replaying' | 'failed'>;
 }
 
+const GAP_RETRY_MS = [500, 1000, 2000, 4000, 8000];
+
+const systemTimeout = (run: () => void, delay: number) => {
+	const timer = setTimeout(run, delay);
+	return () => clearTimeout(timer);
+};
+
 export function createThreadController(options: {
 	bridge: ThreadBridge;
 	onChange(state: ThreadControllerState): void;
 	onSnapshot?(snapshot: ThreadSnapshot): void;
 	onTurn?(event: Extract<ProjectEvent, {type: 'turn'}>): void;
 	onRemoved?(threadId: string): void;
+	setTimeout?(run: () => void, delay: number): () => void;
 }) {
 	let state: ThreadControllerState = {
 		projectId: null,
@@ -58,6 +66,13 @@ export function createThreadController(options: {
 	let generation = 0;
 	let disposed = false;
 	let revision = 0;
+	const later = options.setTimeout ?? systemTimeout;
+	const retries = new Map<string, () => void>();
+	let gapError: {threadId: string; message: string} | null = null;
+	const clearRetries = () => {
+		for (const cancel of retries.values()) cancel();
+		retries.clear();
+	};
 	const sequences = new Map<string, number>();
 	const commands = new Map<
 		string,
@@ -228,16 +243,40 @@ export function createThreadController(options: {
 		const thread = state.threads.find(row => row.id === threadId);
 		return !!thread && stream.replace(token, {...snapshot, thread});
 	};
-	async function readGap(threadId: string, token: number) {
+	async function readGap(threadId: string, token: number, attempt = 0) {
 		const projectId = state.projectId;
-		if (
-			disposed ||
-			!projectId ||
-			!state.threads.some(row => row.id === threadId)
-		)
-			return;
+		if (disposed || !projectId) return;
 		const current = generation;
 		const started = revision;
+		const retry = (message: string | null) => {
+			if (
+				disposed ||
+				current !== generation ||
+				!stream.isCurrent(threadId, token)
+			)
+				return;
+			if (message && state.activeThreadId === threadId) {
+				gapError = {threadId, message};
+				update({error: message});
+			}
+			const delay = GAP_RETRY_MS[attempt];
+			if (delay === undefined) {
+				stream.release(threadId, token);
+				return;
+			}
+			retries.get(threadId)?.();
+			retries.set(
+				threadId,
+				later(() => {
+					retries.delete(threadId);
+					void readGap(threadId, token, attempt + 1);
+				}, delay),
+			);
+		};
+		if (!state.threads.some(row => row.id === threadId)) {
+			retry(null);
+			return;
+		}
 		try {
 			const result = await options.bridge.getThreadSnapshot({
 				projectId,
@@ -245,18 +284,16 @@ export function createThreadController(options: {
 			});
 			if (current !== generation || !stream.isCurrent(threadId, token)) return;
 			if (!result.ok) {
-				if (state.activeThreadId === threadId)
-					update({error: result.error.message});
+				retry(result.error.message);
 				return;
 			}
 			replace(result.value, started, threadId, token);
+			if (gapError?.threadId === threadId && state.error === gapError.message) {
+				gapError = null;
+				update({error: null});
+			}
 		} catch {
-			if (
-				current === generation &&
-				stream.isCurrent(threadId, token) &&
-				state.activeThreadId === threadId
-			)
-				update({error: 'the thread snapshot is unavailable'});
+			retry('the thread snapshot is unavailable');
 		}
 	}
 	const load = (threadId: string, open: boolean) => {
@@ -280,6 +317,7 @@ export function createThreadController(options: {
 		if (disposed) return;
 		const current = ++generation;
 		revision = 0;
+		clearRetries();
 		changes.clear();
 		commands.clear();
 		stream.selectProject(projectId);
@@ -449,6 +487,7 @@ export function createThreadController(options: {
 			if (disposed) return;
 			disposed = true;
 			generation++;
+			clearRetries();
 			changes.clear();
 			commands.clear();
 			sequences.clear();

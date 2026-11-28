@@ -47,6 +47,7 @@ function fixture() {
 		| {type: 'turn'; value: Extract<ProjectEvent, {type: 'turn'}>}
 	> = [];
 	const removed: string[] = [];
+	const timers: Array<{run: () => void; delay: number; cleared: boolean}> = [];
 	const bridge = {
 		listThreads: async (request: {
 			projectId: string;
@@ -129,10 +130,18 @@ function fixture() {
 		onSnapshot: value => delivered.push({type: 'snapshot', value}),
 		onTurn: value => delivered.push({type: 'turn', value}),
 		onRemoved: id => removed.push(id),
+		setTimeout: (run, delay) => {
+			const timer = {run, delay, cleared: false};
+			timers.push(timer);
+			return () => {
+				timer.cleared = true;
+			};
+		},
 	});
 	return {
 		bridge,
 		calls,
+		timers,
 		controller,
 		delivered,
 		removed,
@@ -510,6 +519,79 @@ test('metadata and chat counters stay independent and a chat gap reads main with
 	if (delivered.at(-1)?.type === 'snapshot')
 		t.is((delivered.at(-1)?.value as ThreadSnapshot).sequence, 3);
 	t.false(calls.some(call => Array.isArray(call) && call[0] === 'open'));
+});
+
+test('a failed gap snapshot is retried with backoff and the live stream resumes (CHAT-04)', async t => {
+	const {bridge, controller, emit, delivered, timers} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	t.true(await controller.read('created'));
+	const live = (sequence: number): Extract<ProjectEvent, {type: 'turn'}> => ({
+		type: 'turn',
+		projectId: 'project-a',
+		threadId: 'created',
+		sequence,
+		events: [{type: 'text', text: `delta ${sequence}`}],
+	});
+	const answers: Array<() => Promise<IpcResult<ThreadSnapshot>>> = [
+		async () => ({
+			ok: false,
+			error: {code: 'UNAVAILABLE', message: 'busy', retryable: true},
+		}),
+		async () => {
+			throw new Error('fixture bridge failure');
+		},
+		async () => ok(snap('created', 2)),
+	];
+	let reads = 0;
+	bridge.getThreadSnapshot = () => {
+		const answer = answers[reads++];
+		if (!answer) throw new Error('unexpected read');
+		return answer();
+	};
+	const settle = () => new Promise(resolve => setImmediate(resolve));
+	emit(live(2));
+	await settle();
+	t.is(reads, 1);
+	t.is(timers.length, 1);
+	timers[0].run();
+	await settle();
+	t.is(reads, 2);
+	t.is(timers.length, 2);
+	t.true(timers[1].delay > timers[0].delay);
+	timers[1].run();
+	await settle();
+	t.is(reads, 3);
+	t.is(controller.getState().error, null);
+	t.is(delivered.at(-1)?.type, 'snapshot');
+	emit(live(3));
+	t.deepEqual(delivered.at(-1), {type: 'turn', value: live(3)});
+});
+
+test('a gap retry stops when the project changes (CHAT-04)', async t => {
+	const {bridge, controller, emit, timers} = fixture();
+	await controller.selectProject('project-a');
+	await controller.create();
+	t.true(await controller.read('created'));
+	let reads = 0;
+	bridge.getThreadSnapshot = async () => {
+		reads++;
+		throw new Error('fixture bridge failure');
+	};
+	emit({
+		type: 'turn',
+		projectId: 'project-a',
+		threadId: 'created',
+		sequence: 2,
+		events: [{type: 'text', text: 'gap'}],
+	});
+	await new Promise(resolve => setImmediate(resolve));
+	t.is(timers.length, 1);
+	await controller.selectProject('project-b');
+	t.true(timers[0].cleared);
+	timers[0].run();
+	await new Promise(resolve => setImmediate(resolve));
+	t.is(reads, 1);
 });
 
 test('a thread removed during an open cannot be restored by its old snapshot response (CHAT-14)', async t => {
