@@ -4,6 +4,7 @@ import {
 	attachmentKey,
 	chips,
 	clearAttachments,
+	forgetProjectAttachments,
 	labelFor,
 	MAX_ATTACHMENTS,
 	removeAttachment,
@@ -99,4 +100,16 @@ test('BRW-10 a page chip names the site and a second page replaces the first', t
 	store = addAttachment(store, key, page('http://localhost:3000/'));
 	store = addAttachment(store, key, page('http://localhost:5173/'));
 	t.deepEqual(store[key], [file('a.ts'), page('http://localhost:5173/')]);
+});
+
+test('a project that leaves the desktop forgets its own threads only (CHAT-16)', t => {
+	const mine = attachmentKey('p', 'a');
+	const sibling = attachmentKey('pq', 'a');
+	let store = addAttachment({}, mine, file('a.ts'));
+	store = addAttachment(store, attachmentKey('p', 'b'), file('b.ts'));
+	store = addAttachment(store, sibling, file('c.ts'));
+	t.deepEqual(forgetProjectAttachments(store, 'p'), {
+		[sibling]: [file('c.ts')],
+	});
+	t.is(forgetProjectAttachments(store, 'missing'), store);
 });

@@ -32,6 +32,7 @@ export function AppShell({
 	sidebarFooter,
 	onOpenThreadMenu,
 	streamTools,
+	findBar,
 	composer,
 	composerPlacement = 'bottom',
 	approvalShelf,
@@ -56,6 +57,7 @@ export function AppShell({
 	// Shows the thread actions button after the title when set.
 	onOpenThreadMenu?: () => void;
 	streamTools?: React.ReactNode;
+	findBar?: React.ReactNode;
 	composer?: React.ReactNode;
 	composerPlacement?: 'centred' | 'bottom';
 	approvalShelf?: React.ReactNode;
@@ -205,6 +207,7 @@ export function AppShell({
 						aria-label="conversation workspace"
 						data-composer-placement={composerPlacement}
 					>
+						{findBar && <div className="shell-find-bar">{findBar}</div>}
 						<div
 							ref={scroller}
 							className="shell-stream-scroll"

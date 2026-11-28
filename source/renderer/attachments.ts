@@ -79,3 +79,26 @@ export function clearAttachments(
 	const {[key]: _removed, ...rest} = store;
 	return rest;
 }
+
+// Forgets every thread of a project that has left the desktop, and no other.
+export function forgetProjectAttachments(
+	store: AttachmentStore,
+	projectId: string,
+): AttachmentStore {
+	const prefix = attachmentKey(projectId, '');
+	let next: AttachmentStore | null = null;
+	for (const [key, list] of Object.entries(store)) {
+		if (key.startsWith(prefix)) {
+			if (!next) {
+				next = {};
+				for (const [keptKey, keptList] of Object.entries(store)) {
+					if (keptKey === key) break;
+					next[keptKey] = keptList;
+				}
+			}
+		} else if (next) {
+			next[key] = list;
+		}
+	}
+	return next ?? store;
+}

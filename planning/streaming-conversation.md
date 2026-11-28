@@ -1,6 +1,6 @@
 # Streaming conversation
 
-- Last updated: 2026-11-24
+- Last updated: 2026-11-28
 
 Phase 1.6 and U.4 implement `CHAT-05`, `ACP-12`, `CHAT-19`, `CHAT-20` and `PERF-04`. `DEC-39` remains proposed.
 
@@ -75,3 +75,13 @@ The 24 November 2026 Linux Instabox review-fix run passed 96 affected built-app 
 The stream-announcement unit tests use injected time and frame callbacks, without sleeps. The dedicated built-app tests check native-dialog moves in Chromium's accessibility tree, focus retention, approval-count ownership and terminal outcomes. The `PERF-04` stream probe also limits announcement writes during its 300 updates. Full platform screen-reader acceptance, including VoiceOver's handling of native-dialog moves, still needs the manual protocol.
 
 The UI uses the designer-approved `DEC-40` tokens and passes the updated contrast inventory without the retired exceptions. Full platform screen-reader acceptance, advanced subagent controls and main-owned external-link navigation remain later work. No transcript, tool output or resource body is persisted by the desktop.
+
+## Long-transcript performance, failure anchoring and in-conversation find
+
+To keep long transcripts and multi-thread workspaces responsive (`#105`, `#106`, `#72`):
+
+- `applyEvents` lazily copies `transcript.items` at most once per batch and keeps the original array reference when a batch changes only non-item fields. `carryMessageTimes` matches messages in linear time with a map rather than a quadratic scan.
+- `AgentMarkdown` splits completed top-level Markdown blocks into memoised `MarkdownBlock` children and reparses only the live tail during streaming, falling back to a single block when link definitions, footnotes or line-start HTML appear. `ConversationStream` indexes turn starts, subagent counts, agent labels, row keys and tool groups in one memoised pass.
+- `ThreadConversations` bounds cached transcript views to 16 LRU entries while protecting active, ticketed, replaying, streaming, draft and pending-approval threads, and trims on project switch. Removing a thread, deleting history or removing a project drops its unsent in-memory attachments.
+- `appendFailure` and `carryFailureRows` anchor each failure row to the turn that failed with a stable `rowId` so rebuilding a thread from a snapshot keeps failures beside their turn instead of moving them to the end.
+- In-conversation find (`find-model.ts`, `transcript-find.ts`, `transcript-highlights.ts`, `find-bar.tsx`) searches loaded user text, assistant text, tool titles and folded tool details case-insensitively and literally. Stepping onto a folded tool match opens its `<details>` disclosure and centres the active range. Highlights use the CSS Custom Highlight API (`::highlight(find-match)` and `::highlight(find-active)`), bounded to visible rows within a 300px overscan window and repainted on scroll without injecting HTML into Markdown. Query text, matches and indices stay in memory only and are never written to disk or logs.

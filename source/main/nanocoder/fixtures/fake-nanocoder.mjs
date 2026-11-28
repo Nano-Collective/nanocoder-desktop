@@ -522,6 +522,28 @@ async function streamFixture(id, sessionId) {
 	});
 }
 
+// Markdown and a completed tool call with folded output, for the find tests.
+function findFixture(id, sessionId) {
+	const update = body => notify('session/update', {sessionId, update: body});
+	say(
+		sessionId,
+		'# zephyr heading\n\nA **zephyr bold** note with `zephyr code`.\n\n```ts\nconst zephyrCode = 1;\n```\n\n',
+	);
+	update({
+		sessionUpdate: 'tool_call',
+		toolCallId: 'find-tool',
+		title: 'execute_bash: zephyr check',
+		kind: 'execute',
+		status: 'in_progress',
+		content: [
+			{type: 'content', content: {type: 'text', text: 'folded zephyr output'}},
+		],
+		rawInput: {fixture: true},
+	});
+	tool(sessionId, 'find-tool', {status: 'completed'});
+	send({id, result: {stopReason: 'end_turn'}});
+}
+
 let subagentTurn = 0;
 async function subagentFixture(id, {sessionId, prompt}) {
 	const text = prompt
@@ -656,6 +678,7 @@ async function runTurn(id, params) {
 	if (mode === 'files' || mode === 'files-timeline')
 		return filesFixture(id, params);
 	if (mode === 'streaming') return streamFixture(id, sessionId);
+	if (mode === 'find-transcript') return findFixture(id, sessionId);
 	if (mode === 'subagents') return subagentFixture(id, params);
 	if (
 		mode === 'reported-usage' ||

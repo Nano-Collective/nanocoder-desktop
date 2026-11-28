@@ -5,6 +5,7 @@ import {
 	AgentMarkdown,
 	CopyContext,
 	LocalUrlContext,
+	splitMarkdownBlocks,
 } from '@/renderer/agent-markdown';
 
 const render = (text: string) =>
@@ -188,4 +189,87 @@ test('only fenced code gets an accessible copy action', t => {
 	t.is(html.match(/aria-label="copy code"/g)?.length, 1);
 	t.true(html.includes('class="stream-code-block"'));
 	t.false(render('```ts\nconst fixture = 1;\n```').includes('copy code'));
+});
+
+test('streamed Markdown splits only where a new top-level block starts (DEC-39)', t => {
+	t.deepEqual(splitMarkdownBlocks('a\n\nb'), ['a\n\n', 'b']);
+	t.deepEqual(splitMarkdownBlocks('- one\n\n- two\n\nthree'), [
+		'- one\n\n- two\n\n',
+		'three',
+	]);
+	t.deepEqual(splitMarkdownBlocks('- one\n\n  continued'), [
+		'- one\n\n  continued',
+	]);
+	t.deepEqual(splitMarkdownBlocks('    code\n\n    more'), [
+		'    code\n\n    more',
+	]);
+	t.deepEqual(splitMarkdownBlocks('```\nx\n\ny\n```\n\nz'), [
+		'```\nx\n\ny\n```\n\n',
+		'z',
+	]);
+	t.deepEqual(splitMarkdownBlocks('[ref]: https://fixture.invalid\n\ntext'), [
+		'[ref]: https://fixture.invalid\n\ntext',
+	]);
+	t.deepEqual(
+		splitMarkdownBlocks(
+			'[example][foo bar]\n\n[foo\nbar]: http://localhost:3000',
+		),
+		['[example][foo bar]\n\n[foo\nbar]: http://localhost:3000'],
+	);
+	t.deepEqual(
+		splitMarkdownBlocks(
+			'[example][foo\\]bar]\n\n[foo\\]bar]: http://localhost:3000',
+		),
+		['[example][foo\\]bar]\n\n[foo\\]bar]: http://localhost:3000'],
+	);
+	t.deepEqual(splitMarkdownBlocks('<div>\n\nx'), ['<div>\n\nx']);
+	const multilineRefHtml = renderToStaticMarkup(
+		createElement(
+			LocalUrlContext.Provider,
+			{value: () => {}},
+			createElement(AgentMarkdown, {
+				text: '[example][foo bar]\n\n[foo\nbar]: http://localhost:3000',
+			}),
+		),
+	);
+	t.true(multilineRefHtml.includes('stream-local-link'));
+	t.true(multilineRefHtml.includes('example'));
+	const escapedBracketHtml = renderToStaticMarkup(
+		createElement(
+			LocalUrlContext.Provider,
+			{value: () => {}},
+			createElement(AgentMarkdown, {
+				text: '[example][foo\\]bar]\n\n[foo\\]bar]: http://localhost:3000',
+			}),
+		),
+	);
+	t.true(escapedBracketHtml.includes('stream-local-link'));
+	const quotedRef = '[open][dev]\n\n> [dev]: http://localhost:3000';
+	t.deepEqual(splitMarkdownBlocks(quotedRef), [quotedRef]);
+	t.true(renderWithOpener(quotedRef).includes('stream-local-link'));
+});
+
+test('a long streamed reply renders every paragraph once (PERF-03 DEC-39)', t => {
+	const text = Array.from(
+		{length: 200},
+		(_, index) => `Paragraph ${index} with **bold**.`,
+	).join('\n\n');
+	const html = render(text);
+	t.is(html.match(/<p>/g)?.length, 200);
+	t.is(html.match(/<strong>bold<\/strong>/g)?.length, 200);
+});
+
+test('fenced code in a later streamed block keeps its own copy action (CHAT-05)', t => {
+	const html = renderToStaticMarkup(
+		createElement(
+			CopyContext.Provider,
+			{value: () => {}},
+			createElement(AgentMarkdown, {
+				text: 'first\n\n```ts\nconst one = 1;\n```\n\nmiddle\n\n```\nsecond\n```',
+			}),
+		),
+	);
+	t.is(html.match(/aria-label="copy code"/g)?.length, 2);
+	t.true(html.includes('const one = 1;'));
+	t.true(html.includes('second'));
 });

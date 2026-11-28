@@ -1,4 +1,11 @@
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react';
 import {AppShell} from '@/renderer/app-shell';
 import {ApprovalRequests} from '@/renderer/approval-requests';
 import logoUrl from '@/renderer/assets/nano-collective-avatar.png';
@@ -8,6 +15,7 @@ import {
 	attachmentKey,
 	chips,
 	clearAttachments,
+	forgetProjectAttachments,
 	labelFor,
 	MAX_ATTACHMENTS,
 	removeAttachment,
@@ -17,9 +25,22 @@ import {BrowserPanel} from '@/renderer/browser-panel';
 import {Composer} from '@/renderer/composer';
 import {ConversationStream} from '@/renderer/conversation-stream';
 import {copyContent} from '@/renderer/copy-content';
+import {FindBar} from '@/renderer/find-bar';
+import {
+	closeFind,
+	detectFindFocusContext,
+	initialFindState,
+	openFind,
+	reconcileFindMatches,
+	routeFindShortcut,
+	setFindQuery,
+	stepFind,
+	transcriptScopeLabel,
+} from '@/renderer/find-model';
 import {Icon} from '@/renderer/icons';
 import {
 	commandModifier,
+	focusReturn,
 	notifyImported,
 	type OverlayRequest,
 	type WorkspaceDialog,
@@ -44,6 +65,7 @@ import {
 	retentionHint,
 } from '@/renderer/retention-notice';
 import {stepRetryFocus} from '@/renderer/retry-focus';
+import {type ReviewPanelHandle} from '@/renderer/review-panel';
 import {SessionImportList} from '@/renderer/session-import-list';
 import {type FooterAcpState, SidebarFooter} from '@/renderer/sidebar-footer';
 import {SidebarRecents} from '@/renderer/sidebar-recents';
@@ -65,6 +87,10 @@ import {
 	ThreadRecoveryNotice,
 	ViewOnlyFooter,
 } from '@/renderer/thread-recovery-notice';
+import {
+	findTranscriptMatches,
+	type TranscriptFindTarget,
+} from '@/renderer/transcript-find';
 import {TrustFeedback} from '@/renderer/trust-feedback';
 import {Button, Card, StatusBadge} from '@/renderer/ui';
 import {useBrowser} from '@/renderer/use-browser';
@@ -276,6 +302,95 @@ export function App() {
 	} | null>(null);
 	const [, setPaletteFocusRevision] = useState(0);
 	const overlays = useRef<OverlayHandle>(null);
+	// A find belongs to the thread it started in, and its query is kept for the next one.
+	const threadScope = `${projectId ?? ''}\n${thread?.id ?? ''}`;
+	const [findScope, setFindScope] = useState(threadScope);
+	const [transcriptFind, setTranscriptFind] = useState(() =>
+		initialFindState<TranscriptFindTarget>(),
+	);
+	const [findReveal, setFindReveal] = useState(0);
+	const [findFocus, setFindFocus] = useState(0);
+	const findInput = useRef<HTMLInputElement>(null);
+	const findOpener = useRef<HTMLElement | null>(null);
+	const paletteFind = useRef<'conversation' | 'diff' | null>(null);
+	const reviewPanelRef = useRef<ReviewPanelHandle>(null);
+	if (findScope !== threadScope) {
+		setFindScope(threadScope);
+		setTranscriptFind(current => closeFind(current));
+	}
+	const findShown = transcriptFind.open && thread !== null && !importOpen;
+	const transcriptMatches = useMemo(
+		() =>
+			findShown
+				? findTranscriptMatches(transcript.items, transcriptFind.query)
+				: [],
+		[findShown, transcript.items, transcriptFind.query],
+	);
+	const liveFind = useMemo(
+		() => reconcileFindMatches(transcriptFind, transcriptMatches),
+		[transcriptFind, transcriptMatches],
+	);
+	const activeFindMatch =
+		liveFind.activeIndex >= 0
+			? liveFind.matches[liveFind.activeIndex]
+			: undefined;
+	const reviewDiffOpen =
+		inspectorOpen &&
+		inspector === 'review' &&
+		reviewPanel.state.diff?.value?.kind === 'text';
+	useLayoutEffect(() => {
+		if (!findFocus) return;
+		findInput.current?.focus();
+		findInput.current?.select();
+	}, [findFocus]);
+	const openTranscriptFind = (opener: HTMLElement | null) => {
+		if (!thread || importOpen) return;
+		// At 840px and below an open workbench covers the conversation, so it steps aside.
+		if (inspectorOpen && window.matchMedia('(max-width: 840px)').matches)
+			setInspector(null);
+		if (!transcriptFind.open) findOpener.current = opener;
+		setTranscriptFind(openFind(liveFind));
+		setFindReveal(revision => revision + 1);
+		setFindFocus(count => count + 1);
+	};
+	const closeTranscriptFind = () => {
+		setTranscriptFind(closeFind(liveFind));
+		focusReturn(
+			findOpener.current,
+			document.querySelector<HTMLElement>('.shell-stream-scroll') ??
+				document.body,
+		)();
+		findOpener.current = null;
+	};
+	const stepTranscriptFind = (delta: 1 | -1) => {
+		setTranscriptFind(stepFind(liveFind, delta));
+		setFindReveal(revision => revision + 1);
+	};
+	const changeTranscriptQuery = (query: string) => {
+		setTranscriptFind(setFindQuery(liveFind, query));
+		setFindReveal(revision => revision + 1);
+	};
+	// A palette action runs while its dialog is open, so its find waits until the dialog closes.
+	useEffect(() => {
+		const target = paletteFind.current;
+		if (!target || overlayOpen || document.querySelector('dialog:modal'))
+			return;
+		paletteFind.current = null;
+		if (target === 'diff') reviewPanelRef.current?.openFind(null);
+		else openTranscriptFind(null);
+	});
+	// Cmd or Ctrl+F searches the open diff when focus is in it, else the loaded conversation.
+	const onFind = (event: KeyboardEvent, dialogOpen: boolean) => {
+		const route = routeFindShortcut({
+			modalOpen: modalOpen || dialogOpen,
+			...detectFindFocusContext(event.target),
+			hasDiff: reviewPanelRef.current?.hasOpenDiff() ?? false,
+			hasTranscript: !!thread && !importOpen,
+		});
+		if (route === 'diff') reviewPanelRef.current?.openFind(focusedElement());
+		if (route === 'transcript') openTranscriptFind(focusedElement());
+		return route !== 'ignore';
+	};
 	// What is happening in other projects, kept apart from the one in view (CHAT-22).
 	const activity = useProjectActivity(id => void projectControls.onOpen(id));
 	const background = useMemo(
@@ -417,6 +532,20 @@ export function App() {
 
 	useEffect(() => {
 		return window.desktop.onProjectEvent(event => {
+			// Attachment cleanup runs regardless of supervisor state or active project,
+			// so a background deletion after switching projects never leaks attachments.
+			if (event.type === 'thread-removed') {
+				setAttachments(current =>
+					clearAttachments(
+						current,
+						attachmentKey(event.projectId, event.threadId),
+					),
+				);
+			} else if (event.type === 'project-removed') {
+				setAttachments(current =>
+					forgetProjectAttachments(current, event.projectId),
+				);
+			}
 			const previous = supervisorIndex.current;
 			const next = observeSupervisor(previous, event);
 			if (next === previous) return;
@@ -767,6 +896,7 @@ export function App() {
 				if (request === 'diagnostics') review.close();
 			}}
 			onOpenChange={setOverlayOpen}
+			onFind={onFind}
 			renderDialog={(request, api) =>
 				typeof request === 'string' ? (
 					<WorkspaceDialogs
@@ -831,6 +961,30 @@ export function App() {
 					keywords: 'preview localhost web page url address',
 					disabledReason: projectId ? undefined : 'open a project first',
 					run: () => (browserTabOpen ? hidePanel() : showPanel('browser')),
+				},
+				{
+					id: 'find-conversation',
+					label: 'find in conversation',
+					glyph: '⌕',
+					shortcut: `${commandModifier(navigator.platform)}F`,
+					keywords: 'search text transcript messages tools output',
+					disabledReason:
+						thread && !importOpen ? undefined : 'open a thread first',
+					run: () => {
+						paletteFind.current = 'conversation';
+					},
+				},
+				{
+					id: 'find-diff',
+					label: 'find in open diff',
+					glyph: '⌕',
+					keywords: 'search review changes text git',
+					disabledReason: reviewDiffOpen
+						? undefined
+						: 'open a text diff in review first',
+					run: () => {
+						paletteFind.current = 'diff';
+					},
 				},
 				...projectPalette({
 					...projectControls,
@@ -981,6 +1135,7 @@ export function App() {
 									<Workbench
 										tab={inspector}
 										onTab={showPanel}
+										reviewRef={reviewPanelRef}
 										files={files}
 										review={reviewPanel}
 										attachReason={attachReason}
@@ -1104,6 +1259,23 @@ export function App() {
 				followKey={
 					thread && !importOpen ? `${projectId ?? ''}:${thread.id}` : undefined
 				}
+				findBar={
+					findShown ? (
+						<FindBar
+							open
+							query={transcriptFind.query}
+							activeIndex={liveFind.activeIndex}
+							total={liveFind.matches.length}
+							scopeLabel={transcriptScopeLabel}
+							hostLabel="find in conversation"
+							inputRef={findInput}
+							onQueryChange={changeTranscriptQuery}
+							onNext={() => stepTranscriptFind(1)}
+							onPrevious={() => stepTranscriptFind(-1)}
+							onClose={closeTranscriptFind}
+						/>
+					) : undefined
+				}
 				followContent={transcript.items}
 				approvalShelf={
 					thread && (
@@ -1220,6 +1392,16 @@ export function App() {
 						running={sending}
 						onOpenLocalUrl={openInBrowser}
 						onCopy={copy}
+						find={
+							findShown
+								? {
+										query: transcriptFind.query,
+										activeId: liveFind.activeId,
+										activeTarget: activeFindMatch?.target ?? null,
+										revision: findReveal,
+									}
+								: undefined
+						}
 						onStopTurn={cancel}
 						stopping={stopping}
 						stopReason={turn?.ok ? turn.value.stopReason : undefined}

@@ -48,6 +48,7 @@ const turn = (
 function fixture(
 	onChange?: (state: ThreadConversationState) => void,
 	now?: () => number,
+	maxViews?: number,
 ) {
 	const changes: ThreadConversationState[] = [];
 	const timers: {callback(): void; delayMs: number; cancelled: boolean}[] = [];
@@ -66,6 +67,7 @@ function fixture(
 			},
 		},
 		...(now && {now}),
+		...(maxViews !== undefined && {maxViews}),
 	});
 	conversations.selectProject('project-a');
 	conversations.selectThread('a');
@@ -698,6 +700,199 @@ test('replay without a terminal clears the old result but keeps its failure noti
 	);
 });
 
+test('a failed turn stays beside its turn after a snapshot rebuilds the history (CHAT-04)', t => {
+	const {conversations} = fixture();
+	const history: TurnEvent[] = [
+		{type: 'user', text: 'one'},
+		{type: 'text', text: 'answer one'},
+		{type: 'user', text: 'two'},
+		{type: 'user', text: 'three'},
+		{type: 'text', text: 'reply three'},
+	];
+	const kinds = ['user', 'agent', 'user', 'failure', 'user', 'agent'];
+	conversations.snapshot(snapshot('a', history.slice(0, 2)));
+	conversations.setDraft('two');
+	const failed = conversations.beginTurn('a');
+	if (!failed) return t.fail('the selected draft should begin a turn');
+	conversations.receive(turn([{type: 'user', text: 'two'}]));
+	t.true(
+		conversations.finishTurn(failed, {
+			ok: false,
+			error: {
+				code: 'AGENT_UNAVAILABLE',
+				message: 'boom',
+				retryable: true,
+			},
+		}),
+	);
+	conversations.setDraft('three');
+	const next = conversations.beginTurn('a');
+	if (!next) return t.fail('the selected draft should begin a turn');
+	conversations.receive(
+		turn([
+			{type: 'user', text: 'three'},
+			{type: 'text', text: 'reply three'},
+		]),
+	);
+	t.true(
+		conversations.finishTurn(next, {
+			ok: true,
+			value: {stopReason: 'end_turn'},
+		}),
+	);
+	const before = conversations.getState().transcript.items;
+	t.deepEqual(
+		before.map(item => item.kind),
+		kinds,
+	);
+	const failureKey = transcriptRowId(before[3], 3);
+	conversations.snapshot(snapshot('a', history));
+	const after = conversations.getState().transcript.items;
+	t.deepEqual(
+		after.map(item => item.kind),
+		kinds,
+	);
+	t.like(after[3], {kind: 'failure', text: 'boom'});
+	t.is(transcriptRowId(after[3], 3), failureKey);
+	conversations.snapshot(snapshot('a', history));
+	t.deepEqual(
+		conversations.getState().transcript.items.map(item => item.kind),
+		kinds,
+	);
+});
+
+test('the view cache keeps the open thread, unsent drafts and live turns, and drops the least recently written idle thread (PERF-04)', t => {
+	const conversations = createThreadConversations({
+		onChange() {},
+		clock: {schedule: () => () => {}},
+		maxViews: 2,
+	});
+	conversations.selectProject('project-a');
+	conversations.selectThread('a');
+	conversations.setDraft('unsent');
+	conversations.selectThread('b');
+	conversations.receive(turn([{type: 'text', text: 'b reply'}], 'b'));
+	conversations.flush();
+	conversations.selectThread('c');
+	conversations.receive({
+		...turn([{type: 'text', text: 'c reply'}], 'c'),
+		result: {ok: true, value: {stopReason: 'end_turn'}},
+	});
+	conversations.selectThread('d');
+	conversations.receive({
+		...turn([{type: 'text', text: 'd reply'}], 'd'),
+		result: {ok: true, value: {stopReason: 'end_turn'}},
+	});
+	t.is(conversations.getState().transcript.items[0]?.kind, 'agent');
+	conversations.selectThread('a');
+	t.is(conversations.getState().draft, 'unsent');
+	conversations.selectThread('b');
+	t.is(conversations.getState().transcript.items[0]?.text, 'b reply');
+	conversations.selectThread('c');
+	t.deepEqual(conversations.getState().transcript.items, []);
+});
+
+test('a view that waits for an approval is kept when the cache is full (PERF-04)', t => {
+	const conversations = createThreadConversations({
+		onChange() {},
+		clock: {schedule: () => () => {}},
+		maxViews: 1,
+	});
+	const request = {
+		id: 'request-a',
+		title: 'offered action',
+		options: [{id: 'deny', name: 'deny', kind: 'reject_once' as const}],
+	};
+	conversations.selectProject('project-a');
+	conversations.selectThread('a');
+	conversations.snapshot(snapshot('a', [{type: 'permission', request}]));
+	conversations.selectThread('b');
+	conversations.receive({
+		...turn([{type: 'text', text: 'b reply'}], 'b'),
+		result: {ok: true, value: {stopReason: 'end_turn'}},
+	});
+	conversations.selectThread('a');
+	t.is(conversations.getState().transcript.permissions.length, 1);
+});
+
+test('opening a thread with snapshot before selectThread keeps its history even when other views are protected (PERF-04)', t => {
+	const conversations = createThreadConversations({
+		onChange() {},
+		clock: {schedule: () => () => {}},
+		maxViews: 2,
+	});
+	conversations.selectProject('project-a');
+	// One protected draft view plus one currently active idle view fill maxViews=2.
+	conversations.selectThread('draft-1');
+	conversations.setDraft('unsent draft');
+	conversations.selectThread('outgoing');
+	conversations.snapshot(snapshot('outgoing', [{type: 'text', text: 'old'}]));
+	// Production open order: snapshot arrives before selectThread switches activeThreadId.
+	conversations.snapshot(
+		snapshot('incoming', [{type: 'text', text: 'loaded history'}]),
+	);
+	conversations.selectThread('incoming');
+	t.deepEqual(
+		conversations
+			.getState()
+			.transcript.items.map(item => (item.kind === 'agent' ? item.text : '')),
+		['loaded history'],
+	);
+	// After switching, the outgoing idle view was trimmed while the draft stayed.
+	conversations.selectThread('outgoing');
+	t.deepEqual(conversations.getState().transcript.items, []);
+	conversations.selectThread('draft-1');
+	t.is(conversations.getState().draft, 'unsent draft');
+});
+
+test('evicted failed-turn rows stay anchored beside their turns after reopening from a snapshot', t => {
+	const conversations = createThreadConversations({
+		onChange() {},
+		clock: {schedule: () => () => {}},
+		maxViews: 1,
+	});
+	const history: TurnEvent[] = [
+		{type: 'user', text: 'turn one'},
+		{type: 'user', text: 'turn two'},
+	];
+	conversations.selectProject('project-a');
+	conversations.selectThread('failed');
+	conversations.receive({
+		...turn([{type: 'user', text: 'turn one'}], 'failed'),
+		result: {ok: false, error: {code: 'UNAVAILABLE', message: 'first boom'}},
+	});
+	conversations.receive({
+		...turn([{type: 'user', text: 'turn two'}], 'failed'),
+		result: {ok: false, error: {code: 'UNAVAILABLE', message: 'second boom'}},
+	});
+	// Visit another thread so the idle failed view is evicted from the cache.
+	conversations.selectThread('other');
+	conversations.snapshot(snapshot('other', [{type: 'text', text: 'idle'}]));
+	// Reopen via snapshot (carrying only the latest terminal result, as main does).
+	conversations.snapshot({
+		...snapshot('failed', history),
+		result: {ok: false, error: {code: 'UNAVAILABLE', message: 'second boom'}},
+	});
+	conversations.selectThread('failed');
+	t.deepEqual(
+		conversations
+			.getState()
+			.transcript.items.map(item =>
+				item.kind === 'failure'
+					? `failure:${item.text}`
+					: item.kind === 'user'
+						? `user:${item.text}`
+						: item.kind,
+			),
+		[
+			'user:turn one',
+			'failure:first boom',
+			'user:turn two',
+			'failure:second boom',
+		],
+	);
+});
+
 const epoch = '00000000-0000-4000-8000-000000000001';
 const marker = (phase: 'begin' | 'complete' | 'failed', threadId = 'a') => ({
 	...turn([], threadId),
@@ -825,4 +1020,82 @@ test('a settled snapshot ends replay and carries live times only to matching mes
 		'none',
 		'none',
 	]);
+});
+
+test('a rejected send that never echoed its user row stays unanchored after a snapshot (CHAT-04)', t => {
+	const {conversations} = fixture();
+	conversations.snapshot(
+		snapshot('a', [
+			{type: 'user', text: 'earlier'},
+			{type: 'text', text: 'done'},
+		]),
+	);
+	conversations.setDraft('rejected prompt');
+	const ticket = conversations.beginTurn('a');
+	if (!ticket) {
+		t.fail('expected a turn ticket');
+		return;
+	}
+	conversations.finishTurn(ticket, {
+		ok: false,
+		error: {code: 'AGENT_UNAVAILABLE', message: 'send failed', retryable: true},
+	});
+	conversations.snapshot(
+		snapshot('a', [
+			{type: 'user', text: 'earlier'},
+			{type: 'text', text: 'done'},
+			{type: 'user', text: 'next turn'},
+			{type: 'text', text: 'reply'},
+		]),
+	);
+	t.deepEqual(
+		conversations.getState().transcript.items.map(item => item.kind),
+		['user', 'agent', 'user', 'agent', 'failure'],
+	);
+});
+
+test('an evicted idle thread restores its live timestamps and anchored failures when reopened (PERF-04)', t => {
+	const {conversations} = fixture(undefined, () => 900, 2);
+	conversations.selectThread('t0');
+	conversations.receive(
+		turn(
+			[
+				{type: 'user', text: 'first'},
+				{type: 'text', text: 'answer'},
+			],
+			't0',
+		),
+	);
+	conversations.flush('t0');
+	conversations.receive({
+		...turn([], 't0'),
+		result: {
+			ok: false,
+			error: {
+				code: 'AGENT_UNAVAILABLE',
+				message: 'failed on first',
+				retryable: true,
+			},
+		},
+	});
+	// Visit enough other threads to evict t0.
+	for (const id of ['t1', 't2', 't3']) {
+		conversations.selectThread(id);
+		conversations.receive(turn([{type: 'user', text: id}], id));
+		conversations.flush(id);
+	}
+	conversations.selectThread('t0');
+	t.deepEqual(conversations.getState().transcript.items, []);
+	conversations.snapshot(
+		snapshot('t0', [
+			{type: 'user', text: 'first'},
+			{type: 'text', text: 'answer'},
+			{type: 'user', text: 'second'},
+		]),
+	);
+	t.deepEqual(
+		conversations.getState().transcript.items.map(item => item.kind),
+		['user', 'agent', 'failure', 'user'],
+	);
+	t.deepEqual(times(conversations.getState()), [900, 900, 'none', 'none']);
 });

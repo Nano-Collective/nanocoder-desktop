@@ -105,9 +105,10 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/main/store/agent-runs.ts`, `source/main/nanocoder/subagent-runs.ts` | Metadata-only repository and forkable passive observer; ThreadService owns atomic live/replay association |
 | `source/main/threads/thread-history-observer.ts` | Scoped atomic live/replay observation, disposable staging, strict slot/epoch guards and post-commit-only observer activation |
 | `source/main/threads/thread-history-mapping.ts`, `source/main/threads/thread-live-mapping.ts`, `source/main/threads/thread-sequence.ts`, `planning/durable-replay.md` | Structural replay and live identities through one main-only batch allocator, bounded session replay and opaque readiness gates |
-| `source/renderer/transcript.ts`, `source/renderer/stream-batcher.ts` | Ordered immutable transcript patches and cancellable 16ms renderer batching |
+| `source/renderer/transcript.ts`, `source/renderer/stream-batcher.ts` | Ordered immutable transcript patches (single-copy `applyEvents`, linear `carryMessageTimes`, turn-anchored failure rows) and cancellable 16ms renderer batching |
 | `source/renderer/transcript-follow.ts` | Memory-only thread-scoped follow state; `AppShell` observes content and viewport resizing and keeps reader scroll intent separate |
-| `source/renderer/conversation-stream.tsx`, `source/renderer/agent-markdown.tsx`, `source/renderer/stream-commands.tsx` | U.4 stream rows, isolated inert Markdown and advertised-command draft suggestions |
+| `source/renderer/conversation-stream.tsx`, `source/renderer/agent-markdown.tsx`, `source/renderer/stream-commands.tsx` | Single-pass U.4 stream rows, isolated inert Markdown with memoised settled blocks and advertised-command draft suggestions |
+| `source/renderer/find-model.ts`, `source/renderer/transcript-find.ts`, `source/renderer/diff-find.ts`, `source/renderer/transcript-highlights.ts`, `source/renderer/find-bar.tsx`, `source/renderer/styles/find-bar.css` | Memory-only in-conversation and open-diff find: shared state and `Cmd/Ctrl+F` focus routing (leaving terminal, native browser and modals untouched), viewport-scoped CSS Custom Highlight painting without HTML injection into Markdown, folded tool auto-expand and capped 5,000-row virtual diff search |
 | `source/renderer/stream-announcements.tsx` | A11Y-04/05 clock-injected lifecycle/finished-response speech and one persistent modal-aware polite live node |
 | `source/renderer/composer.tsx`, `source/renderer/project-controls.ts`, `source/renderer/use-project-controls.ts` | Mounted multiline composer, native mode/default disclosure and scoped acknowledged project-control state; no renderer live-mode cache |
 | `source/shared/control-reasons.ts` | Shared refusal copy for irreversible same-process config uncertainty |
@@ -123,7 +124,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `source/renderer/thread-palette.ts` | New, rename and archive palette commands sharing the rail's callbacks and refusal policy |
 | `source/renderer/thread-controller.ts` | Scoped thread metadata, snapshot/open bridge calls, isolated project/chat sequences and stale async/disposal guards |
 | `source/renderer/thread-stream.ts` | Per-thread transient sequence guards, snapshot-prefix replacement and buffered live delivery; separate from project metadata sequencing |
-| `source/renderer/thread-workspace.ts`, `source/renderer/use-threads.ts`, `source/renderer/thread-conversations.ts` | Live scoped workspace composition, memory-only drafts and authoritative transient terminal prefixes |
+| `source/renderer/thread-workspace.ts`, `source/renderer/use-threads.ts`, `source/renderer/thread-conversations.ts` | Live scoped workspace composition, memory-only drafts, authoritative transient terminal prefixes, anchored failure rows and bounded LRU cached transcript views |
 | `planning/threads.md` | Phase 1.5 ownership, legacy protection twins, selected-glyph ink rule and deferred resume work |
 | `source/renderer/supervisor-state.ts` | Project-scoped, sequenced ACP badge state; never infers readiness from a connect result |
 | `source/renderer/approval-requests.tsx` | U.6 plain-prop composer-shelf approval cards, request-scoped shortcuts and queued focus return |
@@ -148,6 +149,7 @@ Details are in [`planning/architecture.md`](planning/architecture.md); the secur
 | `e2e/supervisor.e2e.ts` | Built-main quit while a child is still initialising, including child-exit verification |
 | `e2e/supervisor-recovery.e2e.ts` | Crash/retry, saved-history replay, both-theme CHAT-09 keyboard/native recovery actions, crash-loop limits and reviewed diagnostics refusals |
 | `e2e/streaming.e2e.ts` | Fake stream cadence, ordered rendering, input/scroll/frame response, safe resources and multi-width stream QA |
+| `e2e/find.e2e.ts` | Built-app transcript and 5,000-row diff find, focus routing, terminal/browser non-interception, zero persistence, streaming perf with find open and snapshot failure anchoring |
 | `e2e/replay-gates.e2e.ts` | Mounted replay success/failure refusals, editable unqueued drafts and 200-message post-replay usability timing (`PERF-03`) |
 | `e2e/session-import.e2e.ts` | Both-theme keyboard saved-session import, no ACP/selection/draft side effects, explicit same-session resume and project ownership |
 | `e2e/session-import-focus.e2e.ts`, `e2e/qa/session-import-focus-harness.ts` | Mounted pending-import focus guards (a control outside the import list, and scope) and preserved keyboard-only return in both themes |

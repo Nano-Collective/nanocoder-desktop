@@ -1,5 +1,21 @@
 import {MAX_CLIPBOARD_LENGTH} from '@/shared/ipc';
 
+const fenceOpen = /^ {0,3}(`{3,}|~{3,})/;
+const fenceClose = /^ {0,3}(`{3,}|~{3,})[ \t]*(?:\r\n|\r|\n)?$/;
+
+export function matchFenceOpen(line: string): string | null {
+	return fenceOpen.exec(line)?.[1] ?? null;
+}
+
+export function isFenceClose(line: string, fence: string): boolean {
+	const closing = fenceClose.exec(line);
+	return (
+		closing !== null &&
+		closing[1][0] === fence[0] &&
+		closing[1].length >= fence.length
+	);
+}
+
 export function fencedCodeText(
 	source: string,
 	prefix = '',
@@ -13,19 +29,11 @@ export function fencedCodeText(
 				? line.slice(continuation.length)
 				: line,
 	);
-	const opening = /^ {0,3}(`{3,}|~{3,})[^\r\n]*/.exec(lines[0] ?? '');
-	if (!opening) return undefined;
-	const fence = opening[1];
+	const fence = matchFenceOpen(lines[0] ?? '');
+	if (!fence) return undefined;
 	let end = lines.length;
 	for (let index = 1; index < lines.length; index++) {
-		const closing = /^ {0,3}(`{3,}|~{3,})[ \t]*(?:\r\n|\r|\n)?$/.exec(
-			lines[index],
-		);
-		if (
-			closing &&
-			closing[1][0] === fence[0] &&
-			closing[1].length >= fence.length
-		) {
+		if (isFenceClose(lines[index], fence)) {
 			end = index;
 			break;
 		}

@@ -133,6 +133,7 @@ export function OverlayProvider({
 	canClose = () => true,
 	onClosed,
 	onOpenChange,
+	onFind,
 	renderDialog,
 	children,
 }: {
@@ -144,6 +145,8 @@ export function OverlayProvider({
 	canClose?(request: OverlayRequest): boolean;
 	onClosed?(request: OverlayRequest): void;
 	onOpenChange?(open: boolean): void;
+	// Returns true when it took the find shortcut, which then keeps its default.
+	onFind?(event: KeyboardEvent, dialogOpen: boolean): boolean;
 	renderDialog(request: DialogRequest, api: DialogApi): React.ReactNode;
 	children: React.ReactNode;
 }) {
@@ -154,7 +157,7 @@ export function OverlayProvider({
 	const [themeError, setThemeError] = useState('');
 	const [activeTheme, setActiveTheme] = useState<'dark' | 'light'>('dark');
 	const dialog = useRef<HTMLDialogElement>(null);
-	const latestHooks = useRef({canClose, onClosed, onOpenChange});
+	const latestHooks = useRef({canClose, onClosed, onOpenChange, onFind});
 	const returnFocus = useRef<(() => void) | null>(null);
 	const closingFocus = useRef<Element | null>(null);
 	const notifications = useRef<ReturnType<typeof toastQueue> | null>(null);
@@ -278,7 +281,7 @@ export function OverlayProvider({
 
 	useLayoutEffect(() => {
 		latestActions.current = actions;
-		latestHooks.current = {canClose, onClosed, onOpenChange};
+		latestHooks.current = {canClose, onClosed, onOpenChange, onFind};
 	});
 
 	useLayoutEffect(() => {
@@ -326,6 +329,9 @@ export function OverlayProvider({
 			} else if (modifier && !event.altKey && !event.shiftKey && key === 'n') {
 				event.preventDefault();
 				if (!dialog.current?.open) runNewThread();
+			} else if (modifier && !event.altKey && !event.shiftKey && key === 'f') {
+				if (latestHooks.current.onFind?.(event, dialog.current?.open === true))
+					event.preventDefault();
 			} else if (
 				event.key === '?' &&
 				!typing &&
@@ -589,6 +595,10 @@ export function OverlayProvider({
 							<ShortcutRow
 								label="new thread"
 								keys={<kbd>{`${modifier}N`}</kbd>}
+							/>
+							<ShortcutRow
+								label="find in conversation or open diff"
+								keys={<kbd>{`${modifier}F`}</kbd>}
 							/>
 							<ShortcutRow label="send message" keys={<kbd>Enter</kbd>} />
 							<ShortcutRow

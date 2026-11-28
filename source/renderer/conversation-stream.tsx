@@ -13,12 +13,17 @@ import {
 } from '@/renderer/message-time';
 import {StreamAnnouncements} from '@/renderer/stream-announcements';
 import {SubagentRunCard} from '@/renderer/subagent-run-card';
+import {type Transcript, type TranscriptItem} from '@/renderer/transcript';
 import {
-	currentTurnStart,
-	type Transcript,
-	type TranscriptItem,
-	transcriptRowId,
-} from '@/renderer/transcript';
+	formatToolLocation,
+	type TranscriptFindTarget,
+	transcriptFieldId,
+	transcriptRowKeys,
+} from '@/renderer/transcript-find';
+import {
+	clearTranscriptFind,
+	paintTranscriptFind,
+} from '@/renderer/transcript-highlights';
 import type {StreamMetadata, StreamToolDetails} from '@/shared/ipc';
 
 function ReportedMetadata({metadata}: {metadata?: StreamMetadata}) {
@@ -75,29 +80,46 @@ function toolWord(status: string) {
 			: status.replaceAll('_', ' ');
 }
 
-function ToolDetails({details}: {details: StreamToolDetails}) {
+function ToolDetails({
+	details,
+	rowKey,
+}: {
+	details: StreamToolDetails;
+	rowKey: string;
+}) {
 	return (
 		<div className="stream-tool-details">
 			{details.locations?.map((location, index) => (
-				<p key={`${location.path}:${index}`}>
-					{location.path}
-					{location.line === undefined ? '' : `:${location.line}`}
+				<p
+					key={`${location.path}:${index}`}
+					data-find-id={transcriptFieldId(rowKey, 'tool-location', index)}
+				>
+					{formatToolLocation(location)}
 				</p>
 			))}
 			{details.input !== undefined && (
 				<>
 					<p>input</p>
-					<pre>{details.input}</pre>
+					<pre data-find-id={transcriptFieldId(rowKey, 'tool-input')}>
+						{details.input}
+					</pre>
 				</>
 			)}
 			{details.output !== undefined && (
 				<>
 					<p>output</p>
-					<pre>{details.output}</pre>
+					<pre data-find-id={transcriptFieldId(rowKey, 'tool-output')}>
+						{details.output}
+					</pre>
 				</>
 			)}
 			{details.content?.map((text, index) => (
-				<pre key={index}>{text}</pre>
+				<pre
+					key={index}
+					data-find-id={transcriptFieldId(rowKey, 'tool-content', index)}
+				>
+					{text}
+				</pre>
 			))}
 		</div>
 	);
@@ -122,32 +144,51 @@ function isAgentTurnItem(item: TranscriptItem) {
 	);
 }
 
-// One agent label per turn, timed from the turn's first live agent message.
-function agentLabels(items: readonly TranscriptItem[]) {
+// One pass per change to the transcript: the turn start, run counts, label
+// owners, row keys and tool groups that the render reads by index.
+function indexStream(items: readonly TranscriptItem[]) {
+	const keys = transcriptRowKeys(items);
+	const runPositions: number[] = [];
+	const groups: (string | undefined)[] = [];
 	const labels = new Map<number, {at?: number}>();
-	let current: {at?: number} | null = null;
+	let turnStart = -1;
+	let lastFailure = -1;
+	let runs = 0;
+	let dayTime: number | undefined;
+	// One agent label per turn, timed from the turn's first live agent message.
+	let label: {at?: number} | null = null;
 	for (const [index, item] of items.entries()) {
-		if (item.kind === 'user') current = null;
-		else if (isAgentTurnItem(item)) {
-			if (!current) {
-				current = {};
-				labels.set(index, current);
+		if (isSubagentRun(item)) runs++;
+		runPositions.push(runs);
+		groups.push(toolGroup(items, index));
+		if (item.kind === 'failure') lastFailure = index;
+		if (item.kind === 'user') {
+			turnStart = index;
+			label = null;
+		} else if (isAgentTurnItem(item)) {
+			if (!label) {
+				label = {};
+				labels.set(index, label);
 			}
-			if (item.kind === 'agent' && current.at === undefined)
-				current.at = item.at;
+			if (item.kind === 'agent' && label.at === undefined) label.at = item.at;
 		}
-	}
-	return labels;
-}
-
-function firstTime(items: readonly TranscriptItem[]) {
-	for (const item of items)
 		if (
+			dayTime === undefined &&
 			(item.kind === 'user' || item.kind === 'agent') &&
 			item.at !== undefined
 		)
-			return item.at;
-	return undefined;
+			dayTime = item.at;
+	}
+	return {
+		turnStart,
+		lastFailure,
+		runCount: runs,
+		labels,
+		dayTime,
+		keys,
+		runPositions,
+		groups,
+	};
 }
 
 function toolGroup(items: readonly TranscriptItem[], index: number) {
@@ -194,6 +235,7 @@ function CopyMessage({text}: {text: string}) {
 }
 
 const StreamRow = React.memo(function StreamRow({
+	rowKey,
 	item,
 	runPosition,
 	runCount,
@@ -204,7 +246,9 @@ const StreamRow = React.memo(function StreamRow({
 	outcome,
 	group,
 	notice,
+	findOpen,
 }: {
+	rowKey: string;
 	item: TranscriptItem;
 	runPosition: number;
 	runCount: number;
@@ -215,6 +259,7 @@ const StreamRow = React.memo(function StreamRow({
 	outcome?: 'completed' | 'failed' | 'cancelled';
 	group?: string;
 	notice?: React.ReactNode;
+	findOpen: boolean;
 }) {
 	let content: React.ReactNode;
 	switch (item.kind) {
@@ -233,7 +278,12 @@ const StreamRow = React.memo(function StreamRow({
 						)}
 					</div>
 					<CopyMessage text={item.text} />
-					<div className="stream-plain">{item.text}</div>
+					<div
+						className="stream-plain"
+						data-find-id={transcriptFieldId(rowKey, 'user')}
+					>
+						{item.text}
+					</div>
 					{item.attachmentSummary?.length ? (
 						<div className="stream-plain">
 							{item.attachmentSummary.join('\n')}
@@ -247,7 +297,9 @@ const StreamRow = React.memo(function StreamRow({
 				<>
 					<CopyMessage text={item.text} />
 					<ReportedMetadata metadata={item.metadata} />
-					<AgentMarkdown text={item.text} />
+					<div data-find-id={transcriptFieldId(rowKey, 'agent')}>
+						<AgentMarkdown text={item.text} />
+					</div>
 					{streaming && (
 						<span className="stream-cursor" aria-label="streaming">
 							▌
@@ -298,6 +350,7 @@ const StreamRow = React.memo(function StreamRow({
 						stopping={stopping}
 						outcome={item.turnOutcome ?? outcome}
 						onStopTurn={onStopTurn}
+						findId={transcriptFieldId(rowKey, 'tool-title')}
 					/>
 				);
 				break;
@@ -337,7 +390,14 @@ const StreamRow = React.memo(function StreamRow({
 					{item.toolKind && !kindInTitle && (
 						<span className="stream-tool-verb">{item.toolKind} </span>
 					)}
-					{!running && <code className="stream-tool-name">{item.title}</code>}
+					{!running && (
+						<code
+							className="stream-tool-name"
+							data-find-id={transcriptFieldId(rowKey, 'tool-title')}
+						>
+							{item.title}
+						</code>
+					)}
 				</>
 			);
 			content = foldable ? (
@@ -346,12 +406,22 @@ const StreamRow = React.memo(function StreamRow({
 						running ||
 						item.status === 'failed' ||
 						item.status === 'cancelled' ||
+						findOpen ||
 						undefined
 					}
 				>
 					<summary>{summary}</summary>
-					{running && <p className="stream-tool-detail">{item.title}</p>}
-					{details && hasDetails && <ToolDetails details={details} />}
+					{running && (
+						<p
+							className="stream-tool-detail"
+							data-find-id={transcriptFieldId(rowKey, 'tool-title')}
+						>
+							{item.title}
+						</p>
+					)}
+					{details && hasDetails && (
+						<ToolDetails details={details} rowKey={rowKey} />
+					)}
 					{running && (
 						<p className="stream-tool-wait">
 							waiting for Nanocoder's tool result
@@ -439,12 +509,24 @@ const StreamRow = React.memo(function StreamRow({
 	return (
 		<li
 			className={`gate-message-${item.kind}${group ? ` stream-tool-${group}` : ''}`}
+			data-row-key={rowKey}
 			data-status={'status' in item ? item.status : undefined}
 		>
 			{content}
 		</li>
 	);
 });
+
+const streamPaintMs = 150;
+
+// The transcript find as the stream shows it: the query, the active match and
+// a revision that asks for a reveal on each step.
+interface StreamFind {
+	query: string;
+	activeId: string | null;
+	activeTarget: TranscriptFindTarget | null;
+	revision: number;
+}
 
 export function ConversationStream({
 	transcript,
@@ -457,6 +539,7 @@ export function ConversationStream({
 	failureNotice,
 	onOpenLocalUrl,
 	onCopy,
+	find,
 	now = Date.now,
 }: {
 	transcript: Transcript;
@@ -469,6 +552,7 @@ export function ConversationStream({
 	failureNotice?: React.ReactNode;
 	onOpenLocalUrl?: (url: string) => void;
 	onCopy?: (text: string) => void;
+	find?: StreamFind;
 	now?: () => number;
 }) {
 	const stop = React.useRef(onStopTurn);
@@ -495,15 +579,144 @@ export function ConversationStream({
 			}
 		})();
 	}, []);
-	const turnStart = currentTurnStart(transcript.items);
-	const keyOccurrences = new Map<string, number>();
-	const runCount = transcript.items.filter(isSubagentRun).length;
-	const labels = agentLabels(transcript.items);
-	const lastFailure = transcript.items
-		.map(item => item.kind)
-		.lastIndexOf('failure');
-	const dayTime = firstTime(transcript.items);
-	let runPosition = 0;
+	const stream = React.useMemo(
+		() => indexStream(transcript.items),
+		[transcript.items],
+	);
+	const list = React.useRef<HTMLOListElement>(null);
+	const findQuery = find?.query ?? '';
+	const findActiveId = find?.activeId ?? null;
+	const findRow = find?.activeTarget?.rowKey ?? null;
+	const findField = find?.activeTarget
+		? transcriptFieldId(
+				find.activeTarget.rowKey,
+				find.activeTarget.field,
+				find.activeTarget.fieldIndex,
+			)
+		: null;
+	const findOpenRow = find?.activeTarget?.folded ? findRow : null;
+	const findRevision = find?.revision ?? 0;
+	const paintedRevision = React.useRef(0);
+	const findPaint = React.useRef({key: '', at: Number.NEGATIVE_INFINITY});
+	// biome-ignore lint/correctness/useExhaustiveDependencies: marks are repainted when the rows change
+	React.useEffect(() => {
+		const scope = list.current;
+		if (!scope || !findQuery) {
+			clearTranscriptFind();
+			return;
+		}
+		const scroller = scope.closest<HTMLElement>('.shell-stream-scroll');
+		const shouldReveal =
+			findRevision > 0 && findRevision !== paintedRevision.current;
+		if (shouldReveal) {
+			paintedRevision.current = findRevision;
+			const field = findField
+				? scope.querySelector(`[data-find-id="${CSS.escape(findField)}"]`)
+				: null;
+			const row = findRow
+				? scope.querySelector(`[data-row-key="${CSS.escape(findRow)}"]`)
+				: null;
+			(field ?? row)?.scrollIntoView({block: 'center'});
+		}
+		let timer = 0;
+		const paintMarks = () => {
+			window.clearTimeout(timer);
+			findPaint.current.at = performance.now();
+			return paintTranscriptFind(
+				scope,
+				findQuery,
+				findActiveId,
+				scroller,
+				findField,
+			);
+		};
+		// Only a find change repaints at once. Streamed rows repaint the marks
+		// at most once per interval, with a trailing repaint for the last batch.
+		const key = [
+			findQuery,
+			findActiveId,
+			findRevision,
+			findRow,
+			findField,
+		].join('\n');
+		const moved = findPaint.current.key !== key;
+		const wait = findPaint.current.at + streamPaintMs - performance.now();
+		findPaint.current.key = key;
+		let painted: ReturnType<typeof paintMarks> = null;
+		if (moved || wait <= 0) painted = paintMarks();
+		else timer = window.setTimeout(paintMarks, wait);
+		// A long message, code block or tool output can exceed the viewport; centre
+		// the active range vertically and inside any horizontally scrollable container.
+		if (shouldReveal && painted?.activeRange) {
+			let scrolled = false;
+			if (scroller) {
+				const rangeRect = painted.activeRange.getBoundingClientRect();
+				const viewRect = scroller.getBoundingClientRect();
+				if (
+					rangeRect.height > 0 &&
+					(rangeRect.top < viewRect.top || rangeRect.bottom > viewRect.bottom)
+				) {
+					const delta =
+						rangeRect.top -
+						viewRect.top -
+						(viewRect.height - rangeRect.height) / 2;
+					scroller.scrollTop = Math.max(0, scroller.scrollTop + delta);
+					scrolled = true;
+				}
+			}
+			const startNode = painted.activeRange.startContainer;
+			let container =
+				startNode.nodeType === Node.ELEMENT_NODE
+					? (startNode as HTMLElement)
+					: startNode.parentElement;
+			while (container && container !== scroller && scope.contains(container)) {
+				if (container.scrollWidth > container.clientWidth) {
+					const rangeRect = painted.activeRange.getBoundingClientRect();
+					const boxRect = container.getBoundingClientRect();
+					if (
+						rangeRect.width > 0 &&
+						(rangeRect.left < boxRect.left || rangeRect.right > boxRect.right)
+					) {
+						const delta =
+							rangeRect.left -
+							boxRect.left -
+							(boxRect.width - rangeRect.width) / 2;
+						container.scrollLeft = Math.max(0, container.scrollLeft + delta);
+						scrolled = true;
+					}
+					break;
+				}
+				container = container.parentElement;
+			}
+			if (scrolled) paintMarks();
+		}
+		let frame = 0;
+		const scheduleRepaint = () => {
+			if (frame) return;
+			frame = requestAnimationFrame(() => {
+				frame = 0;
+				paintMarks();
+			});
+		};
+		if (scroller) {
+			scroller.addEventListener('scroll', scheduleRepaint, {passive: true});
+			window.addEventListener('resize', scheduleRepaint, {passive: true});
+		}
+		return () => {
+			window.clearTimeout(timer);
+			if (frame) cancelAnimationFrame(frame);
+			scroller?.removeEventListener('scroll', scheduleRepaint);
+			window.removeEventListener('resize', scheduleRepaint);
+		};
+	}, [
+		transcript.items,
+		findQuery,
+		findActiveId,
+		findRevision,
+		findRow,
+		findField,
+	]);
+	React.useEffect(() => clearTranscriptFind, []);
 	const context = transcript.context;
 	const percentage = context
 		? Math.min(
@@ -520,33 +733,35 @@ export function ConversationStream({
 					data-empty={transcript.items.length === 0 || undefined}
 				>
 					{transcript.items.length > 0 &&
-						(dayTime === undefined ? (
+						(stream.dayTime === undefined ? (
 							<p className="stream-day-label" title={untimedHistoryTitle}>
 								saved history
 							</p>
 						) : (
-							<p className="stream-day-label">{dayLabel(dayTime, now())}</p>
+							<p className="stream-day-label">
+								{dayLabel(stream.dayTime, now())}
+							</p>
 						))}
-					<ol className="gate-transcript" aria-label="conversation">
+					<ol ref={list} className="gate-transcript" aria-label="conversation">
 						{transcript.items.map((item, index) => {
-							if (isSubagentRun(item)) runPosition++;
-							const base = transcriptRowId(item, index);
-							const occurrence = keyOccurrences.get(base) ?? 0;
-							keyOccurrences.set(base, occurrence + 1);
-							const key = `${base}:${occurrence}`;
-							const label = labels.get(index);
+							const key = stream.keys[index];
+							const label = stream.labels.get(index);
 							const row = (
 								<StreamRow
 									key={key}
+									rowKey={key}
+									findOpen={findOpenRow === key}
 									item={item}
-									runPosition={runPosition}
-									runCount={runCount}
-									active={running && index > turnStart}
-									outcome={index > turnStart ? outcome : undefined}
+									runPosition={stream.runPositions[index]}
+									runCount={stream.runCount}
+									active={running && index > stream.turnStart}
+									outcome={index > stream.turnStart ? outcome : undefined}
 									stopping={stopping || localStopping}
 									onStopTurn={onStopTurn ? stopTurn : undefined}
-									group={toolGroup(transcript.items, index)}
-									notice={index === lastFailure ? failureNotice : undefined}
+									group={stream.groups[index]}
+									notice={
+										index === stream.lastFailure ? failureNotice : undefined
+									}
 									streaming={
 										running &&
 										(item.kind === 'agent' || item.kind === 'thought') &&
