@@ -15,6 +15,7 @@ import {
 	type ConnectOptions,
 	connectNanocoder,
 } from '@/main/nanocoder/acp-client';
+import {FakeClock} from '@/main/nanocoder/fixtures/fake-clock';
 import {
 	fakeEvents,
 	fakeProject,
@@ -269,6 +270,54 @@ test('cancellation rejects late permissions until the turn settles and allows a 
 	await next;
 	await supervisor.cancel(chosen.id, id);
 	t.deepEqual(await following, {stopReason: 'cancelled'});
+});
+
+test('a cancel Nanocoder ignores stops the process after the grace period and leaves the project usable', async t => {
+	const clock = new FakeClock();
+	const supervisor = make({clock, cancelGraceMs: 10_000});
+	t.teardown(() => supervisor.close());
+	const chosen = project('ignore-cancel');
+	await supervisor.ensureProcess(chosen);
+	const {id} = await supervisor.getConnection(chosen.id).newSession('normal');
+	const running = nextEvent(
+		supervisor,
+		event => event.type === 'supervisor' && event.state.activeThreadId === id,
+	);
+	const turn = supervisor.prompt(chosen.id, id, 'never ends');
+	await running;
+	const cancelled = supervisor.cancel(chosen.id, id);
+	await new Promise(resolve => setImmediate(resolve));
+	t.is(supervisor.getState(chosen.id).status, 'ready');
+	clock.advance(10_000);
+	t.deepEqual(await turn, {stopReason: 'cancelled'});
+	await cancelled;
+	const state = supervisor.getState(chosen.id);
+	t.is(state.status, 'stopped');
+	t.is(state.activeThreadId, null);
+	t.regex(state.reason ?? '', /did not stop the turn/);
+	t.is((await supervisor.ensureProcess(chosen)).status, 'ready');
+	t.is(supervisor.getState(chosen.id).reason, null);
+});
+
+test('a cancel Nanocoder honours settles without stopping the process', async t => {
+	const clock = new FakeClock();
+	const supervisor = make({clock, cancelGraceMs: 10_000});
+	t.teardown(() => supervisor.close());
+	const chosen = project('wait-for-cancel');
+	await supervisor.ensureProcess(chosen);
+	const {id} = await supervisor.getConnection(chosen.id).newSession('normal');
+	const running = nextEvent(
+		supervisor,
+		event => event.type === 'supervisor' && event.state.activeThreadId === id,
+	);
+	const turn = supervisor.prompt(chosen.id, id, 'stops on cancel');
+	await running;
+	await supervisor.cancel(chosen.id, id);
+	t.deepEqual(await turn, {stopReason: 'cancelled'});
+	t.is(clock.pending, 0);
+	clock.advance(10_000);
+	t.is(supervisor.getState(chosen.id).status, 'ready');
+	t.is(supervisor.getState(chosen.id).reason, null);
 });
 
 test('permissions outside the active session are cancelled instead of becoming hidden approvals', async t => {

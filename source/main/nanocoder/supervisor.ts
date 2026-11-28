@@ -54,6 +54,7 @@ interface Entry {
 		sessionId: string;
 		cancelled: boolean;
 		settled: Promise<void>;
+		abandon: () => void;
 		questions: QuestionHints;
 	};
 	cancelRetry?: () => void;
@@ -86,6 +87,7 @@ interface SupervisorOptions {
 	disabledTools?: ConnectOptions['disabledTools'];
 	clock?: SupervisorClock;
 	idleTimeoutMs?: number;
+	cancelGraceMs?: number;
 	activity?: (projectId: string) => ProjectActivity;
 	recover?: (
 		project: ProjectInfo,
@@ -129,6 +131,10 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 
 	private get idleTimeoutMs(): number {
 		return this.options.idleTimeoutMs ?? 300_000;
+	}
+
+	private get cancelGraceMs(): number {
+		return this.options.cancelGraceMs ?? 10_000;
 	}
 
 	private scheduleIdle(entry: Entry, delay = this.idleTimeoutMs): void {
@@ -699,12 +705,17 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 				true,
 			);
 		let settle!: () => void;
+		let abandon!: () => void;
+		const abandoned = new Promise<NanocoderTurnResult>(resolve => {
+			abandon = () => resolve({stopReason: 'cancelled'});
+		});
 		const turn = {
 			sessionId,
 			cancelled: false,
 			settled: new Promise<void>(resolve => {
 				settle = resolve;
 			}),
+			abandon,
 			questions: new QuestionHints(sessionId),
 		};
 		entry.activeTurn = turn;
@@ -712,7 +723,9 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		this.publish(entry);
 		try {
 			if (turn.cancelled) return {stopReason: 'cancelled'};
-			return await connection.prompt(sessionId, text, attachments);
+			const answer = connection.prompt(sessionId, text, attachments);
+			answer.catch(() => {});
+			return await Promise.race([answer, abandoned]);
 		} finally {
 			turn.questions.clear();
 			if (entry.activeTurn === turn) {
@@ -804,14 +817,30 @@ export class ProjectSupervisor implements NanocoderSupervisor {
 		const connection = this.getConnection(projectId);
 		const entry = this.entries.get(projectId);
 		const turn = entry?.activeTurn;
-		if (!turn || turn.sessionId !== sessionId) return;
+		if (!entry || !turn || turn.sessionId !== sessionId) return;
 		turn.cancelled = true;
-		entry?.permissions.get(sessionId)?.cancelAll();
+		entry.permissions.get(sessionId)?.cancelAll();
+		let overdue = false;
+		const grace = this.cancelGraceMs;
+		const stopTimer = this.clock.setTimeout(() => {
+			overdue = true;
+			turn.abandon();
+		}, grace);
 		try {
 			await connection.cancel(sessionId);
 		} finally {
 			await turn.settled;
+			stopTimer();
 		}
+		if (!overdue || this.entries.get(projectId) !== entry) return;
+		// Nanocoder ignored the cancel, so its process may still be acting on the turn (CHAT-07, ACP-09).
+		await this.stop(projectId).catch(() => {});
+		if (entry.state.status !== 'stopped') return;
+		entry.state = {
+			...entry.state,
+			reason: `Nanocoder did not stop the turn within ${grace / 1000} seconds of the cancel, so the desktop stopped its process. Start the project again when you are ready.`,
+		};
+		this.publish(entry);
 	}
 
 	stop(projectId: string): Promise<SupervisorState> {
