@@ -20,7 +20,7 @@ export type TranscriptItem = (
 	  }
 	| {kind: 'thought'; text: string; messageId?: string; rowId?: string}
 	| {kind: 'turn-metadata'}
-	| {kind: 'failure'; text: string}
+	| {kind: 'failure'; text: string; rowId?: string}
 	| {
 			kind: 'tool';
 			id: string;
@@ -127,45 +127,127 @@ export function transcriptRowId(item: TranscriptItem, index: number): string {
 	return fallbackRowId(item.kind, index, text);
 }
 
-function upsert(
+// A failure belongs to the turn that was current when it was recorded.
+export function appendFailure(
 	transcript: Transcript,
-	matches: (item: TranscriptItem, index: number) => boolean,
-	update: (previous?: TranscriptItem) => TranscriptItem,
+	text: string,
 ): Transcript {
-	const index = transcript.items.findIndex(matches);
-	const items = [...transcript.items];
-	if (index < 0) items.push(update());
-	else items[index] = update(items[index]);
-	return {...transcript, items};
+	const turns = transcript.items.filter(item => item.kind === 'user').length;
+	const failures = transcript.items.filter(
+		item => item.kind === 'failure',
+	).length;
+	return {
+		...transcript,
+		items: [
+			...transcript.items,
+			{kind: 'failure', text, rowId: `${turns}:${failures}`},
+		],
+	};
+}
+
+// One variant covers both user and agent text, so Extract matches on both kinds.
+type UserItem = Extract<TranscriptItem, {kind: 'user' | 'agent'}>;
+
+function sameTurnUser(
+	a: UserItem | undefined,
+	b: UserItem | undefined,
+): boolean {
+	if (!a || !b) return false;
+	if (a.messageId !== undefined || b.messageId !== undefined)
+		return a.messageId === b.messageId;
+	return a.text === b.text;
+}
+
+// Re-inserts each failure after the turn that failed (before the next user
+// message), so a snapshot keeps it beside its turn. Failures whose turn no
+// longer matches go last.
+export function carryFailureRows(
+	previous: Transcript,
+	next: Transcript,
+): Transcript {
+	const failures = new Map<
+		number,
+		{anchor?: UserItem; rows: TranscriptItem[]}
+	>();
+	let turns = 0;
+	let currentUser: UserItem | undefined;
+	for (const item of previous.items) {
+		if (item.kind === 'user') {
+			turns++;
+			currentUser = item;
+		} else if (item.kind === 'failure') {
+			const group = failures.get(turns);
+			if (group) group.rows.push(item);
+			else failures.set(turns, {anchor: currentUser, rows: [item]});
+		}
+	}
+	if (failures.size === 0) return next;
+	const placed = new Set<number>();
+	const items: TranscriptItem[] = [];
+	let seen = 0;
+	let seenUser: UserItem | undefined;
+	for (const item of next.items) {
+		if (item.kind === 'user') {
+			const group = failures.get(seen);
+			if (group && (seen === 0 || sameTurnUser(group.anchor, seenUser))) {
+				items.push(...group.rows);
+				placed.add(seen);
+			}
+			seen++;
+			seenUser = item;
+		}
+		items.push(item);
+	}
+	for (const [turn, group] of failures) {
+		if (!placed.has(turn)) items.push(...group.rows);
+	}
+	return {...next, items};
+}
+
+// Each batch copies the list at most once, lazily on the first item write.
+function upsert(
+	mutableItems: () => TranscriptItem[],
+	readItems: readonly TranscriptItem[],
+	matches: (item: TranscriptItem) => boolean,
+	update: (previous?: TranscriptItem) => TranscriptItem,
+	floor = -1,
+): void {
+	let index = readItems.length - 1;
+	while (index > floor && !matches(readItems[index])) index--;
+	const items = mutableItems();
+	if (index > floor) items[index] = update(items[index]);
+	else items.push(update());
 }
 
 function applyContent(
-	transcript: Transcript,
+	draft: Transcript,
+	mutableItems: () => TranscriptItem[],
 	event: TurnEvent,
 	at: number | undefined,
-): Transcript {
-	const {items} = transcript;
+): void {
 	switch (event.type) {
 		case 'metadata':
-			return transcript;
+			return;
 		case 'commands':
-			return {...transcript, commands: event.commands};
+			draft.commands = event.commands;
+			return;
 		case 'mode':
-			return {...transcript, mode: event.id};
+			draft.mode = event.id;
+			return;
 		case 'config':
-			return {...transcript, config: event.options};
+			draft.config = event.options;
+			return;
 		case 'context':
-			return {
-				...transcript,
-				context: {
-					used: event.used,
-					size: event.size,
-					...(event.cost ? {cost: event.cost} : {}),
-				},
+			draft.context = {
+				used: event.used,
+				size: event.size,
+				...(event.cost ? {cost: event.cost} : {}),
 			};
+			return;
 		case 'user':
 		case 'text':
 		case 'thought': {
+			const items = mutableItems();
 			const kind = event.type === 'text' ? 'agent' : event.type;
 			const last = items.at(-1);
 			const join =
@@ -185,17 +267,15 @@ function applyContent(
 							: {rowId: fallbackRowId('live', items.length, event.text)}),
 						...(at !== undefined && kind !== 'thought' ? {at} : {}),
 					};
-			return {
-				...transcript,
-				items: join ? [...items.slice(0, -1), item] : [...items, item],
-			};
+			if (join) items[items.length - 1] = item;
+			else items.push(item);
+			return;
 		}
-		case 'tool': {
-			const start = currentTurnStart(items);
-			return upsert(
-				transcript,
-				(item, index) =>
-					item.kind === 'tool' && item.id === event.id && index > start,
+		case 'tool':
+			upsert(
+				mutableItems,
+				draft.items,
+				item => item.kind === 'tool' && item.id === event.id,
 				previous => {
 					const known = previous?.kind === 'tool' ? previous : undefined;
 					if (
@@ -236,18 +316,20 @@ function applyContent(
 							: {}),
 					};
 				},
+				currentTurnStart(draft.items),
 			);
-		}
+			return;
 		case 'plan':
-			if (event.content === null)
-				return {
-					...transcript,
-					items: items.filter(
-						item => item.kind !== 'plan' || item.id !== event.id,
-					),
-				};
-			return upsert(
-				transcript,
+			if (event.content === null) {
+				const filtered = draft.items.filter(
+					item => item.kind !== 'plan' || item.id !== event.id,
+				);
+				if (filtered.length !== draft.items.length) draft.items = filtered;
+				return;
+			}
+			upsert(
+				mutableItems,
+				draft.items,
 				item => item.kind === 'plan' && item.id === event.id,
 				() => ({
 					kind: 'plan',
@@ -255,25 +337,22 @@ function applyContent(
 					content: event.content as StreamPlan,
 				}),
 			);
+			return;
 		case 'notice':
-			return {
-				...transcript,
-				items: [
-					...items,
-					{
-						kind: 'notice',
-						severity: event.severity,
-						title: event.title,
-						...(event.description === undefined
-							? {}
-							: {description: event.description}),
-					},
-				],
-			};
+			mutableItems().push({
+				kind: 'notice',
+				severity: event.severity,
+				title: event.title,
+				...(event.description === undefined
+					? {}
+					: {description: event.description}),
+			});
+			return;
 		case 'compaction':
 		case 'compaction-chunk':
-			return upsert(
-				transcript,
+			upsert(
+				mutableItems,
+				draft.items,
 				item => item.kind === 'compaction' && item.id === event.id,
 				previous => {
 					const known = previous?.kind === 'compaction' ? previous : undefined;
@@ -297,9 +376,11 @@ function applyContent(
 							};
 				},
 			);
+			return;
 		case 'subagent':
-			return upsert(
-				transcript,
+			upsert(
+				mutableItems,
+				draft.items,
 				item => item.kind === 'subagent' && item.id === event.id,
 				previous => ({
 					...(previous?.kind === 'subagent' ? previous : {}),
@@ -312,9 +393,11 @@ function applyContent(
 					...(event.state === undefined ? {} : {state: event.state}),
 				}),
 			);
+			return;
 		case 'session-message':
-			return upsert(
-				transcript,
+			upsert(
+				mutableItems,
+				draft.items,
 				item => item.kind === 'session-message' && item.id === event.id,
 				previous => {
 					const known =
@@ -336,23 +419,18 @@ function applyContent(
 					};
 				},
 			);
+			return;
 		case 'permission':
-			return {
-				...transcript,
-				permissions: [
-					...transcript.permissions.filter(
-						request => request.id !== event.request.id,
-					),
-					event.request,
-				],
-			};
+			draft.permissions = [
+				...draft.permissions.filter(request => request.id !== event.request.id),
+				event.request,
+			];
+			return;
 		case 'permission-closed':
-			return {
-				...transcript,
-				permissions: transcript.permissions.filter(
-					request => request.id !== event.id,
-				),
-			};
+			draft.permissions = draft.permissions.filter(
+				request => request.id !== event.id,
+			);
+			return;
 	}
 }
 
@@ -367,16 +445,18 @@ function mergeMetadata(
 	};
 }
 
-export function applyEvent(
-	transcript: Transcript,
+function applyOne(
+	draft: Transcript,
+	mutableItems: () => TranscriptItem[],
 	event: TurnEvent,
-	at?: number,
-): Transcript {
-	const next = applyContent(transcript, event, at);
-	if (!event.metadata) return next;
+	at: number | undefined,
+): void {
+	applyContent(draft, mutableItems, event, at);
+	if (!event.metadata) return;
+	const items = mutableItems();
 	let index = -1;
-	for (let cursor = next.items.length - 1; cursor >= 0; cursor--) {
-		const {kind} = next.items[cursor];
+	for (let cursor = items.length - 1; cursor >= 0; cursor--) {
+		const {kind} = items[cursor];
 		if (kind === 'user') break;
 		if (kind === 'turn-metadata') {
 			index = cursor;
@@ -384,42 +464,58 @@ export function applyEvent(
 		}
 		if (kind === 'agent' && index < 0) index = cursor;
 	}
-	if (index < 0)
-		return {
-			...next,
-			items: [...next.items, {kind: 'turn-metadata', metadata: event.metadata}],
-		};
-	const items = [...next.items];
+	if (index < 0) {
+		items.push({kind: 'turn-metadata', metadata: event.metadata});
+		return;
+	}
 	const item = items[index];
 	items[index] = {
 		...item,
 		metadata: mergeMetadata(item.metadata, event.metadata),
 	};
-	return {...next, items};
 }
 
+export function applyEvent(
+	transcript: Transcript,
+	event: TurnEvent,
+	at?: number,
+): Transcript {
+	return applyEvents(transcript, [event], at);
+}
+
+// A batch copies the list at most once, so its cost does not grow with each event.
 export function applyEvents(
 	transcript: Transcript,
 	events: readonly TurnEvent[],
 	at?: number,
 ): Transcript {
-	return events.reduce(
-		(current, event) => applyEvent(current, event, at),
-		transcript,
-	);
+	if (events.length === 0) return transcript;
+	const draft: Transcript = {...transcript};
+	let copied = false;
+	const mutableItems = () => {
+		if (!copied || draft.items === transcript.items) {
+			draft.items = [...draft.items];
+			copied = true;
+		}
+		return draft.items;
+	};
+	for (const event of events) applyOne(draft, mutableItems, event, at);
+	return draft;
 }
 
 type Message = Extract<TranscriptItem, {kind: 'user' | 'agent'}>;
 
+function isMessage(item: TranscriptItem): item is Message {
+	return item.kind === 'user' || item.kind === 'agent';
+}
+
 // A shared message id is the only proof of identity. Exact text counts only
 // when neither side has an id, and empty agent text never counts.
-function sameMessage(earlier: Message, item: Message): boolean {
-	if (earlier.kind !== item.kind) return false;
-	if (earlier.kind === 'agent' && (earlier.text === '' || item.text === ''))
-		return false;
-	if (earlier.messageId !== undefined || item.messageId !== undefined)
-		return earlier.messageId === item.messageId;
-	return earlier.text === item.text;
+function messageKey(item: Message): string | undefined {
+	if (item.kind === 'agent' && item.text === '') return undefined;
+	return item.messageId === undefined
+		? `${item.kind}:text:${item.text}`
+		: `${item.kind}:id:${item.messageId}`;
 }
 
 export function carryMessageRows(
@@ -454,23 +550,24 @@ export function carryMessageTimes(
 	previous: Transcript,
 	next: Transcript,
 ): Transcript {
-	const earlier = previous.items.filter(
-		(item): item is Message => item.kind === 'user' || item.kind === 'agent',
-	);
-	const used = new Set<Message>();
+	const earlier = new Map<string, Message[]>();
+	for (const item of previous.items) {
+		if (!isMessage(item)) continue;
+		const key = messageKey(item);
+		if (key === undefined) continue;
+		const bucket = earlier.get(key);
+		if (bucket) bucket.push(item);
+		else earlier.set(key, [item]);
+	}
 	let changed = false;
 	const items = next.items.map(item => {
-		if (
-			(item.kind !== 'user' && item.kind !== 'agent') ||
-			item.at !== undefined
-		)
-			return item;
-		const matches = earlier.filter(
-			candidate => !used.has(candidate) && sameMessage(candidate, item),
-		);
-		if (matches.length !== 1) return item;
+		if (!isMessage(item) || item.at !== undefined) return item;
+		const key = messageKey(item);
+		const matches = key === undefined ? [] : (earlier.get(key) ?? []);
+		// Only a single unused match carries a time, and then it is used up.
+		if (key === undefined || matches.length !== 1) return item;
+		earlier.delete(key);
 		const [match] = matches;
-		used.add(match);
 		if (match.at === undefined) return item;
 		changed = true;
 		return {...item, at: match.at};

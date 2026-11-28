@@ -17,6 +17,17 @@ const render = (items: TranscriptItem[], running = false) =>
 		}),
 	);
 
+test('a long resumed history renders one row and one label per message (PERF-03)', t => {
+	const items = Array.from({length: 200}, (_, index): TranscriptItem[] => [
+		{kind: 'user', text: `question ${index}`},
+		{kind: 'agent', text: `answer ${index}`},
+	]).flat();
+	const html = render(items);
+	t.is(html.match(/gate-message-user/g)?.length, 200);
+	t.is(html.match(/gate-message-agent/g)?.length, 200);
+	t.is(html.match(/stream-author-agent/g)?.length, 200);
+});
+
 test('user and assistant rows expose copy controls without changing message text or composer labels', t => {
 	const first = renderToStaticMarkup(
 		createElement(ConversationStream, {
@@ -55,7 +66,10 @@ test('empty streaming rows have no copy action and attachment summaries remain s
 		}),
 	);
 	t.is(html.match(/aria-label="copy text"/g)?.length, 1);
-	t.true(html.includes('<div class="stream-plain">original</div>'));
+	t.regex(
+		html,
+		/<div class="stream-plain" data-find-id="[^"]+">original<\/div>/,
+	);
 	t.true(html.includes('<div class="stream-plain">attached: fixture.ts</div>'));
 });
 
@@ -341,12 +355,11 @@ test('a running tool row shows its kind once and its reported title once (C-19)'
 		true,
 	);
 	t.true(html.includes('<span class="stream-tool-verb">execute </span>'));
-	t.true(
-		html.includes(
-			'<p class="stream-tool-detail">execute_bash: pnpm test:unit -- export</p>',
-		),
+	t.regex(
+		html,
+		/<p class="stream-tool-detail" data-find-id="[^"]+">execute_bash: pnpm test:unit -- export<\/p>/,
 	);
-	t.false(html.includes('<code class="stream-tool-name">'));
+	t.false(html.includes('class="stream-tool-name"'));
 });
 
 test('a finished tool row shows its kind word once, dropping it when the title already has it', t => {
@@ -370,7 +383,66 @@ test('a finished tool row shows its kind word once, dropping it when the title a
 		},
 	]);
 	t.false(once.includes('<span class="stream-tool-verb">read </span>'));
-	t.true(
-		once.includes('<code class="stream-tool-name">read src/export.ts</code>'),
+	t.regex(
+		once,
+		/<code class="stream-tool-name" data-find-id="[^"]+">read src\/export\.ts<\/code>/,
 	);
+});
+
+test('find marks each searchable field, and an active match in a closed disclosure opens it', t => {
+	const items: TranscriptItem[] = [
+		{kind: 'user', text: 'api question', messageId: 'u1'},
+		{
+			kind: 'tool',
+			id: 'call-1',
+			title: 'read src/api.ts',
+			status: 'completed',
+			details: {
+				locations: [{path: 'src/api.ts', line: 12}],
+				content: ['api line'],
+			},
+		},
+	];
+	const closed = render(items);
+	t.true(closed.includes('data-row-key="user:u1:0"'));
+	t.true(closed.includes('data-find-id="user:u1:0:user:0"'));
+	t.true(closed.includes('data-find-id="tool:call-1:0:tool-title:0"'));
+	t.true(closed.includes('data-find-id="tool:call-1:0:tool-location:0"'));
+	t.true(closed.includes('data-find-id="tool:call-1:0:tool-content:0"'));
+	t.false(closed.includes('<details open'));
+	const found = renderToStaticMarkup(
+		createElement(ConversationStream, {
+			transcript: {...emptyTranscript, items},
+			running: false,
+			find: {
+				query: 'api',
+				activeId: 'tool:call-1:0:tool-content:0:0',
+				activeTarget: {
+					rowKey: 'tool:call-1:0',
+					itemIndex: 1,
+					field: 'tool-content',
+					fieldIndex: 0,
+					folded: true,
+				},
+				revision: 1,
+			},
+		}),
+	);
+	t.true(found.includes('<details open=""'));
+});
+
+test('a delegated run title is findable through its progress line', t => {
+	const html = render(
+		[
+			{
+				kind: 'tool',
+				id: 'd',
+				title: 'delegate api work',
+				status: 'in_progress',
+				delegation: {history: false, task: 'api task'},
+			},
+		],
+		true,
+	);
+	t.true(html.includes('data-find-id="tool:d:0:tool-title:0"'));
 });

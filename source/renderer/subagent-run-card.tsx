@@ -15,6 +15,7 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 	stopping = false,
 	outcome,
 	onStopTurn,
+	findId,
 }: {
 	title?: string | null;
 	role?: string;
@@ -28,6 +29,7 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 	stopping?: boolean;
 	outcome?: 'completed' | 'failed' | 'cancelled';
 	onStopTurn?: () => void;
+	findId?: string;
 }) {
 	const card = React.useRef<HTMLElement>(null);
 	const stopButton = React.useCallback((button: HTMLButtonElement | null) => {
@@ -98,7 +100,8 @@ export const SubagentRunCard = React.memo(function SubagentRunCard({
 			</p>
 			{progress && (
 				<p className="subagent-progress">
-					<span aria-hidden="true">↳ </span>Nanocoder reports: {progress}
+					<span aria-hidden="true">↳ </span>Nanocoder reports:{' '}
+					<span data-find-id={findId}>{progress}</span>
 				</p>
 			)}
 			<p className="subagent-fallback">

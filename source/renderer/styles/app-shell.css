@@ -342,6 +342,29 @@
 	padding-bottom: 12px;
 }
 
+.shell-find-bar {
+	flex: none;
+	padding: var(--spacing-sm) 40px 0;
+}
+
+.shell-find-bar > .find-bar {
+	width: 100%;
+	max-width: 740px;
+	margin-inline: auto;
+}
+
+@media (max-width: 1050px) {
+	.shell-find-bar {
+		padding-inline: 30px;
+	}
+}
+
+@media (max-width: 840px) {
+	.shell-find-bar {
+		padding-inline: 27px;
+	}
+}
+
 .shell-approval-shelf:empty {
 	display: none;
 }

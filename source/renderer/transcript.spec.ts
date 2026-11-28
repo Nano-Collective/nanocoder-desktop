@@ -1,11 +1,14 @@
 import test from 'ava';
 import {toTurnEvent} from '@/main/nanocoder/turn-events';
 import {
+	appendFailure,
 	applyEvent,
 	applyEvents,
+	carryFailureRows,
 	carryMessageRows,
 	carryMessageTimes,
 	emptyTranscript,
+	type Transcript,
 	transcriptRowId,
 } from '@/renderer/transcript';
 
@@ -766,4 +769,130 @@ test('carrying times never overwrites a time, ignores empty agent text and keeps
 	]);
 	t.is(carryMessageTimes(previous, unmatched), unmatched);
 	t.is(carryMessageTimes(emptyTranscript, unmatched), unmatched);
+});
+
+test('a failure row returns before the user message of its turn, and one of a vanished turn goes last (CHAT-04)', t => {
+	const previous: Transcript = {
+		items: [
+			{kind: 'user', text: 'one'},
+			{kind: 'agent', text: 'answer'},
+			{kind: 'user', text: 'two'},
+			{kind: 'failure', text: 'boom', rowId: '2:0'},
+			{kind: 'user', text: 'three'},
+		],
+		permissions: [],
+	};
+	const rebuilt = applyEvents(emptyTranscript, [
+		{type: 'user', text: 'one'},
+		{type: 'text', text: 'answer'},
+		{type: 'user', text: 'two'},
+		{type: 'user', text: 'three'},
+	]);
+	const carried = carryFailureRows(previous, rebuilt);
+	t.deepEqual(
+		carried.items.map(item => item.kind),
+		['user', 'agent', 'user', 'failure', 'user'],
+	);
+	t.is(carried.items[3], previous.items[3]);
+	const shorter = applyEvents(emptyTranscript, [{type: 'user', text: 'one'}]);
+	t.deepEqual(
+		carryFailureRows(previous, shorter).items.map(item => item.kind),
+		['user', 'failure'],
+	);
+	const replaced = applyEvents(emptyTranscript, [
+		{type: 'user', text: 'one'},
+		{type: 'user', text: 'different'},
+		{type: 'user', text: 'three'},
+	]);
+	t.deepEqual(
+		carryFailureRows(previous, replaced).items.map(item => item.kind),
+		['user', 'user', 'user', 'failure'],
+	);
+	t.is(carryFailureRows(emptyTranscript, rebuilt), rebuilt);
+});
+
+test('non-item batches keep the transcript items reference intact (PERF-04)', t => {
+	const base = applyEvents(emptyTranscript, [{type: 'user', text: 'zero'}]);
+	const updated = applyEvents(base, [
+		{type: 'mode', id: 'plan'},
+		{type: 'context', used: 10, size: 100},
+	]);
+	t.is(updated.items, base.items);
+	t.is(updated.mode, 'plan');
+	t.deepEqual(updated.context, {used: 10, size: 100});
+});
+
+test('each failure row has its own key, so repeated failures in one turn never share a row (CHAT-04)', t => {
+	const once = appendFailure(
+		applyEvents(emptyTranscript, [{type: 'user', text: 'one'}]),
+		'boom',
+	);
+	const twice = appendFailure(once, 'boom');
+	const keys = twice.items
+		.map((item, index) => transcriptRowId(item, index))
+		.filter(key => key.startsWith('failure:'));
+	t.is(keys.length, 2);
+	t.is(new Set(keys).size, 2);
+});
+
+test('a batch applies every event in order and keeps the rows it does not change (PERF-04)', t => {
+	const base = applyEvents(emptyTranscript, [{type: 'user', text: 'zero'}]);
+	const batched = applyEvents(base, [
+		{type: 'user', text: 'one'},
+		{type: 'text', text: 'answer '},
+		{type: 'text', text: 'more'},
+		{type: 'user', text: 'two'},
+	]);
+	t.deepEqual(
+		batched.items.map(item => ('text' in item ? item.text : '')),
+		['zero', 'one', 'answer more', 'two'],
+	);
+	t.is(batched.items[0], base.items[0]);
+	t.is(applyEvents(base, []), base);
+});
+
+test('a message time carries to one unused match only, so repeated messages never share a time (PERF-04)', t => {
+	const timed = applyEvents(
+		emptyTranscript,
+		[{type: 'user', text: 'same'}],
+		10,
+	);
+	const twice = applyEvents(emptyTranscript, [
+		{type: 'user', text: 'same'},
+		{type: 'user', text: 'same'},
+	]);
+	t.deepEqual(carryMessageTimes(timed, twice).items.map(at), [10, 'none']);
+	const ambiguous = applyEvents(
+		emptyTranscript,
+		[
+			{type: 'user', text: 'same'},
+			{type: 'user', text: 'same'},
+		],
+		10,
+	);
+	t.deepEqual(
+		carryMessageTimes(
+			ambiguous,
+			applyEvents(emptyTranscript, [{type: 'user', text: 'same'}]),
+		).items.map(at),
+		['none'],
+	);
+});
+
+test('carrying times over a long history gives each message its own time (PERF-03)', t => {
+	const count = 2000;
+	let timed = emptyTranscript;
+	for (let index = 0; index < count; index++)
+		timed = applyEvent(timed, {type: 'user', text: `question ${index}`}, index);
+	const untimed = applyEvents(
+		emptyTranscript,
+		Array.from({length: count}, (_, index) => ({
+			type: 'user' as const,
+			text: `question ${index}`,
+		})),
+	);
+	t.deepEqual(
+		carryMessageTimes(timed, untimed).items.map(at),
+		Array.from({length: count}, (_, index) => index),
+	);
 });

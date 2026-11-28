@@ -79,3 +79,27 @@ export function clearAttachments(
 	const {[key]: _removed, ...rest} = store;
 	return rest;
 }
+
+// Forgets every thread of a project that has left the desktop, and no other.
+export function forgetProjectAttachments(
+	store: AttachmentStore,
+	projectId: string,
+): AttachmentStore {
+	const prefix = attachmentKey(projectId, '');
+	return pruneAttachments(
+		store,
+		new Set(Object.keys(store).filter(key => !key.startsWith(prefix))),
+	);
+}
+
+// Keeps attachments only for threads that still exist, so a removed thread
+// cannot keep its files in memory.
+export function pruneAttachments(
+	store: AttachmentStore,
+	live: ReadonlySet<string>,
+): AttachmentStore {
+	const kept = Object.entries(store).filter(([key]) => live.has(key));
+	return kept.length === Object.keys(store).length
+		? store
+		: Object.fromEntries(kept);
+}

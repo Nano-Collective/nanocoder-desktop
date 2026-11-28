@@ -2,7 +2,7 @@ import * as React from 'react';
 import {FilePreview} from '@/renderer/file-preview';
 import {FileTree} from '@/renderer/file-tree';
 import {keyHint} from '@/renderer/overlay-model';
-import {ReviewPanel} from '@/renderer/review-panel';
+import {ReviewPanel, type ReviewPanelHandle} from '@/renderer/review-panel';
 import {Button} from '@/renderer/ui';
 import type {useFiles} from '@/renderer/use-files';
 import type {useReview} from '@/renderer/use-review';
@@ -28,6 +28,8 @@ export interface WorkbenchProps {
 	// Resolve to a plain message when the editor or file manager could not be used.
 	onOpenEditor(path: string, line?: number): Promise<string | null>;
 	onReveal(path: string): Promise<string | null>;
+	// Lets the host search the open diff.
+	reviewRef?: React.Ref<ReviewPanelHandle>;
 	browser: React.ReactNode;
 }
 
@@ -41,6 +43,7 @@ export function Workbench({
 	onComment,
 	onOpenEditor,
 	onReveal,
+	reviewRef,
 	browser,
 }: WorkbenchProps): React.ReactElement {
 	const [message, setMessage] = React.useState<string | null>(null);
@@ -171,6 +174,7 @@ export function Workbench({
 			>
 				{tab === 'review' && (
 					<ReviewPanel
+						ref={reviewRef}
 						state={review.state}
 						interactions={review.interactions}
 						onInteraction={review.setInteraction}

@@ -3,7 +3,9 @@ import {
 	type StreamBatchClock,
 } from '@/renderer/stream-batcher';
 import {
+	appendFailure,
 	applyEvents,
+	carryFailureRows,
 	carryMessageRows,
 	carryMessageTimes,
 	emptyTranscript,
@@ -38,8 +40,11 @@ export function createThreadConversations(options: {
 	onChange(state: ThreadConversationState): void;
 	clock?: StreamBatchClock;
 	now?: () => number;
+	// Idle views beyond this count are dropped, least recently written first.
+	maxViews?: number;
 }) {
 	const now = options.now ?? Date.now;
+	const maxViews = options.maxViews ?? 16;
 	type View = Omit<ThreadConversationState, 'projectId' | 'activeThreadId'>;
 	const empty: View = {
 		transcript: emptyTranscript,
@@ -50,6 +55,8 @@ export function createThreadConversations(options: {
 	const views = new Map<string, View>();
 	const removed = new Set<string>();
 	const replaying = new Set<string>();
+	// Threads with a turn that sent live events and has no result yet.
+	const streaming = new Set<string>();
 	const tickets = new Map<string, TurnTicket>();
 	let projectId: string | null = null;
 	let activeThreadId: string | null = null;
@@ -68,8 +75,30 @@ export function createThreadConversations(options: {
 	};
 	const allowed = (threadId: string) =>
 		!disposed && projectId !== null && !removed.has(key(threadId));
+	// Idle views go first. Live turns, approvals and drafts stay; an idle thread
+	// reloads from its snapshot when it is opened again.
+	const trim = () => {
+		const active = activeThreadId ? key(activeThreadId) : null;
+		for (const [viewKey, held] of views) {
+			if (views.size <= maxViews) return;
+			if (
+				viewKey === active ||
+				tickets.has(viewKey) ||
+				replaying.has(viewKey) ||
+				streaming.has(viewKey) ||
+				held.draft !== '' ||
+				held.transcript.permissions.length > 0
+			)
+				continue;
+			views.delete(viewKey);
+		}
+	};
 	const put = (threadId: string, patch: Partial<View>) => {
-		views.set(key(threadId), {...view(threadId), ...patch});
+		const next = {...view(threadId), ...patch};
+		// Deleting first moves the view to the newest end of the map.
+		views.delete(key(threadId));
+		views.set(key(threadId), next);
+		trim();
 		emit();
 	};
 	const terminal = (
@@ -90,13 +119,7 @@ export function createThreadConversations(options: {
 			transcript:
 				!result.ok &&
 				!(last?.kind === 'failure' && last.text === result.error.message)
-					? {
-							...settled,
-							items: [
-								...settled.items,
-								{kind: 'failure', text: result.error.message},
-							],
-						}
+					? appendFailure(settled, result.error.message)
 					: settled,
 		};
 	};
@@ -118,9 +141,11 @@ export function createThreadConversations(options: {
 			batcher.flush();
 			tickets.clear();
 			replaying.clear();
+			streaming.clear();
 			generation++;
 			projectId = selected;
 			activeThreadId = null;
+			trim();
 			emit();
 		},
 		selectThread(threadId: string | null) {
@@ -147,6 +172,9 @@ export function createThreadConversations(options: {
 				if (event.replay.phase === 'begin') replaying.add(key(event.threadId));
 				else replaying.delete(key(event.threadId));
 			}
+			if (event.result) streaming.delete(key(event.threadId));
+			else if (event.events.length && !replaying.has(key(event.threadId)))
+				streaming.add(key(event.threadId));
 			batcher.enqueue(
 				event.threadId,
 				event.events,
@@ -189,25 +217,27 @@ export function createThreadConversations(options: {
 			if (snapshot.replaying) replaying.add(key(threadId));
 			else replaying.delete(key(threadId));
 			const previous = view(threadId).transcript;
-			const transcript = carryMessageTimes(
+			// Failure rows are not in the history, so messages match without them.
+			const history = {
+				...previous,
+				items: previous.items.filter(item => item.kind !== 'failure'),
+			};
+			const transcript = carryFailureRows(
 				previous,
-				carryMessageRows(
-					previous,
-					applyEvents(emptyTranscript, snapshot.events),
+				carryMessageTimes(
+					history,
+					carryMessageRows(
+						history,
+						applyEvents(emptyTranscript, snapshot.events),
+					),
 				),
 			);
-			const prefix = {
-				...transcript,
-				items: [
-					...transcript.items,
-					...previous.items.filter(item => item.kind === 'failure'),
-				],
-			};
+			if (snapshot.result) streaming.delete(key(threadId));
 			put(
 				threadId,
 				snapshot.result
-					? terminal(prefix, snapshot.result)
-					: {transcript: prefix, turn: null},
+					? terminal(transcript, snapshot.result)
+					: {transcript, turn: null},
 			);
 			return true;
 		},
@@ -244,6 +274,7 @@ export function createThreadConversations(options: {
 			batcher.flush(ticket.threadId);
 			if (!isCurrent()) return false;
 			tickets.delete(key(ticket.threadId));
+			if (result !== null) streaming.delete(key(ticket.threadId));
 			const current = view(ticket.threadId);
 			if (current.turn) return result !== null;
 			const interrupted =
@@ -271,13 +302,7 @@ export function createThreadConversations(options: {
 				turn: result,
 				transcript:
 					result && !result.ok
-						? {
-								...transcript,
-								items: [
-									...transcript.items,
-									{kind: 'failure', text: result.error.message},
-								],
-							}
+						? appendFailure(transcript, result.error.message)
 						: transcript,
 			});
 			return result !== null;
@@ -297,6 +322,7 @@ export function createThreadConversations(options: {
 			views.delete(key(threadId));
 			tickets.delete(key(threadId));
 			replaying.delete(key(threadId));
+			streaming.delete(key(threadId));
 			removed.add(key(threadId));
 			if (activeThreadId === threadId) activeThreadId = null;
 			emit();
@@ -308,6 +334,7 @@ export function createThreadConversations(options: {
 			views.clear();
 			removed.clear();
 			replaying.clear();
+			streaming.clear();
 			projectId = null;
 			activeThreadId = null;
 		},

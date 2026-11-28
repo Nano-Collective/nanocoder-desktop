@@ -4,8 +4,10 @@ import {
 	attachmentKey,
 	chips,
 	clearAttachments,
+	forgetProjectAttachments,
 	labelFor,
 	MAX_ATTACHMENTS,
+	pruneAttachments,
 	removeAttachment,
 } from '@/renderer/attachments';
 import type {PromptAttachment} from '@/shared/ipc';
@@ -99,4 +101,27 @@ test('BRW-10 a page chip names the site and a second page replaces the first', t
 	store = addAttachment(store, key, page('http://localhost:3000/'));
 	store = addAttachment(store, key, page('http://localhost:5173/'));
 	t.deepEqual(store[key], [file('a.ts'), page('http://localhost:5173/')]);
+});
+
+test('a project that leaves the desktop forgets its own threads only (CHAT-16)', t => {
+	const mine = attachmentKey('p', 'a');
+	const sibling = attachmentKey('pq', 'a');
+	let store = addAttachment({}, mine, file('a.ts'));
+	store = addAttachment(store, attachmentKey('p', 'b'), file('b.ts'));
+	store = addAttachment(store, sibling, file('c.ts'));
+	t.deepEqual(forgetProjectAttachments(store, 'p'), {
+		[sibling]: [file('c.ts')],
+	});
+	t.is(forgetProjectAttachments(store, 'missing'), store);
+});
+
+test('a removed thread drops its attachments, and an unchanged store is returned as it is (CHAT-16)', t => {
+	const kept = attachmentKey('p', 'a');
+	const removed = attachmentKey('p', 'b');
+	let store = addAttachment({}, kept, file('a.ts'));
+	store = addAttachment(store, removed, file('b.ts'));
+	const pruned = pruneAttachments(store, new Set([kept]));
+	t.deepEqual(pruned, {[kept]: [file('a.ts')]});
+	t.is(pruneAttachments(pruned, new Set([kept])), pruned);
+	t.deepEqual(pruneAttachments(store, new Set()), {});
 });

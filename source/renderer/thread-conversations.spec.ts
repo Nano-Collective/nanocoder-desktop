@@ -698,6 +698,122 @@ test('replay without a terminal clears the old result but keeps its failure noti
 	);
 });
 
+test('a failed turn stays beside its turn after a snapshot rebuilds the history (CHAT-04)', t => {
+	const {conversations} = fixture();
+	const history: TurnEvent[] = [
+		{type: 'user', text: 'one'},
+		{type: 'text', text: 'answer one'},
+		{type: 'user', text: 'two'},
+		{type: 'user', text: 'three'},
+		{type: 'text', text: 'reply three'},
+	];
+	const kinds = ['user', 'agent', 'user', 'failure', 'user', 'agent'];
+	conversations.snapshot(snapshot('a', history.slice(0, 2)));
+	conversations.setDraft('two');
+	const failed = conversations.beginTurn('a');
+	if (!failed) return t.fail('the selected draft should begin a turn');
+	conversations.receive(turn([{type: 'user', text: 'two'}]));
+	t.true(
+		conversations.finishTurn(failed, {
+			ok: false,
+			error: {
+				code: 'AGENT_UNAVAILABLE',
+				message: 'boom',
+				retryable: true,
+			},
+		}),
+	);
+	conversations.setDraft('three');
+	const next = conversations.beginTurn('a');
+	if (!next) return t.fail('the selected draft should begin a turn');
+	conversations.receive(
+		turn([
+			{type: 'user', text: 'three'},
+			{type: 'text', text: 'reply three'},
+		]),
+	);
+	t.true(
+		conversations.finishTurn(next, {
+			ok: true,
+			value: {stopReason: 'end_turn'},
+		}),
+	);
+	const before = conversations.getState().transcript.items;
+	t.deepEqual(
+		before.map(item => item.kind),
+		kinds,
+	);
+	const failureKey = transcriptRowId(before[3], 3);
+	conversations.snapshot(snapshot('a', history));
+	const after = conversations.getState().transcript.items;
+	t.deepEqual(
+		after.map(item => item.kind),
+		kinds,
+	);
+	t.like(after[3], {kind: 'failure', text: 'boom'});
+	t.is(transcriptRowId(after[3], 3), failureKey);
+	conversations.snapshot(snapshot('a', history));
+	t.deepEqual(
+		conversations.getState().transcript.items.map(item => item.kind),
+		kinds,
+	);
+});
+
+test('the view cache keeps the open thread, unsent drafts and live turns, and drops the least recently written idle thread (PERF-04)', t => {
+	const conversations = createThreadConversations({
+		onChange() {},
+		clock: {schedule: () => () => {}},
+		maxViews: 2,
+	});
+	conversations.selectProject('project-a');
+	conversations.selectThread('a');
+	conversations.setDraft('unsent');
+	conversations.selectThread('b');
+	conversations.receive(turn([{type: 'text', text: 'b reply'}], 'b'));
+	conversations.flush();
+	conversations.selectThread('c');
+	conversations.receive({
+		...turn([{type: 'text', text: 'c reply'}], 'c'),
+		result: {ok: true, value: {stopReason: 'end_turn'}},
+	});
+	conversations.selectThread('d');
+	conversations.receive({
+		...turn([{type: 'text', text: 'd reply'}], 'd'),
+		result: {ok: true, value: {stopReason: 'end_turn'}},
+	});
+	conversations.selectThread('a');
+	t.is(conversations.getState().draft, 'unsent');
+	conversations.selectThread('b');
+	t.is(conversations.getState().transcript.items[0]?.text, 'b reply');
+	conversations.selectThread('c');
+	t.deepEqual(conversations.getState().transcript.items, []);
+	conversations.selectThread('d');
+	t.is(conversations.getState().transcript.items[0]?.kind, 'agent');
+});
+
+test('a view that waits for an approval is kept when the cache is full (PERF-04)', t => {
+	const conversations = createThreadConversations({
+		onChange() {},
+		clock: {schedule: () => () => {}},
+		maxViews: 1,
+	});
+	const request = {
+		id: 'request-a',
+		title: 'offered action',
+		options: [{id: 'deny', name: 'deny', kind: 'reject_once' as const}],
+	};
+	conversations.selectProject('project-a');
+	conversations.selectThread('a');
+	conversations.snapshot(snapshot('a', [{type: 'permission', request}]));
+	conversations.selectThread('b');
+	conversations.receive({
+		...turn([{type: 'text', text: 'b reply'}], 'b'),
+		result: {ok: true, value: {stopReason: 'end_turn'}},
+	});
+	conversations.selectThread('a');
+	t.is(conversations.getState().transcript.permissions.length, 1);
+});
+
 const epoch = '00000000-0000-4000-8000-000000000001';
 const marker = (phase: 'begin' | 'complete' | 'failed', threadId = 'a') => ({
 	...turn([], threadId),

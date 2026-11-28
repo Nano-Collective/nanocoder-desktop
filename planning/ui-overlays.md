@@ -1,7 +1,7 @@
 # Workspace overlays
 
 - Status: implemented for U.12 in issue #17
-- Last updated: 2026-11-24
+- Last updated: 2026-11-28
 
 Visual design: see [`DESIGN.md`](../DESIGN.md).
 
@@ -9,6 +9,16 @@ Visual design: see [`DESIGN.md`](../DESIGN.md).
 
 The renderer owns the command palette, keyboard shortcut sheet and notification
 queue. They add no IPC channels or preload capabilities.
+
+- `⌘F` on macOS, or `Ctrl+F` elsewhere, is routed through the single global
+  `keydown` handler when no modal dialog is open. When focus is inside an open
+  text diff, it opens the diff find bar; otherwise, including from the composer,
+  it opens the loaded conversation find bar (closing a covering workbench at
+  840px and below). It never intercepts `⌘F` or `Ctrl+F` inside the terminal or
+  native browser panel. The shortcut sheet lists `find in conversation or open
+  diff`, and the command palette exposes `find in conversation` and `find in
+  open diff`. Query text, matches and active indices stay in renderer memory
+  only and are never written to disk or logs.
 
 - `⌘K` on macOS, or `Ctrl+K` elsewhere, opens the palette. Query words filter
   labels and keywords, with exact labels before prefixes, label words and

@@ -101,6 +101,100 @@ const components: Components = {
 		) : null,
 };
 
+const listItemStart = /^(?:[-+*]|\d{1,9}[.)])(?:[ \t]|\r?\n?$)/;
+const fenceOpen = /^ {0,3}(`{3,}|~{3,})/;
+const fenceClose = /^ {0,3}(`{3,}|~{3,})[ \t]*\r?\n?$/;
+
+// Splits at a blank line only when the next line starts a new top-level block,
+// so each part parses as it would inside the whole text. Text that can refer
+// across blocks (link definitions, footnotes, HTML) stays in one block.
+export function splitMarkdownBlocks(text: string): string[] {
+	if (/^ {0,3}\[[^\]\n]+\]:|\[\^|^[ \t]{0,3}</m.test(text)) return [text];
+	const blocks: string[] = [];
+	let block = '';
+	let content = false;
+	let fence: string | null = null;
+	let afterBlank = false;
+	for (const line of text.split(/(?<=\n)/)) {
+		const blank = line.trim() === '';
+		if (
+			afterBlank &&
+			fence === null &&
+			content &&
+			!blank &&
+			!/^\s/.test(line) &&
+			!listItemStart.test(line)
+		) {
+			blocks.push(block);
+			block = '';
+			content = false;
+		}
+		block += line;
+		content ||= !blank;
+		if (fence === null) {
+			const open = fenceOpen.exec(line);
+			if (open) fence = open[1];
+		} else {
+			const close = fenceClose.exec(line);
+			if (close && close[1][0] === fence[0] && close[1].length >= fence.length)
+				fence = null;
+		}
+		afterBlank = blank;
+	}
+	blocks.push(block);
+	return blocks;
+}
+
+// Settled blocks skip parsing while a reply streams.
+const MarkdownBlock = React.memo(function MarkdownBlock({
+	text,
+}: {
+	text: string;
+}) {
+	return (
+		<MarkdownSource.Provider value={text}>
+			<Markdown
+				skipHtml
+				remarkPlugins={[remarkGfm]}
+				unwrapDisallowed
+				urlTransform={url => localHref(url) ?? ''}
+				allowedElements={[
+					'p',
+					'h1',
+					'h2',
+					'h3',
+					'h4',
+					'h5',
+					'h6',
+					'blockquote',
+					'ul',
+					'ol',
+					'li',
+					'pre',
+					'code',
+					'strong',
+					'em',
+					'del',
+					'hr',
+					'br',
+					'a',
+					'img',
+					'input',
+					'table',
+					'thead',
+					'tbody',
+					'tr',
+					'th',
+					'td',
+				]}
+				components={components}
+			>
+				{text}
+			</Markdown>
+		</MarkdownSource.Provider>
+	);
+});
+
 // Swappable while DEC-39 is proposed. Only localhost links act, and only through the opener; main still applies the origin policy.
 export const AgentMarkdown = React.memo(function AgentMarkdown({
 	text,
@@ -108,47 +202,10 @@ export const AgentMarkdown = React.memo(function AgentMarkdown({
 	text: string;
 }) {
 	return (
-		<MarkdownSource.Provider value={text}>
-			<div className="stream-markdown">
-				<Markdown
-					skipHtml
-					remarkPlugins={[remarkGfm]}
-					unwrapDisallowed
-					urlTransform={url => localHref(url) ?? ''}
-					allowedElements={[
-						'p',
-						'h1',
-						'h2',
-						'h3',
-						'h4',
-						'h5',
-						'h6',
-						'blockquote',
-						'ul',
-						'ol',
-						'li',
-						'pre',
-						'code',
-						'strong',
-						'em',
-						'del',
-						'hr',
-						'br',
-						'a',
-						'img',
-						'input',
-						'table',
-						'thead',
-						'tbody',
-						'tr',
-						'th',
-						'td',
-					]}
-					components={components}
-				>
-					{text}
-				</Markdown>
-			</div>
-		</MarkdownSource.Provider>
+		<div className="stream-markdown">
+			{splitMarkdownBlocks(text).map((block, index) => (
+				<MarkdownBlock key={index} text={block} />
+			))}
+		</div>
 	);
 });

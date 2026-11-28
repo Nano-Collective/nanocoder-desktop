@@ -1,5 +1,12 @@
 import * as React from 'react';
 import {
+	type DiffFindTarget,
+	type DiffMatch,
+	findDiffMatches,
+	groupDiffMatches,
+	sliceRowHighlights,
+} from '@/renderer/diff-find';
+import {
 	type DiffRow,
 	diffKey,
 	parseDiff,
@@ -13,7 +20,17 @@ import {
 	mountedDiffRows,
 	scrollTopForRow,
 } from '@/renderer/diff-virtual';
-import {keyHint} from '@/renderer/overlay-model';
+import {FindBar} from '@/renderer/find-bar';
+import {
+	closeFind,
+	diffScopeLabel,
+	initialFindState,
+	openFind,
+	reconcileFindMatches,
+	setFindQuery,
+	stepFind,
+} from '@/renderer/find-model';
+import {focusReturn, keyHint} from '@/renderer/overlay-model';
 import {
 	defaultSide,
 	describeEntry,
@@ -52,6 +69,47 @@ const KIND_WORDS: Record<DiffRow['kind'], string> = {
 
 type CommentAttachment = Extract<PromptAttachment, {kind: 'review-comment'}>;
 
+// Find state is memory-only and resets with the diff it searches.
+const closedFind = initialFindState<DiffFindTarget>();
+
+interface DiffFindHandle {
+	open(opener: HTMLElement | null): void;
+	close(): void;
+}
+
+export interface ReviewPanelHandle {
+	openFind(opener?: HTMLElement | null): void;
+	closeFind(): void;
+	hasOpenDiff(): boolean;
+}
+
+function focusInDiff(): boolean {
+	const active = document.activeElement;
+	return (
+		!active || active === document.body || active.closest('.diff-view') !== null
+	);
+}
+
+function findHighlights(
+	text: string,
+	hits: readonly DiffMatch[],
+	activeId: string | null,
+): React.ReactNode[] {
+	return sliceRowHighlights(text, hits, activeId).map((piece, index) => {
+		if (piece.match === 'none') return piece.text;
+		return (
+			<mark
+				key={index}
+				className={
+					piece.match === 'active' ? 'find-hit find-hit--active' : 'find-hit'
+				}
+			>
+				{piece.text}
+			</mark>
+		);
+	});
+}
+
 function DiffView({
 	diff,
 	agent,
@@ -60,6 +118,7 @@ function DiffView({
 	onInteraction,
 	onComment,
 	onOpenEditor,
+	findRef,
 }: {
 	diff: Extract<ReviewDiff, {kind: 'text'}>;
 	agent: boolean;
@@ -68,6 +127,7 @@ function DiffView({
 	onInteraction(next: ReviewInteraction): void;
 	onComment(comment: CommentAttachment): void;
 	onOpenEditor(path: string, line?: number): void;
+	findRef: React.Ref<DiffFindHandle>;
 }): React.ReactElement {
 	const rows = React.useMemo(() => parseDiff(diff.diff), [diff.diff]);
 	const shown = React.useMemo(() => rows.slice(0, MAX_DIFF_ROWS), [rows]);
@@ -80,6 +140,31 @@ function DiffView({
 	const [contentWidth, setContentWidth] = React.useState(0);
 	const nodes = React.useRef(new Map<number, HTMLElement>());
 	const pending = React.useRef<number | null>(null);
+	const findInput = React.useRef<HTMLInputElement | null>(null);
+	const findOpener = React.useRef<HTMLElement | null>(null);
+	const [findFocusRequest, setFindFocusRequest] = React.useState(0);
+	const [findFingerprint, setFindFingerprint] = React.useState(fingerprint);
+	const [find, setFind] = React.useState(closedFind);
+	if (findFingerprint !== fingerprint) {
+		setFindFingerprint(fingerprint);
+		// A refresh of the same file keeps an open find bar and searches the new rows.
+		setFind(current =>
+			current.open
+				? reconcileFindMatches(
+						current,
+						findDiffMatches(rows, current.query).matches,
+					)
+				: closedFind,
+		);
+	}
+	const hitsByRow = React.useMemo(
+		() => groupDiffMatches(find.matches),
+		[find.matches],
+	);
+	const activeMatch =
+		find.activeIndex >= 0 ? find.matches[find.activeIndex] : undefined;
+	const activeRow = activeMatch?.target.rowIndex;
+	const scopeLabel = diffScopeLabel(rows.length, MAX_DIFF_ROWS);
 	const updateWindow = React.useCallback(
 		(top: number, height: number) => {
 			setWindow(diffWindow(shown.length, top, height));
@@ -166,14 +251,89 @@ function DiffView({
 		if (top !== element.scrollTop) element.scrollTop = top;
 		updateWindow(top, element.clientHeight);
 	};
+	const showFind = React.useCallback(
+		(opener: HTMLElement | null) => {
+			if (!find.open) {
+				findOpener.current = opener;
+				setFind(current =>
+					reconcileFindMatches(
+						openFind(current),
+						findDiffMatches(rows, current.query).matches,
+					),
+				);
+			}
+			setFindFocusRequest(count => count + 1);
+		},
+		[find.open, rows],
+	);
+	const hideFind = React.useCallback(() => {
+		if (!find.open) return;
+		setFind(current => closeFind(current));
+		const fallback = nodes.current.get(tabbable) ?? scroller.current;
+		if (fallback && focusInDiff()) focusReturn(findOpener.current, fallback)();
+	}, [find.open, tabbable]);
+	const changeFindQuery = React.useCallback(
+		(query: string) => {
+			setFind(current =>
+				reconcileFindMatches(
+					setFindQuery(current, query),
+					findDiffMatches(rows, query).matches,
+				),
+			);
+		},
+		[rows],
+	);
+	const moveFind = React.useCallback((delta: 1 | -1) => {
+		setFind(current => stepFind(current, delta));
+	}, []);
+	React.useImperativeHandle(
+		findRef,
+		() => ({
+			open: showFind,
+			close: hideFind,
+		}),
+		[showFind, hideFind],
+	);
+	React.useLayoutEffect(() => {
+		if (findFocusRequest === 0) return;
+		findInput.current?.focus();
+		findInput.current?.select();
+	}, [findFocusRequest]);
+	React.useLayoutEffect(() => {
+		if (!activeMatch) return;
+		const element = scroller.current;
+		if (!element) return;
+		const top = scrollTopForRow(
+			activeMatch.target.rowIndex,
+			element.scrollTop,
+			element.clientHeight,
+			shown.length,
+		);
+		if (top !== element.scrollTop) element.scrollTop = top;
+		updateWindow(top, element.clientHeight);
+	}, [activeMatch, shown.length, updateWindow]);
 	const orderedMounted = mountedDiffRows(
 		window,
 		activeCursor?.cursor,
 		focusedIndex,
 		tabbable,
+		activeRow,
 	);
 	return (
 		<div className="diff-view">
+			<FindBar
+				open={find.open}
+				query={find.query}
+				activeIndex={find.activeIndex}
+				total={find.matches.length}
+				scopeLabel={scopeLabel}
+				hostLabel={`find in ${described} in ${displayName(diff.path)}`}
+				inputRef={findInput}
+				onQueryChange={changeFindQuery}
+				onNext={() => moveFind(1)}
+				onPrevious={() => moveFind(-1)}
+				onClose={hideFind}
+			/>
 			<header className="diff-header">
 				<p className="diff-title">
 					{displayName(diff.path)} <span className="diff-side">({label})</span>
@@ -184,6 +344,13 @@ function DiffView({
 						</span>
 					</span>
 				</p>
+				<Button
+					className="find-open"
+					onClick={event => showFind(event.currentTarget)}
+					title="find in this diff"
+				>
+					find
+				</Button>
 				<Button
 					onClick={() => onOpenEditor(diff.path, selection?.startLine)}
 					title="open this file in your editor"
@@ -244,6 +411,7 @@ function DiffView({
 					{orderedMounted.map(index => {
 						const row = shown[index];
 						if (!row) return null;
+						const hits = hitsByRow.get(index);
 						return (
 							<div
 								key={diffRowKey(index)}
@@ -260,6 +428,7 @@ function DiffView({
 								aria-posinset={index + 1}
 								aria-setsize={shown.length}
 								tabIndex={index === tabbable ? 0 : -1}
+								data-find-active={activeRow === index ? 'true' : undefined}
 								className={`diff-row diff-row--${row.kind}${
 									row.selectable && index >= low && index <= high
 										? ' diff-row--selected'
@@ -295,7 +464,11 @@ function DiffView({
 									{KIND_WORDS[row.kind]}
 									{row.selectable ? ` line ${row.newLine ?? row.oldLine}` : ''}:{' '}
 								</span>
-								<span className="diff-text">{row.text}</span>
+								<span className="diff-text">
+									{hits
+										? findHighlights(row.text, hits, find.activeId)
+										: row.text}
+								</span>
 							</div>
 						);
 					})}
@@ -384,6 +557,7 @@ function DiffView({
 }
 
 export function ReviewPanel({
+	ref,
 	state,
 	commentReason,
 	onFilter,
@@ -396,6 +570,7 @@ export function ReviewPanel({
 	interactions,
 	onInteraction,
 }: {
+	ref?: React.Ref<ReviewPanelHandle>;
 	state: ReviewState;
 	commentReason: string | null;
 	onFilter(filter: ReviewFilter): void;
@@ -411,6 +586,17 @@ export function ReviewPanel({
 		next: ReviewInteraction,
 	): void;
 }): React.ReactElement {
+	const diffFind = React.useRef<DiffFindHandle | null>(null);
+	React.useImperativeHandle(
+		ref,
+		() => ({
+			openFind: (opener?: HTMLElement | null) =>
+				diffFind.current?.open(opener ?? null),
+			closeFind: () => diffFind.current?.close(),
+			hasOpenDiff: () => diffFind.current !== null,
+		}),
+		[],
+	);
 	const {value} = state;
 	if (!value)
 		return state.status === 'error' ? (
@@ -616,6 +802,7 @@ export function ReviewPanel({
 					{state.diff?.value?.kind === 'text' && interactionIdentity && (
 						<DiffView
 							key={interactionKey(interactionIdentity)}
+							findRef={diffFind}
 							diff={state.diff.value}
 							agent={agentView}
 							commentReason={commentReason}
